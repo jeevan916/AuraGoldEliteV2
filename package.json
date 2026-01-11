@@ -1,16 +1,31 @@
 
 {
-  "name": "auragold-elite",
+  "name": "auragold-pro",
   "private": true,
-  "version": "2.1.0",
+  "version": "3.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "tsc && vite build",
+    "preview": "vite preview"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@google/genai": "^0.21.0",
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.4",
+    "lucide-react": "^0.469.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.15.0"
+  },
   "devDependencies": {
-    "vite": "^6.0.0",
-    "@vitejs/plugin-react": "^4.0.0"
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
   }
 }

@@ -13,9 +13,18 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: 'dist',
-      assetsDir: 'assets',
-      sourcemap: false,
-      minify: 'esbuild'
+      target: 'esnext',
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            vendor: ['react', 'react-dom'],
+            utils: ['jspdf', 'recharts']
+          }
+        }
+      }
+    },
+    server: {
+      port: 3000
     }
   };
 });
