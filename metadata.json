@@ -1,0 +1,7 @@
+{
+  "name": " AuraGold Elite v2",
+  "description": "High-end jewelry order and collection management system with AI recovery",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

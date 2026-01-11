@@ -1,0 +1,218 @@
+
+export type Purity = '18K' | '22K' | '24K';
+
+export enum OrderStatus {
+  ACTIVE = 'ACTIVE',
+  COMPLETED = 'COMPLETED',
+  OVERDUE = 'OVERDUE'
+}
+
+export enum ProductionStatus {
+  DESIGNING = 'DESIGNING',
+  PRODUCTION = 'PRODUCTION',
+  QUALITY_CHECK = 'QUALITY_CHECK',
+  READY = 'READY',
+  DELIVERED = 'DELIVERED'
+}
+
+export enum ProtectionStatus {
+  ACTIVE = 'ACTIVE',
+  WARNING = 'WARNING',
+  LAPSED = 'LAPSED'
+}
+
+export interface Milestone {
+  id: string;
+  dueDate: string;
+  targetAmount: number;
+  cumulativeTarget: number;
+  status: 'PENDING' | 'PARTIAL' | 'PAID';
+  warningCount: number;
+}
+
+export interface PaymentPlan {
+  type: 'PRE_CREATED' | 'MANUAL';
+  templateId?: string;
+  months: number;
+  interestPercentage: number;
+  advancePercentage: number;
+  goldRateProtection: boolean;
+  protectionLimit: number;
+  protectionRateBooked: number;
+  protectionDeadline: string;
+  milestones: Milestone[];
+  protectionStatus: ProtectionStatus;
+  gracePeriodEndAt?: string;
+}
+
+export interface JewelryDetail {
+  id: string;
+  category: string;
+  metalColor: 'Yellow Gold' | 'Rose Gold' | 'White Gold';
+  grossWeight?: number;
+  netWeight: number;
+  wastagePercentage: number;
+  wastageValue: number;
+  makingChargesPerGram: number;
+  totalLaborValue: number;
+  stoneCharges: number;
+  purity: Purity;
+  taxAmount: number;
+  finalAmount: number;
+  baseMetalValue: number;
+  customizationDetails: string;
+  productionStatus: ProductionStatus;
+  photoUrls: string[];
+}
+
+export interface Payment {
+  id: string;
+  date: string;
+  amount: number;
+  method: string;
+  note?: string;
+  orderId?: string;
+}
+
+export interface Order {
+  id: string;
+  customerName: string;
+  customerContact: string;
+  customerEmail?: string;
+  secondaryContact?: string;
+  shareToken: string;
+  items: JewelryDetail[];
+  payments: Payment[];
+  totalAmount: number;
+  goldRateAtBooking: number;
+  paymentPlan: PaymentPlan;
+  status: OrderStatus;
+  createdAt: string;
+}
+
+export interface GlobalSettings {
+  currentGoldRate24K: number;
+  currentGoldRate22K: number;
+  currentGoldRate18K: number;
+  defaultTaxRate: number;
+  goldRateProtectionMax: number;
+  whatsappPhoneNumberId?: string;
+  whatsappBusinessAccountId?: string;
+  whatsappBusinessToken?: string;
+}
+
+export type MessageStatus = 'SENT' | 'DELIVERED' | 'READ' | 'FAILED' | 'QUEUED';
+
+export interface WhatsAppLogEntry {
+  id: string;
+  customerName: string;
+  phoneNumber: string;
+  message: string;
+  status: MessageStatus;
+  timestamp: string;
+  direction: 'outbound' | 'inbound';
+  type: 'TEMPLATE' | 'CUSTOM' | 'INBOUND';
+  context?: string;
+}
+
+export type CollectionTone = 'POLITE' | 'FIRM' | 'URGENT' | 'ENCOURAGING';
+
+export type AppResolutionPath = 'settings' | 'templates' | 'whatsapp' | 'none';
+
+export interface Customer {
+  id: string;
+  name: string;
+  contact: string;
+  email?: string;
+  secondaryContact?: string;
+  orderIds: string[];
+  totalSpent: number;
+  joinDate: string;
+}
+
+export interface CreditworthinessReport {
+  riskLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
+  persona: string;
+  nextBestAction: string;
+  communicationStrategy: string;
+  negotiationLeverage: string;
+}
+
+export interface PaymentRecord extends Payment {
+  orderId: string;
+  customerName: string;
+}
+
+export type ErrorSeverity = 'LOW' | 'MEDIUM' | 'CRITICAL';
+export type ErrorStatus = 'NEW' | 'ANALYZING' | 'FIXING' | 'RESOLVED' | 'UNRESOLVABLE';
+
+export interface AppError {
+  id: string;
+  timestamp: string;
+  source: string;
+  message: string;
+  stack?: string;
+  severity: ErrorSeverity;
+  status: ErrorStatus;
+  aiDiagnosis?: string;
+  aiFixApplied?: string;
+  resolutionPath?: AppResolutionPath;
+  resolutionCTA?: string;
+  suggestedFixData?: any;
+  retryAction?: () => Promise<void>;
+}
+
+export interface ActivityLogEntry {
+  id: string;
+  timestamp: string;
+  actionType: 'ORDER_CREATED' | 'STATUS_UPDATE' | 'TEMPLATE_SENT' | 'MANUAL_MESSAGE_SENT' | 'PAYMENT_RECORDED';
+  details: string;
+  metadata?: any;
+}
+
+export interface NotificationTrigger {
+  id: string;
+  customerName: string;
+  type: 'UPCOMING' | 'OVERDUE' | 'SYSTEM';
+  message: string;
+  date: string;
+  sent: boolean;
+  tone?: CollectionTone;
+  strategyReasoning?: string;
+}
+
+export type PsychologicalTactic = 'LOSS_AVERSION' | 'SOCIAL_PROOF' | 'AUTHORITY' | 'RECIPROCITY' | 'URGENCY' | 'EMPATHY';
+export type RiskProfile = 'VIP' | 'REGULAR' | 'FORGETFUL' | 'HIGH_RISK';
+export type MetaCategory = 'UTILITY' | 'MARKETING' | 'AUTHENTICATION';
+export type AppTemplateGroup = 'PAYMENT_COLLECTION' | 'ORDER_STATUS' | 'MARKETING_PROMO' | 'GENERAL_SUPPORT' | 'SYSTEM_NOTIFICATIONS' | 'UNCATEGORIZED';
+
+export interface WhatsAppTemplate {
+  id: string;
+  name: string;
+  content: string;
+  tactic: PsychologicalTactic;
+  targetProfile: RiskProfile;
+  isAiGenerated: boolean;
+  source: 'LOCAL' | 'META';
+  status?: string;
+  category?: MetaCategory;
+  appGroup?: AppTemplateGroup;
+  structure?: any[];
+  variableExamples?: string[];
+}
+
+export interface PaymentPlanTemplate {
+  id: string;
+  name: string;
+  months: number;
+  interestPercentage: number;
+  advancePercentage: number;
+  enabled: boolean;
+}
+
+export interface AiChatInsight {
+  intent: string;
+  tone: string;
+  suggestedReply: string;
+  recommendedTemplateId?: string;
+}
