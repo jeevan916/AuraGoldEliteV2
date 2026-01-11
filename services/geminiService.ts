@@ -1,6 +1,6 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
-import { Order, CollectionTone, Customer, WhatsAppLogEntry, CreditworthinessReport, AiChatInsight, WhatsAppTemplate, AppResolutionPath, AppError, ActivityLogEntry, MetaCategory, AppTemplateGroup, PsychologicalTactic } from "../types";
+import { GoogleGenAI } from "@google/genai";
+import { Order, CollectionTone, Customer, WhatsAppLogEntry, CreditworthinessReport, AiChatInsight, WhatsAppTemplate, AppResolutionPath, ActivityLogEntry, MetaCategory, AppTemplateGroup, PsychologicalTactic } from "../types";
 
 const getAI = () => {
     const key = process.env.API_KEY;
