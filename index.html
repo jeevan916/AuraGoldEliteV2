@@ -4,16 +4,41 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AuraGold Elite</title>
+    <title>AuraGold Elite | Master Console</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Playfair+Display:ital,wght@1,900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,700;0,900;1,700;1,900&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      body { background-color: #fcfcfc; -webkit-font-smoothing: antialiased; font-family: 'Inter', sans-serif; }
-      .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+      :root {
+        --glass: rgba(255, 255, 255, 0.7);
+        --obsidian: #0f172a;
+        --gold: #d97706;
+      }
+      body { 
+        background-color: #f8fafc; 
+        -webkit-font-smoothing: antialiased; 
+        font-family: 'Inter', sans-serif;
+        color: var(--obsidian);
+      }
+      .font-serif-elite { font-family: 'Playfair Display', serif; }
+      .glass-card {
+        background: var(--glass);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04);
+      }
+      .custom-scrollbar::-webkit-scrollbar { width: 4px; }
       .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-      .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+      .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+      .nav-active {
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      }
+      input:focus, select:focus {
+        border-color: var(--gold) !important;
+        box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.1) !important;
+      }
     </style>
   <script type="importmap">
 {
@@ -32,7 +57,7 @@
 }
 </script>
 </head>
-  <body>
+  <body class="selection:bg-amber-100 selection:text-amber-900">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

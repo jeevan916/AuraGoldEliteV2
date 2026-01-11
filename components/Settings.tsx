@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, AlertTriangle, Zap, AlertCircle, Smartphone, Key, Building } from 'lucide-react';
+import { Save, RefreshCw, Zap, Smartphone, Key, ShieldCheck, Info } from 'lucide-react';
 import { GlobalSettings } from '../types';
 import { goldRateService } from '../services/goldRateService';
 
@@ -12,20 +12,15 @@ interface SettingsProps {
 const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
   const [localSettings, setLocalSettings] = useState(settings);
   const [syncing, setSyncing] = useState(false);
-  const [lastError, setLastError] = useState<string | null>(null);
 
-  // Synchronization: When parent updates settings (e.g. background gold rate fetch), update local state
   useEffect(() => {
     setLocalSettings(settings);
   }, [settings]);
 
   const handleLiveSync = async () => {
     setSyncing(true);
-    setLastError(null);
     try {
-        // Force refresh on button click
         const result = await goldRateService.fetchLiveRate(true);
-        
         if (result && result.success) {
           const updatedSettings = {
             ...localSettings,
@@ -33,183 +28,156 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
             currentGoldRate22K: result.rate22K
           };
           setLocalSettings(updatedSettings);
-          // Also update parent immediately so other components see it
           onUpdate(updatedSettings);
-          alert("Live gold rates updated successfully!");
-        } else {
-          setLastError(result?.error || "Unknown synchronization error.");
         }
-    } catch (e: any) {
-        setLastError(`Crash prevented: ${e.message}`);
     } finally {
         setSyncing(false);
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-fadeIn">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+    <div className="max-w-5xl mx-auto space-y-12 animate-fadeIn py-4">
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
-          <h2 className="text-3xl font-black text-slate-800 tracking-tight">Store Configuration</h2>
-          <p className="text-slate-500 text-sm">Control pricing logic and live market integration.</p>
+          <h2 className="text-4xl font-serif-elite font-black text-slate-900 tracking-tight">Console Configuration</h2>
+          <p className="text-slate-500 text-sm mt-2 font-medium">Control institutional pricing logic and automated communication protocols.</p>
         </div>
-        <div className="flex gap-3 w-full sm:w-auto">
-           <button 
+        <div className="flex gap-3">
+          <button 
             disabled={syncing}
-            className={`flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-900 text-white px-5 py-3 rounded-xl font-bold text-sm transition-all hover:bg-slate-800 disabled:opacity-50`}
+            className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-5 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all hover:bg-slate-50 disabled:opacity-50 shadow-sm"
             onClick={handleLiveSync}
           >
-            <Zap size={16} className={syncing ? 'animate-pulse text-amber-400' : 'text-amber-400'} /> 
-            {syncing ? 'Syncing...' : 'Sync Live Rates'}
+            <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /> 
+            Sync Market
           </button>
           <button 
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-amber-600 text-white px-8 py-3 rounded-xl font-bold text-sm hover:bg-amber-700 shadow-lg shadow-amber-100"
+            className="flex items-center gap-2 bg-slate-900 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-slate-800 shadow-xl transition-all active:scale-95"
             onClick={() => onUpdate(localSettings)}
           >
-            <Save size={18} /> Save Changes
+            <Save size={16} /> Update Console
           </button>
         </div>
-      </div>
+      </header>
 
-      {lastError && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-2xl flex items-start gap-3 animate-fadeIn">
-          <AlertCircle className="shrink-0 mt-0.5" size={18} />
-          <div>
-            <p className="font-bold text-sm uppercase tracking-wider">Sync Error</p>
-            <p className="text-xs opacity-90">{lastError}</p>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div className="bg-white p-8 rounded-3xl border shadow-sm space-y-6">
-          <h3 className="font-black text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2">
-            <RefreshCw size={14} className="text-amber-500" /> Current Gold Rates
-          </h3>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">24K Gold Rate (per gram)</label>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
-                <input 
-                  type="number" 
-                  className="w-full border-slate-100 rounded-2xl p-4 pl-10 outline-none ring-2 ring-slate-50 focus:ring-amber-500 font-black text-xl" 
-                  value={localSettings.currentGoldRate24K}
-                  onChange={e => setLocalSettings({...localSettings, currentGoldRate24K: parseFloat(e.target.value) || 0})}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">22K Gold Rate (per gram)</label>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
-                <input 
-                  type="number" 
-                  className="w-full border-slate-100 rounded-2xl p-4 pl-10 outline-none ring-2 ring-slate-50 focus:ring-amber-500 font-black text-xl" 
-                  value={localSettings.currentGoldRate22K}
-                  onChange={e => setLocalSettings({...localSettings, currentGoldRate22K: parseFloat(e.target.value) || 0})}
-                />
-              </div>
-            </div>
-          </div>
-          <p className="text-[10px] text-slate-400 font-medium italic">Rates are used for all new order calculations in real-time.</p>
-        </div>
-
-        <div className="bg-white p-8 rounded-3xl border shadow-sm space-y-6">
-          <h3 className="font-black text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2">
-            Business Policy & Tax
-          </h3>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Tax (GST) %</label>
-              <input 
-                type="number" 
-                className="w-full border-slate-100 rounded-2xl p-4 ring-2 ring-slate-50 focus:ring-amber-500 font-black text-xl" 
-                value={localSettings.defaultTaxRate}
-                onChange={e => setLocalSettings({...localSettings, defaultTaxRate: parseFloat(e.target.value) || 0})}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Rate Protection Cap (₹/g)</label>
-              <input 
-                type="number" 
-                className="w-full border-slate-100 rounded-2xl p-4 ring-2 ring-slate-50 focus:ring-amber-500 font-black text-xl" 
-                value={localSettings.goldRateProtectionMax}
-                onChange={e => setLocalSettings({...localSettings, goldRateProtectionMax: parseFloat(e.target.value) || 0})}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* New WhatsApp Integration Section */}
-        <div className="md:col-span-2 bg-slate-900 text-white p-8 rounded-3xl shadow-xl space-y-6">
-          <div className="flex items-center gap-3 mb-2">
-             <div className="p-3 bg-emerald-500/20 rounded-xl">
-               <Smartphone className="text-emerald-400" />
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Market Pricing Section */}
+        <section className="lg:col-span-8 space-y-8">
+          <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200/60 shadow-sm space-y-10 relative overflow-hidden">
+             <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600">
+                    <Zap size={16} />
+                </div>
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Market Pricing Matrix</h3>
              </div>
-             <div>
-               <h3 className="font-black text-lg tracking-tight">WhatsApp Business API</h3>
-               <p className="text-xs text-slate-400">Configure Meta credentials for real automated messaging.</p>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                <PricingField 
+                    label="24K Purity (/g)" 
+                    value={localSettings.currentGoldRate24K} 
+                    onChange={v => setLocalSettings({...localSettings, currentGoldRate24K: v})}
+                />
+                <PricingField 
+                    label="22K Standard (/g)" 
+                    value={localSettings.currentGoldRate22K} 
+                    onChange={v => setLocalSettings({...localSettings, currentGoldRate22K: v})}
+                />
+             </div>
+
+             <div className="pt-8 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-10">
+                <PricingField 
+                    label="Policy Tax (GST) %" 
+                    value={localSettings.defaultTaxRate} 
+                    onChange={v => setLocalSettings({...localSettings, defaultTaxRate: v})}
+                />
+                <PricingField 
+                    label="Rate Protection Cap" 
+                    value={localSettings.goldRateProtectionMax} 
+                    onChange={v => setLocalSettings({...localSettings, goldRateProtectionMax: v})}
+                />
              </div>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-xs font-bold text-slate-400 mb-2 uppercase flex items-center gap-2">
-                Phone Number ID
-              </label>
-              <input 
-                type="text" 
-                className="w-full bg-slate-800 border-slate-700 rounded-xl p-4 text-white font-mono text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                placeholder="e.g. 1016..."
-                value={localSettings.whatsappPhoneNumberId || ''}
-                onChange={e => setLocalSettings({...localSettings, whatsappPhoneNumberId: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 mb-2 uppercase flex items-center gap-2">
-                <Building size={12} /> Business Account ID (WABA)
-              </label>
-              <input 
-                type="text" 
-                className="w-full bg-slate-800 border-slate-700 rounded-xl p-4 text-white font-mono text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                placeholder="e.g. 1056..."
-                value={localSettings.whatsappBusinessAccountId || ''}
-                onChange={e => setLocalSettings({...localSettings, whatsappBusinessAccountId: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 mb-2 uppercase flex items-center gap-2">
-                <Key size={12} /> Access Token
-              </label>
-              <input 
-                type="password" 
-                className="w-full bg-slate-800 border-slate-700 rounded-xl p-4 text-white font-mono text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                placeholder="Meta Graph API Token"
-                value={localSettings.whatsappBusinessToken || ''}
-                onChange={e => setLocalSettings({...localSettings, whatsappBusinessToken: e.target.value})}
-              />
-            </div>
-          </div>
-          <p className="text-[10px] text-slate-500 italic border-t border-slate-700/50 pt-4 mt-2">
-            * These credentials are stored locally in your browser storage. If you clear cache, you must re-enter them.
-          </p>
-        </div>
-      </div>
 
-      <div className="bg-amber-50 border-2 border-amber-100 rounded-3xl p-6 flex gap-4">
-        <div className="p-3 bg-white rounded-2xl shadow-sm h-fit">
-           <AlertTriangle className="text-amber-600" />
-        </div>
-        <div>
-          <p className="text-amber-900 font-bold mb-1">Impact Disclaimer</p>
-          <p className="text-xs text-amber-800 leading-relaxed">
-            Changing these rates will instantly update the calculator for all **new orders**. Existing payment plans with "Gold Rate Protection" enabled are locked to the rates at which they were created.
-          </p>
-        </div>
+          <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200/60 shadow-sm space-y-8">
+             <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-600">
+                    <Smartphone size={16} />
+                </div>
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Communication API (Meta)</h3>
+             </div>
+             
+             <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <MetaField label="Phone Number ID" value={localSettings.whatsappPhoneNumberId || ''} onChange={v => setLocalSettings({...localSettings, whatsappPhoneNumberId: v})} placeholder="1016..." />
+                    <MetaField label="WABA Account ID" value={localSettings.whatsappBusinessAccountId || ''} onChange={v => setLocalSettings({...localSettings, whatsappBusinessAccountId: v})} placeholder="1056..." />
+                </div>
+                <div className="relative">
+                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block ml-1">System Access Token</label>
+                   <input 
+                    type="password" 
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-mono focus:bg-white transition-all outline-none" 
+                    value={localSettings.whatsappBusinessToken || ''}
+                    onChange={e => setLocalSettings({...localSettings, whatsappBusinessToken: e.target.value})}
+                   />
+                   <Key size={14} className="absolute right-5 bottom-4 text-slate-300" />
+                </div>
+             </div>
+          </div>
+        </section>
+
+        {/* Sidebar Info */}
+        <aside className="lg:col-span-4 space-y-6">
+            <div className="bg-[#0f172a] text-white p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden group">
+               <div className="relative z-10 space-y-6">
+                  <ShieldCheck size={32} className="text-amber-500" />
+                  <h4 className="text-xl font-bold leading-tight">Institutional Integrity Policy</h4>
+                  <p className="text-sm text-slate-400 leading-relaxed font-medium">
+                    All rate modifications are logged and applied to new contract generation instantly. Rate protection locks for existing VIP clients remain until the specific contract matures.
+                  </p>
+               </div>
+               <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl group-hover:bg-amber-500/20 transition-all"></div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-100 p-8 rounded-[2.5rem] space-y-4">
+               <div className="flex items-center gap-2 text-amber-800 font-black text-xs uppercase tracking-widest">
+                  <Info size={14} /> Audit Notice
+               </div>
+               <p className="text-xs text-amber-900/70 leading-relaxed font-medium">
+                  Ensure the **WhatsApp Token** has `whatsapp_business_messaging` and `whatsapp_business_management` permissions active in the Meta Developer Portal.
+               </p>
+            </div>
+        </aside>
       </div>
     </div>
   );
 };
+
+const PricingField = ({ label, value, onChange }: { label: string, value: number, onChange: (v: number) => void }) => (
+  <div className="space-y-3">
+    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{label}</label>
+    <div className="relative">
+        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium">₹</span>
+        <input 
+            type="number" 
+            className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-5 pl-10 text-xl font-black text-slate-800 focus:bg-white transition-all outline-none" 
+            value={value}
+            onChange={e => onChange(parseFloat(e.target.value) || 0)}
+        />
+    </div>
+  </div>
+);
+
+const MetaField = ({ label, value, onChange, placeholder }: any) => (
+  <div className="space-y-2">
+    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{label}</label>
+    <input 
+        type="text" 
+        className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 text-sm font-bold focus:bg-white transition-all outline-none" 
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+    />
+  </div>
+);
 
 export default Settings;

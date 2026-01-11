@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutDashboard, ShoppingBag, Users, ReceiptIndianRupee, 
   MessageSquare, Globe, Settings as SettingsIcon, AlertTriangle, 
-  Plus, Search, ShieldCheck, Zap, LogOut
+  Plus, ShieldCheck, LogOut, Briefcase
 } from 'lucide-react';
 
 // Modules
@@ -42,7 +42,6 @@ const App: React.FC = () => {
       const saved = localStorage.getItem('aura_settings');
       return saved ? JSON.parse(saved) : INITIAL_SETTINGS;
     } catch (e) {
-      console.error("Settings corrupted, resetting to defaults", e);
       return INITIAL_SETTINGS;
     }
   });
@@ -50,7 +49,6 @@ const App: React.FC = () => {
   const [errors, setErrors] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
 
-  // Initialize Error Monitor
   useEffect(() => {
     errorService.initGlobalListeners();
     const unsubscribe = errorService.subscribe((errs, acts) => {
@@ -60,7 +58,6 @@ const App: React.FC = () => {
     return unsubscribe;
   }, []);
 
-  // Live Market Rates Sync
   useEffect(() => {
     const sync = async () => {
       const res = await goldRateService.fetchLiveRate();
@@ -73,16 +70,10 @@ const App: React.FC = () => {
       }
     };
     sync();
-    const interval = setInterval(sync, 300000); // Every 5 mins
+    const interval = setInterval(sync, 300000);
     return () => clearInterval(interval);
   }, []);
 
-  // Persist Settings
-  useEffect(() => {
-    localStorage.setItem('aura_settings', JSON.stringify(settings));
-  }, [settings]);
-
-  // Derived Customer Data
   const customers = useMemo(() => {
     const map = new Map<string, Customer>();
     orders.forEach(o => {
@@ -108,124 +99,73 @@ const App: React.FC = () => {
 
   const activeOrder = orders.find(o => o.id === selectedOrderId);
 
-  const navigateToOrder = (id: string) => {
-    setSelectedOrderId(id);
-    setView('ORDER_DETAILS');
-  };
-
-  const navigateToWhatsApp = (phone: string) => {
-    setWaInitialContact(phone);
-    setView('WHATSAPP');
-  };
-
-  const handleResolveAction = (path: AppResolutionPath) => {
-    switch(path) {
-      case 'settings': setView('SETTINGS'); break;
-      case 'templates': setView('TEMPLATES'); break;
-      case 'whatsapp': setView('WHATSAPP'); break;
-      default: break;
-    }
-  };
-
   return (
     <ErrorBoundary>
-      <div className="flex h-screen bg-[#f8fafc] text-slate-900 overflow-hidden font-sans">
-        
-        {/* Luxury Sidebar */}
-        <aside className="w-20 lg:w-72 bg-slate-900 flex flex-col p-4 lg:p-6 text-white shrink-0 shadow-2xl z-40">
-          <div className="mb-10 px-2 flex items-center gap-3">
-            <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center text-slate-900 font-black shadow-lg shadow-amber-500/20">AG</div>
+      <div className="flex h-screen overflow-hidden bg-[#f8fafc]">
+        {/* Elite Sidebar */}
+        <aside className="w-20 lg:w-72 bg-[#0f172a] flex flex-col px-3 lg:px-6 py-8 text-white shrink-0 z-50">
+          <div className="mb-12 flex items-center gap-3 px-2">
+            <div className="w-10 h-10 bg-gradient-to-tr from-amber-600 to-amber-400 rounded-xl flex items-center justify-center shadow-lg shadow-amber-900/40">
+              <Briefcase size={20} className="text-white" />
+            </div>
             <div className="hidden lg:block">
-              <h1 className="text-xl font-black text-amber-500 font-serif italic tracking-tighter">AuraGold</h1>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Elite Backend</p>
+              <h1 className="text-2xl font-serif-elite italic font-black text-amber-500 leading-none">AuraGold</h1>
+              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-[0.3em] mt-1">Enterprise Elite</p>
             </div>
           </div>
 
-          <nav className="flex-1 space-y-1">
+          <nav className="flex-1 space-y-8 overflow-y-auto custom-scrollbar pr-1">
             <NavGroup label="Insights">
-              <NavItem icon={<LayoutDashboard size={20}/>} label="Dashboard" active={view==='DASH'} onClick={()=>setView('DASH')} />
-              <NavItem icon={<Globe size={20}/>} label="Market Intel" active={view==='MARKET'} onClick={()=>setView('MARKET')} />
+              <NavItem icon={<LayoutDashboard size={18}/>} label="Dashboard" active={view==='DASH'} onClick={()=>setView('DASH')} />
+              <NavItem icon={<Globe size={18}/>} label="Market Intel" active={view==='MARKET'} onClick={()=>setView('MARKET')} />
             </NavGroup>
 
-            <NavGroup label="Orders">
-              <NavItem icon={<Plus size={20}/>} label="New Booking" active={view==='ORDER_NEW'} onClick={()=>setView('ORDER_NEW')} />
-              <NavItem icon={<ShoppingBag size={20}/>} label="Order Ledger" active={view==='ORDER_DETAILS'} onClick={() => setView('ORDER_DETAILS')} />
-              <NavItem icon={<Users size={20}/>} label="Customers" active={view==='CUSTOMERS'} onClick={()=>setView('CUSTOMERS')} />
+            <NavGroup label="Commerce">
+              <NavItem icon={<Plus size={18}/>} label="New Booking" active={view==='ORDER_NEW'} onClick={()=>setView('ORDER_NEW')} />
+              <NavItem icon={<ShoppingBag size={18}/>} label="Order Ledger" active={view==='ORDER_DETAILS'} onClick={() => setView('ORDER_DETAILS')} />
+              <NavItem icon={<Users size={18}/>} label="Client Directory" active={view==='CUSTOMERS'} onClick={()=>setView('CUSTOMERS')} />
             </NavGroup>
 
             <NavGroup label="Operations">
-              <NavItem icon={<ReceiptIndianRupee size={20}/>} label="Collections" active={view==='COLLECTIONS'} onClick={()=>setView('COLLECTIONS')} />
-              <NavItem icon={<MessageSquare size={20}/>} label="WhatsApp Hub" active={view==='WHATSAPP'} onClick={()=>setView('WHATSAPP')} />
-              <NavItem icon={<ShieldCheck size={20}/>} label="Templates" active={view==='TEMPLATES'} onClick={()=>setView('TEMPLATES')} />
-            </NavGroup>
-
-            <NavGroup label="System">
-              <NavItem icon={<AlertTriangle size={20}/>} label="Error Logs" active={view==='LOGS'} onClick={()=>setView('LOGS')} count={errors.filter(e => e.status !== 'RESOLVED').length} />
-              <NavItem icon={<SettingsIcon size={20}/>} label="Global Settings" active={view==='SETTINGS'} onClick={()=>setView('SETTINGS')} />
+              <NavItem icon={<ReceiptIndianRupee size={18}/>} label="Collections" active={view==='COLLECTIONS'} onClick={()=>setView('COLLECTIONS')} />
+              <NavItem icon={<MessageSquare size={18}/>} label="WhatsApp Hub" active={view==='WHATSAPP'} onClick={()=>setView('WHATSAPP')} />
+              <NavItem icon={<ShieldCheck size={18}/>} label="Meta Templates" active={view==='TEMPLATES'} onClick={()=>setView('TEMPLATES')} />
             </NavGroup>
           </nav>
 
-          <div className="mt-auto pt-6 border-t border-slate-800">
-            <div className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700 hidden lg:block mb-4">
-              <p className="text-[10px] font-black uppercase text-amber-500 tracking-widest mb-1">Live 22K Market</p>
-              <p className="text-lg font-black tracking-tight">₹{settings.currentGoldRate22K.toLocaleString()}/g</p>
-            </div>
-            <button className="flex items-center gap-3 w-full p-3 text-slate-400 hover:text-rose-400 transition-colors text-sm font-bold">
-              <LogOut size={18} /> <span className="hidden lg:block">Terminal Logout</span>
+          {/* Sidebar System Dock */}
+          <div className="pt-6 mt-6 border-t border-slate-800/60 space-y-1">
+             <NavItem 
+              icon={<AlertTriangle size={18} className={errors.length > 0 ? "text-rose-400" : ""}/>} 
+              label="Incident Logs" 
+              active={view==='LOGS'} 
+              onClick={()=>setView('LOGS')} 
+              count={errors.filter(e => e.status !== 'RESOLVED').length} 
+            />
+            <NavItem 
+              icon={<SettingsIcon size={18}/>} 
+              label="Global Settings" 
+              active={view==='SETTINGS'} 
+              onClick={()=>setView('SETTINGS')} 
+            />
+            <button className="flex items-center gap-4 w-full p-3.5 text-slate-500 hover:text-rose-400 transition-all text-xs font-bold group rounded-xl hover:bg-rose-500/5 mt-4">
+              <LogOut size={18} /> <span className="hidden lg:block group-hover:translate-x-1 transition-transform">Terminate Session</span>
             </button>
           </div>
         </aside>
 
-        {/* Main Workspace */}
-        <main className="flex-1 overflow-y-auto custom-scrollbar p-4 lg:p-8">
-          <div className="max-w-[1600px] mx-auto">
+        {/* Workspace */}
+        <main className="flex-1 overflow-y-auto custom-scrollbar p-6 lg:p-10">
+          <div className="max-w-[1500px] mx-auto">
             {view === 'DASH' && <Dashboard orders={orders} currentRates={{ k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K }} />}
-            
-            {view === 'ORDER_NEW' && (
-              <OrderForm 
-                settings={settings} 
-                planTemplates={[]} 
-                existingCustomers={customers} 
-                onSubmit={(o) => { addOrder(o); navigateToOrder(o.id); }} 
-                onCancel={() => setView('DASH')} 
-              />
-            )}
-
-            {view === 'ORDER_DETAILS' && (
-              activeOrder ? (
-                <OrderDetails 
-                  order={activeOrder} 
-                  settings={settings} 
-                  onBack={() => setView('DASH')} 
-                  onUpdateStatus={(itemId, status) => updateItemStatus(activeOrder.id, itemId, status)}
-                  onRecordPayment={recordPayment}
-                  onSendPaymentRequest={() => {}}
-                  onOrderUpdate={updateOrder}
-                  onTriggerLapse={() => {}}
-                  logs={logs}
-                  onAddLog={addLog}
-                />
-              ) : (
-                <div className="h-[60vh] flex flex-col items-center justify-center text-slate-400 space-y-4">
-                  <ShoppingBag size={48} className="opacity-20" />
-                  <p className="font-bold">Select an order from the Dashboard to view details.</p>
-                  <button onClick={() => setView('DASH')} className="text-amber-600 font-bold hover:underline">Back to Dashboard</button>
-                </div>
-              )
-            )}
-
-            {view === 'CUSTOMERS' && <CustomerList customers={customers} orders={orders} onViewOrder={navigateToOrder} onMessageSent={addLog} />}
-            
-            {view === 'COLLECTIONS' && <PaymentCollections orders={orders} onViewOrder={navigateToOrder} onSendWhatsApp={() => {}} settings={settings} />}
-            
+            {view === 'ORDER_NEW' && <OrderForm settings={settings} onSubmit={(o) => { addOrder(o); setView('ORDER_DETAILS'); setSelectedOrderId(o.id); }} onCancel={() => setView('DASH')} />}
+            {view === 'ORDER_DETAILS' && (activeOrder ? <OrderDetails order={activeOrder} settings={settings} onBack={() => setView('DASH')} onUpdateStatus={(itemId, status) => updateItemStatus(activeOrder.id, itemId, status)} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} onSendPaymentRequest={()=>{}} onTriggerLapse={()=>{}} logs={logs} onAddLog={addLog} /> : <div className="text-center py-20 text-slate-400 font-medium">Select an order from the ledger to manage.</div>)}
+            {view === 'CUSTOMERS' && <CustomerList customers={customers} orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onMessageSent={addLog} />}
+            {view === 'COLLECTIONS' && <PaymentCollections orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onSendWhatsApp={()=>{}} settings={settings} />}
             {view === 'WHATSAPP' && <WhatsAppPanel logs={logs} customers={customers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} initialContact={waInitialContact} />}
-            
             {view === 'TEMPLATES' && <WhatsAppTemplates templates={templates} onUpdate={setTemplates} />}
-            
             {view === 'MARKET' && <MarketIntelligence />}
-            
-            {view === 'LOGS' && <ErrorLogPanel errors={errors} activities={activities} onClear={() => errorService.clearErrors()} onResolveAction={handleResolveAction} />}
-            
+            {view === 'LOGS' && <ErrorLogPanel errors={errors} activities={activities} onClear={() => errorService.clearErrors()} onResolveAction={(path)=>{setView(path.toUpperCase() as any)}} />}
             {view === 'SETTINGS' && <Settings settings={settings} onUpdate={setSettings} />}
           </div>
         </main>
@@ -235,8 +175,8 @@ const App: React.FC = () => {
 };
 
 const NavGroup = ({ label, children }: { label: string, children: React.ReactNode }) => (
-  <div className="pt-6 first:pt-0">
-    <p className="px-4 text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] mb-3 hidden lg:block">{label}</p>
+  <div className="space-y-3">
+    <p className="px-4 text-[9px] font-black uppercase text-slate-500 tracking-[0.4em] hidden lg:block">{label}</p>
     <div className="space-y-1">{children}</div>
   </div>
 );
@@ -244,16 +184,16 @@ const NavGroup = ({ label, children }: { label: string, children: React.ReactNod
 const NavItem = ({ icon, label, active, onClick, count }: any) => (
   <button 
     onClick={onClick} 
-    className={`flex items-center gap-4 w-full p-3.5 rounded-xl transition-all relative group ${
+    className={`flex items-center gap-4 w-full p-3 rounded-xl transition-all relative group ${
       active 
-      ? 'bg-amber-500 text-slate-900 font-black shadow-lg shadow-amber-500/20' 
-      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+      ? 'bg-amber-600 text-white font-semibold shadow-lg shadow-amber-900/20' 
+      : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
     }`}
   >
-    <span className="shrink-0">{icon}</span>
-    <span className="text-sm font-bold hidden lg:block flex-1 text-left">{label}</span>
+    <span className={`shrink-0 transition-transform group-hover:scale-110 ${active ? 'text-white' : 'text-slate-500'}`}>{icon}</span>
+    <span className="text-sm hidden lg:block flex-1 text-left">{label}</span>
     {count !== undefined && count > 0 && (
-      <span className="absolute right-3 top-3 lg:static bg-rose-500 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-slate-900 lg:border-none">
+      <span className="absolute right-2 top-2 lg:static bg-rose-600 text-white text-[9px] w-5 h-5 rounded-full flex items-center justify-center font-black">
         {count}
       </span>
     )}
