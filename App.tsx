@@ -168,7 +168,7 @@ const App: React.FC = () => {
           <div className="max-w-[1600px] mx-auto">
             {view === 'DASH' && <Dashboard orders={orders} currentRates={{ k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K }} />}
             {view === 'ORDER_NEW' && <OrderForm settings={settings} onSubmit={(o) => { addOrder(o); navigateToOrder(o.id); }} onCancel={() => setView('DASH')} />}
-            {view === 'ORDER_DETAILS' && (activeOrder ? <OrderDetails order={activeOrder} settings={settings} onBack={() => setView('DASH')} onUpdateStatus={(itemId, status) => updateItemStatus(activeOrder.id, itemId, status)} onRecordPayment={recordPayment} onSendPaymentRequest={() => {}} onOrderUpdate={updateOrder} onTriggerLapse={() => {}} logs={logs} onAddLog={addLog} /> : <div>Select Order</div>)}
+            {view === 'ORDER_DETAILS' && (activeOrder ? <OrderDetails order={activeOrder} settings={settings} onBack={() => setView('DASH')} onUpdateStatus={(itemId, status) => updateItemStatus(activeOrder.id, itemId, status)} onRecordPayment={recordPayment} onSendPaymentRequest={() => {}} onOrderUpdate={updateOrder} onTriggerLapse={() => {}} logs={logs} onAddLog={addLog} /> : <div className="p-8 text-center text-slate-400 font-bold uppercase tracking-widest border-2 border-dashed rounded-3xl">Select an order from the ledger to view details</div>)}
             {view === 'CUSTOMERS' && <CustomerList customers={customers} orders={orders} onViewOrder={navigateToOrder} onMessageSent={addLog} />}
             {view === 'COLLECTIONS' && <PaymentCollections orders={orders} onViewOrder={navigateToOrder} onSendWhatsApp={() => {}} settings={settings} />}
             {view === 'WHATSAPP' && <WhatsAppPanel logs={logs} customers={customers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} initialContact={waInitialContact} />}
@@ -190,7 +190,7 @@ const NavGroup = ({ label, children }: { label: string, children: React.ReactNod
   </div>
 );
 
-const NavItem = ({ icon, label, active, onClick, count }: any) => (
+const NavItem = ({ icon, label, active, onClick, count }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void, count?: number }) => (
   <button 
     onClick={onClick} 
     className={`flex items-center gap-4 w-full p-3.5 rounded-xl transition-all relative group ${
