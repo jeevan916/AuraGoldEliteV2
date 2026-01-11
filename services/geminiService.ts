@@ -1,263 +1,132 @@
 
-// @google/genai guidelines followed:
-// - Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
-// - Use ai.models.generateContent
-// - Do not use response.text()
-import { GoogleGenAI } from "@google/genai";
-import { Order, CollectionTone, Customer, WhatsAppLogEntry, CreditworthinessReport, AiChatInsight, WhatsAppTemplate, MetaCategory, AppTemplateGroup, PsychologicalTactic, ActivityLogEntry } from "../types";
+import { GoogleGenAI, Type } from "@google/genai";
+import { Order, CollectionTone, Customer, WhatsAppLogEntry, CreditworthinessReport, AiChatInsight, WhatsAppTemplate, AppResolutionPath, AppError, ActivityLogEntry, MetaCategory, AppTemplateGroup, PsychologicalTactic } from "../types";
 
-// Safety wrapper to prevent crash if API Key is missing during dev
 const getAI = () => {
     const key = process.env.API_KEY;
-    if (!key) {
-        console.warn("Gemini API Key is missing. AI features will run in mock mode.");
-        return null;
-    }
+    if (!key) return null;
     return new GoogleGenAI({ apiKey: key });
 };
 
 export const geminiService = {
-  /**
-   * Analyzes overdue orders and provides a strategic collection report.
-   */
   async analyzeCollectionRisk(overdueOrders: Order[]): Promise<string> {
     const ai = getAI();
-    if (!ai || overdueOrders.length === 0) return "No collection risks identified or AI offline.";
+    if (!ai || overdueOrders.length === 0) return "No collection risks identified.";
 
     const riskSummary = overdueOrders.map(o => {
       const paid = o.payments.reduce((acc, p) => acc + p.amount, 0);
       return `${o.customerName}: ₹${(o.totalAmount - paid).toLocaleString()} outstanding.`;
     }).join('\n');
 
-    const prompt = `
-      Act as a Lead Collection Strategist for a luxury jewelry brand. 
-      Analyze the following overdue accounts and provide a summary of the cash flow at risk, 
-      prioritize the top 3 customers to contact, and suggest a tone for the reminders.
-      
-      Overdue Accounts:
-      ${riskSummary}
-
-      Return a professional, concise executive summary in bullet points.
-    `;
-
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt
-      });
-      return response.text || "Unable to analyze risk at this time.";
-    } catch (error) {
-      console.error("AI Analysis Error:", error);
-      return "AI Risk Analysis Engine is offline. Please review manually.";
-    }
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: `Analyze these overdue jewelry accounts: \n${riskSummary}\nProvide a 3-point executive recovery strategy for a high-end jewelry store.`,
+      config: {
+        thinkingConfig: { thinkingBudget: 2000 }
+      }
+    });
+    return response.text || "Unable to analyze risk.";
   },
 
-  /**
-   * Generates a specific strategic message for a customer.
-   */
   async generateStrategicNotification(
     order: Order, 
     type: 'UPCOMING' | 'OVERDUE',
     currentGoldRate: number
   ): Promise<{ message: string, tone: CollectionTone, reasoning: string }> {
     const ai = getAI();
+    if (!ai) throw new Error("API Key Missing");
+
     const paid = order.payments.reduce((acc, p) => acc + p.amount, 0);
     const balance = order.totalAmount - paid;
-    
-    // Fallback if AI offline
-    if (!ai) {
-         return { 
-            tone: 'POLITE', 
-            reasoning: 'AI Offline - Default Polite Message', 
-            message: `Hello ${order.customerName}, a friendly reminder for your upcoming jewelry payment of ₹${balance.toLocaleString()}.`
-          };
-    }
 
-    const prompt = `
-      Jewelry Order: ${order.customerName}
-      Pending Balance: ₹${balance.toLocaleString()}
-      Status: ${type} payment milestone.
-      Locked Gold Rate: ₹${order.paymentPlan.protectionRateBooked}/g
-      Current Market Rate: ₹${currentGoldRate}/g
-
-      Create a persuasive WhatsApp message. 
-      If OVERDUE, mention that their Gold Rate Protection is at risk. 
-      Tone options: "POLITE", "FIRM", "URGENT", or "ENCOURAGING".
-      
-      Return JSON: { "tone": "POLITE" | "FIRM" | "URGENT" | "ENCOURAGING", "reasoning": "...", "message": "..." }
-    `;
-
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
-      });
-      return JSON.parse(response.text || "{}");
-    } catch (e) {
-      return { 
-        tone: 'POLITE', 
-        reasoning: 'AI Fallback', 
-        message: `Hello ${order.customerName}, a friendly reminder for your upcoming jewelry payment of ₹${balance.toLocaleString()}.`
-      };
-    }
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Create a WhatsApp reminder for ${order.customerName}. Balance: ₹${balance}. Status: ${type}. Current Gold Rate: ₹${currentGoldRate}.`,
+      config: { 
+        responseMimeType: "application/json",
+        systemInstruction: "You are an elite jewelry store manager. Use high-end, persuasive language. Return JSON with keys: message, tone (POLITE, FIRM, URGENT, ENCOURAGING), reasoning."
+      }
+    });
+    return JSON.parse(response.text || "{}");
   },
 
-  /**
-   * Generates a deep behavioral analysis for a customer profile.
-   */
   async generateDeepCustomerAnalysis(customer: Customer, orders: Order[], logs: WhatsAppLogEntry[]): Promise<CreditworthinessReport> {
     const ai = getAI();
-    if (!ai) throw new Error("AI Key missing");
+    if (!ai) throw new Error("API Key Missing");
 
-    const prompt = `
-      Analyze this jewelry customer for a luxury brand:
-      Name: ${customer.name}
-      Total Spent: ₹${customer.totalSpent}
-      Orders: ${JSON.stringify(orders.map(o => ({ id: o.id, status: o.status, total: o.totalAmount })))}
-      Recent Communication: ${JSON.stringify(logs.slice(0, 5).map(l => ({ msg: l.message, direction: l.direction })))}
-
-      Provide a Creditworthiness Report in JSON format:
-      {
-        "riskLevel": "LOW" | "MODERATE" | "HIGH" | "CRITICAL",
-        "persona": "Description of customer behavior",
-        "nextBestAction": "What the store should do next",
-        "communicationStrategy": "How to talk to them",
-        "negotiationLeverage": "What to use to convince them"
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: `Analyze this customer for a luxury jewelry boutique: 
+      Profile: ${JSON.stringify(customer)}
+      Purchase History: ${JSON.stringify(orders)}
+      Communication History: ${JSON.stringify(logs)}`,
+      config: {
+        responseMimeType: "application/json",
+        systemInstruction: "Perform a behavioral and financial analysis. Return JSON with keys: riskLevel (LOW, MODERATE, HIGH, CRITICAL), persona (a luxury-centric title), nextBestAction, communicationStrategy, negotiationLeverage."
       }
-    `;
-
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
-      });
-      return JSON.parse(response.text || "{}");
-    } catch (e) {
-      throw e;
-    }
+    });
+    return JSON.parse(response.text || "{}");
   },
 
-  /**
-   * Analyzes live chat context to provide assistance.
-   */
   async analyzeChatContext(messages: WhatsAppLogEntry[], templates: WhatsAppTemplate[], customerName: string): Promise<AiChatInsight> {
     const ai = getAI();
-    if (!ai) return { intent: "Unknown", tone: "Neutral", suggestedReply: "How can I help you today?" };
+    if (!ai) throw new Error("API Key Missing");
 
-    const prompt = `
-      Customer: ${customerName}
-      Messages: ${JSON.stringify(messages.slice(-10).map(m => ({ text: m.message, dir: m.direction })))}
-      Available Templates: ${JSON.stringify(templates.map(t => ({ id: t.id, name: t.name })))}
-
-      Analyze intent and suggest next reply.
-      Return JSON: { "intent": "string", "tone": "string", "suggestedReply": "string", "recommendedTemplateId": "string | null" }
-    `;
-
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
-      });
-      return JSON.parse(response.text || "{}");
-    } catch (e) {
-      return { intent: "Unknown", tone: "Neutral", suggestedReply: "How can I help you today?" };
-    }
-  },
-
-  /**
-   * Generates a template based on a natural language prompt.
-   */
-  async generateTemplateFromPrompt(userInput: string): Promise<any> {
-    const ai = getAI();
-    if (!ai) throw new Error("AI Key Missing");
-
-    const prompt = `
-      User wants a WhatsApp template for: "${userInput}"
-      Generate a compliant Meta WhatsApp template.
-      Return JSON: 
-      {
-        "suggestedName": "lowercase_snake_case",
-        "content": "Message text with {{1}} placeholders",
-        "metaCategory": "UTILITY" | "MARKETING",
-        "appGroup": "PAYMENT_COLLECTION" | "ORDER_STATUS" | "MARKETING_PROMO" | "GENERAL_SUPPORT" | "SYSTEM_NOTIFICATIONS",
-        "tactic": "LOSS_AVERSION" | "SOCIAL_PROOF" | "AUTHORITY" | "RECIPROCITY" | "URGENCY" | "EMPATHY",
-        "examples": ["example value for {{1}}", ...]
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Analyze the current chat with ${customerName}. 
+      Recent Messages: ${JSON.stringify(messages.slice(-5))}
+      Available Templates: ${JSON.stringify(templates.map(t => ({id: t.id, name: t.name, content: t.content})))}`,
+      config: {
+        responseMimeType: "application/json",
+        systemInstruction: "Determine customer intent. Suggest a high-quality reply and recommend a template if appropriate. Return JSON with keys: intent, tone, suggestedReply, recommendedTemplateId."
       }
-    `;
-
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
-      });
-      return JSON.parse(response.text || "{}");
-    } catch (e) {
-      throw e;
-    }
+    });
+    return JSON.parse(response.text || "{}");
   },
 
-  /**
-   * Diagnoses a system error and suggests a fix.
-   */
-  async diagnoseError(errorMessage: string, source: string): Promise<any> {
+  async generateTemplateFromPrompt(prompt: string): Promise<{ suggestedName: string, content: string, metaCategory: MetaCategory, appGroup: AppTemplateGroup, tactic: PsychologicalTactic, examples: string[] }> {
     const ai = getAI();
-    if (!ai) return { explanation: "AI unavailable.", path: "none", cta: "Review Manually", action: "NONE" };
+    if (!ai) throw new Error("API Key Missing");
 
-    const prompt = `
-      Diagnose this application error:
-      Source: ${source}
-      Message: ${errorMessage}
-
-      Return JSON:
-      {
-        "explanation": "Human readable explanation",
-        "path": "settings" | "templates" | "whatsapp" | "none",
-        "cta": "Button text",
-        "action": "REPAIR_TEMPLATE" | "RETRY_API" | "NONE",
-        "suggestedFixData": {}
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Generate a Meta-compliant WhatsApp template based on: ${prompt}`,
+      config: {
+        responseMimeType: "application/json",
+        systemInstruction: "Design a template for a jewelry store. Suggested name must be snake_case. Return JSON with keys: suggestedName, content (use {{1}}, {{2}} for variables), metaCategory (UTILITY, MARKETING), appGroup (PAYMENT_COLLECTION, ORDER_STATUS, etc.), tactic, examples (array of matching strings for placeholders)."
       }
-    `;
-
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
-      });
-      return JSON.parse(response.text || "{}");
-    } catch (e) {
-      return { explanation: "AI could not diagnose error.", path: "none", cta: "Review Manually", action: "NONE" };
-    }
+    });
+    return JSON.parse(response.text || "{}");
   },
 
-  /**
-   * Analyzes application activity logs to suggest improvements.
-   */
+  async diagnoseError(message: string, source: string): Promise<{ explanation: string, path: AppResolutionPath, cta: string, action?: 'REPAIR_TEMPLATE' | 'RETRY_API', suggestedFixData?: any }> {
+    const ai = getAI();
+    if (!ai) throw new Error("API Key Missing");
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Error: ${message}. Source: ${source}. Diagnose and provide resolution steps.`,
+      config: {
+        responseMimeType: "application/json",
+        systemInstruction: "Analyze technical errors in the AuraGold jewelry app. Provide a fix path. Return JSON with keys: explanation, path (settings, templates, whatsapp, none), cta (call to action text), action, suggestedFixData."
+      }
+    });
+    return JSON.parse(response.text || "{}");
+  },
+
   async analyzeSystemLogsForImprovements(activities: ActivityLogEntry[]): Promise<any> {
     const ai = getAI();
-    if (!ai) return { suggestions: [] };
+    if (!ai) throw new Error("API Key Missing");
 
-    const prompt = `
-      Analyze these application activity logs for a luxury jewelry brand backend:
-      ${JSON.stringify(activities.slice(0, 50).map(a => ({ type: a.actionType, msg: a.details })))}
-
-      Suggest 3 high-impact improvements for the store's operations or app features based on patterns in these logs.
-      Return JSON: { "suggestions": [{ "title": "string", "reason": "string", "impact": "LOW" | "MEDIUM" | "HIGH" }] }
-    `;
-
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
-      });
-      return JSON.parse(response.text || "{}");
-    } catch (e) {
-      return { suggestions: [] };
-    }
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: `Analyze these system activities for performance or business bottlenecks: ${JSON.stringify(activities.slice(0, 30))}`,
+      config: {
+        responseMimeType: "application/json",
+        systemInstruction: "As a CTO advisor, find patterns and optimization opportunities. Return JSON with detailed insights and actionable advice."
+      }
+    });
+    return JSON.parse(response.text || "{}");
   }
 };

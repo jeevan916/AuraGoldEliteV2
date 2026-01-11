@@ -14,11 +14,14 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       target: 'esnext',
+      minify: 'esbuild',
+      cssMinify: true,
       rollupOptions: {
         output: {
           manualChunks: {
             vendor: ['react', 'react-dom'],
-            utils: ['jspdf', 'recharts']
+            charts: ['recharts'],
+            pdf: ['jspdf', 'jspdf-autotable']
           }
         }
       }
