@@ -29,7 +29,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, onSubmit, onCancel }) =
   // Current Item Input
   const initialItem: Partial<JewelryDetail> = {
     category: 'Ring', purity: '22K', metalColor: 'Yellow Gold',
-    netWeight: 0, wastagePercentage: 12, makingChargesPerGram: 450, 
+    grossWeight: 0, netWeight: 0, wastagePercentage: 12, makingChargesPerGram: 450, 
     stoneCharges: 0, photoUrls: []
   };
   const [currentItem, setCurrentItem] = useState<Partial<JewelryDetail>>(initialItem);
@@ -187,7 +187,8 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, onSubmit, onCancel }) =
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <InputGroup label="Gross Weight (g)" val={currentItem.grossWeight} onChange={v => setCurrentItem({...currentItem, grossWeight: v})} />
                 <InputGroup label="Net Weight (g)" val={currentItem.netWeight} onChange={v => setCurrentItem({...currentItem, netWeight: v})} />
                 <InputGroup label="VA (Wastage) %" val={currentItem.wastagePercentage} onChange={v => setCurrentItem({...currentItem, wastagePercentage: v})} />
                 <InputGroup label="Making/g" val={currentItem.makingChargesPerGram} onChange={v => setCurrentItem({...currentItem, makingChargesPerGram: v})} />
