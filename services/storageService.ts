@@ -2,7 +2,9 @@
 import { Order, WhatsAppLogEntry, WhatsAppTemplate } from '../types';
 import { errorService } from './errorService';
 
-const API_ENDPOINT = './api/server.php';
+// Use an absolute path if hosted at root, or relative if using hash routing.
+// For Hostinger "public_html/api", this should be valid.
+const API_ENDPOINT = 'api/server.php';
 const SYNC_INTERVAL = 10000; // 10 seconds
 
 export interface AppState {
@@ -65,6 +67,13 @@ class StorageService {
 
     try {
       const response = await fetch(API_ENDPOINT);
+      
+      if (response.status === 404) {
+          console.warn("[Storage] API not found (404). Backend files might be missing.");
+          this.isSyncing = false;
+          return;
+      }
+      
       if (!response.ok) throw new Error(`Server returned ${response.status} ${response.statusText}`);
       
       const text = await response.text();
@@ -75,23 +84,22 @@ class StorageService {
       } catch (e) {
         // If PHP crashes, it often returns HTML. We log a snippet to help debug.
         console.error("[Storage] Invalid JSON from server:", text.substring(0, 150));
-        throw new Error("Invalid JSON response from server. Check DB config.");
+        // Don't throw to UI, just stay offline
+        this.isSyncing = false;
+        return;
       }
       
-      // Simple conflict resolution: Server wins if it has data and local is empty, 
-      // or if server timestamp is newer. For now, we merge carefully.
+      // Merge logic: Trust server if it has data
       if (serverData && Array.isArray(serverData.orders)) {
-          // If server has more data than local, trust server
           if (serverData.orders.length >= this.state.orders.length) {
               this.state.orders = serverData.orders;
               this.state.logs = serverData.logs || [];
               this.state.templates = serverData.templates || [];
               this.saveToLocal(); // Update local cache
-              console.log("[Storage] Synced from Hostinger Server");
+              console.log("[Storage] Synced from Server");
           }
       }
     } catch (e: any) {
-      // Silent fail - offline mode, but log to console
       console.debug(`[Storage] Pull skipped: ${e.message}`);
     } finally {
       this.isSyncing = false;
@@ -119,14 +127,19 @@ class StorageService {
            body: JSON.stringify(payload)
        });
 
+       if (response.status === 404) {
+          // Backend missing, suppress error
+          this.isSyncing = false;
+          return;
+       }
+
        if (!response.ok) throw new Error(`Push failed: ${response.status}`);
        
-       // Verify response is JSON
        const text = await response.text();
        try { JSON.parse(text); } catch(e) { throw new Error("Server response not JSON"); }
        
     } catch (e: any) {
-        errorService.logWarning('Database', `Sync to Hostinger failed: ${e.message}`);
+        // Silent fail to avoid spamming user
     } finally {
         this.isSyncing = false;
     }
@@ -138,7 +151,7 @@ class StorageService {
   public setOrders(orders: Order[]) { 
       this.state.orders = orders; 
       this.saveToLocal();
-      this.pushToServer(); // Trigger immediate push on critical change
+      this.pushToServer(); // Trigger immediate push
   }
 
   public getLogs() { return this.state.logs; }

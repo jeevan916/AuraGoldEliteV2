@@ -1,34 +1,25 @@
-
 # 💎 AuraGold Elite - System Architecture
 
-**Version:** 3.3.0 (MySQL Edition)
+**Version:** 3.3.1 (MySQL Edition)
 **Stack:** React 19, Vite, PHP (PDO), MySQL, Tailwind CSS, Gemini AI.
 
-## 💾 Database Setup (Hostinger MySQL)
+## 💾 Critical Installation Step (Hostinger)
 
-The application now uses a live MySQL database instead of JSON files.
+Because of deployment restrictions, the PHP files are generated as `.md` files. **You must rename them manually.**
 
-### 1. Database Credentials
-The app is pre-configured to look for:
-*   **Database:** `u477692720_AuraGoldElite`
-*   **User:** `u477692720_jeevan1`
+1.  **Upload** the contents of the `dist/` folder to your Hostinger `public_html/` folder.
+2.  Open **Hostinger File Manager** and navigate to `public_html/api/`.
+3.  **Rename the files**:
+    *   `db_config.md`  ➡️  `db_config.php`
+    *   `server.md`     ➡️  `server.php`
+    *   `test_db.md`    ➡️  `test_db.php`
+4.  **Edit `db_config.php`**:
+    *   Open the file.
+    *   Replace `'YOUR_DB_PASSWORD'` with your actual database password.
+    *   Save.
 
-### 2. Critical Installation Step
-After uploading the files to Hostinger, you **MUST** perform this manual step:
-
-1.  Open **Hostinger File Manager**.
-2.  Navigate to `public_html/api/`.
-3.  Open `db_config.php`.
-4.  Replace `'YOUR_DB_PASSWORD'` with your actual database password.
-5.  Save the file.
-
-### 3. How it Works
-*   The frontend (React) works offline using `LocalStorage`.
-*   Every 10 seconds, it syncs with `public/api/server.php`.
-*   `server.php` connects to your MySQL database and saves data into a table named `app_storage`.
-*   The table is created automatically if it doesn't exist.
-
----
+### Testing
+Once renamed, open `https://your-domain.com/api/test_db.php` in your browser. It should return a JSON response saying "Success".
 
 ## 🛑 CORE PROTOCOLS
 
