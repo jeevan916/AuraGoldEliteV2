@@ -8,10 +8,19 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    // Base set to './' allows deployment to root or subfolder on Hostinger without breaking asset links
     base: './', 
     define: {
       'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY)
+    },
+    server: {
+      port: 3000,
+      proxy: {
+        '/api': {
+          target: 'http://localhost:3001',
+          changeOrigin: true,
+          secure: false,
+        }
+      }
     },
     build: {
       outDir: 'dist',
@@ -28,9 +37,6 @@ export default defineConfig(({ mode }) => {
           }
         }
       }
-    },
-    server: {
-      port: 3000
     }
   };
 });

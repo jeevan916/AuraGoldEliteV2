@@ -1,11 +1,9 @@
 
 import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings } from '../types';
 import { INITIAL_SETTINGS } from '../constants';
-import { errorService } from './errorService';
 
-// Updated endpoint: Back to the standard api folder as per user restore
-const API_ENDPOINT = 'api/server.php';
-const SYNC_INTERVAL = 10000; // 10 seconds
+const API_ENDPOINT = '/api/storage';
+const SYNC_INTERVAL = 15000;
 
 export interface AppState {
   orders: Order[];
@@ -26,20 +24,15 @@ class StorageService {
 
   private isSyncing = false;
   private listeners: (() => void)[] = [];
-  private backendAvailable = true; // Assume true initially
 
   constructor() {
     this.loadFromLocal();
-    // Auto-sync on load
     this.pullFromServer();
     
-    // Periodic sync
     setInterval(() => {
         this.pushToServer();
     }, SYNC_INTERVAL);
   }
-
-  // --- LOCAL STORAGE ---
 
   private loadFromLocal() {
     try {
@@ -65,83 +58,38 @@ class StorageService {
     this.notify();
   }
 
-  // --- SERVER SYNC ---
-
   public async pullFromServer() {
     if (this.isSyncing) return;
     this.isSyncing = true;
 
     try {
-      const response = await fetch(API_ENDPOINT, {
-        headers: { 'Accept': 'application/json' }
-      });
+      const response = await fetch(API_ENDPOINT);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       
-      if (response.status === 404) {
-          if (this.backendAvailable) {
-             console.warn(`[Storage] API not found (404) at ${API_ENDPOINT}. Ensure your 'api' folder contains 'server.php'.`);
-             this.backendAvailable = false;
-          }
-          this.isSyncing = false;
-          return;
-      }
+      const serverData = await response.json();
       
-      if (!response.ok) throw new Error(`Server returned ${response.status} ${response.statusText}`);
-      
-      const text = await response.text();
-
-      // Check if response is HTML (Common with SPA fallbacks or default 404 pages)
-      if (text.trim().startsWith('<')) {
-         if (this.backendAvailable) {
-             console.warn(`[Storage] Server returned HTML instead of JSON. Check if ${API_ENDPOINT} is being redirected.`);
-             this.backendAvailable = false;
-         }
-         this.isSyncing = false;
-         return;
-      }
-
-      let serverData;
-      
-      try {
-        serverData = JSON.parse(text);
-        this.backendAvailable = true; // If we got JSON, backend is up
-      } catch (e) {
-        if (this.backendAvailable) {
-             console.error("[Storage] Invalid JSON from server:", text.substring(0, 150));
-        }
-        this.isSyncing = false;
-        return;
-      }
-      
-      // Merge logic: Trust server if it has data
       if (serverData && (serverData.lastUpdated > this.state.lastUpdated || !this.state.lastUpdated)) {
-          this.state.orders = Array.isArray(serverData.orders) ? serverData.orders : this.state.orders;
-          this.state.logs = Array.isArray(serverData.logs) ? serverData.logs : this.state.logs;
-          this.state.templates = Array.isArray(serverData.templates) ? serverData.templates : this.state.templates;
-          
-          if (serverData.settings) {
-              this.state.settings = { ...this.state.settings, ...serverData.settings };
-          }
-          
+          this.state.orders = serverData.orders || [];
+          this.state.logs = serverData.logs || [];
+          this.state.templates = serverData.templates || [];
+          this.state.settings = serverData.settings || this.state.settings;
           this.state.lastUpdated = serverData.lastUpdated || Date.now();
           this.saveToLocal(); 
       }
     } catch (e: any) {
-      // Silent catch for periodic sync
+      console.warn("Pull failed", e.message);
     } finally {
       this.isSyncing = false;
     }
   }
 
   public async pushToServer() {
-    if (this.isSyncing || !this.backendAvailable) return;
+    if (this.isSyncing) return;
     
     this.isSyncing = true;
     try {
        const payload = {
-           orders: this.state.orders,
-           logs: this.state.logs,
-           templates: this.state.templates,
-           settings: this.state.settings,
+           ...this.state,
            lastUpdated: Date.now()
        };
 
@@ -151,38 +99,18 @@ class StorageService {
            body: JSON.stringify(payload)
        });
 
-       if (response.status === 404) {
-          this.backendAvailable = false;
-          this.isSyncing = false;
-          return;
-       }
-
        if (!response.ok) throw new Error(`Push failed: ${response.status}`);
-       
-       const text = await response.text();
-       if (text.trim().startsWith('<')) {
-           this.backendAvailable = false;
-           return;
-       }
-       try { JSON.parse(text); } catch(e) { throw new Error("Server response not JSON"); }
-       
     } catch (e: any) {
-        // Silent catch
+        console.warn("Push failed", e.message);
     } finally {
         this.isSyncing = false;
     }
   }
 
   public async forceSync(): Promise<{ success: boolean; message: string }> {
-      this.backendAvailable = true; 
-      this.isSyncing = false; 
-      
       try {
            const payload = {
-               orders: this.state.orders,
-               logs: this.state.logs,
-               templates: this.state.templates,
-               settings: this.state.settings,
+               ...this.state,
                lastUpdated: Date.now()
            };
 
@@ -192,36 +120,16 @@ class StorageService {
                body: JSON.stringify(payload)
            });
 
-           if (response.status === 404) {
-               return { success: false, message: `Error 404: '${API_ENDPOINT}' not found. Verify 'public_html/api/server.php' exists.` };
+           if (response.ok) {
+               return { success: true, message: "Express Backend Connected & Synced!" };
+           } else {
+               return { success: false, message: `Server Error: ${response.status}` };
            }
-
-           if (response.status === 403) {
-               return { success: false, message: `Error 403: Forbidden. Your server is blocking access to the api folder.` };
-           }
-
-           const text = await response.text();
-           
-           if (text.trim().startsWith('<')) {
-               return { success: false, message: `Server returned HTML. Likely a 404 or redirect. Check API path.` };
-           }
-
-           try {
-               const json = JSON.parse(text);
-               if (json.error) {
-                   return { success: false, message: `Database Error: ${json.error}` };
-               }
-               return { success: true, message: "Connected & Saved Successfully!" };
-           } catch (e) {
-               return { success: false, message: `Invalid JSON Response. Is 'server.php' producing valid output?` };
-           }
-
       } catch (e: any) {
           return { success: false, message: `Network Error: ${e.message}` };
       }
   }
 
-  // --- ACCESSORS ---
   public getOrders() { return this.state.orders; }
   public setOrders(orders: Order[]) { 
       this.state.orders = orders; 
@@ -247,9 +155,6 @@ class StorageService {
   public subscribe(cb: () => void) {
       this.listeners.push(cb);
       return () => { this.listeners = this.listeners.filter(l => l !== cb); };
-  }
-  public isBackendOnline() {
-      return this.backendAvailable;
   }
   private notify() {
       this.listeners.forEach(cb => cb());
