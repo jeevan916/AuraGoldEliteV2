@@ -24,6 +24,7 @@ class StorageService {
 
   private isSyncing = false;
   private listeners: (() => void)[] = [];
+  private backendAvailable = true; // Assume true initially
 
   constructor() {
     this.loadFromLocal();
@@ -66,10 +67,15 @@ class StorageService {
     this.isSyncing = true;
 
     try {
-      const response = await fetch(API_ENDPOINT);
+      const response = await fetch(API_ENDPOINT, {
+        headers: { 'Accept': 'application/json' }
+      });
       
       if (response.status === 404) {
-          console.warn("[Storage] API not found (404). Backend files might be missing.");
+          if (this.backendAvailable) {
+             console.warn("[Storage] API not found (404). Backend files might be missing or not renamed.");
+             this.backendAvailable = false;
+          }
           this.isSyncing = false;
           return;
       }
@@ -77,37 +83,53 @@ class StorageService {
       if (!response.ok) throw new Error(`Server returned ${response.status} ${response.statusText}`);
       
       const text = await response.text();
+
+      // Check if response is HTML (Common with SPA fallbacks or default 404 pages)
+      if (text.trim().startsWith('<')) {
+         if (this.backendAvailable) {
+             console.warn("[Storage] Server returned HTML. Likely SPA fallback (api/server.php not found). Backend disabled.");
+             this.backendAvailable = false;
+         }
+         this.isSyncing = false;
+         return;
+      }
+
       let serverData;
       
       try {
         serverData = JSON.parse(text);
+        this.backendAvailable = true; // If we got JSON, backend is up
       } catch (e) {
-        // If PHP crashes, it often returns HTML. We log a snippet to help debug.
-        console.error("[Storage] Invalid JSON from server:", text.substring(0, 150));
-        // Don't throw to UI, just stay offline
+        // Only log if we haven't already determined backend is dodgy
+        if (this.backendAvailable) {
+             console.error("[Storage] Invalid JSON from server:", text.substring(0, 150));
+        }
         this.isSyncing = false;
         return;
       }
       
       // Merge logic: Trust server if it has data
       if (serverData && Array.isArray(serverData.orders)) {
-          if (serverData.orders.length >= this.state.orders.length) {
+          // Simple merge strategy: If server has more or equal items, trust it. 
+          // Ideally use timestamps, but this prevents data loss on fresh device.
+          if (serverData.orders.length >= this.state.orders.length || serverData.lastUpdated > this.state.lastUpdated) {
               this.state.orders = serverData.orders;
               this.state.logs = serverData.logs || [];
               this.state.templates = serverData.templates || [];
-              this.saveToLocal(); // Update local cache
-              console.log("[Storage] Synced from Server");
+              this.state.lastUpdated = serverData.lastUpdated || Date.now();
+              this.saveToLocal(); 
+              // console.log("[Storage] Synced from Server");
           }
       }
     } catch (e: any) {
-      console.debug(`[Storage] Pull skipped: ${e.message}`);
+      // console.debug(`[Storage] Pull skipped: ${e.message}`);
     } finally {
       this.isSyncing = false;
     }
   }
 
   public async pushToServer() {
-    if (this.isSyncing) return;
+    if (this.isSyncing || !this.backendAvailable) return;
     
     // Only push if we have data
     if (this.state.orders.length === 0) return;
@@ -128,7 +150,7 @@ class StorageService {
        });
 
        if (response.status === 404) {
-          // Backend missing, suppress error
+          this.backendAvailable = false;
           this.isSyncing = false;
           return;
        }
@@ -136,10 +158,16 @@ class StorageService {
        if (!response.ok) throw new Error(`Push failed: ${response.status}`);
        
        const text = await response.text();
+       
+       if (text.trim().startsWith('<')) {
+           this.backendAvailable = false;
+           return;
+       }
+
        try { JSON.parse(text); } catch(e) { throw new Error("Server response not JSON"); }
        
     } catch (e: any) {
-        // Silent fail to avoid spamming user
+        // Silent fail
     } finally {
         this.isSyncing = false;
     }
@@ -169,6 +197,10 @@ class StorageService {
   public subscribe(cb: () => void) {
       this.listeners.push(cb);
       return () => { this.listeners = this.listeners.filter(l => l !== cb); };
+  }
+
+  public isBackendOnline() {
+      return this.backendAvailable;
   }
 
   private notify() {
