@@ -63,135 +63,135 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates }) => {
 
   return (
     <div className="space-y-6">
-      {/* Live Rate Strip */}
-      <div className={`px-6 py-3 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-lg animate-fadeIn ${(!currentRates?.k24 || currentRates.k24 === 0) ? 'bg-rose-600 text-white shadow-rose-100' : 'bg-amber-600 text-white shadow-amber-100'}`}>
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-white/20 rounded-lg">
-            {(!currentRates?.k24 || currentRates.k24 === 0) ? <AlertTriangle size={18} /> : <Zap size={18} className="text-amber-200" />}
-          </div>
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest opacity-70 leading-none mb-1">Live Market Rates</p>
-            <div className="flex gap-4">
+      {/* Live Rate Hero Card */}
+      <div className={`p-6 rounded-[24px] flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-lg transition-all ${(!currentRates?.k24 || currentRates.k24 === 0) ? 'bg-rose-600 text-white shadow-rose-200/50' : 'bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-amber-500/30'}`}>
+        <div>
+           <div className="flex items-center gap-2 mb-2 opacity-90">
+             {(!currentRates?.k24 || currentRates.k24 === 0) ? <AlertTriangle size={16} /> : <Zap size={16} className="text-amber-100 fill-amber-100" />}
+             <span className="text-[11px] font-black uppercase tracking-widest">Live Market Rates</span>
+           </div>
+           
+           <div className="flex items-baseline gap-4">
               {(!currentRates?.k24 || currentRates.k24 === 0) ? (
-                  <p className="text-sm font-bold">Connection Failed / Offline</p>
+                  <p className="text-xl font-bold">Offline</p>
               ) : (
                   <>
-                    <p className="text-sm font-black">24K: ₹{currentRates?.k24?.toLocaleString()}/g</p>
-                    <p className="text-sm font-black opacity-80">22K: ₹{currentRates?.k22?.toLocaleString()}/g</p>
+                    <div>
+                      <span className="text-4xl font-black tracking-tighter">₹{currentRates?.k22?.toLocaleString()}</span>
+                      <span className="text-sm font-bold opacity-80 ml-1">/ 22K</span>
+                    </div>
+                    <div className="opacity-80">
+                      <span className="text-lg font-bold">₹{currentRates?.k24?.toLocaleString()}</span>
+                      <span className="text-[10px] font-bold ml-1">/ 24K</span>
+                    </div>
                   </>
               )}
-            </div>
-          </div>
+           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={handleManualSync} 
-            disabled={isSyncing}
-            className="bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all"
-          >
-             <RefreshCw size={12} className={isSyncing ? 'animate-spin' : ''} /> {isSyncing ? 'Syncing...' : 'Retry Sync'}
-          </button>
-          
-          <div className="flex items-center gap-1.5">
-            <div className={`w-2 h-2 rounded-full ${currentRates?.k24 ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'}`}></div>
-            <span className="text-[10px] font-bold uppercase tracking-widest opacity-80">
-              {currentRates?.k24 ? 'Live' : 'Offline'}
-            </span>
-          </div>
-        </div>
+        
+        <button 
+          onClick={handleManualSync} 
+          disabled={isSyncing}
+          className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 backdrop-blur-sm transition-all self-end md:self-center"
+        >
+           <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} /> {isSyncing ? 'Syncing...' : 'Sync Now'}
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center space-x-4">
-          <div className="p-3 bg-amber-50 rounded-lg"><DollarSign className="text-amber-600 w-6 h-6" /></div>
-          <div>
-            <p className="text-sm text-slate-500 font-medium">Total Order Value</p>
-            <p className="text-2xl font-bold">₹{stats.totalSales.toLocaleString()}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center space-x-4">
-          <div className="p-3 bg-blue-50 rounded-lg"><ShoppingBag className="text-blue-600 w-6 h-6" /></div>
-          <div>
-            <p className="text-sm text-slate-500 font-medium">Active Orders</p>
-            <p className="text-2xl font-bold">{stats.activeOrders}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center space-x-4">
-          <div className="p-3 bg-rose-50 rounded-lg"><Clock className="text-rose-600 w-6 h-6" /></div>
-          <div>
-            <p className="text-sm text-slate-500 font-medium">Overdue Plans</p>
-            <p className={`text-2xl font-bold ${stats.overdueCount > 0 ? 'text-rose-600' : ''}`}>
-              {stats.overdueCount}
-            </p>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center space-x-4">
-          <div className="p-3 bg-emerald-50 rounded-lg"><TrendingUp className="text-emerald-600 w-6 h-6" /></div>
-          <div>
-            <p className="text-sm text-slate-500 font-medium">Total Collected</p>
-            <p className="text-2xl font-bold text-emerald-600">₹{stats.collectedAmount.toLocaleString()}</p>
-          </div>
-        </div>
+      {/* Snap Scroll Stats for Mobile */}
+      <div className="flex overflow-x-auto gap-4 pb-4 -mx-4 px-4 snap-x no-scrollbar md:grid md:grid-cols-4 md:mx-0 md:px-0 md:pb-0">
+        <StatCard 
+          icon={<DollarSign className="text-amber-600 w-6 h-6" />} 
+          label="Total Order Value" 
+          value={`₹${stats.totalSales.toLocaleString()}`} 
+          bg="bg-amber-50"
+        />
+        <StatCard 
+          icon={<ShoppingBag className="text-blue-600 w-6 h-6" />} 
+          label="Active Orders" 
+          value={stats.activeOrders.toString()} 
+          bg="bg-blue-50"
+        />
+        <StatCard 
+          icon={<Clock className="text-rose-600 w-6 h-6" />} 
+          label="Overdue Plans" 
+          value={stats.overdueCount.toString()} 
+          bg="bg-rose-50"
+          valueColor={stats.overdueCount > 0 ? 'text-rose-600' : 'text-slate-900'}
+        />
+        <StatCard 
+          icon={<TrendingUp className="text-emerald-600 w-6 h-6" />} 
+          label="Total Collected" 
+          value={`₹${stats.collectedAmount.toLocaleString()}`} 
+          bg="bg-emerald-50"
+          valueColor="text-emerald-600"
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white p-8 rounded-3xl border shadow-sm space-y-4">
-          <div className="flex justify-between items-center mb-4">
+        {/* AI Insight Card */}
+        <div className="lg:col-span-2 bg-white p-6 rounded-[24px] shadow-sm space-y-4">
+          <div className="flex justify-between items-center mb-2">
             <div className="flex items-center gap-2">
-              <Sparkles className="text-amber-500" />
-              <h3 className="font-bold text-lg">AI Recovery Intelligence</h3>
+              <Sparkles className="text-amber-500" size={20} />
+              <h3 className="font-bold text-lg text-slate-800 tracking-tight">AI Recovery Intel</h3>
             </div>
             <button 
               onClick={handleAnalyzeRisk}
               disabled={loadingRisk}
-              className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-amber-600 hover:text-amber-700 disabled:opacity-50"
+              className="p-2 bg-slate-100 rounded-full text-slate-500 hover:text-amber-600 active:bg-slate-200 transition-colors"
             >
-              <RefreshCw size={14} className={loadingRisk ? 'animate-spin' : ''} />
-              Re-Analyze
+              <RefreshCw size={16} className={loadingRisk ? 'animate-spin' : ''} />
             </button>
           </div>
           
-          <div className="bg-slate-50 p-6 rounded-2xl min-h-[200px] border border-slate-100">
+          <div className="bg-slate-50 p-6 rounded-2xl min-h-[160px]">
             {loadingRisk ? (
-              <div className="flex flex-col items-center justify-center h-40 space-y-4">
+              <div className="flex flex-col items-center justify-center h-full space-y-3 py-4">
                 <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Consulting Gemini AI...</p>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Consulting Gemini...</p>
               </div>
             ) : (
-              <div className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">
-                {riskAnalysis || "No analysis available. Click refresh to scan overdue orders."}
+              <div className="text-[15px] text-slate-700 leading-relaxed font-medium">
+                {riskAnalysis || "No overdue risks detected. Tap refresh to scan again."}
               </div>
             )}
           </div>
         </div>
 
-        <div className="bg-white p-8 rounded-3xl border shadow-sm">
-          <h3 className="font-bold text-lg mb-6 flex items-center gap-2">
-            <BarChartIcon size={18} className="text-blue-500" /> Recent Flows
+        {/* Chart Card */}
+        <div className="bg-white p-6 rounded-[24px] shadow-sm">
+          <h3 className="font-bold text-lg mb-6 flex items-center gap-2 tracking-tight text-slate-800">
+            <BarChartIcon size={20} className="text-blue-500" /> Recent Flows
           </h3>
           <div className="h-48 w-full" style={{ minHeight: '12rem' }}>
-            <ResponsiveContainer width="100%" height="100%" minHeight={150}>
+            <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10}} />
-                <YAxis hide />
-                <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8'}} />
+                <Tooltip 
+                  contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 30px -10px rgba(0,0,0,0.1)', fontSize: '12px', fontWeight: 'bold'}} 
+                  cursor={{fill: '#f8fafc'}}
+                />
                 <Bar dataKey="total" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="paid" fill="#10b981" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
-          <div className="mt-4 flex justify-between text-[10px] font-black uppercase text-slate-400 tracking-widest">
-            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-500"></div> Order Value</div>
-            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> Collected</div>
           </div>
         </div>
       </div>
     </div>
   );
 };
+
+const StatCard = ({ icon, label, value, bg, valueColor = 'text-slate-900' }: any) => (
+  <div className="min-w-[85vw] md:min-w-0 snap-center bg-white p-6 rounded-[24px] shadow-sm flex items-center gap-4 border border-slate-50/50">
+    <div className={`p-4 rounded-2xl ${bg}`}>{icon}</div>
+    <div>
+      <p className="text-xs text-slate-500 font-bold uppercase tracking-wide mb-1">{label}</p>
+      <p className={`text-2xl font-black tracking-tight ${valueColor}`}>{value}</p>
+    </div>
+  </div>
+);
 
 export default Dashboard;
