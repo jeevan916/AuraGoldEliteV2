@@ -25,8 +25,9 @@ import { useOrders } from './hooks/useOrders';
 import { useWhatsApp } from './hooks/useWhatsApp';
 import { errorService } from './services/errorService';
 import { goldRateService } from './services/goldRateService';
-import { INITIAL_SETTINGS } from './constants';
+import { storageService } from './services/storageService';
 import { Order, GlobalSettings, AppResolutionPath, Customer } from './types';
+import { INITIAL_SETTINGS } from './constants';
 
 type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'CUSTOMERS' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'MARKET' | 'LOGS' | 'SETTINGS' | 'MENU';
 
@@ -38,17 +39,24 @@ const App: React.FC = () => {
   const { orders, addOrder, recordPayment, updateItemStatus, updateOrder } = useOrders();
   const { logs, templates, addLog, setTemplates } = useWhatsApp();
   
-  const [settings, setSettings] = useState<GlobalSettings>(() => {
-    try {
-      const saved = localStorage.getItem('aura_settings');
-      return saved ? JSON.parse(saved) : INITIAL_SETTINGS;
-    } catch (e) {
-      return INITIAL_SETTINGS;
-    }
-  });
+  // Use Storage Service for Settings
+  const [settings, setSettingsState] = useState<GlobalSettings>(storageService.getSettings());
+
+  const setSettings = (newSettings: GlobalSettings) => {
+    setSettingsState(newSettings);
+    storageService.setSettings(newSettings);
+  };
 
   const [errors, setErrors] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
+
+  // Subscribe to storage changes to keep settings in sync (e.g. from server pull)
+  useEffect(() => {
+    const unsubscribe = storageService.subscribe(() => {
+       setSettingsState(storageService.getSettings());
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     errorService.initGlobalListeners();
@@ -63,11 +71,11 @@ const App: React.FC = () => {
     const sync = async () => {
       const res = await goldRateService.fetchLiveRate();
       if (res.success) {
-        setSettings(prev => ({
-          ...prev,
+        setSettings({
+          ...settings,
           currentGoldRate24K: res.rate24K,
           currentGoldRate22K: res.rate22K
-        }));
+        });
       }
     };
     sync();

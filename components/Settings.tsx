@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, Zap, Smartphone, Key, ShieldCheck, Info } from 'lucide-react';
+import { Save, RefreshCw, Zap, Smartphone, Key, ShieldCheck, Info, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 import { GlobalSettings } from '../types';
 import { goldRateService } from '../services/goldRateService';
+import { storageService } from '../services/storageService';
 
 interface SettingsProps {
   settings: GlobalSettings;
@@ -12,6 +13,10 @@ interface SettingsProps {
 const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
   const [localSettings, setLocalSettings] = useState(settings);
   const [syncing, setSyncing] = useState(false);
+  
+  // DB Test State
+  const [dbStatus, setDbStatus] = useState<'IDLE' | 'TESTING' | 'SUCCESS' | 'ERROR'>('IDLE');
+  const [dbMessage, setDbMessage] = useState('');
 
   useEffect(() => {
     setLocalSettings(settings);
@@ -33,6 +38,21 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
     } finally {
         setSyncing(false);
     }
+  };
+
+  const handleTestDatabase = async () => {
+      setDbStatus('TESTING');
+      setDbMessage('Attempting to connect to server.php...');
+      
+      const result = await storageService.forceSync();
+      
+      if (result.success) {
+          setDbStatus('SUCCESS');
+          setDbMessage(result.message);
+      } else {
+          setDbStatus('ERROR');
+          setDbMessage(result.message);
+      }
   };
 
   return (
@@ -63,6 +83,38 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Market Pricing Section */}
         <section className="lg:col-span-8 space-y-8">
+          
+          {/* DATABASE DIAGNOSTICS */}
+          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200/60 shadow-sm space-y-6">
+             <div className="flex items-center gap-3">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${dbStatus === 'ERROR' ? 'bg-rose-100 text-rose-600' : dbStatus === 'SUCCESS' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}>
+                    <Database size={16} />
+                </div>
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Backend Connection</h3>
+             </div>
+             
+             <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
+                 <button 
+                    onClick={handleTestDatabase}
+                    disabled={dbStatus === 'TESTING'}
+                    className="shrink-0 bg-slate-100 text-slate-700 hover:bg-slate-200 px-6 py-3 rounded-xl font-bold text-xs flex items-center gap-2 transition-colors disabled:opacity-50"
+                 >
+                    {dbStatus === 'TESTING' ? <Loader2 className="animate-spin" size={14}/> : <ServerCrash size={14} />}
+                    Test Connection
+                 </button>
+                 
+                 <div className={`flex-1 p-4 rounded-xl text-sm font-medium flex items-start gap-3 ${
+                     dbStatus === 'SUCCESS' ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' :
+                     dbStatus === 'ERROR' ? 'bg-rose-50 text-rose-800 border border-rose-100' :
+                     'bg-slate-50 text-slate-500'
+                 }`}>
+                     {dbStatus === 'SUCCESS' && <CheckCircle2 className="shrink-0 text-emerald-600" size={18} />}
+                     {dbStatus === 'ERROR' && <AlertTriangle className="shrink-0 text-rose-600" size={18} />}
+                     <p>{dbMessage || "Click 'Test Connection' to verify server status."}</p>
+                 </div>
+             </div>
+          </div>
+
           <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200/60 shadow-sm space-y-10 relative overflow-hidden">
              <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600">

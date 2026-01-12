@@ -1,16 +1,17 @@
 
-import { Order, WhatsAppLogEntry, WhatsAppTemplate } from '../types';
+import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings } from '../types';
+import { INITIAL_SETTINGS } from '../constants';
 import { errorService } from './errorService';
 
-// Use an absolute path if hosted at root, or relative if using hash routing.
-// For Hostinger "public_html/api", this should be valid.
-const API_ENDPOINT = 'api/server.php';
+// Updated endpoint to point to the new hidden builds folder
+const API_ENDPOINT = '.builds/api/server.php';
 const SYNC_INTERVAL = 10000; // 10 seconds
 
 export interface AppState {
   orders: Order[];
   logs: WhatsAppLogEntry[];
   templates: WhatsAppTemplate[];
+  settings: GlobalSettings;
   lastUpdated: number;
 }
 
@@ -19,6 +20,7 @@ class StorageService {
     orders: [],
     logs: [],
     templates: [],
+    settings: INITIAL_SETTINGS,
     lastUpdated: 0
   };
 
@@ -44,10 +46,12 @@ class StorageService {
       const orders = localStorage.getItem('aura_orders');
       const logs = localStorage.getItem('aura_whatsapp_logs');
       const templates = localStorage.getItem('aura_whatsapp_templates');
+      const settings = localStorage.getItem('aura_settings');
       
       this.state.orders = orders ? JSON.parse(orders) : [];
       this.state.logs = logs ? JSON.parse(logs) : [];
       this.state.templates = templates ? JSON.parse(templates) : [];
+      this.state.settings = settings ? JSON.parse(settings) : INITIAL_SETTINGS;
     } catch (e) {
       console.warn("Local storage parse error", e);
     }
@@ -57,6 +61,7 @@ class StorageService {
     localStorage.setItem('aura_orders', JSON.stringify(this.state.orders));
     localStorage.setItem('aura_whatsapp_logs', JSON.stringify(this.state.logs));
     localStorage.setItem('aura_whatsapp_templates', JSON.stringify(this.state.templates));
+    localStorage.setItem('aura_settings', JSON.stringify(this.state.settings));
     this.notify();
   }
 
@@ -73,7 +78,7 @@ class StorageService {
       
       if (response.status === 404) {
           if (this.backendAvailable) {
-             console.warn("[Storage] API not found (404). Backend files might be missing or not renamed.");
+             console.warn(`[Storage] API not found (404) at ${API_ENDPOINT}. Backend files might be missing or in wrong folder.`);
              this.backendAvailable = false;
           }
           this.isSyncing = false;
@@ -87,7 +92,7 @@ class StorageService {
       // Check if response is HTML (Common with SPA fallbacks or default 404 pages)
       if (text.trim().startsWith('<')) {
          if (this.backendAvailable) {
-             console.warn("[Storage] Server returned HTML. Likely SPA fallback (api/server.php not found). Backend disabled.");
+             console.warn(`[Storage] Server returned HTML. Likely SPA fallback (${API_ENDPOINT} not found). Backend disabled.`);
              this.backendAvailable = false;
          }
          this.isSyncing = false;
@@ -109,17 +114,19 @@ class StorageService {
       }
       
       // Merge logic: Trust server if it has data
-      if (serverData && Array.isArray(serverData.orders)) {
-          // Simple merge strategy: If server has more or equal items, trust it. 
-          // Ideally use timestamps, but this prevents data loss on fresh device.
-          if (serverData.orders.length >= this.state.orders.length || serverData.lastUpdated > this.state.lastUpdated) {
-              this.state.orders = serverData.orders;
-              this.state.logs = serverData.logs || [];
-              this.state.templates = serverData.templates || [];
-              this.state.lastUpdated = serverData.lastUpdated || Date.now();
-              this.saveToLocal(); 
-              // console.log("[Storage] Synced from Server");
+      if (serverData && (serverData.lastUpdated > this.state.lastUpdated || !this.state.lastUpdated)) {
+          this.state.orders = Array.isArray(serverData.orders) ? serverData.orders : this.state.orders;
+          this.state.logs = Array.isArray(serverData.logs) ? serverData.logs : this.state.logs;
+          this.state.templates = Array.isArray(serverData.templates) ? serverData.templates : this.state.templates;
+          
+          // Merge Settings
+          if (serverData.settings) {
+              this.state.settings = { ...this.state.settings, ...serverData.settings };
           }
+          
+          this.state.lastUpdated = serverData.lastUpdated || Date.now();
+          this.saveToLocal(); 
+          // console.log("[Storage] Synced from Server");
       }
     } catch (e: any) {
       // console.debug(`[Storage] Pull skipped: ${e.message}`);
@@ -131,15 +138,13 @@ class StorageService {
   public async pushToServer() {
     if (this.isSyncing || !this.backendAvailable) return;
     
-    // Only push if we have data
-    if (this.state.orders.length === 0) return;
-
     this.isSyncing = true;
     try {
        const payload = {
            orders: this.state.orders,
            logs: this.state.logs,
            templates: this.state.templates,
+           settings: this.state.settings,
            lastUpdated: Date.now()
        };
 
@@ -173,6 +178,51 @@ class StorageService {
     }
   }
 
+  // Manually force a sync attempt and return the result for UI diagnostics
+  public async forceSync(): Promise<{ success: boolean; message: string }> {
+      this.backendAvailable = true; // Reset assumption
+      this.isSyncing = false; // Reset lock
+      
+      try {
+           const payload = {
+               orders: this.state.orders,
+               logs: this.state.logs,
+               templates: this.state.templates,
+               settings: this.state.settings,
+               lastUpdated: Date.now()
+           };
+
+           const response = await fetch(API_ENDPOINT, {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify(payload)
+           });
+
+           if (response.status === 404) {
+               return { success: false, message: `Error 404: '${API_ENDPOINT}' not found. Did you move the folder to .builds/api?` };
+           }
+
+           const text = await response.text();
+           
+           if (text.trim().startsWith('<')) {
+               return { success: false, message: `Server returned HTML (likely 404 or Forbidden). Check if '${API_ENDPOINT}' exists and permissions are correct.` };
+           }
+
+           try {
+               const json = JSON.parse(text);
+               if (json.error) {
+                   return { success: false, message: `Database Error: ${json.error}` };
+               }
+               return { success: true, message: "Connected & Saved Successfully!" };
+           } catch (e) {
+               return { success: false, message: `Invalid JSON Response: ${text.substring(0, 100)}...` };
+           }
+
+      } catch (e: any) {
+          return { success: false, message: `Network Error: ${e.message}` };
+      }
+  }
+
   // --- ACCESSORS ---
 
   public getOrders() { return this.state.orders; }
@@ -192,6 +242,13 @@ class StorageService {
   public setTemplates(templates: WhatsAppTemplate[]) {
       this.state.templates = templates;
       this.saveToLocal();
+  }
+
+  public getSettings() { return this.state.settings; }
+  public setSettings(settings: GlobalSettings) {
+      this.state.settings = settings;
+      this.saveToLocal();
+      this.pushToServer(); // Trigger immediate push for settings
   }
 
   public subscribe(cb: () => void) {
