@@ -3,7 +3,7 @@ import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings } from '../ty
 import { INITIAL_SETTINGS } from '../constants';
 
 const API_ENDPOINT = '/api/storage';
-const SYNC_INTERVAL = 15000;
+const SYNC_INTERVAL = 30000; // Sync every 30 seconds
 
 export interface AppState {
   orders: Order[];
@@ -46,7 +46,7 @@ class StorageService {
       this.state.templates = templates ? JSON.parse(templates) : [];
       this.state.settings = settings ? JSON.parse(settings) : INITIAL_SETTINGS;
     } catch (e) {
-      console.warn("Local storage parse error", e);
+      console.warn("AuraGold: Local storage parse error", e);
     }
   }
 
@@ -75,9 +75,10 @@ class StorageService {
           this.state.settings = serverData.settings || this.state.settings;
           this.state.lastUpdated = serverData.lastUpdated || Date.now();
           this.saveToLocal(); 
+          console.log("AuraGold: Pulled latest state from server.");
       }
     } catch (e: any) {
-      console.warn("Pull failed", e.message);
+      console.warn("AuraGold: Pull failed", e.message);
     } finally {
       this.isSyncing = false;
     }
@@ -100,8 +101,9 @@ class StorageService {
        });
 
        if (!response.ok) throw new Error(`Push failed: ${response.status}`);
+       console.log("AuraGold: State synced to MySQL.");
     } catch (e: any) {
-        console.warn("Push failed", e.message);
+        console.warn("AuraGold: Push failed", e.message);
     } finally {
         this.isSyncing = false;
     }
@@ -121,7 +123,7 @@ class StorageService {
            });
 
            if (response.ok) {
-               return { success: true, message: "Express Backend Connected & Synced!" };
+               return { success: true, message: "AuraGold: Express Backend Connected & Synced!" };
            } else {
                return { success: false, message: `Server Error: ${response.status}` };
            }
@@ -134,7 +136,6 @@ class StorageService {
   public setOrders(orders: Order[]) { 
       this.state.orders = orders; 
       this.saveToLocal();
-      this.pushToServer();
   }
   public getLogs() { return this.state.logs; }
   public setLogs(logs: WhatsAppLogEntry[]) {
@@ -150,7 +151,6 @@ class StorageService {
   public setSettings(settings: GlobalSettings) {
       this.state.settings = settings;
       this.saveToLocal();
-      this.pushToServer();
   }
   public subscribe(cb: () => void) {
       this.listeners.push(cb);

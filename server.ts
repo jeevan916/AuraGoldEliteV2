@@ -19,10 +19,11 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 // Database Connection
+// Hostinger typically provides these as env variables or you set them in the Node.js selector
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+  password: process.env.DB_PASSWORD || process.env.DB_PASS,
   database: process.env.DB_NAME,
 };
 
@@ -39,10 +40,10 @@ async function initDB() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
-    console.log('Database initialized successfully.');
+    console.log('AuraGold: Database initialized successfully.');
     connection.release();
   } catch (error) {
-    console.error('Database initialization failed:', error);
+    console.error('AuraGold: Database initialization failed:', error);
   }
 }
 
@@ -55,10 +56,10 @@ app.get('/api/storage', async (req, res) => {
     if (rows.length > 0 && rows[0].data) {
       res.json(JSON.parse(rows[0].data));
     } else {
-      res.json({ orders: [], logs: [], templates: [], lastUpdated: 0 });
+      res.json({ orders: [], logs: [], templates: [], settings: null, lastUpdated: 0 });
     }
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to fetch data', details: error.message });
   }
 });
 
@@ -69,17 +70,23 @@ app.post('/api/storage', async (req, res) => {
       'INSERT INTO app_storage (id, data) VALUES (1, ?) ON DUPLICATE KEY UPDATE data = ?',
       [data, data]
     );
-    res.json({ success: true });
+    res.json({ success: true, timestamp: Date.now() });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to save data', details: error.message });
   }
 });
 
-// Serve Static Frontend
-app.use(express.static(path.join(__dirname, 'dist')));
+// Serve Static Frontend (Production Only)
+const distPath = path.join(__dirname, 'dist');
+app.use(express.static(distPath));
 
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  // Check if requesting an API, otherwise serve frontend
+  if (!req.path.startsWith('/api')) {
+    res.sendFile(path.join(distPath, 'index.html'));
+  } else {
+    res.status(404).json({ error: 'API not found' });
+  }
 });
 
 app.listen(PORT, () => {

@@ -1,47 +1,33 @@
-# 💎 AuraGold Elite - System Architecture
+# 💎 AuraGold Elite - Authoritative Specification
 
-**Version:** 3.3.1 (MySQL Edition)
-**Stack:** React 19, Vite, PHP (PDO), MySQL, Tailwind CSS, Gemini AI.
+**Version:** 3.5.0 (Express/MySQL Edition)
+**Stack:** React 19, Express, Node 22.x, MySQL, Gemini AI.
 
-## 💾 Critical Installation Step (Hostinger)
+## 1. Project Purpose
+AuraGold Elite is a luxury-grade jewelry management system designed for gold retailers to handle complex order valuations, installment plans, and AI-driven debt recovery.
 
-Because of deployment restrictions, the PHP files are generated as `.md` files. **You must rename them manually.**
+## 2. Technical Architecture
+- **Frontend**: React 19 with Tailwind CSS.
+- **Backend**: Express server (`server.ts`) handling API and static assets.
+- **Database**: MySQL table `app_storage` storing a single JSON blob of the entire application state for perfect synchronization.
+- **AI**: Gemini 3 Pro/Flash for risk analysis, message generation, and system diagnosis.
 
-1.  **Upload** the contents of the `dist/` folder to your Hostinger `public_html/` folder.
-2.  Open **Hostinger File Manager** and navigate to `public_html/api/`.
-3.  **Rename the files**:
-    *   `db_config.md`  ➡️  `db_config.php`
-    *   `server.md`     ➡️  `server.php`
-    *   `test_db.md`    ➡️  `test_db.php`
-4.  **Edit `db_config.php`**:
-    *   Open the file.
-    *   Replace `'YOUR_DB_PASSWORD'` with your actual database password.
-    *   Save.
+## 3. Core Business Logic
+- **Valuation**: `Total = ((NetWt * Rate) * (1 + VA%)) + Labor + Stones + GST`.
+- **Gold Rate Protection**: Locked rate feature that voids upon payment default (7-day grace period).
+- **Communication**: WhatsApp Business API using AI-optimized psychological tactics (Loss Aversion, Social Proof, Urgency).
 
-### Testing
-Once renamed, open `https://your-domain.com/api/test_db.php` in your browser. It should return a JSON response saying "Success".
+## 4. Design Standards (AuraDesign)
+- **Aesthetic**: iOS-inspired Glassmorphism.
+- **Colors**: Slate-900 (Base), Amber-600 (Gold Accent), f2f2f7 (Surface).
+- **UX**: Bottom Tab Bar (Mobile), Sidebar (Desktop), High-radius cards (24px).
 
-## 🛑 CORE PROTOCOLS
-
-### 1. Mobile-First Design Language (iOS)
-*   **Viewport:** Must use `viewport-fit=cover` to handle iPhone notches.
-*   **Input Handling:** All inputs must have `font-size: 16px` to prevent iOS Safari from zooming.
-
-### 2. Pricing Engine Logic
-1.  **Metal Value** = Net Weight × Purity Rate (24K/22K/18K).
-2.  **Wastage (VA)** = Metal Value × Percentage.
-3.  **Labor (Making)** = Rate per gram × Net Weight.
-4.  **Stone Charges** = Flat fee added.
-5.  **Subtotal** = Metal + Wastage + Labor + Stone.
-6.  **Final Total** = Subtotal + GST (default 3%).
+## 5. Deployment (Hostinger Node.js)
+- **Root Directory**: `./`
+- **Node Version**: 22.x
+- **Framework**: Express
+- **Build Command**: `npm run build`
+- **Start Command**: `npm start` (runs `node server.js` which is the compiled version of `server.ts`)
 
 ---
-
-## 🛠 Setup & Environment
-
-1.  **Environment Variables:**
-    Ensure `.env` exists with `VITE_API_KEY` (Gemini).
-    
-2.  **Deployment:**
-    Upload `dist/` contents to `public_html/`.
-    Ensure `api/` folder is uploaded and `db_config.php` is updated.
+*This specification is the source of truth for all AuraGold Elite development.*
