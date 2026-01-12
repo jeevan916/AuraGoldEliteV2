@@ -2,52 +2,36 @@
 import { useState, useEffect } from 'react';
 import { WhatsAppLogEntry, WhatsAppTemplate } from '../types';
 import { INITIAL_TEMPLATES } from '../constants';
+import { storageService } from '../services/storageService';
 
 export function useWhatsApp() {
-  const [logs, setLogs] = useState<WhatsAppLogEntry[]>([]);
-  const [templates, setTemplates] = useState<WhatsAppTemplate[]>(INITIAL_TEMPLATES);
+  const [logs, setLogsState] = useState<WhatsAppLogEntry[]>(storageService.getLogs());
+  const [templates, setTemplatesState] = useState<WhatsAppTemplate[]>(storageService.getTemplates().length > 0 ? storageService.getTemplates() : INITIAL_TEMPLATES);
 
   useEffect(() => {
-    // Load Logs
-    try {
-      const savedLogs = localStorage.getItem('aura_whatsapp_logs');
-      if (savedLogs) {
-        const parsed = JSON.parse(savedLogs);
-        if (Array.isArray(parsed)) setLogs(parsed);
-      }
-    } catch (e) {
-      console.warn("Corrupted WhatsApp logs found. Resetting.", e);
-      localStorage.removeItem('aura_whatsapp_logs');
-    }
-    
-    // Load Templates
-    try {
-      const savedTpls = localStorage.getItem('aura_whatsapp_templates');
-      if (savedTpls) {
-        const parsed = JSON.parse(savedTpls);
-        if (Array.isArray(parsed)) {
-            setTemplates(parsed);
-        } else {
-            setTemplates(INITIAL_TEMPLATES);
-        }
-      }
-    } catch (e) {
-      console.warn("Corrupted templates found. Resetting to defaults.", e);
-      localStorage.removeItem('aura_whatsapp_templates');
-      setTemplates(INITIAL_TEMPLATES);
-    }
+    const unsubscribe = storageService.subscribe(() => {
+        setLogsState([...storageService.getLogs()]);
+        const sTpls = storageService.getTemplates();
+        if (sTpls.length > 0) setTemplatesState(sTpls);
+    });
+    return unsubscribe;
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('aura_whatsapp_logs', JSON.stringify(logs));
-  }, [logs]);
+  const setLogs = (newLogs: WhatsAppLogEntry[]) => {
+      setLogsState(newLogs);
+      storageService.setLogs(newLogs);
+  };
 
-  useEffect(() => {
-    localStorage.setItem('aura_whatsapp_templates', JSON.stringify(templates));
-  }, [templates]);
+  const setTemplates = (newTemplates: WhatsAppTemplate[]) => {
+      setTemplatesState(newTemplates);
+      storageService.setTemplates(newTemplates);
+  };
 
   const addLog = (log: WhatsAppLogEntry) => {
-    setLogs(prev => [log, ...prev]);
+    const updated = [log, ...logs];
+    setLogs(updated); // Update React state immediately
+    // StorageService update happens in background via setLogs
+    storageService.setLogs(updated);
   };
 
   return { logs, setLogs, templates, setTemplates, addLog };

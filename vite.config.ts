@@ -8,6 +8,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    // Base set to './' allows deployment to root or subfolder on Hostinger without breaking asset links
+    base: './', 
     define: {
       'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY)
     },
@@ -21,7 +23,8 @@ export default defineConfig(({ mode }) => {
           manualChunks: {
             vendor: ['react', 'react-dom'],
             charts: ['recharts'],
-            pdf: ['jspdf', 'jspdf-autotable']
+            pdf: ['jspdf', 'jspdf-autotable'],
+            genai: ['@google/genai']
           }
         }
       }
