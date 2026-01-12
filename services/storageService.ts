@@ -65,9 +65,18 @@ class StorageService {
 
     try {
       const response = await fetch(API_ENDPOINT);
-      if (!response.ok) throw new Error("Server offline");
+      if (!response.ok) throw new Error(`Server returned ${response.status} ${response.statusText}`);
       
-      const serverData = await response.json();
+      const text = await response.text();
+      let serverData;
+      
+      try {
+        serverData = JSON.parse(text);
+      } catch (e) {
+        // If PHP crashes, it often returns HTML. We log a snippet to help debug.
+        console.error("[Storage] Invalid JSON from server:", text.substring(0, 150));
+        throw new Error("Invalid JSON response from server. Check DB config.");
+      }
       
       // Simple conflict resolution: Server wins if it has data and local is empty, 
       // or if server timestamp is newer. For now, we merge carefully.
@@ -81,8 +90,9 @@ class StorageService {
               console.log("[Storage] Synced from Hostinger Server");
           }
       }
-    } catch (e) {
-      // Silent fail - offline mode
+    } catch (e: any) {
+      // Silent fail - offline mode, but log to console
+      console.debug(`[Storage] Pull skipped: ${e.message}`);
     } finally {
       this.isSyncing = false;
     }
@@ -109,7 +119,11 @@ class StorageService {
            body: JSON.stringify(payload)
        });
 
-       if (!response.ok) throw new Error("Sync failed");
+       if (!response.ok) throw new Error(`Push failed: ${response.status}`);
+       
+       // Verify response is JSON
+       const text = await response.text();
+       try { JSON.parse(text); } catch(e) { throw new Error("Server response not JSON"); }
        
     } catch (e: any) {
         errorService.logWarning('Database', `Sync to Hostinger failed: ${e.message}`);
