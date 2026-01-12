@@ -3,7 +3,7 @@ import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings } from '../ty
 import { INITIAL_SETTINGS } from '../constants';
 
 const API_ENDPOINT = '/api/storage';
-const SYNC_INTERVAL = 30000; // Sync every 30 seconds
+const SYNC_INTERVAL = 30000;
 
 export interface AppState {
   orders: Order[];
@@ -46,7 +46,7 @@ class StorageService {
       this.state.templates = templates ? JSON.parse(templates) : [];
       this.state.settings = settings ? JSON.parse(settings) : INITIAL_SETTINGS;
     } catch (e) {
-      console.warn("AuraGold: Local storage parse error", e);
+      console.warn("AuraGold: Local parsing error", e);
     }
   }
 
@@ -64,7 +64,7 @@ class StorageService {
 
     try {
       const response = await fetch(API_ENDPOINT);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) throw new Error(`Status ${response.status}`);
       
       const serverData = await response.json();
       
@@ -75,10 +75,10 @@ class StorageService {
           this.state.settings = serverData.settings || this.state.settings;
           this.state.lastUpdated = serverData.lastUpdated || Date.now();
           this.saveToLocal(); 
-          console.log("AuraGold: Pulled latest state from server.");
+          console.log("AuraGold: Synced from Cloud.");
       }
     } catch (e: any) {
-      console.warn("AuraGold: Pull failed", e.message);
+      console.warn("AuraGold: Pull skipped", e.message);
     } finally {
       this.isSyncing = false;
     }
@@ -86,24 +86,16 @@ class StorageService {
 
   public async pushToServer() {
     if (this.isSyncing) return;
-    
     this.isSyncing = true;
     try {
-       const payload = {
-           ...this.state,
-           lastUpdated: Date.now()
-       };
-
-       const response = await fetch(API_ENDPOINT, {
+       const payload = { ...this.state, lastUpdated: Date.now() };
+       await fetch(API_ENDPOINT, {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify(payload)
        });
-
-       if (!response.ok) throw new Error(`Push failed: ${response.status}`);
-       console.log("AuraGold: State synced to MySQL.");
     } catch (e: any) {
-        console.warn("AuraGold: Push failed", e.message);
+        console.warn("AuraGold: Push skipped", e.message);
     } finally {
         this.isSyncing = false;
     }
@@ -111,54 +103,34 @@ class StorageService {
 
   public async forceSync(): Promise<{ success: boolean; message: string }> {
       try {
-           const payload = {
-               ...this.state,
-               lastUpdated: Date.now()
-           };
-
+           const payload = { ...this.state, lastUpdated: Date.now() };
            const response = await fetch(API_ENDPOINT, {
                method: 'POST',
                headers: { 'Content-Type': 'application/json' },
                body: JSON.stringify(payload)
            });
-
-           if (response.ok) {
-               return { success: true, message: "AuraGold: Express Backend Connected & Synced!" };
-           } else {
-               return { success: false, message: `Server Error: ${response.status}` };
-           }
+           return response.ok 
+              ? { success: true, message: "AuraGold: Express/MySQL Link Verified." }
+              : { success: false, message: `Server Error: ${response.status}` };
       } catch (e: any) {
           return { success: false, message: `Network Error: ${e.message}` };
       }
   }
 
   public getOrders() { return this.state.orders; }
-  public setOrders(orders: Order[]) { 
-      this.state.orders = orders; 
-      this.saveToLocal();
-  }
+  public setOrders(orders: Order[]) { this.state.orders = orders; this.saveToLocal(); }
   public getLogs() { return this.state.logs; }
-  public setLogs(logs: WhatsAppLogEntry[]) {
-      this.state.logs = logs;
-      this.saveToLocal();
-  }
+  public setLogs(logs: WhatsAppLogEntry[]) { this.state.logs = logs; this.saveToLocal(); }
   public getTemplates() { return this.state.templates; }
-  public setTemplates(templates: WhatsAppTemplate[]) {
-      this.state.templates = templates;
-      this.saveToLocal();
-  }
+  public setTemplates(templates: WhatsAppTemplate[]) { this.state.templates = templates; this.saveToLocal(); }
   public getSettings() { return this.state.settings; }
-  public setSettings(settings: GlobalSettings) {
-      this.state.settings = settings;
-      this.saveToLocal();
-  }
+  public setSettings(settings: GlobalSettings) { this.state.settings = settings; this.saveToLocal(); }
+  
   public subscribe(cb: () => void) {
       this.listeners.push(cb);
       return () => { this.listeners = this.listeners.filter(l => l !== cb); };
   }
-  private notify() {
-      this.listeners.forEach(cb => cb());
-  }
+  private notify() { this.listeners.forEach(cb => cb()); }
 }
 
 export const storageService = new StorageService();

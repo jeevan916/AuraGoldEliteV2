@@ -19,7 +19,6 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 // Database Connection
-// Hostinger typically provides these as env variables or you set them in the Node.js selector
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER,
@@ -29,7 +28,7 @@ const dbConfig = {
 
 const pool = mysql.createPool(dbConfig);
 
-// Initialize Table
+// Initialize Table according to Specification
 async function initDB() {
   try {
     const connection = await pool.getConnection();
@@ -40,16 +39,16 @@ async function initDB() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
-    console.log('AuraGold: Database initialized successfully.');
+    console.log('AuraGold Elite: Database schema verified.');
     connection.release();
   } catch (error) {
-    console.error('AuraGold: Database initialization failed:', error);
+    console.error('AuraGold Elite: Database initialization failed:', error);
   }
 }
 
 initDB();
 
-// API Endpoints
+// API Endpoints for Single-Blob Synchronization
 app.get('/api/storage', async (req, res) => {
   try {
     const [rows]: any = await pool.query('SELECT data FROM app_storage WHERE id = 1');
@@ -59,7 +58,7 @@ app.get('/api/storage', async (req, res) => {
       res.json({ orders: [], logs: [], templates: [], settings: null, lastUpdated: 0 });
     }
   } catch (error: any) {
-    res.status(500).json({ error: 'Failed to fetch data', details: error.message });
+    res.status(500).json({ error: 'Storage fetch failed', details: error.message });
   }
 });
 
@@ -72,23 +71,23 @@ app.post('/api/storage', async (req, res) => {
     );
     res.json({ success: true, timestamp: Date.now() });
   } catch (error: any) {
-    res.status(500).json({ error: 'Failed to save data', details: error.message });
+    res.status(500).json({ error: 'Storage save failed', details: error.message });
   }
 });
 
-// Serve Static Frontend (Production Only)
+// Serve Production React Bundle
 const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
 
+// Catch-all for React Router/Single Page Apps
 app.get('*', (req, res) => {
-  // Check if requesting an API, otherwise serve frontend
   if (!req.path.startsWith('/api')) {
     res.sendFile(path.join(distPath, 'index.html'));
   } else {
-    res.status(404).json({ error: 'API not found' });
+    res.status(404).json({ error: 'Endpoint not found' });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`AuraGold Elite Express Server running on port ${PORT}`);
+  console.log(`AuraGold Elite Express running on port ${PORT}`);
 });
