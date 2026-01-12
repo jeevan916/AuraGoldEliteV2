@@ -124,11 +124,13 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, onSubmit, onCancel }) =
     onSubmit(finalOrder);
   };
 
+  // Fix: explicitly cast the FileList array to File[] to prevent 'unknown' type error in loop
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setIsCompressing(true);
       const urls: string[] = [];
-      for (const file of Array.from(e.target.files)) {
+      const files = Array.from(e.target.files) as File[];
+      for (const file of files) {
         const compressed = await compressImage(file);
         urls.push(compressed);
       }

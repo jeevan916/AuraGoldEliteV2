@@ -3,8 +3,8 @@ import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings } from '../ty
 import { INITIAL_SETTINGS } from '../constants';
 import { errorService } from './errorService';
 
-// Updated endpoint to point to the new hidden builds folder
-const API_ENDPOINT = '.builds/api/server.php';
+// Updated endpoint: Removed the dot (.) from .builds as servers block hidden folders
+const API_ENDPOINT = 'builds/api/server.php';
 const SYNC_INTERVAL = 10000; // 10 seconds
 
 export interface AppState {
@@ -78,7 +78,7 @@ class StorageService {
       
       if (response.status === 404) {
           if (this.backendAvailable) {
-             console.warn(`[Storage] API not found (404) at ${API_ENDPOINT}. Backend files might be missing or in wrong folder.`);
+             console.warn(`[Storage] API not found (404) at ${API_ENDPOINT}. Check if folder is renamed to 'builds' (no dot).`);
              this.backendAvailable = false;
           }
           this.isSyncing = false;
@@ -92,7 +92,7 @@ class StorageService {
       // Check if response is HTML (Common with SPA fallbacks or default 404 pages)
       if (text.trim().startsWith('<')) {
          if (this.backendAvailable) {
-             console.warn(`[Storage] Server returned HTML. Likely SPA fallback (${API_ENDPOINT} not found). Backend disabled.`);
+             console.warn(`[Storage] Server returned HTML instead of JSON. Check ${API_ENDPOINT} path.`);
              this.backendAvailable = false;
          }
          this.isSyncing = false;
@@ -105,7 +105,6 @@ class StorageService {
         serverData = JSON.parse(text);
         this.backendAvailable = true; // If we got JSON, backend is up
       } catch (e) {
-        // Only log if we haven't already determined backend is dodgy
         if (this.backendAvailable) {
              console.error("[Storage] Invalid JSON from server:", text.substring(0, 150));
         }
@@ -119,17 +118,15 @@ class StorageService {
           this.state.logs = Array.isArray(serverData.logs) ? serverData.logs : this.state.logs;
           this.state.templates = Array.isArray(serverData.templates) ? serverData.templates : this.state.templates;
           
-          // Merge Settings
           if (serverData.settings) {
               this.state.settings = { ...this.state.settings, ...serverData.settings };
           }
           
           this.state.lastUpdated = serverData.lastUpdated || Date.now();
           this.saveToLocal(); 
-          // console.log("[Storage] Synced from Server");
       }
     } catch (e: any) {
-      // console.debug(`[Storage] Pull skipped: ${e.message}`);
+      // Silent catch for periodic sync
     } finally {
       this.isSyncing = false;
     }
@@ -163,25 +160,22 @@ class StorageService {
        if (!response.ok) throw new Error(`Push failed: ${response.status}`);
        
        const text = await response.text();
-       
        if (text.trim().startsWith('<')) {
            this.backendAvailable = false;
            return;
        }
-
        try { JSON.parse(text); } catch(e) { throw new Error("Server response not JSON"); }
        
     } catch (e: any) {
-        // Silent fail
+        // Silent catch
     } finally {
         this.isSyncing = false;
     }
   }
 
-  // Manually force a sync attempt and return the result for UI diagnostics
   public async forceSync(): Promise<{ success: boolean; message: string }> {
-      this.backendAvailable = true; // Reset assumption
-      this.isSyncing = false; // Reset lock
+      this.backendAvailable = true; 
+      this.isSyncing = false; 
       
       try {
            const payload = {
@@ -199,13 +193,17 @@ class StorageService {
            });
 
            if (response.status === 404) {
-               return { success: false, message: `Error 404: '${API_ENDPOINT}' not found. Did you move the folder to .builds/api?` };
+               return { success: false, message: `Error 404: '${API_ENDPOINT}' not found. Ensure folder is 'builds' (no dot) and 'server.php' is renamed correctly.` };
+           }
+
+           if (response.status === 403) {
+               return { success: false, message: `Error 403: Forbidden. Your server is blocking access to this folder. Try renaming '.builds' to just 'builds'.` };
            }
 
            const text = await response.text();
            
            if (text.trim().startsWith('<')) {
-               return { success: false, message: `Server returned HTML (likely 404 or Forbidden). Check if '${API_ENDPOINT}' exists and permissions are correct.` };
+               return { success: false, message: `Server returned HTML. This usually means the PHP file wasn't found and the server is showing a 404 page.` };
            }
 
            try {
@@ -215,7 +213,7 @@ class StorageService {
                }
                return { success: true, message: "Connected & Saved Successfully!" };
            } catch (e) {
-               return { success: false, message: `Invalid JSON Response: ${text.substring(0, 100)}...` };
+               return { success: false, message: `Invalid JSON Response. Is 'server.php' correct?` };
            }
 
       } catch (e: any) {
@@ -224,42 +222,35 @@ class StorageService {
   }
 
   // --- ACCESSORS ---
-
   public getOrders() { return this.state.orders; }
   public setOrders(orders: Order[]) { 
       this.state.orders = orders; 
       this.saveToLocal();
-      this.pushToServer(); // Trigger immediate push
+      this.pushToServer();
   }
-
   public getLogs() { return this.state.logs; }
   public setLogs(logs: WhatsAppLogEntry[]) {
       this.state.logs = logs;
       this.saveToLocal();
   }
-
   public getTemplates() { return this.state.templates; }
   public setTemplates(templates: WhatsAppTemplate[]) {
       this.state.templates = templates;
       this.saveToLocal();
   }
-
   public getSettings() { return this.state.settings; }
   public setSettings(settings: GlobalSettings) {
       this.state.settings = settings;
       this.saveToLocal();
-      this.pushToServer(); // Trigger immediate push for settings
+      this.pushToServer();
   }
-
   public subscribe(cb: () => void) {
       this.listeners.push(cb);
       return () => { this.listeners = this.listeners.filter(l => l !== cb); };
   }
-
   public isBackendOnline() {
       return this.backendAvailable;
   }
-
   private notify() {
       this.listeners.forEach(cb => cb());
   }

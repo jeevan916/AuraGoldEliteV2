@@ -31,6 +31,55 @@ import { INITIAL_SETTINGS } from './constants';
 
 type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'CUSTOMERS' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'MARKET' | 'LOGS' | 'SETTINGS' | 'MENU';
 
+// Helper Components (moved to top to prevent uninitialized identifier errors in JSX)
+const TabBarItem = ({ icon, label, active, onClick }: any) => (
+  <button 
+    onClick={onClick}
+    className={`flex flex-col items-center gap-1 w-14 transition-colors ${active ? 'text-amber-600' : 'text-slate-400'}`}
+  >
+    {React.cloneElement(icon, { strokeWidth: active ? 2.5 : 2 })}
+    <span className="text-[10px] font-medium tracking-tight">{label}</span>
+  </button>
+);
+
+const MobileMenuItem = ({ icon, label, onClick, color, count }: any) => (
+  <button onClick={onClick} className="w-full flex items-center gap-4 py-3 active:bg-slate-50 rounded-xl transition-colors">
+    <div className={`w-8 h-8 rounded-lg ${color} flex items-center justify-center text-white shadow-sm`}>
+      {React.cloneElement(icon, { size: 16 })}
+    </div>
+    <span className="flex-1 text-left font-semibold text-slate-900 text-[17px]">{label}</span>
+    {count > 0 && <span className="bg-rose-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{count}</span>}
+    <div className="text-slate-300"><ArrowLeft className="rotate-180" size={16} /></div>
+  </button>
+);
+
+// Fix: explicitly define children in props and make it optional to prevent property missing errors
+const NavGroup = ({ label, children }: { label: string, children?: React.ReactNode }) => (
+  <div className="space-y-3">
+    <p className="px-4 text-[9px] font-black uppercase text-slate-500 tracking-[0.4em] hidden lg:block">{label}</p>
+    <div className="space-y-1">{children}</div>
+  </div>
+);
+
+const NavItem = ({ icon, label, active, onClick, count }: any) => (
+  <button 
+    onClick={onClick} 
+    className={`flex items-center gap-4 w-full p-3 rounded-xl transition-all relative group ${
+      active 
+      ? 'bg-amber-600 text-white font-semibold shadow-lg shadow-amber-900/20' 
+      : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+    }`}
+  >
+    <span className={`shrink-0 transition-transform group-hover:scale-110 ${active ? 'text-white' : 'text-slate-500'}`}>{icon}</span>
+    <span className="text-sm hidden lg:block flex-1 text-left">{label}</span>
+    {count !== undefined && count > 0 && (
+      <span className="absolute right-2 top-2 lg:static bg-rose-600 text-white text-[9px] w-5 h-5 rounded-full flex items-center justify-center font-black">
+        {count}
+      </span>
+    )}
+  </button>
+);
+
 const App: React.FC = () => {
   const [view, setView] = useState<MainView>('DASH');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -259,53 +308,5 @@ const App: React.FC = () => {
     </ErrorBoundary>
   );
 };
-
-const TabBarItem = ({ icon, label, active, onClick }: any) => (
-  <button 
-    onClick={onClick}
-    className={`flex flex-col items-center gap-1 w-14 transition-colors ${active ? 'text-amber-600' : 'text-slate-400'}`}
-  >
-    {React.cloneElement(icon, { strokeWidth: active ? 2.5 : 2 })}
-    <span className="text-[10px] font-medium tracking-tight">{label}</span>
-  </button>
-);
-
-const MobileMenuItem = ({ icon, label, onClick, color, count }: any) => (
-  <button onClick={onClick} className="w-full flex items-center gap-4 py-3 active:bg-slate-50 rounded-xl transition-colors">
-    <div className={`w-8 h-8 rounded-lg ${color} flex items-center justify-center text-white shadow-sm`}>
-      {React.cloneElement(icon, { size: 16 })}
-    </div>
-    <span className="flex-1 text-left font-semibold text-slate-900 text-[17px]">{label}</span>
-    {count > 0 && <span className="bg-rose-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{count}</span>}
-    <div className="text-slate-300"><ArrowLeft className="rotate-180" size={16} /></div>
-  </button>
-);
-
-// Desktop Sidebar components kept for backward compatibility on large screens
-const NavGroup = ({ label, children }: { label: string, children: React.ReactNode }) => (
-  <div className="space-y-3">
-    <p className="px-4 text-[9px] font-black uppercase text-slate-500 tracking-[0.4em] hidden lg:block">{label}</p>
-    <div className="space-y-1">{children}</div>
-  </div>
-);
-
-const NavItem = ({ icon, label, active, onClick, count }: any) => (
-  <button 
-    onClick={onClick} 
-    className={`flex items-center gap-4 w-full p-3 rounded-xl transition-all relative group ${
-      active 
-      ? 'bg-amber-600 text-white font-semibold shadow-lg shadow-amber-900/20' 
-      : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
-    }`}
-  >
-    <span className={`shrink-0 transition-transform group-hover:scale-110 ${active ? 'text-white' : 'text-slate-500'}`}>{icon}</span>
-    <span className="text-sm hidden lg:block flex-1 text-left">{label}</span>
-    {count !== undefined && count > 0 && (
-      <span className="absolute right-2 top-2 lg:static bg-rose-600 text-white text-[9px] w-5 h-5 rounded-full flex items-center justify-center font-black">
-        {count}
-      </span>
-    )}
-  </button>
-);
 
 export default App;
