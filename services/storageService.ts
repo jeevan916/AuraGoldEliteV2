@@ -3,8 +3,8 @@ import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings } from '../ty
 import { INITIAL_SETTINGS } from '../constants';
 import { errorService } from './errorService';
 
-// Updated endpoint: Removed the dot (.) from .builds as servers block hidden folders
-const API_ENDPOINT = 'builds/api/server.php';
+// Updated endpoint: Back to the standard api folder as per user restore
+const API_ENDPOINT = 'api/server.php';
 const SYNC_INTERVAL = 10000; // 10 seconds
 
 export interface AppState {
@@ -78,7 +78,7 @@ class StorageService {
       
       if (response.status === 404) {
           if (this.backendAvailable) {
-             console.warn(`[Storage] API not found (404) at ${API_ENDPOINT}. Check if folder is renamed to 'builds' (no dot).`);
+             console.warn(`[Storage] API not found (404) at ${API_ENDPOINT}. Ensure your 'api' folder contains 'server.php'.`);
              this.backendAvailable = false;
           }
           this.isSyncing = false;
@@ -92,7 +92,7 @@ class StorageService {
       // Check if response is HTML (Common with SPA fallbacks or default 404 pages)
       if (text.trim().startsWith('<')) {
          if (this.backendAvailable) {
-             console.warn(`[Storage] Server returned HTML instead of JSON. Check ${API_ENDPOINT} path.`);
+             console.warn(`[Storage] Server returned HTML instead of JSON. Check if ${API_ENDPOINT} is being redirected.`);
              this.backendAvailable = false;
          }
          this.isSyncing = false;
@@ -193,17 +193,17 @@ class StorageService {
            });
 
            if (response.status === 404) {
-               return { success: false, message: `Error 404: '${API_ENDPOINT}' not found. Ensure folder is 'builds' (no dot) and 'server.php' is renamed correctly.` };
+               return { success: false, message: `Error 404: '${API_ENDPOINT}' not found. Verify 'public_html/api/server.php' exists.` };
            }
 
            if (response.status === 403) {
-               return { success: false, message: `Error 403: Forbidden. Your server is blocking access to this folder. Try renaming '.builds' to just 'builds'.` };
+               return { success: false, message: `Error 403: Forbidden. Your server is blocking access to the api folder.` };
            }
 
            const text = await response.text();
            
            if (text.trim().startsWith('<')) {
-               return { success: false, message: `Server returned HTML. This usually means the PHP file wasn't found and the server is showing a 404 page.` };
+               return { success: false, message: `Server returned HTML. Likely a 404 or redirect. Check API path.` };
            }
 
            try {
@@ -213,7 +213,7 @@ class StorageService {
                }
                return { success: true, message: "Connected & Saved Successfully!" };
            } catch (e) {
-               return { success: false, message: `Invalid JSON Response. Is 'server.php' correct?` };
+               return { success: false, message: `Invalid JSON Response. Is 'server.php' producing valid output?` };
            }
 
       } catch (e: any) {
