@@ -2,7 +2,6 @@
 import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate } from '../types';
 import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES } from '../constants';
 
-// Absolute path to the API endpoint
 const API_ENDPOINT = '/api/storage';
 const SYNC_INTERVAL = 30000; 
 
@@ -46,7 +45,7 @@ class StorageService {
         };
       }
     } catch (e) {
-      console.warn("[Storage] Local cache load failed");
+      console.warn("[Storage] Cache load failed");
     }
   }
 
@@ -63,14 +62,16 @@ class StorageService {
       if (response.ok) {
         const serverData = await response.json();
         if (serverData && serverData.lastUpdated > this.state.lastUpdated) {
+          console.log("[Storage] Pulled newer state from server");
           this.state = { ...this.state, ...serverData };
           this.saveToLocal();
         }
       } else {
-        console.error(`[Storage] Server pull returned ${response.status}`);
+        const errData = await response.json().catch(() => ({}));
+        console.error("[Storage] Server pull returned", response.status, errData.message || "");
       }
     } catch (e) {
-      console.warn("[Storage] Cloud sync pull failed", e);
+      console.warn("[Storage] Pull failed network/connection issue", e);
     } finally {
       this.isSyncing = false;
     }
@@ -87,10 +88,11 @@ class StorageService {
            body: JSON.stringify(payload)
        });
        if (!response.ok) {
-         console.error(`[Storage] Server push returned ${response.status}`);
+           const errData = await response.json().catch(() => ({}));
+           console.error("[Storage] Push failed with", response.status, errData.message || "");
        }
     } catch (e) {
-        console.warn("[Storage] Cloud sync push failed", e);
+        console.warn("[Storage] Push failed network issue", e);
     } finally {
         this.isSyncing = false;
     }
@@ -104,8 +106,11 @@ class StorageService {
                headers: { 'Content-Type': 'application/json' },
                body: JSON.stringify(payload)
            });
-           if (!response.ok) return { success: false, message: `Server error: ${response.status}` };
-           return { success: true, message: "AuraCloud Synchronized!" };
+           if (!response.ok) {
+               const errData = await response.json().catch(() => ({}));
+               return { success: false, message: `Server error ${response.status}: ${errData.message || 'Check logs'}` };
+           }
+           return { success: true, message: "Synchronized with Hostinger!" };
       } catch (e: any) {
           return { success: false, message: `Network error: ${e.message}` };
       }

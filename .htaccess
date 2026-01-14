@@ -1,0 +1,8 @@
+
+RewriteEngine On
+RewriteBase /
+
+# Ensure all requests are handled by the Node.js entry point
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ server.js/$1 [L]
