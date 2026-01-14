@@ -17,7 +17,7 @@ const PORT = process.env.PORT || 3000;
 
 // Production Middleware
 app.use(cors());
-app.use(express.json({ limit: '100mb' }) as any);
+app.use(express.json({ limit: '50mb' }) as any);
 
 // Database configuration
 const dbConfig = {
@@ -27,15 +27,17 @@ const dbConfig = {
   database: process.env.DB_NAME,
   port: parseInt(process.env.DB_PORT || '3306'),
   waitForConnections: true,
-  connectionLimit: 20,
+  connectionLimit: 10,
+  maxIdle: 10, // Max idle connections
+  idleTimeout: 60000, // Idle connections timeout in ms
   queueLimit: 0,
   enableKeepAlive: true,
-  keepAliveInitialDelay: 10000
+  keepAliveInitialDelay: 0
 };
 
 const pool = mysql.createPool(dbConfig);
 
-// Initialize Database
+// Initialize Database Table
 async function initDb() {
   try {
     const connection = await pool.getConnection();
@@ -47,38 +49,13 @@ async function initDb() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
     connection.release();
-    console.log('✅ AuraGold: Production Database Link Established');
+    console.log('✅ AuraGold Backend: Database Pool Initialized');
   } catch (err: any) {
-    console.error('❌ AuraGold: Database connection failed. Verify .env settings:', err.message);
+    console.error('❌ AuraGold Backend: Database connection failure:', err.message);
   }
 }
 
 initDb();
-
-// Helper: Fetch Gold Rate on Backend
-async function fetchGoldRateFromSource(): Promise<{k24: number, k22: number} | null> {
-  return new Promise((resolve) => {
-    https.get('https://www.goodreturns.in/gold-rates/', (res) => {
-      let data = '';
-      res.on('data', (chunk) => data += chunk);
-      res.on('end', () => {
-        try {
-          const match = data.match(/24\s*Carat\s*Gold.*?>\s*₹\s*([\d,]+)/i);
-          if (match && match[1]) {
-            const rate10g = parseFloat(match[1].replace(/,/g, ''));
-            const rate24K = Math.round(rate10g / 10);
-            const rate22K = Math.round(rate24K * 0.916);
-            resolve({ k24: rate24K, k22: rate22K });
-          } else {
-            resolve(null);
-          }
-        } catch (e) {
-          resolve(null);
-        }
-      });
-    }).on('error', () => resolve(null));
-  });
-}
 
 // API: Get App State
 app.get('/api/state', async (req, res) => {
@@ -91,8 +68,8 @@ app.get('/api/state', async (req, res) => {
       res.json({ orders: [], logs: [], lastUpdated: 0 });
     }
   } catch (err: any) {
-    console.error('API Error (State GET):', err.message);
-    res.status(500).json({ error: `Database access failure: ${err.message}` });
+    console.error('State GET Error:', err.message);
+    res.status(500).json({ error: `Database Access Error: ${err.message}` });
   }
 });
 
@@ -109,42 +86,30 @@ app.post('/api/state', async (req, res) => {
     `, [content, lastUpdated]);
     res.json({ success: true, timestamp: lastUpdated });
   } catch (err: any) {
-    console.error('API Error (State POST):', err.message);
-    res.status(500).json({ error: `Persistence failed: ${err.message}` });
+    console.error('State POST Error:', err.message);
+    res.status(500).json({ error: `Database Write Failure: ${err.message}` });
   }
 });
 
-// API: Live Gold Rate
-app.get('/api/gold-rate', async (req, res) => {
-  const rates = await fetchGoldRateFromSource();
-  if (rates) {
-    res.json({ success: true, ...rates });
-  } else {
-    res.status(503).json({ success: false, error: 'Market source offline' });
-  }
-});
-
-// Health Check
+// Health Check Endpoint
 app.get('/api/ping', (req, res) => {
   res.json({ 
-    status: 'pong', 
-    timestamp: Date.now(),
-    engine: {
-      node: process.version,
-      platform: process.platform
-    }
+    status: 'online', 
+    engine: 'Node.js 20',
+    platform: process.platform,
+    timestamp: Date.now() 
   });
 });
 
-// Serve built frontend files
+// Serve Frontend
 const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath) as any);
 
-// SPA routing
+// Fallback for SPA Routing
 app.get('*', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Production Server Ready on Port ${PORT}`);
+  console.log(`🚀 Server listening on Port ${PORT}`);
 });

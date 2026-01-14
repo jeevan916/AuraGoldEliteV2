@@ -12,10 +12,10 @@ export interface AppState {
 }
 
 /**
- * Empty authoritative state. 
+ * Authoritative empty state. 
  * The app will not populate these until the server confirms the connection.
  */
-const EMPTY_STATE: AppState = {
+const AUTHORITATIVE_EMPTY_STATE: AppState = {
   orders: [],
   logs: [],
   templates: [],
@@ -25,7 +25,7 @@ const EMPTY_STATE: AppState = {
 };
 
 class StorageService {
-  private state: AppState = EMPTY_STATE;
+  private state: AppState = AUTHORITATIVE_EMPTY_STATE;
   private listeners: (() => void)[] = [];
   private syncStatus: 'CONNECTED' | 'OFFLINE' | 'SYNCING' | 'ERROR' = 'OFFLINE';
 
@@ -36,8 +36,8 @@ class StorageService {
   }
 
   /**
-   * Authoritative sync from MySQL backend. 
-   * If this fails, the app must halt.
+   * Authoritative sync from MySQL backend via Express API. 
+   * This is a hard requirement for the app to function.
    */
   public async syncFromServer(): Promise<{ success: boolean; error?: string; code?: number }> {
     this.syncStatus = 'SYNCING';
@@ -45,7 +45,7 @@ class StorageService {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
       const res = await fetch('/api/state', {
         headers: { 'Accept': 'application/json' },
@@ -69,15 +69,15 @@ class StorageService {
         this.notify();
         return { 
           success: false, 
-          error: "The gateway returned an invalid response (HTML). This usually means the Node.js process is stopped or a 404/500 page was served." 
+          error: "The server returned HTML instead of JSON. This typically happens when a 404 page is served by Hostinger/Apache instead of the Node.js API." 
         };
       }
 
       const serverData = await res.json();
       
-      // Successfully hydrated from live DB
+      // Hydrate authoritative state
       this.state = {
-        ...EMPTY_STATE,
+        ...AUTHORITATIVE_EMPTY_STATE,
         ...serverData,
         lastUpdated: serverData.lastUpdated || Date.now()
       };
@@ -89,13 +89,15 @@ class StorageService {
     } catch (e: any) {
       this.syncStatus = 'OFFLINE';
       this.notify();
-      const message = e.name === 'AbortError' ? "Connection Timeout (Database Unresponsive)" : (e.message || "Network Gateway Failure");
+      const message = e.name === 'AbortError' 
+        ? "Connection Timeout: The database is taking too long to respond." 
+        : (e.message || "Network Gateway Failure: Cannot reach /api/state");
       return { success: false, error: message };
     }
   }
 
   /**
-   * Persists state to MySQL backend.
+   * Persists authoritative state to live MySQL backend.
    */
   private async syncToBackend() {
     this.syncStatus = 'SYNCING';
@@ -120,8 +122,6 @@ class StorageService {
     }
   }
 
-  // --- Authoritative Getters/Setters ---
-  
   public getOrders() { return this.state.orders; }
   public setOrders(orders: Order[]) { 
     this.state.orders = orders; 
@@ -164,9 +164,9 @@ class StorageService {
   public async forceSync(): Promise<{ success: boolean; message: string }> {
     const res = await this.syncFromServer();
     if (res.success) {
-      return { success: true, message: "Database link active. State synchronized." };
+      return { success: true, message: "Database connection healthy. Data synchronized." };
     } else {
-      return { success: false, message: res.error || "Sync failed." };
+      return { success: false, message: res.error || "Handshake failed." };
     }
   }
 }
