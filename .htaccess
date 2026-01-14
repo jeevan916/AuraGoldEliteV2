@@ -1,16 +1,16 @@
 
 RewriteEngine On
 
-# 1. Force /api requests to be handled by the Node.js application
-# We use the ENV:PORT variable which Hostinger sets for the Node process
+# 1. Forward /api requests to the Node.js application
+# Hostinger Node apps run on a specific port; LiteSpeed handles the proxying.
 RewriteCond %{REQUEST_URI} ^/api/ [NC]
 RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]
 
-# 2. Allow existing files (JS/CSS/Images) to be served directly for speed
-RewriteCond %{REQUEST_FILENAME} -f [OR]
-RewriteCond %{REQUEST_FILENAME} -d
-RewriteRule ^ - [L]
+# 2. Serve static assets directly from the dist folder if they exist
+RewriteCond %{DOCUMENT_ROOT}/dist/$1 -f
+RewriteRule ^(.*)$ dist/$1 [L]
 
-# 3. All other requests (SPA routes) should serve the index.html from dist
-# Express will also handle this, but LiteSpeed doing it is faster
+# 3. Handle SPA routing - send everything else to index.html
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ dist/index.html [L]
