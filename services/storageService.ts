@@ -2,8 +2,8 @@
 import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate } from '../types';
 import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES } from '../constants';
 
-// Use absolute relative path for Node server or proxy
-const API_ENDPOINT = '/api/storage';
+// Use a strict relative path for the Hostinger Node.js proxy
+const API_ENDPOINT = 'api/storage';
 const SYNC_INTERVAL = 30000; 
 
 export interface AppState {
@@ -31,7 +31,6 @@ class StorageService {
   constructor() {
     this.loadFromLocal();
     this.pullFromServer();
-    
     setInterval(() => this.pushToServer(), SYNC_INTERVAL);
   }
 
@@ -40,72 +39,53 @@ class StorageService {
       const data = localStorage.getItem('aura_master_state');
       if (data) {
         const parsed = JSON.parse(data);
-        let mergedSettings = parsed.settings ? { ...INITIAL_SETTINGS, ...parsed.settings } : INITIAL_SETTINGS;
-        
         this.state = {
           ...this.state,
           ...parsed,
-          orders: Array.isArray(parsed.orders) ? parsed.orders : [],
-          logs: Array.isArray(parsed.logs) ? parsed.logs : [],
-          templates: Array.isArray(parsed.templates) ? parsed.templates : [],
-          planTemplates: Array.isArray(parsed.planTemplates) ? parsed.planTemplates : INITIAL_PLAN_TEMPLATES,
-          settings: mergedSettings
+          settings: parsed.settings ? { ...INITIAL_SETTINGS, ...parsed.settings } : INITIAL_SETTINGS
         };
       }
     } catch (e) {
-      console.warn("[Storage] Local cache empty or invalid");
+      console.warn("[Storage] Cache load failed");
     }
   }
 
   private saveToLocal() {
-    try {
-      localStorage.setItem('aura_master_state', JSON.stringify(this.state));
-      this.notify();
-    } catch (e) {
-      console.error("[Storage] Local save failed", e);
-    }
+    localStorage.setItem('aura_master_state', JSON.stringify(this.state));
+    this.notify();
   }
 
   public async pullFromServer() {
     if (this.isSyncing) return;
     this.isSyncing = true;
-
     try {
       const response = await fetch(API_ENDPOINT);
-      if (!response.ok) throw new Error(`HTTP ${response.status} at ${API_ENDPOINT}`);
-      
-      const serverData = await response.json();
-      
-      if (serverData && serverData.lastUpdated > this.state.lastUpdated) {
-          this.state = {
-            ...this.state,
-            ...serverData,
-            lastUpdated: serverData.lastUpdated
-          };
+      if (response.ok) {
+        const serverData = await response.json();
+        if (serverData && serverData.lastUpdated > this.state.lastUpdated) {
+          this.state = { ...this.state, ...serverData };
           this.saveToLocal();
+        }
       }
-    } catch (e: any) {
-      console.warn("[Storage] Remote pull failed. Check if server.js is running:", e.message);
+    } catch (e) {
+      console.warn("[Storage] Cloud sync pull failed");
     } finally {
       this.isSyncing = false;
     }
   }
 
   public async pushToServer() {
-    if (this.isSyncing || this.state.orders.length === 0) return;
+    if (this.isSyncing) return;
     this.isSyncing = true;
-
     try {
        const payload = { ...this.state, lastUpdated: Date.now() };
-       const response = await fetch(API_ENDPOINT, {
+       await fetch(API_ENDPOINT, {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify(payload)
        });
-
-       if (!response.ok) throw new Error(`Push failed: ${response.status}`);
-    } catch (e: any) {
-        console.warn("[Storage] Background push failed (404 usually means Node server is down):", e.message);
+    } catch (e) {
+        console.warn("[Storage] Cloud sync push failed");
     } finally {
         this.isSyncing = false;
     }
@@ -119,11 +99,10 @@ class StorageService {
                headers: { 'Content-Type': 'application/json' },
                body: JSON.stringify(payload)
            });
-
-           if (!response.ok) return { success: false, message: `Server Error ${response.status}: Node process may be stopped.` };
+           if (!response.ok) return { success: false, message: `Server error: ${response.status}` };
            return { success: true, message: "AuraCloud Synchronized!" };
       } catch (e: any) {
-          return { success: false, message: `Connection Refused: ${e.message}` };
+          return { success: false, message: `Network error: ${e.message}` };
       }
   }
 

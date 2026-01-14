@@ -5,7 +5,6 @@ import { fileURLToPath } from 'url';
 import mysql from 'mysql2/promise';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -13,12 +12,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-// Hostinger often provides the PORT via environment variable
 const PORT = process.env.PORT || 3000;
 
-// Initialize Database Pool
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
+  host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD || process.env.DB_PASS,
   database: process.env.DB_NAME,
@@ -26,11 +26,6 @@ const pool = mysql.createPool({
   connectionLimit: 10,
 });
 
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-
-// 1. API ROUTES (Must be defined BEFORE express.static)
 app.get('/api/storage', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT data FROM aura_storage WHERE id = 1');
@@ -40,8 +35,7 @@ app.get('/api/storage', async (req, res) => {
       res.json({ orders: [], logs: [], templates: [], settings: null, lastUpdated: 0 });
     }
   } catch (err) {
-    console.error('Storage Fetch Error:', err);
-    res.status(500).json({ error: 'DB Fetch Failed', details: err.message });
+    res.status(500).json({ error: 'Database fetch failed', details: err.message });
   }
 });
 
@@ -54,8 +48,7 @@ app.post('/api/storage', async (req, res) => {
     );
     res.json({ success: true, timestamp: Date.now() });
   } catch (err) {
-    console.error('Storage Save Error:', err);
-    res.status(500).json({ error: 'DB Save Failed', details: err.message });
+    res.status(500).json({ error: 'Database save failed', details: err.message });
   }
 });
 
@@ -67,22 +60,18 @@ app.get('/api/rates', async (req, res) => {
     const rate22K = Math.round(rate24K * 0.916);
     res.json({ rate24K, rate22K, success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: 'Rates Fetch Failed' });
+    res.status(500).json({ success: false, error: 'External rates unavailable' });
   }
 });
 
-// 2. STATIC FILES (Vite Build)
-const distPath = path.join(__dirname, 'dist');
-app.use(express.static(distPath));
+app.use(express.static(__dirname));
 
-// 3. SPA FALLBACK (Catch-all)
 app.get('*', (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Start Server & Init DB
 app.listen(PORT, async () => {
-  console.log(`>>> AuraGold Node Backend running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS aura_storage (
@@ -91,8 +80,7 @@ app.listen(PORT, async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
-    console.log('>>> MySQL Table Verified');
-  } catch (e) {
-    console.error('>>> DB Init Failed:', e.message);
+  } catch (err) {
+    console.error('DB Init Error:', err.message);
   }
 });
