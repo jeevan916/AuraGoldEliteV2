@@ -4,6 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>AuraGold | Jewellery POS</title>
+    
+    <!-- 1. Preconnect to Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+
+    <!-- 2. Tailwind CSS CDN (Failsafe for styling) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -15,10 +23,13 @@
                     },
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
+                        serif: ['Playfair Display', 'serif'],
+                        'serif-elite': ['Playfair Display', 'serif'],
                     },
                     animation: {
                         fadeIn: 'fadeIn 0.3s ease-in-out',
                         slideUp: 'slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+                        slideDown: 'slideDown 0.3s ease-out',
                     },
                     keyframes: {
                         fadeIn: {
@@ -26,15 +37,20 @@
                             '100%': { opacity: '1' },
                         },
                         slideUp: {
-                            '0%': { transform: 'translateY(100%)' },
-                            '100%': { transform: 'translateY(0)' },
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        slideDown: {
+                            '0%': { transform: 'translateY(-20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
                         }
                     }
                 }
             }
         }
     </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <!-- 3. Global Styles -->
     <style>
         :root { 
             --gold: #B8860B; 
@@ -78,8 +94,9 @@
         }
 
         .glass-nav {
-            background: white;
-            border-top: 2px solid #E5E7EB;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+            border-top: 1px solid #E5E7EB;
             padding-bottom: env(safe-area-inset-bottom);
         }
 
@@ -87,31 +104,33 @@
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 10px; }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "recharts": "https://esm.sh/recharts@^3.6.0",
-    "qrcode": "https://esm.sh/qrcode@^1.5.4",
-    "jspdf": "https://esm.sh/jspdf@^4.0.0",
-    "jspdf-autotable": "https://esm.sh/jspdf-autotable@^5.0.7",
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "express": "https://esm.sh/express@^5.2.1",
-    "path": "https://esm.sh/path@^0.12.7",
-    "url": "https://esm.sh/url@^0.11.4",
-    "mysql2/": "https://esm.sh/mysql2@^3.16.0/",
-    "cors": "https://esm.sh/cors@^2.8.5",
-    "dotenv": "https://esm.sh/dotenv@^17.2.3",
-    "https": "https://esm.sh/https@^1.0.0",
-    "fs": "https://esm.sh/fs@^0.0.1-security"
-  }
-}
-</script>
+
+    <!-- 4. Module Map (Preserved for ESM environments) -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@^19.2.3",
+        "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+        "react/": "https://esm.sh/react@^19.2.3/",
+        "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
+        "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+        "recharts": "https://esm.sh/recharts@^3.6.0",
+        "qrcode": "https://esm.sh/qrcode@^1.5.4",
+        "jspdf": "https://esm.sh/jspdf@^4.0.0",
+        "jspdf-autotable": "https://esm.sh/jspdf-autotable@^5.0.7",
+        "vite": "https://esm.sh/vite@^7.3.1",
+        "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+        "express": "https://esm.sh/express@^5.2.1",
+        "path": "https://esm.sh/path@^0.12.7",
+        "url": "https://esm.sh/url@^0.11.4",
+        "mysql2/": "https://esm.sh/mysql2@^3.16.0/",
+        "cors": "https://esm.sh/cors@^2.8.5",
+        "dotenv": "https://esm.sh/dotenv@^17.2.3",
+        "https": "https://esm.sh/https@^1.0.0",
+        "fs": "https://esm.sh/fs@^0.0.1-security"
+      }
+    }
+    </script>
 </head>
 <body class="antialiased text-slate-900 bg-slate-50">
     <div id="root"></div>
