@@ -4,20 +4,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>AuraGold | Jewellery POS</title>
+    <title>AuraGold | Luxury Jewellery Order System</title>
     
-    <!-- 1. Tailwind Play CDN (Fixes 'tailwind cdn issue') -->
+    <!-- Tailwind Play CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
         theme: {
           extend: {
             colors: {
-              gold: '#B8860B',
-              'gold-light': '#FFD700',
+              gold: {
+                DEFAULT: '#B8860B',
+                light: '#FFD700',
+                dark: '#8B6508',
+                pale: '#EEE8AA'
+              },
+              luxury: '#0F172A'
             },
             fontFamily: {
               sans: ['Inter', 'sans-serif'],
+              serif: ['Playfair Display', 'serif']
             },
             animation: {
               fadeIn: 'fadeIn 0.3s ease-in-out',
@@ -32,50 +38,27 @@
       }
     </script>
 
-    <!-- 2. Preconnect to Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
 
-    <!-- 3. Global Styles -->
     <style type="text/tailwindcss">
         @layer base {
-            :root { 
-                --gold: #B8860B; 
-                --gold-light: #FFD700;
-                --bg: #F3F4F6; 
-            }
             body { 
                 @apply antialiased text-slate-900 bg-slate-50;
                 font-family: 'Inter', sans-serif; 
-                overscroll-behavior-y: none;
                 -webkit-tap-highlight-color: transparent;
             }
+            .font-serif-luxury { font-family: 'Playfair Display', serif; }
         }
         
         @layer components {
-            .pos-card { 
-                @apply bg-white rounded-2xl border border-slate-200 shadow-sm;
-            }
-
-            .action-zone {
-                @apply fixed bottom-[84px] left-0 right-0 p-3 bg-white/90 backdrop-blur-md border-t border-slate-200 z-40 lg:static lg:p-0 lg:bg-transparent lg:border-none;
-            }
-
-            .glass-nav {
-                @apply bg-white/95 backdrop-blur-md border-t border-slate-200;
-                padding-bottom: env(safe-area-inset-bottom);
-            }
-
-            .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-            .custom-scrollbar::-webkit-scrollbar-thumb { @apply bg-slate-300 rounded-full; }
+            .pos-card { @apply bg-white rounded-3xl border border-slate-200 shadow-sm; }
+            .input-gold { @apply w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-base font-bold focus:bg-white focus:border-gold transition-all outline-none; }
+            .btn-gold { @apply bg-luxury text-white px-8 py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all; }
         }
-
-        input { font-size: 16px !important; }
     </style>
 
-    <!-- 4. Module Map -->
     <script type="importmap">
 {
   "imports": {
@@ -85,25 +68,17 @@
     "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
     "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
     "recharts": "https://esm.sh/recharts@^3.6.0",
-    "qrcode": "https://esm.sh/qrcode@^1.5.4",
     "jspdf": "https://esm.sh/jspdf@^4.0.0",
     "jspdf-autotable": "https://esm.sh/jspdf-autotable@^5.0.7",
     "vite": "https://esm.sh/vite@^7.3.1",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
     "express": "https://esm.sh/express@^5.2.1",
-    "mysql2/": "https://esm.sh/mysql2@^3.16.0/",
-    "cors": "https://esm.sh/cors@^2.8.5",
-    "dotenv": "https://esm.sh/dotenv@^17.2.3",
-    "path": "https://esm.sh/path@^0.12.7",
-    "url": "https://esm.sh/url@^0.11.4",
-    "https": "https://esm.sh/https@^1.0.0"
+    "cors": "https://esm.sh/cors@^2.8.5"
   }
 }
 </script>
 </head>
-<body class="antialiased text-slate-900 bg-slate-50">
+<body>
     <div id="root"></div>
-    <!-- Entry point for the dev server. For production, the builder will replace this with the hashed JS bundle. -->
-    <script type="module" src="/index.tsx"></script>
 </body>
 </html>

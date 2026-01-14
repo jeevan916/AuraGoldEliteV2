@@ -1,8 +1,7 @@
 {
-  "name": "AuraGold Elite v2",
-  "description": "Enterprise-grade jewelry order and collection management system",
+  "name": "AuraGold Jewellery POS",
+  "description": "Enterprise jewellery order management system with backend synchronization.",
   "requestFramePermissions": [
-    "camera",
-    "microphone"
+    "camera"
   ]
 }
