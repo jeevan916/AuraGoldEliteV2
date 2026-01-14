@@ -1,4 +1,3 @@
-
 import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate } from '../types';
 import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES, INITIAL_TEMPLATES } from '../constants';
 
@@ -26,6 +25,7 @@ const DEFAULT_STATE: AppState = {
 class StorageService {
   private state: AppState;
   private listeners: (() => void)[] = [];
+  private isSyncing = false;
 
   constructor() {
     this.state = this.loadFromLocal();
@@ -55,19 +55,14 @@ class StorageService {
         localStorage.setItem(KEY_STATE, JSON.stringify(this.state));
         this.notify();
     } catch (e) {
-        console.error("[Storage] Write error", e);
+        console.error("[Storage] Local Write error", e);
     }
   }
 
   private async backgroundSync() {
-    // Safe access to environment variables in Vite
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-
-    if (!apiBaseUrl) {
-      console.warn("[Storage] VITE_API_BASE_URL not defined. Running in Offline/Local-Only mode.");
-      return;
-    }
-
+    // Determine API Base URL
+    const envBase = (import.meta as any).env.VITE_API_BASE_URL;
+    const apiBaseUrl = envBase || window.location.origin;
     const apiUrl = `${apiBaseUrl}/api/storage.php`;
 
     try {
@@ -80,12 +75,37 @@ class StorageService {
             const serverData = await res.json();
             if (serverData && serverData.lastUpdated > this.state.lastUpdated) {
                 this.state = serverData;
-                this.saveToLocal();
-                console.log("[Storage] Synced with backend");
+                localStorage.setItem(KEY_STATE, JSON.stringify(this.state));
+                this.notify();
+                console.log("[Storage] Remote data pulled and synced.");
             }
         }
     } catch (e) {
-        console.warn("[Storage] Backend sync skipped: Offline or Server Unreachable.");
+        console.warn("[Storage] Backend sync skipped. Checking local storage only.");
+    }
+  }
+
+  private async syncToBackend() {
+    if (this.isSyncing) return;
+    this.isSyncing = true;
+
+    const envBase = (import.meta as any).env.VITE_API_BASE_URL;
+    const apiBaseUrl = envBase || window.location.origin;
+    const apiUrl = `${apiBaseUrl}/api/storage.php`;
+
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.state)
+      });
+      if (res.ok) {
+          console.log("[Storage] Remote backup updated.");
+      }
+    } catch (e) {
+      console.error("[Storage] Failed to push state to PHP backend.", e);
+    } finally {
+      this.isSyncing = false;
     }
   }
 
@@ -96,43 +116,32 @@ class StorageService {
       this.syncToBackend();
   }
 
-  private async syncToBackend() {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-    if (!apiBaseUrl) return;
-
-    try {
-      await fetch(`${apiBaseUrl}/api/storage.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(this.state)
-      });
-    } catch (e) {
-      console.error("[Storage] Failed to sync to backend", e);
-    }
-  }
-
   public getLogs() { return this.state.logs; }
   public setLogs(logs: WhatsAppLogEntry[]) { 
       this.state.logs = logs; 
       this.saveToLocal(); 
+      this.syncToBackend();
   }
 
   public getTemplates() { return this.state.templates; }
   public setTemplates(templates: WhatsAppTemplate[]) { 
       this.state.templates = templates; 
       this.saveToLocal(); 
+      this.syncToBackend();
   }
 
   public getPlanTemplates() { return this.state.planTemplates; }
   public setPlanTemplates(templates: PaymentPlanTemplate[]) { 
       this.state.planTemplates = templates; 
       this.saveToLocal(); 
+      this.syncToBackend();
   }
 
   public getSettings() { return this.state.settings; }
   public setSettings(settings: GlobalSettings) { 
       this.state.settings = settings; 
       this.saveToLocal(); 
+      this.syncToBackend();
   }
   
   public subscribe(cb: () => void) {
@@ -143,14 +152,12 @@ class StorageService {
   private notify() { this.listeners.forEach(cb => cb()); }
 
   public async forceSync(): Promise<{ success: boolean; message: string }> {
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-      if (!apiBaseUrl) return { success: false, message: "No Backend Configured" };
-
       try {
           await this.backgroundSync();
-          return { success: true, message: "Storage Sync Successful" };
-      } catch (e) {
-          return { success: false, message: "Sync Failed" };
+          await this.syncToBackend();
+          return { success: true, message: "Hostinger Sync Complete" };
+      } catch (e: any) {
+          return { success: false, message: `Sync Error: ${e.message}` };
       }
   }
 }

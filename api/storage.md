@@ -1,12 +1,19 @@
-
 <?php
+/**
+ * AuraGold Elite - Storage API
+ * Handles saving and loading the full app state.
+ */
+
 require_once 'db_config.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 
+// Ensure the table exists
+// CREATE TABLE IF NOT EXISTS aura_app_state (id INT PRIMARY KEY, content LONGTEXT, last_updated BIGINT);
+
 if ($method === 'GET') {
     try {
-        $stmt = $pdo->query("SELECT content FROM app_state WHERE id = 1");
+        $stmt = $pdo->query("SELECT content FROM aura_app_state WHERE id = 1");
         $row = $stmt->fetch();
         
         header('Content-Type: application/json');
@@ -17,7 +24,7 @@ if ($method === 'GET') {
         }
     } catch (Exception $e) {
         header('Content-Type: application/json', true, 500);
-        echo json_encode(['error' => $e->getMessage()]);
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     }
 }
 
@@ -27,11 +34,10 @@ if ($method === 'POST') {
         $data = json_decode($json, true);
         
         if (!$data) {
-            throw new Exception('Invalid JSON data');
+            throw new Exception('Invalid JSON payload');
         }
 
-        // Upsert logic for a single row state storage
-        $stmt = $pdo->prepare("INSERT INTO app_state (id, content, last_updated) 
+        $stmt = $pdo->prepare("INSERT INTO aura_app_state (id, content, last_updated) 
                                VALUES (1, :content, :last_updated) 
                                ON DUPLICATE KEY UPDATE 
                                content = VALUES(content), 
@@ -46,7 +52,7 @@ if ($method === 'POST') {
         echo json_encode(['success' => true]);
     } catch (Exception $e) {
         header('Content-Type: application/json', true, 500);
-        echo json_encode(['error' => $e->getMessage()]);
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     }
 }
 ?>
