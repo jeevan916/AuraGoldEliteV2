@@ -12,23 +12,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+// Hostinger Node selector injection often uses process.env.PORT
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
+// Increased limit for jewelry image data in state sync
 app.use(express.json({ limit: '50mb' }));
 
-// Serve static files from the 'dist' directory (frontend build)
-// This is critical for Hostinger if you want the backend to serve the UI
+// Static file serving: Assuming dist is in the root and server.js is in backend/
 const distPath = path.join(__dirname, '../dist');
 app.use(express.static(distPath));
 
 let pool;
 
 async function initDb() {
-  console.log('--- AuraGold Backend Initialization ---');
-  console.log(`Time: ${new Date().toISOString()}`);
-  console.log(`Port: ${PORT}`);
-  console.log(`DB Host: ${process.env.DB_HOST || 'localhost'}`);
+  console.log(`[${new Date().toISOString()}] Initializing AuraGold Backend...`);
 
   try {
     pool = mysql.createPool({
@@ -39,13 +37,11 @@ async function initDb() {
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 0
+      enableKeepAlive: true
     });
     
-    // Verify connection immediately
     const connection = await pool.getConnection();
-    console.log('✅ Database Connection: SUCCESS');
+    console.log('✅ Database Connection Verified');
     
     await connection.query(`
       CREATE TABLE IF NOT EXISTS aura_app_state (
@@ -54,30 +50,27 @@ async function initDb() {
         last_updated BIGINT NOT NULL
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
-    console.log('✅ Tables Verified');
     connection.release();
   } catch (err) {
-    console.error('❌ Database Connection: FAILED');
-    console.error(`Error Details: ${err.message}`);
-    // We don't exit the process so the health check route still works
+    console.error('❌ Database Initialization Failed:', err.message);
   }
 }
 
 initDb();
 
-// API ROUTES
+// API Health Check
 app.get("/api/health", (req, res) => {
   res.json({
     status: "online",
-    database: pool ? "connected" : "disconnected",
-    timestamp: Date.now(),
-    uptime: process.uptime()
+    db: pool ? "connected" : "disconnected",
+    timestamp: Date.now()
   });
 });
 
+// App State Management
 app.get("/api/state", async (req, res) => {
   try {
-    if (!pool) return res.status(503).json({ error: "Database not initialized" });
+    if (!pool) return res.status(503).json({ error: "DB Unavailable" });
     const [rows] = await pool.query('SELECT content FROM aura_app_state WHERE id = 1');
     if (rows.length > 0) {
       res.json(JSON.parse(rows[0].content));
@@ -85,14 +78,13 @@ app.get("/api/state", async (req, res) => {
       res.json({ orders: [], logs: [], lastUpdated: 0 });
     }
   } catch (err) {
-    console.error('API Error (Get State):', err.message);
-    res.status(500).json({ error: "Failed to load state from database" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
 app.post("/api/state", async (req, res) => {
   try {
-    if (!pool) return res.status(503).json({ error: "Database not initialized" });
+    if (!pool) return res.status(503).json({ error: "DB Unavailable" });
     const content = JSON.stringify(req.body);
     const now = Date.now();
     await pool.query(
@@ -101,12 +93,13 @@ app.post("/api/state", async (req, res) => {
     );
     res.json({ success: true, timestamp: now });
   } catch (err) {
-    console.error('API Error (Save State):', err.message);
-    res.status(500).json({ error: "Failed to save state to database" });
+    res.status(500).json({ error: "Failed to persist state" });
   }
 });
 
+// Live Gold Rates
 app.get('/api/gold-rate', (req, res) => {
+  // Logic to fetch from external or manual source could go here
   res.json({ 
     k24: 7850, 
     k22: 7180, 
@@ -115,12 +108,11 @@ app.get('/api/gold-rate', (req, res) => {
   });
 });
 
-// Fallback to index.html for SPA routing (must be last)
+// SPA Fallback: Serve index.html for any unknown routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 AuraGold Server listening on port: ${PORT}`);
-  console.log(`Check health at: http://localhost:${PORT}/api/health`);
+  console.log(`🚀 AuraGold Server active on port ${PORT}`);
 });

@@ -8,21 +8,23 @@ export interface GoldRateResponse {
 
 export const goldRateService = {
   /**
-   * Fetches the live gold rate from the application's own backend.
-   * This is the authoritative source for real-world transactions.
+   * Fetches the live gold rate from the local API.
+   * Uses relative pathing to ensure the request is routed through the Hostinger Node proxy correctly.
    */
   async fetchLiveRate(): Promise<GoldRateResponse> {
     try {
-        const response = await fetch('/api/gold-rate');
+        const response = await fetch('/api/gold-rate', {
+          headers: { 'Cache-Control': 'no-cache' }
+        });
+        
         if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error || "Rate service unavailable");
+            throw new Error(`Rate service returned ${response.status}`);
         }
         
         const data = await response.json();
         return {
-            rate24K: data.k24,
-            rate22K: data.k22,
+            rate24K: data.k24 || 0,
+            rate22K: data.k22 || 0,
             success: true
         };
     } catch (e: any) {

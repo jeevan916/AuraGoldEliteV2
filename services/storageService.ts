@@ -58,53 +58,55 @@ class StorageService {
 
   /**
    * Attempts to pull the latest state from the backend.
+   * Uses relative pathing which is required for Hostinger same-origin deployments.
    */
   public async syncFromServer(): Promise<{ success: boolean; message: string }> {
     this.syncStatus = 'SYNCING';
     this.notify();
 
     try {
-      console.log("[Storage] Pinging backend /api/state...");
+      console.log("[Storage] Syncing with local backend...");
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
+      // Using relative URL ensures it works regardless of the domain (e.g., hostingersite.com)
       const res = await fetch('/api/state', {
-        headers: { 'Accept': 'application/json' },
+        headers: { 
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache'
+        },
         signal: controller.signal
       });
       clearTimeout(timeoutId);
 
       if (!res.ok) {
-        const errorText = await res.text();
-        console.error(`[Storage] Backend returned error: ${res.status} ${errorText}`);
-        throw new Error(res.status === 503 ? "Database Link Down" : "Network Error");
+        throw new Error(`Backend Error: ${res.status}`);
       }
 
       const serverData = await res.json();
-      console.log("[Storage] Sync SUCCESS. Received state from server.");
       
       if (serverData && serverData.lastUpdated > (this.state.lastUpdated || 0)) {
-          console.log("[Storage] Server state is newer. Updating local cache.");
+          console.log("[Storage] Remote state is newer. Merging...");
           this.state = { ...DEFAULT_STATE, ...serverData };
           this.saveToLocal();
-      } else {
-          console.log("[Storage] Local state is up to date.");
+      } else if (serverData) {
+          console.log("[Storage] Remote state found but local is newer or equal.");
       }
 
       this.syncStatus = 'CONNECTED';
       this.notify();
-      return { success: true, message: "Live Database Linked" };
+      return { success: true, message: "Database Linked" };
 
     } catch (e: any) {
-      console.warn("[Storage] Backend sync failed, using local storage:", e.message);
+      console.warn("[Storage] Remote sync skipped or failed. Using Local Cache.", e.message);
       this.syncStatus = 'LOCAL_FALLBACK';
       this.notify();
-      return { success: false, message: "Local Fallback Mode Active" };
+      return { success: false, message: "Local Mode" };
     }
   }
 
   /**
-   * Pushes current state to MySQL.
+   * Pushes current state to the backend database.
    */
   private async syncToBackend() {
     this.saveToLocal();
@@ -118,21 +120,17 @@ class StorageService {
       });
       
       if (res.ok) {
-        console.log("[Storage] State pushed to backend successfully.");
         this.syncStatus = 'CONNECTED';
       } else {
-        console.warn("[Storage] State push failed.");
         this.syncStatus = 'LOCAL_FALLBACK';
       }
     } catch (e) {
-      console.error("[Storage] Push error:", e);
       this.syncStatus = 'LOCAL_FALLBACK';
     } finally {
       this.notify();
     }
   }
 
-  // Authoritative Getters/Setters
   public getOrders() { return this.state.orders; }
   public setOrders(orders: Order[]) { 
     this.state.orders = orders; 
