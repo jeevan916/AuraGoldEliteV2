@@ -3,8 +3,10 @@ export type Purity = '18K' | '22K' | '24K';
 
 export enum OrderStatus {
   ACTIVE = 'ACTIVE',
-  COMPLETED = 'COMPLETED',
-  OVERDUE = 'OVERDUE'
+  COMPLETED = 'COMPLETED', // Fully paid, but item still in custody
+  OVERDUE = 'OVERDUE',
+  DELIVERED = 'DELIVERED', // Handed over and archived
+  CANCELLED = 'CANCELLED'
 }
 
 export enum ProductionStatus {
@@ -99,6 +101,12 @@ export interface GlobalSettings {
   whatsappPhoneNumberId?: string;
   whatsappBusinessAccountId?: string;
   whatsappBusinessToken?: string;
+  razorpayKeyId?: string;
+  razorpayKeySecret?: string;
+  setuSchemeId?: string;
+  setuSecret?: string;
+  msg91AuthKey?: string;
+  msg91SenderId?: string;
 }
 
 export type MessageStatus = 'SENT' | 'DELIVERED' | 'READ' | 'FAILED' | 'QUEUED';

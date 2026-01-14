@@ -1,10 +1,10 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutDashboard, ShoppingBag, Users, ReceiptIndianRupee, 
   MessageSquare, Globe, Settings as SettingsIcon, AlertTriangle, 
   Plus, ShieldCheck, LogOut, Briefcase, Menu, X, ArrowLeft, Home,
-  MoreHorizontal, PlusCircle
+  MoreHorizontal, PlusCircle, Sparkles, Zap, BrainCircuit, FileText, 
+  ScrollText, Activity, Server, Calculator
 } from 'lucide-react';
 
 // Modules
@@ -15,6 +15,9 @@ import CustomerList from './components/CustomerList';
 import PaymentCollections from './components/PaymentCollections';
 import WhatsAppPanel from './components/WhatsAppPanel';
 import WhatsAppTemplates from './components/WhatsAppTemplates';
+import WhatsAppLogs from './components/WhatsAppLogs';
+import NotificationCenter from './components/NotificationCenter';
+import PlanManager from './components/PlanManager'; // Restored
 import MarketIntelligence from './components/MarketIntelligence';
 import Settings from './components/Settings';
 import ErrorLogPanel from './components/ErrorLogPanel';
@@ -26,83 +29,80 @@ import { useWhatsApp } from './hooks/useWhatsApp';
 import { errorService } from './services/errorService';
 import { goldRateService } from './services/goldRateService';
 import { storageService } from './services/storageService';
-import { Order, GlobalSettings, AppResolutionPath, Customer } from './types';
-import { INITIAL_SETTINGS } from './constants';
+import { geminiService } from './services/geminiService';
+import { whatsappService } from './services/whatsappService';
+import { Order, GlobalSettings, AppResolutionPath, Customer, NotificationTrigger, PaymentPlanTemplate } from './types';
+import { INITIAL_PLAN_TEMPLATES } from './constants';
 
-type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'CUSTOMERS' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'MARKET' | 'LOGS' | 'SETTINGS' | 'MENU';
+// Updated View Types including restored features
+type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'CUSTOMERS' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU';
 
-// Helper Components (moved to top to prevent uninitialized identifier errors in JSX)
 const TabBarItem = ({ icon, label, active, onClick }: any) => (
   <button 
     onClick={onClick}
-    className={`flex flex-col items-center gap-1 w-14 transition-colors ${active ? 'text-amber-600' : 'text-slate-400'}`}
+    className={`flex flex-col items-center gap-1 w-14 transition-all ${active ? 'text-amber-600' : 'text-slate-400 opacity-60'}`}
   >
-    {React.cloneElement(icon, { strokeWidth: active ? 2.5 : 2 })}
-    <span className="text-[10px] font-medium tracking-tight">{label}</span>
-  </button>
-);
-
-const MobileMenuItem = ({ icon, label, onClick, color, count }: any) => (
-  <button onClick={onClick} className="w-full flex items-center gap-4 py-3 active:bg-slate-50 rounded-xl transition-colors">
-    <div className={`w-8 h-8 rounded-lg ${color} flex items-center justify-center text-white shadow-sm`}>
-      {React.cloneElement(icon, { size: 16 })}
+    <div className={`p-1.5 rounded-xl ${active ? 'bg-amber-50' : ''}`}>
+        {React.cloneElement(icon, { size: 22 })}
     </div>
-    <span className="flex-1 text-left font-semibold text-slate-900 text-[17px]">{label}</span>
-    {count > 0 && <span className="bg-rose-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{count}</span>}
-    <div className="text-slate-300"><ArrowLeft className="rotate-180" size={16} /></div>
+    <span className={`text-[9px] font-black uppercase tracking-tighter ${active ? 'opacity-100' : 'opacity-80'}`}>{label}</span>
   </button>
 );
 
-// Fix: explicitly define children in props and make it optional to prevent property missing errors
-const NavGroup = ({ label, children }: { label: string, children?: React.ReactNode }) => (
-  <div className="space-y-3">
-    <p className="px-4 text-[9px] font-black uppercase text-slate-500 tracking-[0.4em] hidden lg:block">{label}</p>
-    <div className="space-y-1">{children}</div>
-  </div>
-);
-
-const NavItem = ({ icon, label, active, onClick, count }: any) => (
+const MenuItem = ({ icon, label, desc, onClick, colorClass }: any) => (
   <button 
-    onClick={onClick} 
-    className={`flex items-center gap-4 w-full p-3 rounded-xl transition-all relative group ${
-      active 
-      ? 'bg-amber-600 text-white font-semibold shadow-lg shadow-amber-900/20' 
-      : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
-    }`}
+    onClick={onClick}
+    className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all flex flex-col gap-3 text-left active:scale-[0.98]"
   >
-    <span className={`shrink-0 transition-transform group-hover:scale-110 ${active ? 'text-white' : 'text-slate-500'}`}>{icon}</span>
-    <span className="text-sm hidden lg:block flex-1 text-left">{label}</span>
-    {count !== undefined && count > 0 && (
-      <span className="absolute right-2 top-2 lg:static bg-rose-600 text-white text-[9px] w-5 h-5 rounded-full flex items-center justify-center font-black">
-        {count}
-      </span>
-    )}
+    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${colorClass}`}>
+       {React.cloneElement(icon, { size: 24 })}
+    </div>
+    <div>
+       <h3 className="font-bold text-slate-800 text-sm">{label}</h3>
+       <p className="text-[10px] text-slate-500 font-medium leading-tight mt-1">{desc}</p>
+    </div>
   </button>
 );
 
 const App: React.FC = () => {
   const [view, setView] = useState<MainView>('DASH');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [waInitialContact, setWaInitialContact] = useState<string | null>(null);
   
   const { orders, addOrder, recordPayment, updateItemStatus, updateOrder } = useOrders();
   const { logs, templates, addLog, setTemplates } = useWhatsApp();
-  
-  // Use Storage Service for Settings
   const [settings, setSettingsState] = useState<GlobalSettings>(storageService.getSettings());
+  
+  // Plan Manager State
+  const [planTemplates, setPlanTemplates] = useState<PaymentPlanTemplate[]>(storageService.getPlanTemplates().length > 0 ? storageService.getPlanTemplates() : INITIAL_PLAN_TEMPLATES);
+
+  // Strategy Center State
+  const [notifications, setNotifications] = useState<NotificationTrigger[]>([]);
+  const [isStrategyLoading, setStrategyLoading] = useState(false);
+  const [sendingNotifId, setSendingNotifId] = useState<string | null>(null);
 
   const setSettings = (newSettings: GlobalSettings) => {
     setSettingsState(newSettings);
     storageService.setSettings(newSettings);
   };
+  
+  const handleUpdatePlans = (newPlans: PaymentPlanTemplate[]) => {
+      setPlanTemplates(newPlans);
+      storageService.setPlanTemplates(newPlans);
+  };
 
   const [errors, setErrors] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
 
-  // Subscribe to storage changes to keep settings in sync (e.g. from server pull)
+  // Expose setView to components
+  useEffect(() => {
+    (window as any).dispatchView = (v: MainView) => setView(v);
+  }, []);
+
   useEffect(() => {
     const unsubscribe = storageService.subscribe(() => {
        setSettingsState(storageService.getSettings());
+       const plans = storageService.getPlanTemplates();
+       if (plans.length > 0) setPlanTemplates(plans);
     });
     return unsubscribe;
   }, []);
@@ -132,6 +132,61 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // --- LOGIC: Strategy Engine (Automated Collection) ---
+  const handleRunStrategy = async () => {
+    setStrategyLoading(true);
+    try {
+        const triggers: NotificationTrigger[] = [];
+        const overdueOrders = orders.filter(o => {
+            const paid = o.payments.reduce((a,c) => a + c.amount, 0);
+            return paid < o.totalAmount && o.paymentPlan.milestones.some(m => m.status !== 'PAID' && m.dueDate < new Date().toISOString());
+        });
+
+        // Generate strategies for overdue orders
+        for (const o of overdueOrders.slice(0, 5)) { // Limit to 5 for demo to save API tokens
+            const strat = await geminiService.generateStrategicNotification(o, 'OVERDUE', settings.currentGoldRate24K);
+            triggers.push({
+                id: `strat-${o.id}-${Date.now()}`,
+                customerName: o.customerName,
+                type: 'OVERDUE',
+                message: strat.message || `Reminder: Payment pending for Order #${o.id}`,
+                date: new Date().toISOString(),
+                sent: false,
+                tone: strat.tone || 'POLITE',
+                strategyReasoning: strat.reasoning || 'Automated scheduled check.'
+            });
+        }
+        setNotifications(triggers);
+    } catch(e) {
+        console.error("Strategy generation failed", e);
+        errorService.logError('AI Strategy', 'Failed to generate strategies', 'MEDIUM');
+    } finally {
+        setStrategyLoading(false);
+    }
+  };
+
+  const handleSendNotification = async (id: string) => {
+    setSendingNotifId(id);
+    const notif = notifications.find(n => n.id === id);
+    if (!notif) return setSendingNotifId(null);
+
+    // Heuristic to find contact
+    const order = orders.find(o => o.customerName === notif.customerName);
+    
+    if (order) {
+        const res = await whatsappService.sendMessage(order.customerContact, notif.message, notif.customerName, 'AI Strategy Auto-Send');
+        if (res.success && res.logEntry) {
+            addLog(res.logEntry);
+            setNotifications(prev => prev.map(n => n.id === id ? { ...n, sent: true } : n));
+        } else {
+            alert("Failed to send: " + res.error);
+        }
+    } else {
+        alert("Could not find customer contact details.");
+    }
+    setSendingNotifId(null);
+  };
+
   const customers = useMemo(() => {
     const map = new Map<string, Customer>();
     orders.forEach(o => {
@@ -157,150 +212,135 @@ const App: React.FC = () => {
 
   const activeOrder = orders.find(o => o.id === selectedOrderId);
 
-  // Helper to handle back navigation on mobile
-  const handleBack = () => {
-    if (view === 'ORDER_DETAILS') setView('CUSTOMERS');
-    else if (view === 'ORDER_NEW') setView('DASH');
-    else setView('DASH');
-  };
-
   const getViewTitle = () => {
     switch(view) {
-      case 'DASH': return 'Dashboard';
+      case 'DASH': return 'Collection Queue';
       case 'ORDER_NEW': return 'New Booking';
-      case 'ORDER_DETAILS': return 'Order Details';
-      case 'CUSTOMERS': return 'Clients';
-      case 'COLLECTIONS': return 'Collections';
-      case 'WHATSAPP': return 'Chats';
-      case 'SETTINGS': return 'Settings';
-      case 'MENU': return 'More';
+      case 'ORDER_DETAILS': return 'Order Ledger';
+      case 'CUSTOMERS': return 'Client Directory';
+      case 'COLLECTIONS': return 'Revenue Recovery';
+      case 'WHATSAPP': return 'Secure Chats';
+      case 'STRATEGY': return 'AI Collection Strategy';
+      case 'TEMPLATES': return 'Template Architect';
+      case 'PLANS': return 'Payment Schemes';
+      case 'LOGS': return 'Communication Logs';
+      case 'MARKET': return 'Market Intelligence';
+      case 'SYS_LOGS': return 'System Diagnostics';
+      case 'SETTINGS': return 'System Settings';
+      case 'MENU': return 'Command Center';
       default: return 'AuraGold';
     }
   };
 
   return (
     <ErrorBoundary>
-      <div className="flex h-screen overflow-hidden bg-[#f2f2f7]">
+      <div className="flex h-[100dvh] overflow-hidden bg-[#F3F4F6] text-slate-900">
         
-        {/* DESKTOP SIDEBAR (Hidden on Mobile) */}
-        <aside className="hidden lg:flex w-72 bg-[#0f172a] flex-col px-6 py-8 text-white shrink-0 z-50">
-          <div className="mb-12 flex items-center gap-3 px-2">
-            <div className="w-10 h-10 bg-gradient-to-tr from-amber-600 to-amber-400 rounded-xl flex items-center justify-center shadow-lg shadow-amber-900/40">
-              <Briefcase size={20} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-serif-elite italic font-black text-amber-500 leading-none">AuraGold</h1>
-              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-[0.3em] mt-1">Enterprise Elite</p>
-            </div>
-          </div>
-          <nav className="flex-1 space-y-6 overflow-y-auto custom-scrollbar pr-1">
-             <NavGroup label="Insights">
-              <NavItem icon={<LayoutDashboard size={18}/>} label="Dashboard" active={view==='DASH'} onClick={()=>setView('DASH')} />
-              <NavItem icon={<Globe size={18}/>} label="Market Intel" active={view==='MARKET'} onClick={()=>setView('MARKET')} />
-            </NavGroup>
-            <NavGroup label="Commerce">
-              <NavItem icon={<Plus size={18}/>} label="New Booking" active={view==='ORDER_NEW'} onClick={()=>setView('ORDER_NEW')} />
-              <NavItem icon={<ShoppingBag size={18}/>} label="Order Ledger" active={view==='ORDER_DETAILS'} onClick={() => setView('ORDER_DETAILS')} />
-              <NavItem icon={<Users size={18}/>} label="Client Directory" active={view==='CUSTOMERS'} onClick={()=>setView('CUSTOMERS')} />
-            </NavGroup>
-            <NavGroup label="Operations">
-              <NavItem icon={<ReceiptIndianRupee size={18}/>} label="Collections" active={view==='COLLECTIONS'} onClick={()=>setView('COLLECTIONS')} />
-              <NavItem icon={<MessageSquare size={18}/>} label="WhatsApp Hub" active={view==='WHATSAPP'} onClick={()=>setView('WHATSAPP')} />
-              <NavItem icon={<ShieldCheck size={18}/>} label="Meta Templates" active={view==='TEMPLATES'} onClick={()=>setView('TEMPLATES')} />
-            </NavGroup>
-          </nav>
-        </aside>
-
-        {/* MAIN CONTENT AREA */}
-        <main className="flex-1 flex flex-col h-full relative w-full">
+        {/* Main Content Area */}
+        <main className="flex-1 flex flex-col h-full relative w-full overflow-hidden">
           
-          {/* MOBILE HEADER (Glassmorphic) */}
-          <header className="lg:hidden glass-header px-4 py-3 flex items-center justify-between transition-all duration-200">
+          {/* App Bar */}
+          <header className="bg-white border-b px-4 py-4 flex items-center justify-between z-40 sticky top-0 shadow-sm">
              <div className="flex items-center gap-3">
-               {(view !== 'DASH' && view !== 'MENU') ? (
-                 <button onClick={handleBack} className="p-2 -ml-2 text-amber-600 active:opacity-50">
-                    <ArrowLeft size={24} strokeWidth={2.5} />
+               {view !== 'DASH' ? (
+                 <button onClick={() => setView('DASH')} className="p-1 text-slate-900 active:scale-90 transition-transform">
+                    <ArrowLeft size={24} />
                  </button>
                ) : (
-                  <div className="w-8 h-8 bg-gradient-to-tr from-amber-600 to-amber-400 rounded-lg flex items-center justify-center shadow-sm">
-                    <Briefcase size={16} className="text-white" />
-                  </div>
-               )}
-               <h1 className="text-xl font-bold tracking-tight text-slate-900">{getViewTitle()}</h1>
-             </div>
-             <div className="flex items-center gap-2">
-                {view === 'DASH' && (
-                  <button onClick={() => setView('ORDER_NEW')} className="text-amber-600 active:opacity-50">
-                    <PlusCircle size={28} />
+                  <button onClick={() => setView('MENU')} className="w-9 h-9 bg-slate-900 rounded-xl flex items-center justify-center shadow-lg active:scale-90 transition-transform">
+                    <Menu size={20} className="text-white" />
                   </button>
-                )}
+               )}
+               <h1 className="text-xl font-black tracking-tight text-slate-900 truncate max-w-[200px]">{getViewTitle()}</h1>
+             </div>
+             <div className="flex items-center gap-3">
+                 <button onClick={()=>setView('SETTINGS')} className="p-2 text-slate-400 active:rotate-90 transition-all"><SettingsIcon size={20}/></button>
+                 {view === 'DASH' && (
+                    <button onClick={() => setView('ORDER_NEW')} className="w-11 h-11 bg-amber-600 text-white rounded-2xl flex items-center justify-center shadow-xl active:scale-90 transition-transform">
+                      <Plus size={28} />
+                    </button>
+                 )}
              </div>
           </header>
 
-          {/* SCROLLABLE CONTENT */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar pb-24 lg:pb-0 p-4 lg:p-10 w-full">
-            <div className="max-w-[1500px] mx-auto space-y-4">
+          {/* Main Scroller */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-4 lg:p-10 w-full pb-[120px]">
+            <div className="max-w-4xl mx-auto">
               {view === 'DASH' && <Dashboard orders={orders} currentRates={{ k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K }} />}
-              {view === 'ORDER_NEW' && <OrderForm settings={settings} onSubmit={(o) => { addOrder(o); setView('ORDER_DETAILS'); setSelectedOrderId(o.id); }} onCancel={() => setView('DASH')} />}
-              {view === 'ORDER_DETAILS' && (activeOrder ? <OrderDetails order={activeOrder} settings={settings} onBack={() => setView('CUSTOMERS')} onUpdateStatus={(itemId, status) => updateItemStatus(activeOrder.id, itemId, status)} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} onSendPaymentRequest={()=>{}} onTriggerLapse={()=>{}} logs={logs} onAddLog={addLog} /> : <div className="text-center py-20 text-slate-400 font-medium">Select an order from the ledger to manage.</div>)}
-              {view === 'CUSTOMERS' && <CustomerList customers={customers} orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onMessageSent={addLog} />}
-              {view === 'COLLECTIONS' && <PaymentCollections orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onSendWhatsApp={()=>{}} settings={settings} />}
-              {view === 'WHATSAPP' && <WhatsAppPanel logs={logs} customers={customers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} initialContact={waInitialContact} />}
-              {view === 'TEMPLATES' && <WhatsAppTemplates templates={templates} onUpdate={setTemplates} />}
-              {view === 'MARKET' && <MarketIntelligence />}
-              {view === 'LOGS' && <ErrorLogPanel errors={errors} activities={activities} onClear={() => errorService.clearErrors()} onResolveAction={(path)=>{setView(path.toUpperCase() as any)}} />}
-              {view === 'SETTINGS' && <Settings settings={settings} onUpdate={setSettings} />}
               
-              {/* MOBILE MENU VIEW (Replaces Sidebar on Mobile) */}
+              {/* COMMAND MENU (The Hub for Power Features) */}
               {view === 'MENU' && (
-                <div className="space-y-6 animate-fadeIn pb-10">
-                   <div className="ios-card p-4">
-                      <div className="space-y-1">
-                          <MobileMenuItem icon={<ReceiptIndianRupee size={20}/>} label="Collections" onClick={()=>{setView('COLLECTIONS')}} color="bg-emerald-500" />
-                          <div className="h-[1px] bg-slate-100 ml-12" />
-                          <MobileMenuItem icon={<MessageSquare size={20}/>} label="WhatsApp Hub" onClick={()=>{setView('WHATSAPP')}} color="bg-green-500" />
-                          <div className="h-[1px] bg-slate-100 ml-12" />
-                          <MobileMenuItem icon={<ShieldCheck size={20}/>} label="Templates" onClick={()=>{setView('TEMPLATES')}} color="bg-blue-500" />
-                      </div>
+                <div className="animate-fadeIn">
+                   <div className="mb-6">
+                      <h2 className="text-2xl font-black text-slate-800">Apps & Tools</h2>
+                      <p className="text-sm text-slate-500">Manage automation, templates, and system health.</p>
                    </div>
-
-                   <div className="ios-card p-4">
-                      <div className="space-y-1">
-                          <MobileMenuItem icon={<Globe size={20}/>} label="Market Intel" onClick={()=>{setView('MARKET')}} color="bg-indigo-500" />
-                          <div className="h-[1px] bg-slate-100 ml-12" />
-                          <MobileMenuItem icon={<AlertTriangle size={20}/>} label="System Logs" onClick={()=>{setView('LOGS')}} count={errors.length} color="bg-orange-500" />
-                          <div className="h-[1px] bg-slate-100 ml-12" />
-                          <MobileMenuItem icon={<SettingsIcon size={20}/>} label="Settings" onClick={()=>{setView('SETTINGS')}} color="bg-slate-500" />
-                      </div>
+                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <MenuItem 
+                         icon={<BrainCircuit />} label="AI Strategy" desc="Automated Collection Engine" 
+                         colorClass="bg-amber-100 text-amber-600" onClick={() => setView('STRATEGY')} 
+                      />
+                      <MenuItem 
+                         icon={<Calculator />} label="Plan Manager" desc="AI Payment Schemes" 
+                         colorClass="bg-violet-100 text-violet-600" onClick={() => setView('PLANS')} 
+                      />
+                      <MenuItem 
+                         icon={<FileText />} label="Templates" desc="Meta WhatsApp Manager" 
+                         colorClass="bg-blue-100 text-blue-600" onClick={() => setView('TEMPLATES')} 
+                      />
+                      <MenuItem 
+                         icon={<ScrollText />} label="Message Logs" desc="Audit Communication History" 
+                         colorClass="bg-emerald-100 text-emerald-600" onClick={() => setView('LOGS')} 
+                      />
+                      <MenuItem 
+                         icon={<Globe />} label="Market Intel" desc="Live Rates & Charts" 
+                         colorClass="bg-indigo-100 text-indigo-600" onClick={() => setView('MARKET')} 
+                      />
+                      <MenuItem 
+                         icon={<Activity />} label="System Logs" desc="Diagnostics & Repair" 
+                         colorClass="bg-slate-100 text-slate-600" onClick={() => setView('SYS_LOGS')} 
+                      />
+                      <MenuItem 
+                         icon={<SettingsIcon />} label="Settings" desc="Global Configuration" 
+                         colorClass="bg-gray-100 text-gray-600" onClick={() => setView('SETTINGS')} 
+                      />
                    </div>
-
-                   <button className="w-full bg-white text-rose-600 font-bold py-4 rounded-2xl shadow-sm active:scale-95 transition-transform">
-                      Log Out
-                   </button>
-                   
-                   <p className="text-center text-xs text-slate-400 font-medium">AuraGold v3.1.0 (iOS Build)</p>
                 </div>
               )}
+
+              {view === 'ORDER_NEW' && <OrderForm settings={settings} planTemplates={planTemplates} onSubmit={(o) => { addOrder(o); setView('ORDER_DETAILS'); setSelectedOrderId(o.id); }} onCancel={() => setView('DASH')} />}
+              {view === 'ORDER_DETAILS' && (activeOrder ? <OrderDetails order={activeOrder} settings={settings} onBack={() => setView('DASH')} onUpdateStatus={(itemId, status) => updateItemStatus(activeOrder.id, itemId, status)} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} onSendPaymentRequest={()=>{}} onTriggerLapse={()=>{}} logs={logs} onAddLog={addLog} /> : <div className="text-center py-20 text-slate-400 font-medium">Please select an order.</div>)}
+              {view === 'CUSTOMERS' && <CustomerList customers={customers} orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onMessageSent={addLog} />}
+              {view === 'COLLECTIONS' && <PaymentCollections orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onSendWhatsApp={()=>{}} settings={settings} />}
+              
+              {/* RESTORED FEATURES */}
+              {view === 'STRATEGY' && (
+                <NotificationCenter 
+                   notifications={notifications} 
+                   onRefresh={handleRunStrategy} 
+                   loading={isStrategyLoading}
+                   onSend={handleSendNotification}
+                   isSending={sendingNotifId}
+                />
+              )}
+              {view === 'TEMPLATES' && <WhatsAppTemplates templates={templates} onUpdate={setTemplates} />}
+              {view === 'PLANS' && <PlanManager templates={planTemplates} onUpdate={handleUpdatePlans} />}
+              {view === 'LOGS' && <WhatsAppLogs logs={logs} onViewChat={(phone) => { setView('WHATSAPP'); (window as any).initialChatContact = phone; }} />}
+              {view === 'WHATSAPP' && <WhatsAppPanel logs={logs} customers={customers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} initialContact={(window as any).initialChatContact} />}
+              
+              {view === 'MARKET' && <MarketIntelligence />}
+              {view === 'SYS_LOGS' && <ErrorLogPanel errors={errors} onClear={() => errorService.clearErrors()} activities={activities} onResolveAction={(path) => path !== 'none' && (path === 'whatsapp' ? setView('WHATSAPP') : path === 'templates' ? setView('TEMPLATES') : setView('SETTINGS'))} />}
+              {view === 'SETTINGS' && <Settings settings={settings} onUpdate={setSettings} />}
             </div>
           </div>
 
-          {/* MOBILE BOTTOM TAB BAR (Glassmorphic) */}
-          <div className="lg:hidden glass-nav fixed bottom-0 w-full pb-[max(env(safe-area-inset-bottom),20px)] pt-3 px-6 flex justify-between items-end z-50">
-             <TabBarItem icon={<Home size={24} />} label="Home" active={view === 'DASH'} onClick={() => setView('DASH')} />
-             <TabBarItem icon={<Users size={24} />} label="Clients" active={view === 'CUSTOMERS' || view === 'ORDER_DETAILS'} onClick={() => setView('CUSTOMERS')} />
-             
-             {/* Center Action Button */}
-             <div className="relative -top-5">
-               <button 
-                onClick={() => setView('ORDER_NEW')}
-                className="w-14 h-14 bg-slate-900 rounded-full shadow-xl shadow-slate-900/30 flex items-center justify-center text-amber-400 active:scale-90 transition-transform"
-               >
-                 <Plus size={28} strokeWidth={3} />
-               </button>
-             </div>
-
-             <TabBarItem icon={<ShoppingBag size={24} />} label="Orders" active={view === 'ORDER_DETAILS' && !selectedOrderId} onClick={() => { setSelectedOrderId(null); setView('ORDER_DETAILS'); }} />
-             <TabBarItem icon={<Menu size={24} />} label="Menu" active={view === 'MENU'} onClick={() => setView('MENU')} />
+          {/* Tab Bar - Action Prioritized */}
+          <div className="glass-nav fixed bottom-0 left-0 right-0 h-[84px] flex justify-around items-center px-2 z-[50] shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
+             <TabBarItem icon={<Home />} label="Queue" active={view === 'DASH'} onClick={() => setView('DASH')} />
+             <TabBarItem icon={<PlusCircle />} label="Book" active={view === 'ORDER_NEW'} onClick={() => setView('ORDER_NEW')} />
+             <TabBarItem icon={<ReceiptIndianRupee />} label="Ledger" active={view === 'COLLECTIONS' || view === 'ORDER_DETAILS'} onClick={() => setView('COLLECTIONS')} />
+             <TabBarItem icon={<Users />} label="Clients" active={view === 'CUSTOMERS'} onClick={() => setView('CUSTOMERS')} />
+             <TabBarItem icon={<MessageSquare />} label="Chats" active={view === 'WHATSAPP'} onClick={() => setView('WHATSAPP')} />
           </div>
 
         </main>

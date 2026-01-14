@@ -7,9 +7,10 @@ export const INITIAL_SETTINGS: GlobalSettings = {
   currentGoldRate18K: 5400,
   defaultTaxRate: 3,
   goldRateProtectionMax: 500,
-  whatsappPhoneNumberId: '',
-  whatsappBusinessAccountId: '',
-  whatsappBusinessToken: ''
+  // Production Keys injected via Vite Environment Variables
+  whatsappPhoneNumberId: process.env.VITE_WHATSAPP_PHONE_ID || '',
+  whatsappBusinessAccountId: process.env.VITE_WHATSAPP_WABA_ID || '',
+  whatsappBusinessToken: process.env.VITE_WHATSAPP_TOKEN || ''
 };
 
 export const JEWELRY_CATEGORIES = [

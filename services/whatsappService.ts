@@ -5,7 +5,7 @@
  */
 
 import { WhatsAppLogEntry, MessageStatus, GlobalSettings, WhatsAppTemplate } from "../types";
-import { REQUIRED_SYSTEM_TEMPLATES } from "../constants";
+import { REQUIRED_SYSTEM_TEMPLATES, INITIAL_SETTINGS } from "../constants";
 import { errorService } from "./errorService";
 
 export interface WhatsAppResponse {
@@ -13,39 +13,73 @@ export interface WhatsAppResponse {
   messageId?: string;
   error?: string;
   logEntry?: WhatsAppLogEntry;
-  rawResponse?: any; // New field for diagnostics
+  rawResponse?: any; 
 }
 
 const API_VERSION = "v21.0";
 
 export const whatsappService = {
-  /**
-   * Formats a phone number for the WhatsApp API (removes non-digits, adds 91 if missing)
-   */
   formatPhoneNumber(phone: string): string {
     const cleaned = phone.replace(/\D/g, '');
     if (cleaned.length === 10) return `91${cleaned}`;
     return cleaned;
   },
 
-  getSettings(): GlobalSettings | null {
+  getSettings(): GlobalSettings {
     try {
         const settingsStr = localStorage.getItem('aura_settings');
-        return settingsStr ? JSON.parse(settingsStr) : null;
+        if (settingsStr) {
+            const saved = JSON.parse(settingsStr);
+            return {
+                ...INITIAL_SETTINGS,
+                ...saved,
+                // Critical: Explicitly fallback to Env Vars if LocalStorage has empty strings
+                whatsappPhoneNumberId: saved.whatsappPhoneNumberId || INITIAL_SETTINGS.whatsappPhoneNumberId,
+                whatsappBusinessAccountId: saved.whatsappBusinessAccountId || INITIAL_SETTINGS.whatsappBusinessAccountId,
+                whatsappBusinessToken: saved.whatsappBusinessToken || INITIAL_SETTINGS.whatsappBusinessToken,
+            };
+        }
+        return INITIAL_SETTINGS;
     } catch (e) {
         console.warn("Failed to load settings from storage", e);
-        return null;
+        return INITIAL_SETTINGS;
     }
   },
 
-  /**
-   * Fetches existing templates from Meta Account
-   */
+  async validateCredentials(): Promise<{ success: boolean; message: string }> {
+      const settings = this.getSettings();
+      
+      // Detailed diagnostics for missing keys
+      if (!settings.whatsappBusinessToken || !settings.whatsappPhoneNumberId) {
+          const missing = [];
+          if (!settings.whatsappBusinessToken) missing.push("Token");
+          if (!settings.whatsappPhoneNumberId) missing.push("Phone ID");
+          return { success: false, message: `Missing Config: ${missing.join(', ')}. Please check .env or Settings.` };
+      }
+
+      try {
+          const response = await fetch(`https://graph.facebook.com/${API_VERSION}/${settings.whatsappPhoneNumberId}`, {
+              headers: { 'Authorization': `Bearer ${settings.whatsappBusinessToken}` }
+          });
+          const data = await response.json();
+          
+          if (data.error) {
+              return { success: false, message: `Meta API Error: ${data.error.message}` };
+          }
+          
+          if (data.id) {
+              return { success: true, message: "Credentials Verified Successfully!" };
+          }
+          
+          return { success: false, message: "Invalid response from Meta (No ID returned)." };
+      } catch (e: any) {
+          return { success: false, message: `Network Error: ${e.message}` };
+      }
+  },
+
   async fetchMetaTemplates(): Promise<any[]> {
     const settings = this.getSettings();
-    if (!settings?.whatsappBusinessToken) {
-        return [];
-    }
+    if (!settings?.whatsappBusinessToken) return [];
 
     let wabaId = settings.whatsappBusinessAccountId;
 
@@ -69,10 +103,7 @@ export const whatsappService = {
             });
             const tplData = await tplReq.json();
             
-            if (tplData.error) {
-                errorService.logError('WhatsApp API', `Meta Template Fetch Failed: ${tplData.error.message}`, 'MEDIUM');
-                throw new Error(tplData.error.message);
-            }
+            if (tplData.error) throw new Error(tplData.error.message);
 
             if (tplData.data) {
                 allTemplates = [...allTemplates, ...tplData.data];
@@ -81,50 +112,35 @@ export const whatsappService = {
             nextUrl = tplData.paging?.next || null;
         }
         
-        return allTemplates.map((t: any) => ({
-            ...t,
-            source: 'META' 
-        }));
+        return allTemplates.map((t: any) => ({ ...t, source: 'META' }));
     } catch (e: any) {
         errorService.logError('WhatsApp API', `Critical Error fetching Meta templates: ${e.message}`, 'CRITICAL');
         throw e;
     }
   },
 
-  /**
-   * Deletes a template from Meta by name
-   */
   async deleteMetaTemplate(templateName: string): Promise<boolean> {
       const settings = this.getSettings();
       if (!settings?.whatsappBusinessToken) return false;
-
       let wabaId = settings.whatsappBusinessAccountId;
       if (!wabaId) return false;
 
       try {
         const response = await fetch(`https://graph.facebook.com/${API_VERSION}/${wabaId}/message_templates?name=${templateName}`, {
             method: 'DELETE',
-            headers: {
-                'Authorization': `Bearer ${settings.whatsappBusinessToken}`
-            }
+            headers: { 'Authorization': `Bearer ${settings.whatsappBusinessToken}` }
         });
         const data = await response.json();
+        if (data.success || (data.error && data.error.code === 100)) return true;
         
-        if (data.success) return true;
-        
-        if (data.error) {
-            if (data.error.code === 100) return true; 
-            errorService.logError('WhatsApp API', `Template Delete Failed (${templateName}): ${data.error.message}`, 'MEDIUM');
-            return false;
-        }
-        return true;
+        errorService.logError('WhatsApp API', `Template Delete Failed: ${data.error?.message}`, 'MEDIUM');
+        return false;
       } catch (e: any) {
-          errorService.logError('WhatsApp API', `Delete Exception: ${e.message}`, 'MEDIUM');
           return false;
       }
   },
 
-  async createMetaTemplate(template: WhatsAppTemplate): Promise<{ success: boolean; error?: any; finalName?: string; rawResponse?: any; usedStrategy?: string; debugPayload?: any }> {
+  async createMetaTemplate(template: WhatsAppTemplate): Promise<{ success: boolean; error?: any; finalName?: string; rawResponse?: any; debugPayload?: any }> {
       const settings = this.getSettings();
       if (!settings?.whatsappBusinessToken) return { success: false, error: { message: "No Token" } };
 
@@ -143,7 +159,6 @@ export const whatsappService = {
 
         const baseName = template.name.toLowerCase().replace(/[^a-z0-9_]/g, '_').substring(0, 512);
         let bodyText = (template.content || " ").trim();
-
         if (/^\s*\{\{/.test(bodyText)) bodyText = "Hello " + bodyText.trimStart();
         if (/\{\{[^}]+\}\}[^a-zA-Z0-9]*$/.test(bodyText)) bodyText = bodyText.replace(/[^a-zA-Z0-9]*$/, "") + " for details.";
 
@@ -169,38 +184,30 @@ export const whatsappService = {
         }
 
         const components: any[] = [bodyComponent];
-        
         if (template.structure) {
             template.structure.forEach((c: any) => {
                 if (c.type === 'BODY') return;
                 const newC = { ...c };
                 if (newC.type === 'HEADER' && newC.format === 'TEXT' && newC.text && newC.text.includes('{{1}}')) {
                     const hVarCount = (newC.text.match(/{{[0-9]+}}/g) || []).length;
-                    if (hVarCount > 0 && !newC.example) {
-                        newC.example = { header_text: [ Array(hVarCount).fill('HeaderVal') ] };
-                    }
+                    if (hVarCount > 0 && !newC.example) newC.example = { header_text: [ Array(hVarCount).fill('HeaderVal') ] };
                 }
                 components.push(newC);
             });
         }
 
         let attempt = 0;
-        const maxAttempts = 5;
         let currentVersion = 0;
         let useFallbackCategory = false;
         let lastErrorResponse: any = null;
         let lastPayload: any = null;
         const baseCategory = template.category || "UTILITY";
 
-        while(attempt < maxAttempts) {
+        while(attempt < 5) {
             attempt++;
             const nameSuffix = currentVersion === 0 ? '' : `_v${currentVersion + 1}`;
             const currentName = `${baseName.replace(/_v\d+$/, '')}${nameSuffix}`;
-
-            let currentCategory = baseCategory;
-            if (useFallbackCategory && (baseCategory === 'UTILITY' || baseCategory === 'MARKETING')) {
-                currentCategory = baseCategory === 'UTILITY' ? 'MARKETING' : 'UTILITY';
-            }
+            let currentCategory = useFallbackCategory ? (baseCategory === 'UTILITY' ? 'MARKETING' : 'UTILITY') : baseCategory;
 
             const payload = {
                 name: currentName,
@@ -212,10 +219,7 @@ export const whatsappService = {
 
             const response = await fetch(`https://graph.facebook.com/${API_VERSION}/${wabaId}/message_templates`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${settings.whatsappBusinessToken}`,
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Authorization': `Bearer ${settings.whatsappBusinessToken}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
 
@@ -244,74 +248,45 @@ export const whatsappService = {
             break; 
         }
 
-        errorService.logError('WhatsApp API', `Template Creation Exhausted: ${lastErrorResponse?.error?.message}`, 'MEDIUM');
         return { success: false, error: lastErrorResponse?.error, rawResponse: lastErrorResponse, debugPayload: lastPayload };
-        
       } catch (e: any) {
-          errorService.logError('WhatsApp API', `Create Exception: ${e.message}`, 'CRITICAL');
           return { success: false, error: { message: e.message } };
       }
   },
 
-  async sendTemplateMessage(
-      to: string, 
-      templateName: string, 
-      languageCode: string = 'en_US', 
-      variables: string[] = [], 
-      customerName: string,
-      structure?: any[]
-  ): Promise<WhatsAppResponse> {
+  async sendTemplateMessage(to: string, templateName: string, languageCode: string = 'en_US', variables: string[] = [], customerName: string, structure?: any[]): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
     const settings = this.getSettings();
-    const phoneNumberId = settings?.whatsappPhoneNumberId;
-    const token = settings?.whatsappBusinessToken;
+    if (!settings?.whatsappPhoneNumberId || !settings?.whatsappBusinessToken) return { success: false, error: "Missing Credentials" };
 
-    if (!phoneNumberId || !token) return { success: false, error: "Missing Credentials" };
-
-    const sendAttempt = async (name: string): Promise<any> => {
+    try {
         const body: any = {
             messaging_product: "whatsapp",
             recipient_type: "individual",
             to: recipient,
             type: "template",
-            template: {
-                name: name,
-                language: { code: languageCode || 'en_US' },
-                components: []
-            }
+            template: { name: templateName, language: { code: languageCode }, components: [] }
         };
 
-        let bodyParamCount = variables.length;
-        if (bodyParamCount > 0) {
+        if (variables.length > 0) {
             body.template.components.push({
                 type: "body",
-                parameters: variables.map(v => ({ type: "text", text: (v === undefined || v === null) ? "" : String(v) }))
+                parameters: variables.map(v => ({ type: "text", text: String(v || "") }))
             });
         }
 
-        const response = await fetch(`https://graph.facebook.com/${API_VERSION}/${phoneNumberId}/messages`, {
+        const response = await fetch(`https://graph.facebook.com/${API_VERSION}/${settings.whatsappPhoneNumberId}/messages`, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            headers: { 'Authorization': `Bearer ${settings.whatsappBusinessToken}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
-        return await response.json();
-    };
-
-    try {
-        let data = await sendAttempt(templateName);
-
-        if (data.error && (data.error.code === 132001 || data.error.code === 404)) {
-            data = await sendAttempt(`${templateName}_v2`);
-            if (data.error && data.error.code === 132001) data = await sendAttempt(`${templateName}_v3`);
-        }
+        const data = await response.json();
 
         if (data.error) {
-           errorService.logError('WhatsApp API', `Send Failed (${data.error.code}): ${data.error.message}`, 'CRITICAL');
            return { success: false, error: data.error.message, rawResponse: data };
         }
 
         const messageId = data.messages?.[0]?.id || `wamid.${Date.now()}`;
-        errorService.logActivity('TEMPLATE_SENT', `Template ${templateName} sent to ${customerName}`);
         return { 
             success: true, messageId, rawResponse: data,
             logEntry: {
@@ -320,7 +295,6 @@ export const whatsappService = {
             }
         };
     } catch (error: any) {
-        errorService.logError('WhatsApp API', `Send Exception: ${error.message}`, 'MEDIUM');
         return { success: false, error: error.message };
     }
   },
@@ -344,11 +318,9 @@ export const whatsappService = {
         });
         const data = await response.json();
         if (data.error) {
-            errorService.logError('WhatsApp API', `Direct Message Failed: ${data.error.message}`, 'MEDIUM');
             return { success: false, error: data.error.message, rawResponse: data };
         }
 
-        errorService.logActivity('MANUAL_MESSAGE_SENT', `Message sent to ${customerName}`);
         return {
           success: true,
           messageId: data.messages?.[0]?.id,
@@ -360,18 +332,10 @@ export const whatsappService = {
           }
         };
       } catch (e: any) { 
-          errorService.logError('WhatsApp API', `Direct Send Exception: ${e.message}`, 'MEDIUM');
           return { success: false, error: e.message }; 
       }
     } 
     return { success: false, error: "Credentials not configured" };
-  },
-
-  simulateStatusUpdate(currentStatus: MessageStatus): MessageStatus {
-    const r = Math.random();
-    if (currentStatus === 'SENT') return r > 0.1 ? 'DELIVERED' : 'FAILED';
-    if (currentStatus === 'DELIVERED') return r > 0.2 ? 'READ' : 'DELIVERED';
-    return currentStatus;
   },
 
   async simulateIncomingReply(to: string, customerName: string): Promise<WhatsAppLogEntry> {

@@ -1,6 +1,5 @@
-
 import { GoogleGenAI } from "@google/genai";
-import { Order, CollectionTone, Customer, WhatsAppLogEntry, CreditworthinessReport, AiChatInsight, WhatsAppTemplate, AppResolutionPath, ActivityLogEntry, MetaCategory, AppTemplateGroup, PsychologicalTactic } from "../types";
+import { Order, CollectionTone, Customer, WhatsAppLogEntry, CreditworthinessReport, AiChatInsight, WhatsAppTemplate, AppResolutionPath, ActivityLogEntry, MetaCategory, AppTemplateGroup, PsychologicalTactic, PaymentPlanTemplate } from "../types";
 
 // Always use named parameter for apiKey and initialize inside or just before use
 const getAI = () => {
@@ -103,6 +102,21 @@ export const geminiService = {
       }
     });
     // Corrected: use .text property, not .text()
+    return JSON.parse(response.text || "{}");
+  },
+
+  async generatePaymentPlan(prompt: string): Promise<Partial<PaymentPlanTemplate>> {
+    const ai = getAI();
+    if (!ai) throw new Error("API Key Missing");
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `Create a jewelry gold purchase plan based on this strategy: "${prompt}"`,
+        config: {
+            responseMimeType: "application/json",
+            systemInstruction: "Return JSON with keys: name (short marketing name), months (number), interestPercentage (number 0-20), advancePercentage (number 0-100). optimize for cash flow."
+        }
+    });
     return JSON.parse(response.text || "{}");
   },
 

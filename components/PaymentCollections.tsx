@@ -3,10 +3,11 @@ import React, { useState, useMemo } from 'react';
 import { 
   Search, Filter, ReceiptIndianRupee, Calendar, CheckCircle2, 
   Clock, AlertCircle, Smartphone, ChevronRight, Download,
-  TrendingUp, ArrowDownLeft, ArrowUpRight, BrainCircuit, Zap, Loader2
+  TrendingUp, ArrowDownLeft, ArrowUpRight, BrainCircuit, Zap, Loader2, Link, Share2
 } from 'lucide-react';
 import { Order, OrderStatus, Milestone, PaymentRecord, CollectionTone, GlobalSettings } from '../types';
 import { geminiService } from '../services/geminiService';
+import { whatsappService } from '../services/whatsappService';
 
 interface PaymentCollectionsProps {
   orders: Order[];
@@ -91,7 +92,6 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
               settings.currentGoldRate24K
           );
           
-          // Using a temporary alert to show strategy, in a real app this would save to notifications
           const confirmed = confirm(
               `AI Strategy: ${result.tone} TONE\n\n` +
               `Reasoning: ${result.reasoning}\n\n` +
@@ -100,18 +100,27 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
           );
           
           if (confirmed) {
-              // Create a temporary notification object to send
-              const tempNotifId = `temp-${Date.now()}`;
-              // Note: This requires the parent component to handle the "temp" notification sending logic
-              // or for us to call whatsappService directly here. 
-              // For simplicity, we'll alert and simulate sending.
-              alert(`Strategic ${result.tone} message dispatched to ${item.customerName}`);
+             await whatsappService.sendMessage(item.customerContact, result.message, item.customerName, 'AI Strategy Manual Trigger');
+             alert(`Strategic ${result.tone} message dispatched to ${item.customerName}`);
           }
       } catch (e) {
           console.error(e);
       } finally {
           setGeneratingStrategy(null);
       }
+  };
+  
+  const generatePaymentLink = async (item: any) => {
+      if(!confirm(`Send payment link for ₹${item.targetAmount} to ${item.customerName} via WhatsApp?`)) return;
+
+      const amount = item.targetAmount || item.amount;
+      const upiLink = `upi://pay?pa=auragold@upi&pn=AuraGold&tr=${item.orderId}&am=${amount}&cu=INR`;
+      const razorpayLink = `https://rzp.io/i/aura${item.orderId}`;
+      
+      const msg = `Dear ${item.customerName}, payment of ₹${amount.toLocaleString()} is due. Pay here: ${razorpayLink}`;
+      
+      await whatsappService.sendMessage(item.customerContact, msg, item.customerName, 'Payment Link');
+      alert("Link Sent Successfully");
   };
 
   return (
@@ -237,20 +246,29 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
                   <td className="px-8 py-6 text-right">
                     <div className="flex justify-end gap-2">
                        {item.status && item.status !== 'PAID' && (
-                          <button 
-                            onClick={() => handleTriggerStrategy(item)}
-                            disabled={generatingStrategy === item.id}
-                            className={`p-2 rounded-xl transition-all shadow-sm flex items-center gap-2 px-4 ${
-                              item.dueDate < todayStr
-                              ? 'bg-rose-600 text-white hover:bg-rose-700' 
-                              : 'bg-emerald-500 text-white hover:bg-emerald-600'
-                            }`}
-                          >
-                             {generatingStrategy === item.id ? <Loader2 size={16} className="animate-spin" /> : <BrainCircuit size={16} />}
-                             <span className="text-[10px] font-black uppercase tracking-widest">
-                                {item.dueDate < todayStr ? 'Recover' : 'Nudge'}
-                             </span>
-                          </button>
+                          <>
+                              <button 
+                                onClick={() => handleTriggerStrategy(item)}
+                                disabled={generatingStrategy === item.id}
+                                className={`p-2 rounded-xl transition-all shadow-sm flex items-center gap-2 px-4 ${
+                                  item.dueDate < todayStr
+                                  ? 'bg-rose-600 text-white hover:bg-rose-700' 
+                                  : 'bg-emerald-500 text-white hover:bg-emerald-600'
+                                }`}
+                              >
+                                 {generatingStrategy === item.id ? <Loader2 size={16} className="animate-spin" /> : <BrainCircuit size={16} />}
+                                 <span className="text-[10px] font-black uppercase tracking-widest">
+                                    {item.dueDate < todayStr ? 'Recover' : 'Nudge'}
+                                 </span>
+                              </button>
+                              <button 
+                                onClick={() => generatePaymentLink(item)}
+                                className="p-2 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors flex items-center gap-2 px-3"
+                                title="Send Payment Link via WhatsApp"
+                              >
+                                  <Share2 size={16} /> <span className="text-[10px] font-bold">Link</span>
+                              </button>
+                          </>
                        )}
                        {!item.status && (
                           <button className="p-2 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-200 transition-colors">
