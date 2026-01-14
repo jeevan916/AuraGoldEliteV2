@@ -1,7 +1,7 @@
+
 import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate } from '../types';
 import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES, INITIAL_TEMPLATES } from '../constants';
 
-// STORAGE KEYS
 const KEY_STATE = 'aura_master_state';
 
 export interface AppState {
@@ -29,22 +29,18 @@ class StorageService {
 
   constructor() {
     this.state = this.loadFromLocal();
-    this.backgroundSync();
+    // Immediate sync with server on startup
+    this.syncFromServer();
   }
 
   private loadFromLocal(): AppState {
     try {
       const serialized = localStorage.getItem(KEY_STATE);
       if (serialized) {
-        const parsed = JSON.parse(serialized);
-        return {
-          ...DEFAULT_STATE,
-          ...parsed,
-          settings: { ...DEFAULT_STATE.settings, ...parsed.settings }
-        };
+        return { ...DEFAULT_STATE, ...JSON.parse(serialized) };
       }
     } catch (e) {
-      console.warn("[Storage] Failed to load local data, using defaults.", e);
+      console.warn("[Storage] Local cache missing or invalid.");
     }
     return DEFAULT_STATE;
   }
@@ -55,33 +51,24 @@ class StorageService {
         localStorage.setItem(KEY_STATE, JSON.stringify(this.state));
         this.notify();
     } catch (e) {
-        console.error("[Storage] Local Write error", e);
+        console.error("[Storage] Failed to update local cache", e);
     }
   }
 
-  private async backgroundSync() {
-    // Determine API Base URL
-    const envBase = (import.meta as any).env.VITE_API_BASE_URL;
-    const apiBaseUrl = envBase || window.location.origin;
-    const apiUrl = `${apiBaseUrl}/api/storage.php`;
-
+  public async syncFromServer() {
     try {
-        const res = await fetch(apiUrl, { 
-          method: 'GET',
-          headers: { 'Accept': 'application/json' }
-        });
-        
+        const res = await fetch('/api/state');
         if (res.ok) {
             const serverData = await res.json();
             if (serverData && serverData.lastUpdated > this.state.lastUpdated) {
                 this.state = serverData;
                 localStorage.setItem(KEY_STATE, JSON.stringify(this.state));
                 this.notify();
-                console.log("[Storage] Remote data pulled and synced.");
+                console.log("[Storage] Synchronized with cloud database.");
             }
         }
     } catch (e) {
-        console.warn("[Storage] Backend sync skipped. Checking local storage only.");
+        console.error("[Storage] Could not reach server for sync.");
     }
   }
 
@@ -89,21 +76,16 @@ class StorageService {
     if (this.isSyncing) return;
     this.isSyncing = true;
 
-    const envBase = (import.meta as any).env.VITE_API_BASE_URL;
-    const apiBaseUrl = envBase || window.location.origin;
-    const apiUrl = `${apiBaseUrl}/api/storage.php`;
-
     try {
-      const res = await fetch(apiUrl, {
+      const res = await fetch('/api/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(this.state)
       });
-      if (res.ok) {
-          console.log("[Storage] Remote backup updated.");
-      }
+      if (!res.ok) throw new Error("Server rejected update");
+      console.log("[Storage] Server state updated successfully.");
     } catch (e) {
-      console.error("[Storage] Failed to push state to PHP backend.", e);
+      console.error("[Storage] Critical: Data push to backend failed.", e);
     } finally {
       this.isSyncing = false;
     }
@@ -153,9 +135,9 @@ class StorageService {
 
   public async forceSync(): Promise<{ success: boolean; message: string }> {
       try {
-          await this.backgroundSync();
+          await this.syncFromServer();
           await this.syncToBackend();
-          return { success: true, message: "Hostinger Sync Complete" };
+          return { success: true, message: "Real-world database sync complete." };
       } catch (e: any) {
           return { success: false, message: `Sync Error: ${e.message}` };
       }
