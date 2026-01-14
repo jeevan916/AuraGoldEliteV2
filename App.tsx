@@ -5,7 +5,7 @@ import {
   MessageSquare, Globe, Settings as SettingsIcon, AlertTriangle, 
   Plus, ShieldCheck, LogOut, Briefcase, Menu, X, ArrowLeft, Home,
   MoreHorizontal, PlusCircle, Sparkles, Zap, BrainCircuit, FileText, 
-  ScrollText, Activity, Server, Calculator, Loader2, WifiOff, Cloud, CloudOff, RefreshCw, ServerCrash, Database
+  ScrollText, Activity, Server, Calculator, Loader2, WifiOff, Cloud, CloudOff, RefreshCw, ServerCrash, Database, ShieldAlert, AlertCircle
 } from 'lucide-react';
 
 // Modules
@@ -33,7 +33,6 @@ import { storageService } from './services/storageService';
 import { geminiService } from './services/geminiService';
 import { whatsappService } from './services/whatsappService';
 import { Order, GlobalSettings, AppResolutionPath, Customer, NotificationTrigger, PaymentPlanTemplate } from './types';
-import { INITIAL_PLAN_TEMPLATES } from './constants';
 
 type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'CUSTOMERS' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU';
 
@@ -68,7 +67,7 @@ const App: React.FC = () => {
   const [view, setView] = useState<MainView>('DASH');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [initError, setInitError] = useState<string | null>(null);
+  const [initError, setInitError] = useState<{ message: string; code?: number } | null>(null);
   const [syncStatus, setSyncStatus] = useState(storageService.getSyncStatus());
   
   const { orders, addOrder, recordPayment, updateItemStatus, updateOrder } = useOrders();
@@ -93,6 +92,33 @@ const App: React.FC = () => {
   const [errors, setErrors] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
 
+  const startApp = async () => {
+    setIsInitializing(true);
+    setInitError(null);
+    try {
+      const result = await storageService.syncFromServer();
+      if (!result.success) {
+        setInitError({ message: result.error || "Unknown Handshake Error", code: result.code });
+        return;
+      }
+      
+      // Background rate refresh after confirmed DB sync
+      const rateRes = await goldRateService.fetchLiveRate();
+      if (rateRes.success) {
+          const currentSettings = storageService.getSettings();
+          setSettings({
+              ...currentSettings,
+              currentGoldRate24K: rateRes.rate24K,
+              currentGoldRate22K: rateRes.rate22K
+          });
+      }
+    } catch (e: any) {
+      setInitError({ message: e.message || "Network Connectivity Failure" });
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
   useEffect(() => {
     (window as any).dispatchView = (v: MainView) => setView(v);
     errorService.initGlobalListeners();
@@ -107,30 +133,6 @@ const App: React.FC = () => {
       setErrors(errs);
       setActivities(acts);
     });
-
-    const startApp = async () => {
-      try {
-        const result = await storageService.syncFromServer();
-        if (!result.success) {
-            throw new Error(result.error);
-        }
-        
-        // Background market update
-        const rateRes = await goldRateService.fetchLiveRate();
-        if (rateRes.success) {
-            const currentSettings = storageService.getSettings();
-            setSettings({
-                ...currentSettings,
-                currentGoldRate24K: rateRes.rate24K,
-                currentGoldRate22K: rateRes.rate22K
-            });
-        }
-      } catch (e: any) {
-        setInitError(e.message || "Unknown Database Connectivity Error");
-      } finally {
-        setIsInitializing(false);
-      }
-    };
 
     startApp();
     
@@ -218,62 +220,66 @@ const App: React.FC = () => {
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
         <Loader2 className="animate-spin text-amber-500 mb-6" size={48} />
         <h2 className="text-xl font-black uppercase tracking-widest">AuraGold Elite</h2>
-        <p className="text-slate-400 text-xs mt-2 font-medium">Connecting to MySQL Database...</p>
+        <p className="text-slate-400 text-xs mt-2 font-medium">Authorizing secure DB connection...</p>
       </div>
     );
   }
 
   if (initError) {
-      return (
-        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-slate-900">
-            <div className="max-w-xl w-full bg-white rounded-[2.5rem] shadow-2xl border-t-8 border-t-rose-500 p-8 md:p-12">
-                <div className="flex justify-between items-start mb-8">
-                    <div className="p-4 bg-rose-50 text-rose-600 rounded-3xl">
-                        <ServerCrash size={40} />
-                    </div>
-                    <div className="bg-slate-100 px-4 py-2 rounded-2xl text-[10px] font-black uppercase text-slate-500 tracking-widest flex items-center gap-2">
-                        <Database size={14} /> System Offline
-                    </div>
-                </div>
-                
-                <h1 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">Backend Sync Failure</h1>
-                <p className="text-slate-500 font-medium leading-relaxed mb-8">
-                    The application is strictly configured for <strong>Live-Only</strong> mode. Your database connection has failed, preventing secure order generation.
-                </p>
-
-                <div className="bg-slate-900 text-emerald-400 p-5 rounded-2xl font-mono text-xs leading-relaxed border border-slate-800 shadow-inner mb-8 overflow-auto max-h-40">
-                    <span className="text-rose-400 block font-bold mb-1 underline">CRITICAL DIAGNOSIS:</span>
-                    {initError}
-                </div>
-
-                <div className="space-y-4 mb-8">
-                    <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Hostinger Fix Steps</h3>
-                    <ul className="grid grid-cols-1 gap-3">
-                        <li className="flex items-start gap-3 text-xs font-bold text-slate-700 bg-slate-50 p-3 rounded-xl">
-                            <span className="bg-slate-200 text-slate-600 w-5 h-5 rounded-md flex items-center justify-center shrink-0">1</span>
-                            Ensure Node.js Application is "Started" in hPanel.
-                        </li>
-                        <li className="flex items-start gap-3 text-xs font-bold text-slate-700 bg-slate-50 p-3 rounded-xl">
-                            <span className="bg-slate-200 text-slate-600 w-5 h-5 rounded-md flex items-center justify-center shrink-0">2</span>
-                            Verify .env variables: DB_HOST, DB_USER, DB_NAME.
-                        </li>
-                        <li className="flex items-start gap-3 text-xs font-bold text-slate-700 bg-slate-50 p-3 rounded-xl">
-                            <span className="bg-slate-200 text-slate-600 w-5 h-5 rounded-md flex items-center justify-center shrink-0">3</span>
-                            Check public_html/.htaccess routing to the Node process.
-                        </li>
-                    </ul>
-                </div>
-
-                <button 
-                    onClick={() => window.location.reload()}
-                    className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-[0.2em] shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3"
-                >
-                    <RefreshCw size={18} /> Retry Connection
-                </button>
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-slate-900">
+        <div className="max-w-xl w-full bg-white rounded-[2.5rem] shadow-2xl border-t-8 border-t-rose-500 p-8 md:p-12 animate-fadeIn">
+          <div className="flex justify-between items-start mb-8">
+            <div className="p-4 bg-rose-50 text-rose-600 rounded-3xl">
+              <ShieldAlert size={40} />
             </div>
-            <p className="mt-8 text-[10px] font-bold text-slate-400 uppercase tracking-widest">AuraGold Security Protocol v5.0</p>
+            <div className="bg-slate-100 px-4 py-2 rounded-2xl text-[10px] font-black uppercase text-slate-500 tracking-widest flex items-center gap-2">
+              <Database size={14} /> System Sync Failure
+            </div>
+          </div>
+          
+          <h1 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">System Sync Failure</h1>
+          <p className="text-slate-500 font-medium leading-relaxed mb-8">
+            The secure gateway to your database is currently unreachable. Please verify that the Node.js server is active and the DB credentials in your environment are correct.
+          </p>
+
+          <div className="bg-slate-900 text-rose-300 p-5 rounded-2xl font-mono text-xs leading-relaxed border border-slate-800 shadow-inner mb-8 overflow-auto max-h-40">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertCircle size={14} className="text-rose-500" />
+              <span className="font-bold uppercase text-[10px]">Technical Diagnosis:</span>
+            </div>
+            {initError.message}
+            {initError.code && <div className="mt-1 opacity-50">Error Code: {initError.code}</div>}
+          </div>
+
+          <div className="space-y-4 mb-8">
+            <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Checklist for Hostinger</h3>
+            <ul className="grid grid-cols-1 gap-2">
+              <li className="flex items-start gap-3 text-xs font-bold text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <span className="bg-slate-200 text-slate-600 w-5 h-5 rounded-md flex items-center justify-center shrink-0">1</span>
+                Ensure <strong>Node.js Application</strong> is "Started" in hPanel.
+              </li>
+              <li className="flex items-start gap-3 text-xs font-bold text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <span className="bg-slate-200 text-slate-600 w-5 h-5 rounded-md flex items-center justify-center shrink-0">2</span>
+                Verify <strong>DB_HOST</strong> is usually <code>localhost</code>.
+              </li>
+              <li className="flex items-start gap-3 text-xs font-bold text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <span className="bg-slate-200 text-slate-600 w-5 h-5 rounded-md flex items-center justify-center shrink-0">3</span>
+                Check <strong>.htaccess</strong> rules in <code>public_html</code>.
+              </li>
+            </ul>
+          </div>
+
+          <button 
+            onClick={startApp}
+            className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-[0.2em] shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3"
+          >
+            <RefreshCw size={18} /> Reconnect Now
+          </button>
         </div>
-      );
+        <p className="mt-8 text-[10px] font-bold text-slate-400 uppercase tracking-widest">AuraGold Security Protocol v5.2 (MySQL Only)</p>
+      </div>
+    );
   }
 
   const getViewTitle = () => {

@@ -21,7 +21,7 @@ app.use(express.json({ limit: '100mb' }) as any);
 
 // Database configuration
 const dbConfig = {
-  host: process.env.DB_HOST,
+  host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
@@ -48,8 +48,8 @@ async function initDb() {
     `);
     connection.release();
     console.log('✅ AuraGold: Production Database Link Established');
-  } catch (err) {
-    console.error('❌ AuraGold: Database connection failed. Verify .env settings:', err);
+  } catch (err: any) {
+    console.error('❌ AuraGold: Database connection failed. Verify .env settings:', err.message);
   }
 }
 
@@ -88,12 +88,11 @@ app.get('/api/state', async (req, res) => {
     if (rows.length > 0) {
       res.json(JSON.parse(rows[0].content));
     } else {
-      // Return empty valid structure for first boot
       res.json({ orders: [], logs: [], lastUpdated: 0 });
     }
   } catch (err: any) {
     console.error('API Error (State GET):', err.message);
-    res.status(500).json({ error: 'Database access failure' });
+    res.status(500).json({ error: `Database access failure: ${err.message}` });
   }
 });
 
@@ -111,7 +110,7 @@ app.post('/api/state', async (req, res) => {
     res.json({ success: true, timestamp: lastUpdated });
   } catch (err: any) {
     console.error('API Error (State POST):', err.message);
-    res.status(500).json({ error: 'Persistence failed' });
+    res.status(500).json({ error: `Persistence failed: ${err.message}` });
   }
 });
 
@@ -127,14 +126,21 @@ app.get('/api/gold-rate', async (req, res) => {
 
 // Health Check
 app.get('/api/ping', (req, res) => {
-  res.json({ status: 'pong', timestamp: Date.now() });
+  res.json({ 
+    status: 'pong', 
+    timestamp: Date.now(),
+    engine: {
+      node: process.version,
+      platform: process.platform
+    }
+  });
 });
 
 // Serve built frontend files
 const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath) as any);
 
-// SPA routing - all unknown routes go to index.html
+// SPA routing
 app.get('*', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
