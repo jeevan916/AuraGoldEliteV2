@@ -18,9 +18,9 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// 1. Logger Middleware (Check your Node.js logs on Hostinger to see requests)
+// 1. ROUTING DEBUGGER (Check your Node.js logs to see this output)
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log(`[AuraGold Request] ${new Date().toISOString()} | ${req.method} ${req.url}`);
   next();
 });
 
@@ -34,12 +34,24 @@ const pool = mysql.createPool({
   connectionLimit: 10,
 });
 
-// 2. Health Check (Test this first: yourdomain.com/api/health)
+// 2. DIAGNOSTIC API ROUTES (Absolute Priority)
+
+// Root API Health
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'AuraGold Server is running', timestamp: Date.now() });
+  res.json({ 
+    status: 'OK', 
+    service: 'AuraGold API', 
+    node_version: process.version,
+    timestamp: new Date().toISOString() 
+  });
 });
 
-// API ROUTE: GET Storage
+// Quick Test Route
+app.get('/api-test', (req, res) => {
+  res.send('AuraGold Express is receiving requests!');
+});
+
+// GET Storage
 app.get('/api/storage', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT data FROM aura_storage WHERE id = 1');
@@ -49,12 +61,12 @@ app.get('/api/storage', async (req, res) => {
       res.json({ orders: [], logs: [], templates: [], settings: null, lastUpdated: 0 });
     }
   } catch (err) {
-    console.error('[API] GET Storage Error:', err);
+    console.error('[DATABASE ERROR] GET /api/storage:', err);
     res.status(500).json({ error: 'Database fetch failed', details: err.message });
   }
 });
 
-// API ROUTE: POST Storage
+// POST Storage
 app.post('/api/storage', async (req, res) => {
   try {
     const data = JSON.stringify(req.body);
@@ -64,12 +76,12 @@ app.post('/api/storage', async (req, res) => {
     );
     res.json({ success: true, timestamp: Date.now() });
   } catch (err) {
-    console.error('[API] POST Storage Error:', err);
+    console.error('[DATABASE ERROR] POST /api/storage:', err);
     res.status(500).json({ error: 'Database save failed', details: err.message });
   }
 });
 
-// API ROUTE: Live Rates Proxy
+// Gold Rates Proxy
 app.get('/api/rates', async (req, res) => {
   try {
     const response = await fetch('https://uat.batuk.in/augmont/gold');
@@ -79,23 +91,33 @@ app.get('/api/rates', async (req, res) => {
     const rate22K = Math.round(rate24K * 0.916);
     res.json({ rate24K, rate22K, success: true });
   } catch (err) {
-    console.error('[API] Rates Error:', err);
-    res.status(500).json({ success: false, error: 'External rates unavailable', details: err.message });
+    console.error('[PROXY ERROR] GET /api/rates:', err);
+    res.status(500).json({ success: false, error: 'Rates unavailable' });
   }
 });
 
-// Serve static assets
+// 3. STATIC FILES (Frontend)
+// Try serving from 'dist' if it exists, otherwise root
+app.use(express.static(path.join(__dirname, 'dist')));
 app.use(express.static(__dirname));
 
-// Single Page Application (SPA) Support
+// 4. SPA FALLBACK
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  // Never serve HTML for an API path that 404'd
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'Route not found in Express', path: req.path });
+  }
+  
+  // Try to find index.html in dist or root
+  const distIdx = path.join(__dirname, 'dist', 'index.html');
+  const rootIdx = path.join(__dirname, 'index.html');
+  
+  res.sendFile(rootIdx); 
 });
 
 app.listen(PORT, async () => {
-  console.log(`[AuraGold] Server active on port ${PORT}`);
+  console.log(`[AuraGold] Node.js Server listening on port ${PORT}`);
   try {
-    // Ensure table structure exists
     await pool.query(`
       CREATE TABLE IF NOT EXISTS aura_storage (
         id INT PRIMARY KEY DEFAULT 1,
@@ -103,8 +125,8 @@ app.listen(PORT, async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
-    console.log('[AuraGold] MySQL Schema Validated');
+    console.log('[AuraGold] MySQL Connectivity Verified');
   } catch (err) {
-    console.error('[AuraGold] Database Initialization Failed:', err.message);
+    console.error('[AuraGold] CRITICAL: MySQL Init Failed:', err.message);
   }
 });

@@ -24,7 +24,7 @@ export const goldRateService = {
     }
 
     try {
-        // Root-relative path to the backend rate proxy
+        // Absolute path to backend proxy
         const response = await fetch('/api/rates');
         
         if (!response.ok) {

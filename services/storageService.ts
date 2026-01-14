@@ -2,7 +2,7 @@
 import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate } from '../types';
 import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES } from '../constants';
 
-// Use a root-relative path to ensure consistency across the application
+// Absolute path to the API endpoint
 const API_ENDPOINT = '/api/storage';
 const SYNC_INTERVAL = 30000; 
 
@@ -67,7 +67,7 @@ class StorageService {
           this.saveToLocal();
         }
       } else {
-        console.error(`[Storage] Server returned ${response.status} on pull`);
+        console.error(`[Storage] Server pull returned ${response.status}`);
       }
     } catch (e) {
       console.warn("[Storage] Cloud sync pull failed", e);
@@ -87,7 +87,7 @@ class StorageService {
            body: JSON.stringify(payload)
        });
        if (!response.ok) {
-         console.error(`[Storage] Server returned ${response.status} on push`);
+         console.error(`[Storage] Server push returned ${response.status}`);
        }
     } catch (e) {
         console.warn("[Storage] Cloud sync push failed", e);
