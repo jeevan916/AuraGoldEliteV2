@@ -5,7 +5,6 @@ import {
   Smartphone, Lock, AlertCircle, ArrowRight, QrCode
 } from 'lucide-react';
 import { Order, ProductionStatus } from '../types';
-import QRCode from 'qrcode';
 
 interface CustomerOrderViewProps {
   order: Order;
@@ -21,9 +20,10 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
     if (remaining > 0) {
         const amount = nextPayment ? nextPayment.targetAmount : remaining;
         const upi = `upi://pay?pa=auragold@upi&pn=AuraGold%20Jewellers&tr=${order.id}&am=${amount}&cu=INR`;
-        QRCode.toDataURL(upi, { margin: 2 }).then(setQrUrl);
+        // Reliable external QR generator - no build dependencies required
+        setQrUrl(`https://quickchart.io/qr?text=${encodeURIComponent(upi)}&margin=2&size=300`);
     }
-  }, [remaining, nextPayment]);
+  }, [remaining, nextPayment, order.id]);
 
   const upiLink = `upi://pay?pa=auragold@upi&pn=AuraGold%20Jewellery&tr=${order.id}&am=${nextPayment ? nextPayment.targetAmount : remaining}&cu=INR&tn=Order%20${order.id}`;
 
@@ -53,7 +53,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
         
         {remaining > 0 && (
           <div className="bg-white p-6 rounded-3xl shadow-lg border border-amber-100 flex flex-col items-center">
-             {qrUrl && <img src={qrUrl} className="w-40 h-40 mb-4 border p-2 rounded-xl" />}
+             {qrUrl && <img src={qrUrl} className="w-40 h-40 mb-4 border p-2 rounded-xl" alt="Payment QR" />}
              <div className="text-center mb-6">
                 <h3 className="font-bold text-slate-800 text-lg">Balance Due: ₹{remaining.toLocaleString()}</h3>
                 <p className="text-xs text-slate-500">Scan QR or tap below to pay via UPI</p>

@@ -1,10 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { CreditCard, Calendar, CheckCircle2, ArrowRight, Loader2, ReceiptIndianRupee, Share2, Smartphone, Link as LinkIcon, Copy, QrCode, X } from 'lucide-react';
-import { Card, Badge, Button, SectionHeader } from '../shared/BaseUI';
+import { CreditCard, QrCode, X, Share2, Smartphone } from 'lucide-react';
+import { Card, Button } from '../shared/BaseUI';
 import { Order, OrderStatus } from '../../types';
 import { whatsappService } from '../../services/whatsappService';
-import QRCode from 'qrcode';
 
 interface PaymentWidgetProps {
   order: Order;
@@ -29,7 +28,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       } else if (!amount) {
           setAmount(remaining.toString());
       }
-  }, [nextMilestone, remaining]);
+  }, [nextMilestone, remaining, amount]);
 
   const handleRecordPayment = async () => {
     const val = parseFloat(amount);
@@ -84,16 +83,11 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       const val = parseFloat(amount);
       if (!val || val <= 0) return;
       
-      // Generic UPI String - Jeweler should replace with their specific VPA
       const upiString = `upi://pay?pa=auragold@upi&pn=AuraGold%20Jewellers&tr=${order.id}&am=${val}&cu=INR&tn=Jewellery%20Payment`;
       
-      try {
-          const url = await QRCode.toDataURL(upiString, { width: 300, margin: 2 });
-          setQrCodeUrl(url);
-          setActiveTab('REQUEST');
-      } catch (err) {
-          console.error(err);
-      }
+      // Use QuickChart API to avoid local qrcode dependency issues during build
+      setQrCodeUrl(`https://quickchart.io/qr?text=${encodeURIComponent(upiString)}&margin=2&size=300`);
+      setActiveTab('REQUEST');
   };
 
   const handleSendRequest = async () => {
@@ -103,8 +97,6 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
       try {
         const upiLink = `upi://pay?pa=auragold@upi&pn=AuraGold&tr=${order.id}&am=${val}&cu=INR`;
-        const gatewayLink = `https://rzp.io/i/aura${order.id}`;
-
         const message = `Dear ${order.customerName}, a payment of ₹${val.toLocaleString()} is due for your jewellery plan.\n\n` +
                         `Pay via UPI: ${upiLink}\n\n` +
                         `Order ID: ${order.id}`;
@@ -214,7 +206,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                             <h4 className="text-xs font-black uppercase text-slate-500">Scan to Pay (₹{amount})</h4>
                             <button onClick={() => setQrCodeUrl(null)} className="text-slate-400"><X size={18} /></button>
                         </div>
-                        <img src={qrCodeUrl} className="w-48 h-48 bg-white p-2 rounded-xl shadow-inner mb-4" />
+                        <img src={qrCodeUrl} className="w-48 h-48 bg-white p-2 rounded-xl shadow-inner mb-4" alt="UPI QR Code" />
                         <p className="text-[10px] font-medium text-slate-400 text-center">Open any UPI App (GPay, PhonePe, Paytm) and scan this code to complete payment.</p>
                     </div>
                 ) : (
@@ -223,7 +215,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                             <Smartphone className="text-blue-500 shrink-0" size={20} />
                             <div className="text-xs text-blue-800 leading-relaxed">
                                 <p className="font-bold mb-1 italic">WhatsApp Payment Link</p>
-                                <p className="opacity-80">This will send a secure deep-link to the customer's phone. They can pay from their own home.</p>
+                                <p className="opacity-80">This will send a secure deep-link to the customer's phone.</p>
                             </div>
                         </div>
                         <div className="flex gap-3 items-end">
@@ -244,8 +236,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                                 disabled={loading || !amount}
                                 className="bg-blue-600 h-[60px] text-white px-6 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2"
                             >
-                                {loading ? <Loader2 className="animate-spin" size={16} /> : <Share2 size={16} />}
-                                Send
+                                {loading ? 'Sending...' : <><Share2 size={16} /> Send</>}
                             </button>
                         </div>
                     </>

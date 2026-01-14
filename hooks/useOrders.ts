@@ -24,11 +24,15 @@ export function useOrders() {
     const updated = [newOrder, ...orders];
     setOrders(updated);
     errorService.logActivity('ORDER_CREATED', `Order ${newOrder.id} for ${newOrder.customerName}`);
+    // Force immediate sync to backend for robust "order generation"
+    storageService.pushToServer();
   };
 
   const updateOrder = (updatedOrder: Order) => {
     const updated = orders.map(o => o.id === updatedOrder.id ? updatedOrder : o);
     setOrders(updated);
+    // Force immediate sync
+    storageService.pushToServer();
   };
 
   const recordPayment = (orderId: string, amount: number, method: string, date: string, note: string) => {
@@ -55,6 +59,8 @@ export function useOrders() {
       };
     });
     setOrders(updated);
+    // Force immediate sync
+    storageService.pushToServer();
   };
 
   const updateItemStatus = (orderId: string, itemId: string, status: ProductionStatus) => {
@@ -66,6 +72,8 @@ export function useOrders() {
       };
     });
     setOrders(updated);
+    // Force immediate sync
+    storageService.pushToServer();
   };
 
   return { orders, setOrders, addOrder, updateOrder, recordPayment, updateItemStatus };

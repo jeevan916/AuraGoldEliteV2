@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   Plus, ShoppingBag, Trash2, ShieldCheck, 
   Calculator, User, ChevronRight, X, Loader2, Sparkles, Zap, Image as ImageIcon, Camera, Trash, 
@@ -30,6 +31,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   };
   const [currentItem, setCurrentItem] = useState<Partial<JewelryDetail>>(initialItem);
   const [isCompressing, setIsCompressing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [plan, setPlan] = useState<Partial<PaymentPlan>>({
     months: 6, advancePercentage: 10, goldRateProtection: true
@@ -63,6 +65,20 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
     };
     setCartItems([...cartItems, item]);
     setCurrentItem(initialItem);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setIsCompressing(true);
+      try {
+        const base64 = await compressImage(e.target.files[0]);
+        setCurrentItem(prev => ({ ...prev, photoUrls: [base64] }));
+      } catch (err) {
+        console.error("Image upload failed", err);
+      } finally {
+        setIsCompressing(false);
+      }
+    }
   };
 
   const handleGrossWeightChange = (val: number) => {
@@ -151,39 +167,70 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                 <Scale size={16} className="text-amber-500" /> Jewellery Specifications
             </h3>
             
-            <div className="grid grid-cols-2 gap-4">
-                <InputWrapper label="Category">
-                    <select className="w-full font-bold bg-transparent outline-none" value={currentItem.category} onChange={e => setCurrentItem({...currentItem, category: e.target.value})}>
-                        {['Ring', 'Necklace', 'Earrings', 'Bangle', 'Bracelet', 'Chain', 'Pendant', 'Set', 'Mangalsutra'].map(c => <option key={c}>{c}</option>)}
-                    </select>
-                </InputWrapper>
-                <InputWrapper label="Purity">
-                    <select className="w-full font-bold bg-transparent outline-none" value={currentItem.purity} onChange={e => setCurrentItem({...currentItem, purity: e.target.value as Purity})}>
-                        <option value="22K">22K Standard</option>
-                        <option value="24K">24K Pure</option>
-                        <option value="18K">18K Rose/White</option>
-                    </select>
-                </InputWrapper>
-            </div>
+            <div className="flex flex-col md:flex-row gap-6">
+                {/* Image Upload Box */}
+                <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full md:w-32 h-32 shrink-0 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:bg-slate-100 transition-colors relative overflow-hidden group"
+                >
+                    {currentItem.photoUrls?.[0] ? (
+                        <>
+                          <img src={currentItem.photoUrls[0]} className="w-full h-full object-cover" alt="Item Preview" />
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Camera className="text-white" size={24} />
+                          </div>
+                        </>
+                    ) : (
+                        <div className="text-center p-2">
+                            <Camera className="text-slate-400 mx-auto mb-1" size={24} />
+                            <p className="text-[9px] font-black uppercase text-slate-400">Add Photo</p>
+                        </div>
+                    )}
+                    {isCompressing && <div className="absolute inset-0 bg-white/80 flex items-center justify-center"><Loader2 className="animate-spin text-slate-900"/></div>}
+                </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="flex-1 space-y-4">
+                     <div className="grid grid-cols-2 gap-4">
+                        <InputWrapper label="Category">
+                            <select className="w-full font-bold bg-transparent outline-none text-slate-800" value={currentItem.category} onChange={e => setCurrentItem({...currentItem, category: e.target.value})}>
+                                {['Ring', 'Necklace', 'Earrings', 'Bangle', 'Bracelet', 'Chain', 'Pendant', 'Set', 'Mangalsutra'].map(c => <option key={c}>{c}</option>)}
+                            </select>
+                        </InputWrapper>
+                        <InputWrapper label="Purity">
+                            <select className="w-full font-bold bg-transparent outline-none text-slate-800" value={currentItem.purity} onChange={e => setCurrentItem({...currentItem, purity: e.target.value as Purity})}>
+                                <option value="22K">22K Standard</option>
+                                <option value="24K">24K Pure</option>
+                                <option value="18K">18K Rose/White</option>
+                            </select>
+                        </InputWrapper>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <InputWrapper label="HUID Code">
+                            <input type="text" className="w-full font-black text-sm bg-transparent text-slate-500" value={currentItem.huid || ''} onChange={e => setCurrentItem({...currentItem, huid: e.target.value.toUpperCase()})} placeholder="X1Y2Z3" />
+                        </InputWrapper>
+                        <InputWrapper label="Size / Dim">
+                            <input type="text" className="w-full font-bold text-sm bg-transparent" value={currentItem.size || ''} onChange={e => setCurrentItem({...currentItem, size: e.target.value})} placeholder="Size 12" />
+                        </InputWrapper>
+                    </div>
+                </div>
+            </div>
+            
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+
+            <div className="grid grid-cols-3 gap-4">
                 <InputWrapper label="Gross Wt (g)">
                     <input type="number" step="0.001" className="w-full font-black text-lg bg-transparent" value={currentItem.grossWeight || ''} onChange={e => handleGrossWeightChange(parseFloat(e.target.value) || 0)} placeholder="0.000" />
                 </InputWrapper>
                 <InputWrapper label="Net Wt (g)">
                     <input type="number" step="0.001" className="w-full font-black text-lg bg-transparent text-emerald-700" value={currentItem.netWeight || ''} onChange={e => setCurrentItem({...currentItem, netWeight: parseFloat(e.target.value) || 0})} placeholder="0.000" />
                 </InputWrapper>
-                <InputWrapper label="Size / Dim">
-                    <input type="text" className="w-full font-bold text-lg bg-transparent" value={currentItem.size || ''} onChange={e => setCurrentItem({...currentItem, size: e.target.value})} placeholder="Size 12" />
-                </InputWrapper>
-                <InputWrapper label="HUID Code">
-                    <input type="text" className="w-full font-black text-lg bg-transparent text-slate-500" value={currentItem.huid || ''} onChange={e => setCurrentItem({...currentItem, huid: e.target.value.toUpperCase()})} placeholder="X1Y2Z3" />
+                <InputWrapper label="Making/g">
+                    <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.makingChargesPerGram || ''} onChange={e => setCurrentItem({...currentItem, makingChargesPerGram: parseFloat(e.target.value) || 0})} placeholder="450" />
                 </InputWrapper>
             </div>
 
-            <div className="border-t border-slate-100 pt-4 grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
                 <InputWrapper label="VA %"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.wastagePercentage || ''} onChange={e => setCurrentItem({...currentItem, wastagePercentage: parseFloat(e.target.value) || 0})} placeholder="12" /></InputWrapper>
-                <InputWrapper label="Making/g"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.makingChargesPerGram || ''} onChange={e => setCurrentItem({...currentItem, makingChargesPerGram: parseFloat(e.target.value) || 0})} placeholder="450" /></InputWrapper>
                 <InputWrapper label="Stone Cost"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.stoneCharges || ''} onChange={e => setCurrentItem({...currentItem, stoneCharges: parseFloat(e.target.value) || 0})} placeholder="0" /></InputWrapper>
             </div>
 
@@ -208,8 +255,12 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                       {cartItems.map(item => (
                           <div key={item.id} className="p-4 flex justify-between items-center bg-white group hover:bg-slate-50 transition-colors">
                               <div className="flex items-center gap-4">
-                                  <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400">
-                                    <ImageIcon size={20} />
+                                  <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 overflow-hidden border">
+                                    {item.photoUrls?.[0] ? (
+                                        <img src={item.photoUrls[0]} className="w-full h-full object-cover" alt="Item" />
+                                    ) : (
+                                        <ImageIcon size={20} />
+                                    )}
                                   </div>
                                   <div>
                                       <p className="font-black text-sm text-slate-800">{item.category}</p>
