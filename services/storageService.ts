@@ -2,7 +2,15 @@
 import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate } from '../types';
 import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES } from '../constants';
 
-const API_ENDPOINT = '/api/storage';
+// Architecture Compliance:
+// If VITE_API_BASE_URL is set, use it.
+// Otherwise, if DEV mode, use localhost:3000.
+const API_BASE = (import.meta as any).env.VITE_API_BASE_URL || ((import.meta as any).env.DEV ? 'http://localhost:3000' : '');
+
+// Points to Node.js server endpoints (defined in server.js)
+const API_ENDPOINT = `${API_BASE}/api/storage`;
+const HEALTH_ENDPOINT = `${API_BASE}/api/health`;
+
 const SYNC_INTERVAL = 30000; 
 
 export interface AppState {
@@ -67,11 +75,10 @@ class StorageService {
           this.saveToLocal();
         }
       } else {
-        const errData = await response.json().catch(() => ({}));
-        console.error("[Storage] Server pull returned", response.status, errData.message || "");
+        // Silent fail on pull is okay, we rely on local
       }
     } catch (e) {
-      console.warn("[Storage] Pull failed network/connection issue", e);
+      // Offline or server down, ignore
     } finally {
       this.isSyncing = false;
     }
@@ -88,11 +95,10 @@ class StorageService {
            body: JSON.stringify(payload)
        });
        if (!response.ok) {
-           const errData = await response.json().catch(() => ({}));
-           console.error("[Storage] Push failed with", response.status, errData.message || "");
+           console.warn("[Storage] Background push failed");
        }
     } catch (e) {
-        console.warn("[Storage] Push failed network issue", e);
+        // Offline
     } finally {
         this.isSyncing = false;
     }
@@ -107,13 +113,24 @@ class StorageService {
                body: JSON.stringify(payload)
            });
            if (!response.ok) {
-               const errData = await response.json().catch(() => ({}));
-               return { success: false, message: `Server error ${response.status}: ${errData.message || 'Check logs'}` };
+               return { success: false, message: `Server Check Failed: ${response.status}` };
            }
-           return { success: true, message: "Synchronized with Hostinger!" };
+           return { success: true, message: "Synchronized with Node.js Backend!" };
       } catch (e: any) {
-          return { success: false, message: `Network error: ${e.message}` };
+          return { success: false, message: `Connection Failed: Is server.js running?` };
       }
+  }
+
+  public async checkHealth(): Promise<{ status: string; mode: 'mysql' | 'local_fs' | 'offline'; timestamp?: string }> {
+    try {
+        const response = await fetch(HEALTH_ENDPOINT);
+        if (response.ok) {
+            return await response.json();
+        }
+        return { status: 'error', mode: 'offline' };
+    } catch (e) {
+        return { status: 'error', mode: 'offline' };
+    }
   }
 
   public getOrders() { return this.state.orders; }
