@@ -20,9 +20,9 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '100mb' })); // Increased for multiple high-res jewelry photos
+app.use(express.json({ limit: '100mb' }));
 
-// Database Connection
+// Database Connection Pool
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER,
@@ -53,7 +53,6 @@ initDB();
 
 // --- API ROUTES ---
 
-// 1. Storage: Fetch State
 app.get('/api/storage', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT data FROM aura_storage WHERE id = 1');
@@ -67,7 +66,6 @@ app.get('/api/storage', async (req, res) => {
   }
 });
 
-// 2. Storage: Save State
 app.post('/api/storage', async (req, res) => {
   try {
     const data = JSON.stringify(req.body);
@@ -81,7 +79,6 @@ app.post('/api/storage', async (req, res) => {
   }
 });
 
-// 3. Gold Rates Proxy (Bypasses CORS for Frontend)
 app.get('/api/rates', async (req, res) => {
   try {
     const response = await fetch('https://uat.batuk.in/augmont/gold');
@@ -94,27 +91,13 @@ app.get('/api/rates', async (req, res) => {
   }
 });
 
-// 4. Gemini AI Strategy Route
-app.post('/api/ai/strategy', async (req, res) => {
-  try {
-    const { order, type } = req.body;
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Generate a high-end collection strategy for ${order.customerName}. 
-                 Outstanding: ₹${order.balance}. Status: ${type}.
-                 Return JSON: { "tone": "POLITE|FIRM|URGENT", "message": "The text", "reasoning": "Strategy explanation" }`,
-      config: { responseMimeType: "application/json" }
-    });
-    res.json(JSON.parse(response.text));
-  } catch (err) {
-    res.status(500).json({ error: 'AI Brain Offline', details: err.message });
-  }
-});
+// Serve Frontend from the 'dist' directory
+const distPath = path.join(__dirname, 'dist');
+app.use(express.static(distPath));
 
-// Serve Frontend
-app.use(express.static(__dirname));
+// For SPA routing
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
 app.listen(PORT, () => {
