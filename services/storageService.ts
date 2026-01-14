@@ -2,8 +2,6 @@
 import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate } from '../types';
 import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES, INITIAL_TEMPLATES } from '../constants';
 
-const KEY_STATE = 'aura_master_state';
-
 export interface AppState {
   orders: Order[];
   logs: WhatsAppLogEntry[];
@@ -23,61 +21,63 @@ const DEFAULT_STATE: AppState = {
 };
 
 class StorageService {
-  private state: AppState;
+  private state: AppState = DEFAULT_STATE;
   private listeners: (() => void)[] = [];
   private isSyncing = false;
+  private syncStatus: 'CONNECTED' | 'OFFLINE' | 'SYNCING' | 'ERROR' = 'OFFLINE';
 
-  constructor() {
-    this.state = this.loadFromLocal();
-  }
+  constructor() {}
 
-  private loadFromLocal(): AppState {
-    try {
-      const serialized = localStorage.getItem(KEY_STATE);
-      if (serialized) {
-        return { ...DEFAULT_STATE, ...JSON.parse(serialized) };
-      }
-    } catch (e) {
-      console.warn("[Storage] Local cache missing.");
-    }
-    return DEFAULT_STATE;
-  }
-
-  private saveToLocal() {
-    this.state.lastUpdated = Date.now();
-    try {
-        localStorage.setItem(KEY_STATE, JSON.stringify(this.state));
-        this.notify();
-    } catch (e) {
-        console.error("[Storage] Local cache write failed", e);
-    }
+  public getSyncStatus() {
+      return this.syncStatus;
   }
 
   /**
-   * Authoritative sync from the production MySQL database via Express.
+   * Fetches state from server. Must succeed for app to boot.
    */
-  public async syncFromServer(): Promise<boolean> {
+  public async syncFromServer(): Promise<{success: boolean, error?: string}> {
+    this.syncStatus = 'SYNCING';
+    this.notify();
+    
     try {
-        const res = await fetch('/api/state');
-        if (res.ok) {
-            const serverData = await res.json();
-            if (serverData) {
-                this.state = serverData;
-                localStorage.setItem(KEY_STATE, JSON.stringify(this.state));
-                this.notify();
-                return true;
-            }
+        const res = await fetch('/api/state', {
+            headers: { 'Accept': 'application/json' }
+        });
+        
+        if (!res.ok) {
+            const errorMsg = `Server Response: ${res.status} ${res.statusText}`;
+            this.syncStatus = 'ERROR';
+            this.notify();
+            return { success: false, error: errorMsg };
         }
-        return false;
-    } catch (e) {
-        console.error("[Storage] Critical: Could not reach backend state API.");
-        return false;
+
+        const contentType = res.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+            this.syncStatus = 'ERROR';
+            this.notify();
+            return { success: false, error: "The server returned a non-JSON response (likely a 404/500 HTML page). Verify your Node.js startup file." };
+        }
+
+        const serverData = await res.json();
+        this.state = {
+            ...DEFAULT_STATE,
+            ...serverData,
+            lastUpdated: serverData.lastUpdated || Date.now()
+        };
+        
+        this.syncStatus = 'CONNECTED';
+        this.notify();
+        return { success: true };
+    } catch (e: any) {
+        this.syncStatus = 'OFFLINE';
+        this.notify();
+        return { success: false, error: e.message || "Network Connectivity Error" };
     }
   }
 
   private async syncToBackend() {
-    if (this.isSyncing) return;
-    this.isSyncing = true;
+    this.syncStatus = 'SYNCING';
+    this.notify();
 
     try {
       const res = await fetch('/api/state', {
@@ -85,46 +85,45 @@ class StorageService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(this.state)
       });
-      if (!res.ok) throw new Error("Server rejected state update");
+      if (res.ok) {
+          this.syncStatus = 'CONNECTED';
+      } else {
+          this.syncStatus = 'ERROR';
+      }
     } catch (e) {
-      console.error("[Storage] Error: Persistence to backend failed.", e);
+      this.syncStatus = 'OFFLINE';
     } finally {
-      this.isSyncing = false;
+      this.notify();
     }
   }
 
   public getOrders() { return this.state.orders; }
   public setOrders(orders: Order[]) { 
       this.state.orders = orders; 
-      this.saveToLocal(); 
       this.syncToBackend();
   }
 
   public getLogs() { return this.state.logs; }
   public setLogs(logs: WhatsAppLogEntry[]) { 
       this.state.logs = logs; 
-      this.saveToLocal(); 
       this.syncToBackend();
   }
 
   public getTemplates() { return this.state.templates; }
   public setTemplates(templates: WhatsAppTemplate[]) { 
       this.state.templates = templates; 
-      this.saveToLocal(); 
       this.syncToBackend();
   }
 
   public getPlanTemplates() { return this.state.planTemplates; }
   public setPlanTemplates(templates: PaymentPlanTemplate[]) { 
       this.state.planTemplates = templates; 
-      this.saveToLocal(); 
       this.syncToBackend();
   }
 
   public getSettings() { return this.state.settings; }
   public setSettings(settings: GlobalSettings) { 
       this.state.settings = settings; 
-      this.saveToLocal(); 
       this.syncToBackend();
   }
   
@@ -136,11 +135,11 @@ class StorageService {
   private notify() { this.listeners.forEach(cb => cb()); }
 
   public async forceSync(): Promise<{ success: boolean; message: string }> {
-      const success = await this.syncFromServer();
-      if (success) {
-          return { success: true, message: "Database synchronization successful." };
+      const res = await this.syncFromServer();
+      if (res.success) {
+          return { success: true, message: "Live Sync Complete." };
       } else {
-          return { success: false, message: "Server connection failed. Check backend status." };
+          return { success: false, message: res.error || "Sync Failed." };
       }
   }
 }

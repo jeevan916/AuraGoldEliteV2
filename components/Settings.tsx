@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, Zap, Smartphone, Key, ShieldCheck, Info, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, Wifi } from 'lucide-react';
+import { Save, RefreshCw, Zap, Smartphone, Key, ShieldCheck, Info, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, Wifi, ExternalLink } from 'lucide-react';
 import { GlobalSettings } from '../types';
 import { goldRateService } from '../services/goldRateService';
 import { storageService } from '../services/storageService';
@@ -30,7 +30,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
   const handleLiveSync = async () => {
     setSyncing(true);
     try {
-        // Fix: fetchLiveRate does not accept any arguments (corrected line 33)
         const result = await goldRateService.fetchLiveRate();
         if (result && result.success) {
           const updatedSettings = {
@@ -48,7 +47,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
 
   const handleTestDatabase = async () => {
       setDbStatus('TESTING');
-      setDbMessage('Attempting to connect to server.php...');
+      setDbMessage('Pinging AuraGold Backend...');
       
       const result = await storageService.forceSync();
       
@@ -62,9 +61,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
   };
 
   const handleTestWhatsApp = async () => {
-    // Save current input state first to ensure service uses latest values
     onUpdate(localSettings);
-    
     setWaStatus('TESTING');
     setWaMessage('Validating credentials with Meta Graph API...');
 
@@ -109,7 +106,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Market Pricing Section */}
         <section className="lg:col-span-8 space-y-8">
           
           {/* DATABASE DIAGNOSTICS */}
@@ -121,25 +117,44 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Backend Connection</h3>
              </div>
              
-             <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
-                 <button 
-                    onClick={handleTestDatabase}
-                    disabled={dbStatus === 'TESTING'}
-                    className="shrink-0 bg-slate-100 text-slate-700 hover:bg-slate-200 px-5 py-2.5 rounded-xl font-bold text-[10px] flex items-center gap-2 transition-colors disabled:opacity-50"
-                 >
-                    {dbStatus === 'TESTING' ? <Loader2 className="animate-spin" size={14}/> : <ServerCrash size={14} />}
-                    Test Connection
-                 </button>
-                 
-                 <div className={`flex-1 p-3.5 rounded-xl text-xs font-medium flex items-start gap-3 ${
-                     dbStatus === 'SUCCESS' ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' :
-                     dbStatus === 'ERROR' ? 'bg-rose-50 text-rose-800 border border-rose-100' :
-                     'bg-slate-50 text-slate-500'
-                 }`}>
-                     {dbStatus === 'SUCCESS' && <CheckCircle2 className="shrink-0 text-emerald-600" size={18} />}
-                     {dbStatus === 'ERROR' && <AlertTriangle className="shrink-0 text-rose-600" size={18} />}
-                     <p>{dbMessage || "Click 'Test Connection' to verify server status."}</p>
+             <div className="flex flex-col gap-4">
+                 <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
+                    <button 
+                        onClick={handleTestDatabase}
+                        disabled={dbStatus === 'TESTING'}
+                        className="shrink-0 bg-slate-100 text-slate-700 hover:bg-slate-200 px-5 py-2.5 rounded-xl font-bold text-[10px] flex items-center gap-2 transition-colors disabled:opacity-50"
+                    >
+                        {dbStatus === 'TESTING' ? <Loader2 className="animate-spin" size={14}/> : <ServerCrash size={14} />}
+                        Test Connection
+                    </button>
+                    
+                    <div className={`flex-1 p-3.5 rounded-xl text-xs font-medium flex items-start gap-3 ${
+                        dbStatus === 'SUCCESS' ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' :
+                        dbStatus === 'ERROR' ? 'bg-rose-50 text-rose-800 border border-rose-100' :
+                        'bg-slate-50 text-slate-500'
+                    }`}>
+                        {dbStatus === 'SUCCESS' && <CheckCircle2 className="shrink-0 text-emerald-600" size={18} />}
+                        {dbStatus === 'ERROR' && <AlertTriangle className="shrink-0 text-rose-600" size={18} />}
+                        <p>{dbMessage || "Click 'Test Connection' to verify server status."}</p>
+                    </div>
                  </div>
+
+                 {dbStatus === 'ERROR' && (
+                     <div className="bg-slate-900 text-slate-300 p-5 rounded-2xl text-[11px] leading-relaxed space-y-3 border border-slate-700">
+                        <p className="font-bold text-white flex items-center gap-2">
+                            <Info size={14} className="text-amber-500" /> Troubleshooting Hostinger 404
+                        </p>
+                        <ul className="list-disc ml-4 space-y-1 opacity-80">
+                            <li>Ensure the <strong>Node.js Selector</strong> in Hostinger is active.</li>
+                            <li>The Application Startup File should be <code>server.js</code> (built from server.ts).</li>
+                            <li>Check your <code>public_html/.htaccess</code> file—it must route requests to your Node process.</li>
+                            <li>Verify <strong>DB_HOST, DB_USER, DB_PASSWORD</strong> are set in your Hostinger environment variables.</li>
+                        </ul>
+                        <button onClick={() => window.open('https://hpanel.hostinger.com', '_blank')} className="text-amber-400 font-bold hover:underline flex items-center gap-1">
+                            Open Hostinger Panel <ExternalLink size={10} />
+                        </button>
+                     </div>
+                 )}
              </div>
           </div>
 
@@ -225,7 +240,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
           </div>
         </section>
 
-        {/* Sidebar Info */}
         <aside className="lg:col-span-4 space-y-6">
             <div className="bg-[#0f172a] text-white p-6 rounded-[2.5rem] shadow-2xl relative overflow-hidden group">
                <div className="relative z-10 space-y-6">
@@ -259,7 +273,7 @@ const PricingField = ({ label, value, onChange }: { label: string, value: number
         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium text-[15px]">₹</span>
         <input 
             type="number" 
-            className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 pl-9 text-lg font-black text-slate-800 focus:bg-white transition-all outline-none" 
+            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 pl-9 text-lg font-black text-slate-800 focus:bg-white transition-all outline-none" 
             value={value}
             onChange={e => onChange(parseFloat(e.target.value) || 0)}
         />
@@ -272,7 +286,7 @@ const MetaField = ({ label, value, onChange, placeholder }: any) => (
     <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">{label}</label>
     <input 
         type="text" 
-        className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-xs font-bold focus:bg-white transition-all outline-none" 
+        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs font-bold focus:bg-white transition-all outline-none" 
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}

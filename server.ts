@@ -47,17 +47,15 @@ async function initDb() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
     connection.release();
-    console.log('✅ Database Connection Verified');
+    console.log('✅ AuraGold: Production Database Link Established');
   } catch (err) {
-    console.error('❌ CRITICAL: Database connection failed:', err);
-    // In a real production app, we might not want to exit if we want to serve a "Maintenance" page,
-    // but for this implementation, we ensure the DB is ready.
+    console.error('❌ AuraGold: Database connection failed. Verify .env settings:', err);
   }
 }
 
 initDb();
 
-// Helper: Fetch Gold Rate on Backend (Avoids Browser CORS/Protocol issues)
+// Helper: Fetch Gold Rate on Backend
 async function fetchGoldRateFromSource(): Promise<{k24: number, k22: number} | null> {
   return new Promise((resolve) => {
     https.get('https://www.goodreturns.in/gold-rates/', (res) => {
@@ -84,20 +82,24 @@ async function fetchGoldRateFromSource(): Promise<{k24: number, k22: number} | n
 
 // API: Get App State
 app.get('/api/state', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   try {
     const [rows]: any = await pool.query('SELECT content FROM aura_app_state WHERE id = 1');
     if (rows.length > 0) {
       res.json(JSON.parse(rows[0].content));
     } else {
-      res.status(404).json({ error: 'Initial state not found. Please save settings once.' });
+      // Return empty valid structure for first boot
+      res.json({ orders: [], logs: [], lastUpdated: 0 });
     }
   } catch (err: any) {
-    res.status(500).json({ error: 'Database access error' });
+    console.error('API Error (State GET):', err.message);
+    res.status(500).json({ error: 'Database access failure' });
   }
 });
 
 // API: Save App State
 app.post('/api/state', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   try {
     const content = JSON.stringify(req.body);
     const lastUpdated = Date.now();
@@ -108,23 +110,24 @@ app.post('/api/state', async (req, res) => {
     `, [content, lastUpdated]);
     res.json({ success: true, timestamp: lastUpdated });
   } catch (err: any) {
-    res.status(500).json({ error: 'Sync failed' });
+    console.error('API Error (State POST):', err.message);
+    res.status(500).json({ error: 'Persistence failed' });
   }
 });
 
-// API: Live Gold Rate (Backend Authority)
+// API: Live Gold Rate
 app.get('/api/gold-rate', async (req, res) => {
   const rates = await fetchGoldRateFromSource();
   if (rates) {
     res.json({ success: true, ...rates });
   } else {
-    res.status(503).json({ success: false, error: 'Market provider unreachable' });
+    res.status(503).json({ success: false, error: 'Market source offline' });
   }
 });
 
 // Health Check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'AuraGold Live', uptime: process.uptime() });
+app.get('/api/ping', (req, res) => {
+  res.json({ status: 'pong', timestamp: Date.now() });
 });
 
 // Serve built frontend files
@@ -137,5 +140,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 AuraGold Production Server running on port ${PORT}`);
+  console.log(`🚀 Production Server Ready on Port ${PORT}`);
 });

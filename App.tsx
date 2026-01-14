@@ -5,7 +5,7 @@ import {
   MessageSquare, Globe, Settings as SettingsIcon, AlertTriangle, 
   Plus, ShieldCheck, LogOut, Briefcase, Menu, X, ArrowLeft, Home,
   MoreHorizontal, PlusCircle, Sparkles, Zap, BrainCircuit, FileText, 
-  ScrollText, Activity, Server, Calculator, Loader2, WifiOff
+  ScrollText, Activity, Server, Calculator, Loader2, WifiOff, Cloud, CloudOff, RefreshCw, ServerCrash, Database
 } from 'lucide-react';
 
 // Modules
@@ -69,11 +69,12 @@ const App: React.FC = () => {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState(storageService.getSyncStatus());
   
   const { orders, addOrder, recordPayment, updateItemStatus, updateOrder } = useOrders();
   const { logs, templates, addLog, setTemplates } = useWhatsApp();
   const [settings, setSettingsState] = useState<GlobalSettings>(storageService.getSettings());
-  const [planTemplates, setPlanTemplates] = useState<PaymentPlanTemplate[]>(storageService.getPlanTemplates().length > 0 ? storageService.getPlanTemplates() : INITIAL_PLAN_TEMPLATES);
+  const [planTemplates, setPlanTemplates] = useState<PaymentPlanTemplate[]>(storageService.getPlanTemplates());
 
   const [notifications, setNotifications] = useState<NotificationTrigger[]>([]);
   const [isStrategyLoading, setStrategyLoading] = useState(false);
@@ -98,8 +99,8 @@ const App: React.FC = () => {
     
     const unsubStorage = storageService.subscribe(() => {
        setSettingsState(storageService.getSettings());
-       const plans = storageService.getPlanTemplates();
-       if (plans.length > 0) setPlanTemplates(plans);
+       setSyncStatus(storageService.getSyncStatus());
+       setPlanTemplates(storageService.getPlanTemplates());
     });
 
     const unsubErrors = errorService.subscribe((errs, acts) => {
@@ -107,16 +108,14 @@ const App: React.FC = () => {
       setActivities(acts);
     });
 
-    // CRITICAL: Real-world initialization
     const startApp = async () => {
       try {
-        const synced = await storageService.syncFromServer();
-        if (!synced) {
-            // Check if we have at least local settings
-            const s = storageService.getSettings();
-            if (!s.currentGoldRate24K) throw new Error("Database sync failed on launch.");
+        const result = await storageService.syncFromServer();
+        if (!result.success) {
+            throw new Error(result.error);
         }
         
+        // Background market update
         const rateRes = await goldRateService.fetchLiveRate();
         if (rateRes.success) {
             const currentSettings = storageService.getSettings();
@@ -127,7 +126,7 @@ const App: React.FC = () => {
             });
         }
       } catch (e: any) {
-        setInitError(e.message || "Network Error");
+        setInitError(e.message || "Unknown Database Connectivity Error");
       } finally {
         setIsInitializing(false);
       }
@@ -218,24 +217,63 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
         <Loader2 className="animate-spin text-amber-500 mb-6" size={48} />
-        <h2 className="text-xl font-black uppercase tracking-widest">AuraGold Production</h2>
-        <p className="text-slate-400 text-xs mt-2">Synchronizing with institutional database...</p>
+        <h2 className="text-xl font-black uppercase tracking-widest">AuraGold Elite</h2>
+        <p className="text-slate-400 text-xs mt-2 font-medium">Connecting to MySQL Database...</p>
       </div>
     );
   }
 
   if (initError) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-2xl text-center border-t-8 border-t-rose-500">
-          <WifiOff size={48} className="mx-auto text-rose-500 mb-6" />
-          <h2 className="text-2xl font-black text-slate-900 mb-2">System Offline</h2>
-          <p className="text-slate-500 text-sm mb-6">The application could not establish a connection with the production server. This may be due to a server restart or network timeout.</p>
-          <div className="bg-slate-100 p-4 rounded-xl text-xs font-mono text-slate-500 mb-8 overflow-auto">{initError}</div>
-          <button onClick={() => window.location.reload()} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest">Retry Connection</button>
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-slate-900">
+            <div className="max-w-xl w-full bg-white rounded-[2.5rem] shadow-2xl border-t-8 border-t-rose-500 p-8 md:p-12">
+                <div className="flex justify-between items-start mb-8">
+                    <div className="p-4 bg-rose-50 text-rose-600 rounded-3xl">
+                        <ServerCrash size={40} />
+                    </div>
+                    <div className="bg-slate-100 px-4 py-2 rounded-2xl text-[10px] font-black uppercase text-slate-500 tracking-widest flex items-center gap-2">
+                        <Database size={14} /> System Offline
+                    </div>
+                </div>
+                
+                <h1 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">Backend Sync Failure</h1>
+                <p className="text-slate-500 font-medium leading-relaxed mb-8">
+                    The application is strictly configured for <strong>Live-Only</strong> mode. Your database connection has failed, preventing secure order generation.
+                </p>
+
+                <div className="bg-slate-900 text-emerald-400 p-5 rounded-2xl font-mono text-xs leading-relaxed border border-slate-800 shadow-inner mb-8 overflow-auto max-h-40">
+                    <span className="text-rose-400 block font-bold mb-1 underline">CRITICAL DIAGNOSIS:</span>
+                    {initError}
+                </div>
+
+                <div className="space-y-4 mb-8">
+                    <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Hostinger Fix Steps</h3>
+                    <ul className="grid grid-cols-1 gap-3">
+                        <li className="flex items-start gap-3 text-xs font-bold text-slate-700 bg-slate-50 p-3 rounded-xl">
+                            <span className="bg-slate-200 text-slate-600 w-5 h-5 rounded-md flex items-center justify-center shrink-0">1</span>
+                            Ensure Node.js Application is "Started" in hPanel.
+                        </li>
+                        <li className="flex items-start gap-3 text-xs font-bold text-slate-700 bg-slate-50 p-3 rounded-xl">
+                            <span className="bg-slate-200 text-slate-600 w-5 h-5 rounded-md flex items-center justify-center shrink-0">2</span>
+                            Verify .env variables: DB_HOST, DB_USER, DB_NAME.
+                        </li>
+                        <li className="flex items-start gap-3 text-xs font-bold text-slate-700 bg-slate-50 p-3 rounded-xl">
+                            <span className="bg-slate-200 text-slate-600 w-5 h-5 rounded-md flex items-center justify-center shrink-0">3</span>
+                            Check public_html/.htaccess routing to the Node process.
+                        </li>
+                    </ul>
+                </div>
+
+                <button 
+                    onClick={() => window.location.reload()}
+                    className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-[0.2em] shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3"
+                >
+                    <RefreshCw size={18} /> Retry Connection
+                </button>
+            </div>
+            <p className="mt-8 text-[10px] font-bold text-slate-400 uppercase tracking-widest">AuraGold Security Protocol v5.0</p>
         </div>
-      </div>
-    );
+      );
   }
 
   const getViewTitle = () => {
@@ -269,11 +307,24 @@ const App: React.FC = () => {
                     <ArrowLeft size={24} />
                  </button>
                ) : (
-                  <button onClick={() => setView('MENU')} className="w-9 h-9 bg-slate-900 rounded-xl flex items-center justify-center shadow-lg active:scale-90 transition-transform">
+                  <button onClick={() => setView('MENU')} className="w-9 h-9 bg-slate-900 rounded-xl flex items-center justify-center shadow-lg active:scale-90 transition-transform relative">
                     <Menu size={20} className="text-white" />
                   </button>
                )}
-               <h1 className="text-xl font-black tracking-tight text-slate-900 truncate max-w-[200px]">{getViewTitle()}</h1>
+               <div>
+                    <h1 className="text-xl font-black tracking-tight text-slate-900 truncate max-w-[200px] leading-tight">{getViewTitle()}</h1>
+                    <div className="flex items-center gap-1">
+                        {syncStatus === 'CONNECTED' ? (
+                            <span className="text-[8px] font-black uppercase text-emerald-600 flex items-center gap-1">
+                                <Cloud size={10} /> Live Database Linked
+                            </span>
+                        ) : (
+                            <span className="text-[8px] font-black uppercase text-blue-600 flex items-center gap-1">
+                                <Loader2 size={10} className="animate-spin" /> Synchronizing...
+                            </span>
+                        )}
+                    </div>
+               </div>
              </div>
              <div className="flex items-center gap-3">
                  <button onClick={()=>setView('SETTINGS')} className="p-2 text-slate-400 active:rotate-90 transition-all"><SettingsIcon size={20}/></button>
@@ -292,7 +343,7 @@ const App: React.FC = () => {
                 <div className="animate-fadeIn">
                    <div className="mb-6">
                       <h2 className="text-2xl font-black text-slate-800">Apps & Tools</h2>
-                      <p className="text-sm text-slate-500">Manage automation, templates, and system health.</p>
+                      <p className="text-sm text-slate-500 font-medium">Manage automation, templates, and system health.</p>
                    </div>
                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                       <MenuItem icon={<BrainCircuit />} label="AI Strategy" desc="Automated Collection Engine" colorClass="bg-amber-100 text-amber-600" onClick={() => setView('STRATEGY')} />
