@@ -2,6 +2,7 @@
 import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate } from '../types';
 import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES } from '../constants';
 
+// Use absolute relative path for Node server or proxy
 const API_ENDPOINT = '/api/storage';
 const SYNC_INTERVAL = 30000; 
 
@@ -39,20 +40,8 @@ class StorageService {
       const data = localStorage.getItem('aura_master_state');
       if (data) {
         const parsed = JSON.parse(data);
-        
-        // Smart Merge for Settings: Env Vars (INITIAL_SETTINGS) should override empty LocalStorage values
         let mergedSettings = parsed.settings ? { ...INITIAL_SETTINGS, ...parsed.settings } : INITIAL_SETTINGS;
         
-        if (!mergedSettings.whatsappPhoneNumberId && INITIAL_SETTINGS.whatsappPhoneNumberId) {
-            mergedSettings.whatsappPhoneNumberId = INITIAL_SETTINGS.whatsappPhoneNumberId;
-        }
-        if (!mergedSettings.whatsappBusinessAccountId && INITIAL_SETTINGS.whatsappBusinessAccountId) {
-            mergedSettings.whatsappBusinessAccountId = INITIAL_SETTINGS.whatsappBusinessAccountId;
-        }
-        if (!mergedSettings.whatsappBusinessToken && INITIAL_SETTINGS.whatsappBusinessToken) {
-            mergedSettings.whatsappBusinessToken = INITIAL_SETTINGS.whatsappBusinessToken;
-        }
-
         this.state = {
           ...this.state,
           ...parsed,
@@ -64,14 +53,13 @@ class StorageService {
         };
       }
     } catch (e) {
-      console.warn("[Storage] Local storage parse error", e);
+      console.warn("[Storage] Local cache empty or invalid");
     }
   }
 
   private saveToLocal() {
     try {
       localStorage.setItem('aura_master_state', JSON.stringify(this.state));
-      localStorage.setItem('aura_settings', JSON.stringify(this.state.settings));
       this.notify();
     } catch (e) {
       console.error("[Storage] Local save failed", e);
@@ -84,38 +72,27 @@ class StorageService {
 
     try {
       const response = await fetch(API_ENDPOINT);
-      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status} at ${API_ENDPOINT}`);
       
       const serverData = await response.json();
       
       if (serverData && serverData.lastUpdated > this.state.lastUpdated) {
-          // Apply same smart merge logic for server data
-          let mergedSettings = serverData.settings ? { ...this.state.settings, ...serverData.settings } : this.state.settings;
-          
-          if (!mergedSettings.whatsappPhoneNumberId && INITIAL_SETTINGS.whatsappPhoneNumberId) {
-              mergedSettings.whatsappPhoneNumberId = INITIAL_SETTINGS.whatsappPhoneNumberId;
-          }
-
           this.state = {
             ...this.state,
             ...serverData,
-            orders: Array.isArray(serverData.orders) ? serverData.orders : this.state.orders,
-            logs: Array.isArray(serverData.logs) ? serverData.logs : this.state.logs,
-            templates: Array.isArray(serverData.templates) ? serverData.templates : this.state.templates,
-            planTemplates: Array.isArray(serverData.planTemplates) ? serverData.planTemplates : this.state.planTemplates,
-            settings: mergedSettings
+            lastUpdated: serverData.lastUpdated
           };
           this.saveToLocal();
       }
     } catch (e: any) {
-      console.warn("[Storage] Remote pull failed, using local:", e.message);
+      console.warn("[Storage] Remote pull failed. Check if server.js is running:", e.message);
     } finally {
       this.isSyncing = false;
     }
   }
 
   public async pushToServer() {
-    if (this.isSyncing) return;
+    if (this.isSyncing || this.state.orders.length === 0) return;
     this.isSyncing = true;
 
     try {
@@ -128,7 +105,7 @@ class StorageService {
 
        if (!response.ok) throw new Error(`Push failed: ${response.status}`);
     } catch (e: any) {
-        console.warn("[Storage] Background push failed:", e.message);
+        console.warn("[Storage] Background push failed (404 usually means Node server is down):", e.message);
     } finally {
         this.isSyncing = false;
     }
@@ -143,47 +120,30 @@ class StorageService {
                body: JSON.stringify(payload)
            });
 
-           if (!response.ok) return { success: false, message: `Server error: ${response.status}` };
+           if (!response.ok) return { success: false, message: `Server Error ${response.status}: Node process may be stopped.` };
            return { success: true, message: "AuraCloud Synchronized!" };
       } catch (e: any) {
-          return { success: false, message: `Network Error: ${e.message}` };
+          return { success: false, message: `Connection Refused: ${e.message}` };
       }
   }
 
   public getOrders() { return this.state.orders; }
-  public setOrders(orders: Order[]) { 
-      this.state.orders = orders; 
-      this.saveToLocal();
-  }
+  public setOrders(orders: Order[]) { this.state.orders = orders; this.saveToLocal(); }
   public getLogs() { return this.state.logs; }
-  public setLogs(logs: WhatsAppLogEntry[]) {
-      this.state.logs = logs;
-      this.saveToLocal();
-  }
+  public setLogs(logs: WhatsAppLogEntry[]) { this.state.logs = logs; this.saveToLocal(); }
   public getTemplates() { return this.state.templates; }
-  public setTemplates(templates: WhatsAppTemplate[]) {
-      this.state.templates = templates;
-      this.saveToLocal();
-  }
+  public setTemplates(templates: WhatsAppTemplate[]) { this.state.templates = templates; this.saveToLocal(); }
   public getPlanTemplates() { return this.state.planTemplates; }
-  public setPlanTemplates(planTemplates: PaymentPlanTemplate[]) {
-      this.state.planTemplates = planTemplates;
-      this.saveToLocal();
-  }
+  public setPlanTemplates(planTemplates: PaymentPlanTemplate[]) { this.state.planTemplates = planTemplates; this.saveToLocal(); }
   public getSettings() { return this.state.settings; }
-  public setSettings(settings: GlobalSettings) {
-      this.state.settings = settings;
-      this.saveToLocal();
-  }
+  public setSettings(settings: GlobalSettings) { this.state.settings = settings; this.saveToLocal(); }
   
   public subscribe(cb: () => void) {
       this.listeners.push(cb);
       return () => { this.listeners = this.listeners.filter(l => l !== cb); };
   }
   
-  private notify() {
-      this.listeners.forEach(cb => cb());
-  }
+  private notify() { this.listeners.forEach(cb => cb()); }
 }
 
 export const storageService = new StorageService();

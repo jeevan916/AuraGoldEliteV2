@@ -13,46 +13,24 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+// Hostinger often provides the PORT via environment variable
 const PORT = process.env.PORT || 3000;
 
-// Initialize Gemini AI
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '100mb' }));
-
-// Database Connection Pool
+// Initialize Database Pool
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD || process.env.DB_PASS,
   database: process.env.DB_NAME,
   waitForConnections: true,
-  connectionLimit: 20,
+  connectionLimit: 10,
 });
 
-// Initialize Database Table
-async function initDB() {
-  try {
-    const connection = await pool.getConnection();
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS aura_storage (
-        id INT PRIMARY KEY DEFAULT 1,
-        data LONGTEXT,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-      )
-    `);
-    console.log('AuraGold Express: MySQL Engine Ready');
-    connection.release();
-  } catch (err) {
-    console.error('AuraGold Express: DB Init Error', err.message);
-  }
-}
-initDB();
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
 
-// --- API ROUTES ---
-
+// 1. API ROUTES (Must be defined BEFORE express.static)
 app.get('/api/storage', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT data FROM aura_storage WHERE id = 1');
@@ -62,7 +40,8 @@ app.get('/api/storage', async (req, res) => {
       res.json({ orders: [], logs: [], templates: [], settings: null, lastUpdated: 0 });
     }
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch persistent storage', details: err.message });
+    console.error('Storage Fetch Error:', err);
+    res.status(500).json({ error: 'DB Fetch Failed', details: err.message });
   }
 });
 
@@ -75,7 +54,8 @@ app.post('/api/storage', async (req, res) => {
     );
     res.json({ success: true, timestamp: Date.now() });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to persist data', details: err.message });
+    console.error('Storage Save Error:', err);
+    res.status(500).json({ error: 'DB Save Failed', details: err.message });
   }
 });
 
@@ -87,19 +67,32 @@ app.get('/api/rates', async (req, res) => {
     const rate22K = Math.round(rate24K * 0.916);
     res.json({ rate24K, rate22K, success: true });
   } catch (err) {
-    res.status(500).json({ success: false, error: 'External Market Feed Unavailable', details: err.message });
+    res.status(500).json({ success: false, error: 'Rates Fetch Failed' });
   }
 });
 
-// Serve Frontend from the 'dist' directory
+// 2. STATIC FILES (Vite Build)
 const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
 
-// For SPA routing
+// 3. SPA FALLBACK (Catch-all)
 app.get('*', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`AuraGold Elite Console active on port ${PORT}`);
+// Start Server & Init DB
+app.listen(PORT, async () => {
+  console.log(`>>> AuraGold Node Backend running on port ${PORT}`);
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS aura_storage (
+        id INT PRIMARY KEY DEFAULT 1,
+        data LONGTEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('>>> MySQL Table Verified');
+  } catch (e) {
+    console.error('>>> DB Init Failed:', e.message);
+  }
 });
