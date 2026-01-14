@@ -11,16 +11,27 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 1. Resolve .env from your specific protected path
-// Hostinger absolute path typically: /home/u123456789/domains/yourdomain.com/public_html/.builds/config/.env
-const envPath = path.join(__dirname, '.builds', 'config', '.env');
+// 1. Resilient .env Loading
+// We check multiple potential paths based on how Hostinger handles subdirectories
+const envPaths = [
+  path.join(__dirname, '.builds', 'config', '.env'),
+  path.join(__dirname, '..', '.builds', 'config', '.env'),
+  path.join(__dirname, '.env')
+];
 
-if (fs.existsSync(envPath)) {
-  dotenv.config({ path: envPath });
-  console.log(`[AuraGold] Environment loaded from: ${envPath}`);
-} else {
-  dotenv.config(); // Fallback to root .env
-  console.log(`[AuraGold] .env not found at ${envPath}, attempting root fallback.`);
+let envLoaded = false;
+for (const p of envPaths) {
+  if (fs.existsSync(p)) {
+    dotenv.config({ path: p });
+    console.log(`[AuraGold] Environment loaded from: ${p}`);
+    envLoaded = true;
+    break;
+  }
+}
+
+if (!envLoaded) {
+  dotenv.config(); // Final attempt at current working directory
+  console.log('[AuraGold] No .env found in specific paths, using root fallback.');
 }
 
 const app = express();
@@ -66,12 +77,13 @@ const initDb = async () => {
   }
 };
 
-// 3. API Endpoints (Prefix with /api)
+// 3. API Endpoints (Define these BEFORE static files)
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     db: !!pool, 
-    envFound: fs.existsSync(envPath),
+    envLoaded,
+    port: PORT,
     time: new Date().toISOString() 
   });
 });
@@ -124,8 +136,8 @@ app.get('/api/rates', async (req, res) => {
 });
 
 // 4. Static Frontend Assets
-// The build process puts the frontend in the /dist folder
-app.use(express.static(path.join(__dirname, 'dist')));
+const distPath = path.join(__dirname, 'dist');
+app.use(express.static(distPath));
 
 // 5. Single Page Application (SPA) Fallback
 app.get('*', (req, res) => {
@@ -133,11 +145,18 @@ app.get('*', (req, res) => {
   if (req.url.startsWith('/api/')) {
     return res.status(404).json({ error: 'API not found' });
   }
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  
+  const indexFile = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexFile)) {
+    res.sendFile(indexFile);
+  } else {
+    // If running in development or dist is missing
+    res.status(404).send(`AuraGold: Frontend build not found at ${distPath}. Please ensure 'npm run build' was executed.`);
+  }
 });
 
-// Start Server
-app.listen(PORT, async () => {
-  console.log(`[AuraGold] Server running on port ${PORT}`);
+// Start Server - Bind to 0.0.0.0 for Hostinger compatibility
+app.listen(PORT, '0.0.0.0', async () => {
+  console.log(`[AuraGold] Server active on port ${PORT}`);
   await initDb();
 });
