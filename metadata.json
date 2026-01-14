@@ -1,6 +1,6 @@
 {
   "name": "AuraGold Elite v2",
-  "description": "High-end jewelry order and collection management system with AI recovery",
+  "description": "Enterprise-grade jewelry order and collection management system",
   "requestFramePermissions": [
     "camera",
     "microphone"
