@@ -29,8 +29,6 @@ class StorageService {
 
   constructor() {
     this.state = this.loadFromLocal();
-    // Immediate sync with server on startup
-    this.syncFromServer();
   }
 
   private loadFromLocal(): AppState {
@@ -40,7 +38,7 @@ class StorageService {
         return { ...DEFAULT_STATE, ...JSON.parse(serialized) };
       }
     } catch (e) {
-      console.warn("[Storage] Local cache missing or invalid.");
+      console.warn("[Storage] Local cache missing.");
     }
     return DEFAULT_STATE;
   }
@@ -51,24 +49,29 @@ class StorageService {
         localStorage.setItem(KEY_STATE, JSON.stringify(this.state));
         this.notify();
     } catch (e) {
-        console.error("[Storage] Failed to update local cache", e);
+        console.error("[Storage] Local cache write failed", e);
     }
   }
 
-  public async syncFromServer() {
+  /**
+   * Authoritative sync from the production MySQL database via Express.
+   */
+  public async syncFromServer(): Promise<boolean> {
     try {
         const res = await fetch('/api/state');
         if (res.ok) {
             const serverData = await res.json();
-            if (serverData && serverData.lastUpdated > this.state.lastUpdated) {
+            if (serverData) {
                 this.state = serverData;
                 localStorage.setItem(KEY_STATE, JSON.stringify(this.state));
                 this.notify();
-                console.log("[Storage] Synchronized with cloud database.");
+                return true;
             }
         }
+        return false;
     } catch (e) {
-        console.error("[Storage] Could not reach server for sync.");
+        console.error("[Storage] Critical: Could not reach backend state API.");
+        return false;
     }
   }
 
@@ -82,10 +85,9 @@ class StorageService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(this.state)
       });
-      if (!res.ok) throw new Error("Server rejected update");
-      console.log("[Storage] Server state updated successfully.");
+      if (!res.ok) throw new Error("Server rejected state update");
     } catch (e) {
-      console.error("[Storage] Critical: Data push to backend failed.", e);
+      console.error("[Storage] Error: Persistence to backend failed.", e);
     } finally {
       this.isSyncing = false;
     }
@@ -134,12 +136,11 @@ class StorageService {
   private notify() { this.listeners.forEach(cb => cb()); }
 
   public async forceSync(): Promise<{ success: boolean; message: string }> {
-      try {
-          await this.syncFromServer();
-          await this.syncToBackend();
-          return { success: true, message: "Real-world database sync complete." };
-      } catch (e: any) {
-          return { success: false, message: `Sync Error: ${e.message}` };
+      const success = await this.syncFromServer();
+      if (success) {
+          return { success: true, message: "Database synchronization successful." };
+      } else {
+          return { success: false, message: "Server connection failed. Check backend status." };
       }
   }
 }

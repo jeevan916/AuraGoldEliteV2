@@ -5,7 +5,7 @@ import {
   MessageSquare, Globe, Settings as SettingsIcon, AlertTriangle, 
   Plus, ShieldCheck, LogOut, Briefcase, Menu, X, ArrowLeft, Home,
   MoreHorizontal, PlusCircle, Sparkles, Zap, BrainCircuit, FileText, 
-  ScrollText, Activity, Server, Calculator
+  ScrollText, Activity, Server, Calculator, Loader2, WifiOff
 } from 'lucide-react';
 
 // Modules
@@ -18,7 +18,7 @@ import WhatsAppPanel from './components/WhatsAppPanel';
 import WhatsAppTemplates from './components/WhatsAppTemplates';
 import WhatsAppLogs from './components/WhatsAppLogs';
 import NotificationCenter from './components/NotificationCenter';
-import PlanManager from './components/PlanManager'; // Restored
+import PlanManager from './components/PlanManager';
 import MarketIntelligence from './components/MarketIntelligence';
 import Settings from './components/Settings';
 import ErrorLogPanel from './components/ErrorLogPanel';
@@ -35,7 +35,6 @@ import { whatsappService } from './services/whatsappService';
 import { Order, GlobalSettings, AppResolutionPath, Customer, NotificationTrigger, PaymentPlanTemplate } from './types';
 import { INITIAL_PLAN_TEMPLATES } from './constants';
 
-// Updated View Types including restored features
 type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'CUSTOMERS' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU';
 
 const TabBarItem = ({ icon, label, active, onClick }: any) => (
@@ -68,15 +67,14 @@ const MenuItem = ({ icon, label, desc, onClick, colorClass }: any) => (
 const App: React.FC = () => {
   const [view, setView] = useState<MainView>('DASH');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [initError, setInitError] = useState<string | null>(null);
   
   const { orders, addOrder, recordPayment, updateItemStatus, updateOrder } = useOrders();
   const { logs, templates, addLog, setTemplates } = useWhatsApp();
   const [settings, setSettingsState] = useState<GlobalSettings>(storageService.getSettings());
-  
-  // Plan Manager State
   const [planTemplates, setPlanTemplates] = useState<PaymentPlanTemplate[]>(storageService.getPlanTemplates().length > 0 ? storageService.getPlanTemplates() : INITIAL_PLAN_TEMPLATES);
 
-  // Strategy Center State
   const [notifications, setNotifications] = useState<NotificationTrigger[]>([]);
   const [isStrategyLoading, setStrategyLoading] = useState(false);
   const [sendingNotifId, setSendingNotifId] = useState<string | null>(null);
@@ -94,46 +92,55 @@ const App: React.FC = () => {
   const [errors, setErrors] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
 
-  // Expose setView to components
   useEffect(() => {
     (window as any).dispatchView = (v: MainView) => setView(v);
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = storageService.subscribe(() => {
+    errorService.initGlobalListeners();
+    
+    const unsubStorage = storageService.subscribe(() => {
        setSettingsState(storageService.getSettings());
        const plans = storageService.getPlanTemplates();
        if (plans.length > 0) setPlanTemplates(plans);
     });
-    return unsubscribe;
-  }, []);
 
-  useEffect(() => {
-    errorService.initGlobalListeners();
-    const unsubscribe = errorService.subscribe((errs, acts) => {
+    const unsubErrors = errorService.subscribe((errs, acts) => {
       setErrors(errs);
       setActivities(acts);
     });
-    return unsubscribe;
-  }, []);
 
-  useEffect(() => {
-    const sync = async () => {
-      const res = await goldRateService.fetchLiveRate();
-      if (res.success) {
-        setSettings({
-          ...settings,
-          currentGoldRate24K: res.rate24K,
-          currentGoldRate22K: res.rate22K
-        });
+    // CRITICAL: Real-world initialization
+    const startApp = async () => {
+      try {
+        const synced = await storageService.syncFromServer();
+        if (!synced) {
+            // Check if we have at least local settings
+            const s = storageService.getSettings();
+            if (!s.currentGoldRate24K) throw new Error("Database sync failed on launch.");
+        }
+        
+        const rateRes = await goldRateService.fetchLiveRate();
+        if (rateRes.success) {
+            const currentSettings = storageService.getSettings();
+            setSettings({
+                ...currentSettings,
+                currentGoldRate24K: rateRes.rate24K,
+                currentGoldRate22K: rateRes.rate22K
+            });
+        }
+      } catch (e: any) {
+        setInitError(e.message || "Network Error");
+      } finally {
+        setIsInitializing(false);
       }
     };
-    sync();
-    const interval = setInterval(sync, 300000);
-    return () => clearInterval(interval);
+
+    startApp();
+    
+    return () => {
+      unsubStorage();
+      unsubErrors();
+    };
   }, []);
 
-  // --- LOGIC: Strategy Engine (Automated Collection) ---
   const handleRunStrategy = async () => {
     setStrategyLoading(true);
     try {
@@ -143,8 +150,7 @@ const App: React.FC = () => {
             return paid < o.totalAmount && o.paymentPlan.milestones.some(m => m.status !== 'PAID' && m.dueDate < new Date().toISOString());
         });
 
-        // Generate strategies for overdue orders
-        for (const o of overdueOrders.slice(0, 5)) { // Limit to 5 for demo to save API tokens
+        for (const o of overdueOrders.slice(0, 5)) {
             const strat = await geminiService.generateStrategicNotification(o, 'OVERDUE', settings.currentGoldRate24K);
             triggers.push({
                 id: `strat-${o.id}-${Date.now()}`,
@@ -159,7 +165,6 @@ const App: React.FC = () => {
         }
         setNotifications(triggers);
     } catch(e) {
-        console.error("Strategy generation failed", e);
         errorService.logError('AI Strategy', 'Failed to generate strategies', 'MEDIUM');
     } finally {
         setStrategyLoading(false);
@@ -171,11 +176,8 @@ const App: React.FC = () => {
     const notif = notifications.find(n => n.id === id);
     if (!notif) return setSendingNotifId(null);
 
-    // Heuristic to find contact
     const order = orders.find(o => o.customerName === notif.customerName);
-    
     if (order) {
-        // Fix: Expected 3 arguments, but got 4. Removed the 4th argument.
         const res = await whatsappService.sendMessage(order.customerContact, notif.message, notif.customerName);
         if (res.success && res.logEntry) {
             addLog(res.logEntry);
@@ -183,8 +185,6 @@ const App: React.FC = () => {
         } else {
             alert("Failed to send: " + res.error);
         }
-    } else {
-        alert("Could not find customer contact details.");
     }
     setSendingNotifId(null);
   };
@@ -214,6 +214,30 @@ const App: React.FC = () => {
 
   const activeOrder = orders.find(o => o.id === selectedOrderId);
 
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
+        <Loader2 className="animate-spin text-amber-500 mb-6" size={48} />
+        <h2 className="text-xl font-black uppercase tracking-widest">AuraGold Production</h2>
+        <p className="text-slate-400 text-xs mt-2">Synchronizing with institutional database...</p>
+      </div>
+    );
+  }
+
+  if (initError) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-2xl text-center border-t-8 border-t-rose-500">
+          <WifiOff size={48} className="mx-auto text-rose-500 mb-6" />
+          <h2 className="text-2xl font-black text-slate-900 mb-2">System Offline</h2>
+          <p className="text-slate-500 text-sm mb-6">The application could not establish a connection with the production server. This may be due to a server restart or network timeout.</p>
+          <div className="bg-slate-100 p-4 rounded-xl text-xs font-mono text-slate-500 mb-8 overflow-auto">{initError}</div>
+          <button onClick={() => window.location.reload()} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest">Retry Connection</button>
+        </div>
+      </div>
+    );
+  }
+
   const getViewTitle = () => {
     switch(view) {
       case 'DASH': return 'Collection Queue';
@@ -237,11 +261,7 @@ const App: React.FC = () => {
   return (
     <ErrorBoundary>
       <div className="flex h-[100dvh] overflow-hidden bg-[#F3F4F6] text-slate-900">
-        
-        {/* Main Content Area */}
         <main className="flex-1 flex flex-col h-full relative w-full overflow-hidden">
-          
-          {/* App Bar */}
           <header className="bg-white border-b px-4 py-4 flex items-center justify-between z-40 sticky top-0 shadow-sm">
              <div className="flex items-center gap-3">
                {view !== 'DASH' ? (
@@ -265,12 +285,9 @@ const App: React.FC = () => {
              </div>
           </header>
 
-          {/* Main Scroller */}
           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 lg:p-10 w-full pb-[120px]">
             <div className="max-w-4xl mx-auto">
               {view === 'DASH' && <Dashboard orders={orders} currentRates={{ k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K }} />}
-              
-              {/* COMMAND MENU (The Hub for Power Features) */}
               {view === 'MENU' && (
                 <div className="animate-fadeIn">
                    <div className="mb-6">
@@ -278,65 +295,31 @@ const App: React.FC = () => {
                       <p className="text-sm text-slate-500">Manage automation, templates, and system health.</p>
                    </div>
                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      <MenuItem 
-                         icon={<BrainCircuit />} label="AI Strategy" desc="Automated Collection Engine" 
-                         colorClass="bg-amber-100 text-amber-600" onClick={() => setView('STRATEGY')} 
-                      />
-                      <MenuItem 
-                         icon={<Calculator />} label="Plan Manager" desc="AI Payment Schemes" 
-                         colorClass="bg-violet-100 text-violet-600" onClick={() => setView('PLANS')} 
-                      />
-                      <MenuItem 
-                         icon={<FileText />} label="Templates" desc="Meta WhatsApp Manager" 
-                         colorClass="bg-blue-100 text-blue-600" onClick={() => setView('TEMPLATES')} 
-                      />
-                      <MenuItem 
-                         icon={<ScrollText />} label="Message Logs" desc="Audit Communication History" 
-                         colorClass="bg-emerald-100 text-emerald-600" onClick={() => setView('LOGS')} 
-                      />
-                      <MenuItem 
-                         icon={<Globe />} label="Market Intel" desc="Live Rates & Charts" 
-                         colorClass="bg-indigo-100 text-indigo-600" onClick={() => setView('MARKET')} 
-                      />
-                      <MenuItem 
-                         icon={<Activity />} label="System Logs" desc="Diagnostics & Repair" 
-                         colorClass="bg-slate-100 text-slate-600" onClick={() => setView('SYS_LOGS')} 
-                      />
-                      <MenuItem 
-                         icon={<SettingsIcon />} label="Settings" desc="Global Configuration" 
-                         colorClass="bg-gray-100 text-gray-600" onClick={() => setView('SETTINGS')} 
-                      />
+                      <MenuItem icon={<BrainCircuit />} label="AI Strategy" desc="Automated Collection Engine" colorClass="bg-amber-100 text-amber-600" onClick={() => setView('STRATEGY')} />
+                      <MenuItem icon={<Calculator />} label="Plan Manager" desc="AI Payment Schemes" colorClass="bg-violet-100 text-violet-600" onClick={() => setView('PLANS')} />
+                      <MenuItem icon={<FileText />} label="Templates" desc="Meta WhatsApp Manager" colorClass="bg-blue-100 text-blue-600" onClick={() => setView('TEMPLATES')} />
+                      <MenuItem icon={<ScrollText />} label="Message Logs" desc="Audit Communication History" colorClass="bg-emerald-100 text-emerald-600" onClick={() => setView('LOGS')} />
+                      <MenuItem icon={<Globe />} label="Market Intel" desc="Live Rates & Charts" colorClass="bg-indigo-100 text-indigo-600" onClick={() => setView('MARKET')} />
+                      <MenuItem icon={<Activity />} label="System Logs" desc="Diagnostics & Repair" colorClass="bg-slate-100 text-slate-600" onClick={() => setView('SYS_LOGS')} />
+                      <MenuItem icon={<SettingsIcon />} label="Settings" desc="Global Configuration" colorClass="bg-gray-100 text-gray-600" onClick={() => setView('SETTINGS')} />
                    </div>
                 </div>
               )}
-
               {view === 'ORDER_NEW' && <OrderForm settings={settings} planTemplates={planTemplates} onSubmit={(o) => { addOrder(o); setView('ORDER_DETAILS'); setSelectedOrderId(o.id); }} onCancel={() => setView('DASH')} />}
               {view === 'ORDER_DETAILS' && (activeOrder ? <OrderDetails order={activeOrder} settings={settings} onBack={() => setView('DASH')} onUpdateStatus={(itemId, status) => updateItemStatus(activeOrder.id, itemId, status)} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} logs={logs} onAddLog={addLog} /> : <div className="text-center py-20 text-slate-400 font-medium">Please select an order.</div>)}
               {view === 'CUSTOMERS' && <CustomerList customers={customers} orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onMessageSent={addLog} />}
               {view === 'COLLECTIONS' && <PaymentCollections orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onSendWhatsApp={()=>{}} settings={settings} />}
-              
-              {/* RESTORED FEATURES */}
-              {view === 'STRATEGY' && (
-                <NotificationCenter 
-                   notifications={notifications} 
-                   onRefresh={handleRunStrategy} 
-                   loading={isStrategyLoading}
-                   onSend={handleSendNotification}
-                   isSending={sendingNotifId}
-                />
-              )}
+              {view === 'STRATEGY' && <NotificationCenter notifications={notifications} onRefresh={handleRunStrategy} loading={isStrategyLoading} onSend={handleSendNotification} isSending={sendingNotifId} />}
               {view === 'TEMPLATES' && <WhatsAppTemplates templates={templates} onUpdate={setTemplates} />}
               {view === 'PLANS' && <PlanManager templates={planTemplates} onUpdate={handleUpdatePlans} />}
               {view === 'LOGS' && <WhatsAppLogs logs={logs} onViewChat={(phone) => { setView('WHATSAPP'); (window as any).initialChatContact = phone; }} />}
               {view === 'WHATSAPP' && <WhatsAppPanel logs={logs} customers={customers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} initialContact={(window as any).initialChatContact} />}
-              
               {view === 'MARKET' && <MarketIntelligence />}
               {view === 'SYS_LOGS' && <ErrorLogPanel errors={errors} onClear={() => errorService.clearErrors()} activities={activities} onResolveAction={(path) => path !== 'none' && (path === 'whatsapp' ? setView('WHATSAPP') : path === 'templates' ? setView('TEMPLATES') : setView('SETTINGS'))} />}
               {view === 'SETTINGS' && <Settings settings={settings} onUpdate={setSettings} />}
             </div>
           </div>
 
-          {/* Tab Bar - Action Prioritized */}
           <div className="glass-nav fixed bottom-0 left-0 right-0 h-[84px] flex justify-around items-center px-2 z-[50] shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
              <TabBarItem icon={<Home />} label="Queue" active={view === 'DASH'} onClick={() => setView('DASH')} />
              <TabBarItem icon={<PlusCircle />} label="Book" active={view === 'ORDER_NEW'} onClick={() => setView('ORDER_NEW')} />
@@ -344,7 +327,6 @@ const App: React.FC = () => {
              <TabBarItem icon={<Users />} label="Clients" active={view === 'CUSTOMERS'} onClick={() => setView('CUSTOMERS')} />
              <TabBarItem icon={<MessageSquare />} label="Chats" active={view === 'WHATSAPP'} onClick={() => setView('WHATSAPP')} />
           </div>
-
         </main>
       </div>
     </ErrorBoundary>

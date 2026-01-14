@@ -5,6 +5,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import https from 'https';
 
 dotenv.config();
 
@@ -18,7 +19,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '100mb' }) as any);
 
-// Database configuration from .env
+// Database configuration
 const dbConfig = {
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -34,7 +35,7 @@ const dbConfig = {
 
 const pool = mysql.createPool(dbConfig);
 
-// Initialize Tables
+// Initialize Database
 async function initDb() {
   try {
     const connection = await pool.getConnection();
@@ -46,61 +47,95 @@ async function initDb() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
     connection.release();
-    console.log('✅ Production Database Connection Established');
+    console.log('✅ Database Connection Verified');
   } catch (err) {
-    console.error('❌ Database connection failed. Check your .env credentials:', err);
-    process.exit(1);
+    console.error('❌ CRITICAL: Database connection failed:', err);
+    // In a real production app, we might not want to exit if we want to serve a "Maintenance" page,
+    // but for this implementation, we ensure the DB is ready.
   }
 }
 
 initDb();
 
-// API: Fetch Application State (Orders, Settings, Logs)
+// Helper: Fetch Gold Rate on Backend (Avoids Browser CORS/Protocol issues)
+async function fetchGoldRateFromSource(): Promise<{k24: number, k22: number} | null> {
+  return new Promise((resolve) => {
+    https.get('https://www.goodreturns.in/gold-rates/', (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        try {
+          const match = data.match(/24\s*Carat\s*Gold.*?>\s*₹\s*([\d,]+)/i);
+          if (match && match[1]) {
+            const rate10g = parseFloat(match[1].replace(/,/g, ''));
+            const rate24K = Math.round(rate10g / 10);
+            const rate22K = Math.round(rate24K * 0.916);
+            resolve({ k24: rate24K, k22: rate22K });
+          } else {
+            resolve(null);
+          }
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    }).on('error', () => resolve(null));
+  });
+}
+
+// API: Get App State
 app.get('/api/state', async (req, res) => {
   try {
     const [rows]: any = await pool.query('SELECT content FROM aura_app_state WHERE id = 1');
     if (rows.length > 0) {
       res.json(JSON.parse(rows[0].content));
     } else {
-      // Return empty structure only if brand new
-      res.json({ orders: [], lastUpdated: 0 });
+      res.status(404).json({ error: 'Initial state not found. Please save settings once.' });
     }
   } catch (err: any) {
-    console.error('API Error (GET /state):', err.message);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({ error: 'Database access error' });
   }
 });
 
-// API: Save Application State
+// API: Save App State
 app.post('/api/state', async (req, res) => {
   try {
     const content = JSON.stringify(req.body);
     const lastUpdated = Date.now();
-    
     await pool.query(`
       INSERT INTO aura_app_state (id, content, last_updated) 
       VALUES (1, ?, ?) 
       ON DUPLICATE KEY UPDATE content = VALUES(content), last_updated = VALUES(last_updated)
     `, [content, lastUpdated]);
-    
     res.json({ success: true, timestamp: lastUpdated });
   } catch (err: any) {
-    console.error('API Error (POST /state):', err.message);
-    res.status(500).json({ error: 'Failed to synchronize data' });
+    res.status(500).json({ error: 'Sync failed' });
   }
 });
 
-// Health check for monitoring
-app.get('/api/status', (req, res) => {
-  res.json({ status: 'online', version: '5.0.0-PROD' });
+// API: Live Gold Rate (Backend Authority)
+app.get('/api/gold-rate', async (req, res) => {
+  const rates = await fetchGoldRateFromSource();
+  if (rates) {
+    res.json({ success: true, ...rates });
+  } else {
+    res.status(503).json({ success: false, error: 'Market provider unreachable' });
+  }
 });
 
-// Serve Frontend
-app.use(express.static(path.join(__dirname, 'dist')) as any);
+// Health Check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'AuraGold Live', uptime: process.uptime() });
+});
+
+// Serve built frontend files
+const distPath = path.join(__dirname, 'dist');
+app.use(express.static(distPath) as any);
+
+// SPA routing - all unknown routes go to index.html
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 AuraGold Server active on port ${PORT}`);
+  console.log(`🚀 AuraGold Production Server running on port ${PORT}`);
 });

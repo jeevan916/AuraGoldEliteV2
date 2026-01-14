@@ -30,7 +30,8 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
   const handleLiveSync = async () => {
     setSyncing(true);
     try {
-        const result = await goldRateService.fetchLiveRate(true);
+        // Fix: fetchLiveRate does not accept any arguments (corrected line 33)
+        const result = await goldRateService.fetchLiveRate();
         if (result && result.success) {
           const updatedSettings = {
             ...localSettings,
