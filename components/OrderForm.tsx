@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   Plus, ShoppingBag, Trash2, ShieldCheck, 
   Calculator, User, ChevronRight, X, Loader2, Sparkles, Zap, Image as ImageIcon, Camera, Trash, 
-  IndianRupee, ArrowRight, Lock, Calendar, Scale, Tag, Ruler, Upload
+  IndianRupee, ArrowRight, Lock, Calendar, Scale, Tag, Ruler, Upload, Gem
 } from 'lucide-react';
 import { 
   Order, JewelryDetail, OrderStatus, GlobalSettings, 
@@ -25,10 +25,19 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   const [orderRate, setOrderRate] = useState(settings.currentGoldRate22K);
   
   const initialItem: Partial<JewelryDetail> = {
-    category: 'Ring', purity: '22K', metalColor: 'Yellow Gold',
-    grossWeight: 0, netWeight: 0, wastagePercentage: 12, makingChargesPerGram: 450, 
-    stoneCharges: 0, photoUrls: [], huid: '', size: ''
+    category: 'Ring', 
+    purity: '22K', 
+    metalColor: 'Yellow Gold',
+    grossWeight: 0, 
+    netWeight: 0, 
+    stoneCharges: 0,
+    wastagePercentage: 12, 
+    makingChargesPerGram: 450, 
+    photoUrls: [], 
+    huid: '', 
+    size: ''
   };
+  
   const [currentItem, setCurrentItem] = useState<Partial<JewelryDetail>>(initialItem);
   const [isCompressing, setIsCompressing] = useState(false);
 
@@ -50,7 +59,10 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   const cartTotal = useMemo(() => cartItems.reduce((s, i) => s + i.finalAmount, 0), [cartItems]);
 
   const handleAddItem = () => {
-    if (!currentItem.netWeight || currentItem.netWeight <= 0) return alert("Net weight is required to add item.");
+    if (!currentItem.netWeight || currentItem.netWeight <= 0) {
+        alert("Net weight is required to generate a valid item quote.");
+        return;
+    }
     
     const item: JewelryDetail = {
       ...currentItem as any,
@@ -78,7 +90,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
           photoUrls: [...(prev.photoUrls || []), compressed]
         }));
       } catch (error) {
-        alert("Failed to process image. Ensure file is an image.");
+        alert("Failed to process image. Ensure file is a standard image format.");
       } finally {
         setIsCompressing(false);
       }
@@ -123,8 +135,8 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   };
 
   const submitOrder = () => {
-    if (cartItems.length === 0) return alert("Please add at least one item.");
-    if (!customer.name || !customer.contact) return alert("Customer name and contact are required.");
+    if (cartItems.length === 0) return alert("Please add at least one jewellery item.");
+    if (!customer.name || !customer.contact) return alert("Customer Name and Contact Number are mandatory.");
 
     const milestones = generateMilestones(cartTotal);
     const finalOrder: Order = {
@@ -153,7 +165,6 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   return (
     <div className="flex flex-col min-h-full max-w-4xl mx-auto space-y-4 pb-20">
       
-      {/* Stepper */}
       <div className="flex bg-white rounded-2xl border overflow-hidden p-1 shadow-sm">
         {[1, 2, 3].map(s => (
           <div 
@@ -162,17 +173,16 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
               step === s ? 'bg-slate-900 text-white rounded-xl' : 'text-slate-400'
             }`}
           >
-            {s === 1 ? 'Product Specs' : s === 2 ? 'Client' : 'Milestones'}
+            {s === 1 ? 'Jewellery Specs' : s === 2 ? 'Client Details' : 'Payment Plan'}
           </div>
         ))}
       </div>
 
       {step === 1 && (
         <div className="space-y-4 animate-fadeIn">
-          {/* Market Context Banner */}
-          <div className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center text-white shadow-xl">
+          <div className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center text-white shadow-xl border border-slate-800">
             <div>
-               <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">Locked Booking Rate</p>
+               <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">Locked 22K Rate</p>
                <div className="flex items-center gap-2">
                  <span className="text-amber-500 font-black">₹</span>
                  <input 
@@ -184,35 +194,49 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                </div>
             </div>
             <div className="text-right">
-                <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">Grand Total</p>
+                <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">Order Estimate</p>
                 <p className="text-3xl font-black text-amber-400">₹{cartTotal.toLocaleString()}</p>
             </div>
           </div>
 
-          <div className="pos-card p-5 space-y-5">
-            <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2 uppercase tracking-wide">
-                <Scale size={16} className="text-amber-500" /> Item Details
-            </h3>
+          <div className="pos-card p-5 space-y-6">
+            <div className="flex justify-between items-center">
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2 uppercase tracking-wide">
+                    <Gem size={16} className="text-amber-500" /> Item Specification
+                </h3>
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Step 1 of 3</span>
+            </div>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <InputWrapper label="Category">
                     <select 
-                      className="w-full font-bold bg-transparent outline-none" 
+                      className="w-full font-bold bg-transparent outline-none text-slate-800" 
                       value={currentItem.category} 
                       onChange={e => setCurrentItem({...currentItem, category: e.target.value})}
                     >
-                        {['Ring', 'Necklace', 'Earrings', 'Bangle', 'Bracelet', 'Chain', 'Pendant', 'Set', 'Mangalsutra'].map(c => <option key={c}>{c}</option>)}
+                        {['Ring', 'Necklace', 'Earrings', 'Bangle', 'Bracelet', 'Chain', 'Pendant', 'Set', 'Mangalsutra', 'Coins', 'Kada'].map(c => <option key={c}>{c}</option>)}
                     </select>
                 </InputWrapper>
                 <InputWrapper label="Purity">
                     <select 
-                      className="w-full font-bold bg-transparent outline-none" 
+                      className="w-full font-bold bg-transparent outline-none text-slate-800" 
                       value={currentItem.purity} 
                       onChange={e => setCurrentItem({...currentItem, purity: e.target.value as Purity})}
                     >
-                        <option value="22K">22K Standard</option>
-                        <option value="24K">24K Pure</option>
-                        <option value="18K">18K Luxury</option>
+                        <option value="22K">22K Hallmark</option>
+                        <option value="24K">24K Bullion</option>
+                        <option value="18K">18K Studded</option>
+                    </select>
+                </InputWrapper>
+                <InputWrapper label="Metal Color">
+                    <select 
+                      className="w-full font-bold bg-transparent outline-none text-slate-800" 
+                      value={currentItem.metalColor} 
+                      onChange={e => setCurrentItem({...currentItem, metalColor: e.target.value as any})}
+                    >
+                        <option value="Yellow Gold">Yellow Gold</option>
+                        <option value="Rose Gold">Rose Gold</option>
+                        <option value="White Gold">White Gold</option>
                     </select>
                 </InputWrapper>
             </div>
@@ -220,9 +244,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <InputWrapper label="Gross Wt (g)">
                     <input 
-                      type="number" 
-                      step="0.001" 
-                      className="w-full font-black text-lg bg-transparent" 
+                      type="number" step="0.001" className="w-full font-black text-lg bg-transparent" 
                       value={currentItem.grossWeight || ''} 
                       onChange={e => setCurrentItem({...currentItem, grossWeight: parseFloat(e.target.value) || 0})} 
                       placeholder="0.000" 
@@ -230,64 +252,59 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                 </InputWrapper>
                 <InputWrapper label="Net Wt (g)">
                     <input 
-                      type="number" 
-                      step="0.001" 
-                      className="w-full font-black text-lg bg-transparent text-emerald-700" 
+                      type="number" step="0.001" className="w-full font-black text-lg bg-transparent text-emerald-700" 
                       value={currentItem.netWeight || ''} 
                       onChange={e => setCurrentItem({...currentItem, netWeight: parseFloat(e.target.value) || 0})} 
                       placeholder="0.000" 
                     />
                 </InputWrapper>
-                <InputWrapper label="HUID">
+                <InputWrapper label="HUID (Unique ID)">
                     <input 
-                      type="text" 
-                      className="w-full font-black text-lg bg-transparent text-slate-500" 
+                      type="text" className="w-full font-black text-lg bg-transparent text-slate-500 uppercase" 
                       value={currentItem.huid || ''} 
                       onChange={e => setCurrentItem({...currentItem, huid: e.target.value.toUpperCase()})} 
-                      placeholder="ABC1234" 
+                      placeholder="ABC123" 
                     />
                 </InputWrapper>
-                <InputWrapper label="Size">
+                <InputWrapper label="Size/Length">
                     <input 
-                      type="text" 
-                      className="w-full font-bold text-lg bg-transparent" 
+                      type="text" className="w-full font-bold text-lg bg-transparent" 
                       value={currentItem.size || ''} 
                       onChange={e => setCurrentItem({...currentItem, size: e.target.value})} 
-                      placeholder="12 / 18''" 
+                      placeholder="e.g. 14 / 2.4" 
                     />
                 </InputWrapper>
             </div>
 
             <div className="grid grid-cols-3 gap-4">
-                <InputWrapper label="VA %"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.wastagePercentage || ''} onChange={e => setCurrentItem({...currentItem, wastagePercentage: parseFloat(e.target.value) || 0})} placeholder="12" /></InputWrapper>
-                <InputWrapper label="Labor / g"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.makingChargesPerGram || ''} onChange={e => setCurrentItem({...currentItem, makingChargesPerGram: parseFloat(e.target.value) || 0})} placeholder="450" /></InputWrapper>
-                <InputWrapper label="Stone"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.stoneCharges || ''} onChange={e => setCurrentItem({...currentItem, stoneCharges: parseFloat(e.target.value) || 0})} placeholder="0" /></InputWrapper>
+                <InputWrapper label="Wastage (VA %)">
+                    <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.wastagePercentage || ''} onChange={e => setCurrentItem({...currentItem, wastagePercentage: parseFloat(e.target.value) || 0})} placeholder="12" />
+                </InputWrapper>
+                <InputWrapper label="Labor / g">
+                    <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.makingChargesPerGram || ''} onChange={e => setCurrentItem({...currentItem, makingChargesPerGram: parseFloat(e.target.value) || 0})} placeholder="450" />
+                </InputWrapper>
+                <InputWrapper label="Stone Charges">
+                    <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.stoneCharges || ''} onChange={e => setCurrentItem({...currentItem, stoneCharges: parseFloat(e.target.value) || 0})} placeholder="0" />
+                </InputWrapper>
             </div>
 
             <div className="border-t border-slate-100 pt-4">
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Item Photos</label>
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Reference Photos (Hallmark/Design)</label>
                 <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
                     <div className="relative shrink-0">
                         <input 
-                            type="file" 
-                            accept="image/*" 
-                            className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                            onChange={handleImageUpload}
-                            disabled={isCompressing}
+                            type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                            onChange={handleImageUpload} disabled={isCompressing}
                         />
                         <div className="w-20 h-20 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 hover:bg-slate-50 transition-colors">
                             {isCompressing ? <Loader2 className="animate-spin" size={20} /> : <Camera size={20} />}
-                            <span className="text-[8px] font-bold uppercase mt-1">Add</span>
+                            <span className="text-[8px] font-bold uppercase mt-1">Capture</span>
                         </div>
                     </div>
-
                     {(currentItem.photoUrls || []).map((url, idx) => (
                         <div key={idx} className="relative shrink-0 w-20 h-20 group">
                             <img src={url} className="w-full h-full object-cover rounded-xl border border-slate-200" />
-                            <button 
-                                onClick={() => removePhoto(idx)}
-                                className="absolute -top-1 -right-1 bg-rose-500 text-white p-1 rounded-full shadow-md hover:bg-rose-600 transition-colors"
-                            >
+                            <button onClick={() => removePhoto(idx)} className="absolute -top-1 -right-1 bg-rose-500 text-white p-1 rounded-full shadow-md hover:bg-rose-600 transition-colors">
                                 <X size={10} />
                             </button>
                         </div>
@@ -295,16 +312,16 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                 </div>
             </div>
 
-            <div className="bg-amber-50 p-5 rounded-2xl border border-amber-200 flex justify-between items-center shadow-inner mt-2">
+            <div className="bg-amber-50 p-5 rounded-2xl border border-amber-200 flex justify-between items-center shadow-inner">
                 <div>
-                    <p className="text-[9px] font-black uppercase text-amber-600 mb-1 tracking-wider">Item Total</p>
+                    <p className="text-[9px] font-black uppercase text-amber-600 mb-1 tracking-wider">Estimated Value</p>
                     <p className="text-2xl font-black text-slate-900">₹{Math.round(pricing.total).toLocaleString()}</p>
                 </div>
                 <button 
                   onClick={handleAddItem} 
                   className="bg-slate-900 text-white px-8 py-3.5 rounded-xl font-black text-xs uppercase flex items-center gap-2 active:scale-95 shadow-lg"
                 >
-                    <Plus size={18} /> Add Item
+                    <Plus size={18} /> Add to Order
                 </button>
             </div>
           </div>
@@ -312,27 +329,27 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
           {cartItems.length > 0 && (
               <div className="pos-card overflow-hidden">
                   <div className="bg-slate-50 p-4 border-b flex justify-between items-center">
-                    <p className="text-[10px] font-black uppercase text-slate-500">Cart Contents ({cartItems.length})</p>
-                    <p className="text-xs font-black text-slate-800">₹{cartTotal.toLocaleString()}</p>
+                    <p className="text-[10px] font-black uppercase text-slate-500">Selected Items ({cartItems.length})</p>
+                    <p className="text-xs font-black text-slate-800 uppercase tracking-widest">Running Total: ₹{cartTotal.toLocaleString()}</p>
                   </div>
                   <div className="divide-y">
                       {cartItems.map(item => (
-                          <div key={item.id} className="p-4 flex justify-between items-center bg-white group hover:bg-slate-50">
+                          <div key={item.id} className="p-4 flex justify-between items-center bg-white group hover:bg-slate-50 transition-colors">
                               <div className="flex items-center gap-4">
                                   <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 overflow-hidden">
                                     {item.photoUrls?.[0] ? <img src={item.photoUrls[0]} className="w-full h-full object-cover" /> : <ImageIcon size={20} />}
                                   </div>
                                   <div>
-                                      <p className="font-black text-sm text-slate-800">{item.category}</p>
+                                      <p className="font-black text-sm text-slate-800">{item.category} • {item.metalColor}</p>
                                       <p className="text-[10px] text-slate-400 uppercase font-bold">
-                                          Net: {item.netWeight}g • VA: {item.wastagePercentage}%
-                                          {item.huid && <span className="ml-2 text-emerald-600">[{item.huid}]</span>}
+                                          {item.purity} • {item.netWeight}g
+                                          {item.huid && <span className="ml-2 text-emerald-600 font-mono tracking-tighter">[{item.huid}]</span>}
                                       </p>
                                   </div>
                               </div>
                               <div className="flex items-center gap-4">
-                                  <p className="font-black text-sm">₹{item.finalAmount.toLocaleString()}</p>
-                                  <button onClick={() => setCartItems(cartItems.filter(i => i.id !== item.id))} className="text-rose-500 p-2 hover:bg-rose-50 rounded-lg"><X size={18} /></button>
+                                  <p className="font-black text-sm">₹{Math.round(item.finalAmount).toLocaleString()}</p>
+                                  <button onClick={() => setCartItems(cartItems.filter(i => i.id !== item.id))} className="text-rose-500 p-2 hover:bg-rose-50 rounded-lg"><Trash2 size={18} /></button>
                               </div>
                           </div>
                       ))}
@@ -344,23 +361,22 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
 
       {step === 2 && (
         <div className="space-y-4 animate-fadeIn py-6">
-            <h3 className="text-lg font-black text-slate-800 ml-1">Customer Verification</h3>
+            <h3 className="text-lg font-black text-slate-800 ml-1">Client Authorization</h3>
             <div className="pos-card p-8 space-y-6">
-                <InputWrapper label="Full Name">
+                <InputWrapper label="Customer Legal Name">
                     <input 
                       className="w-full font-bold text-xl bg-transparent p-1 outline-none" 
                       value={customer.name} 
                       onChange={e => setCustomer({...customer, name: e.target.value})} 
-                      placeholder="Ex: Rajesh Kumar" 
+                      placeholder="Ex: Ananya Sharma" 
                     />
                 </InputWrapper>
-                <InputWrapper label="WhatsApp Number">
+                <InputWrapper label="Verified WhatsApp Number">
                     <input 
-                      type="tel" 
-                      className="w-full font-bold text-xl bg-transparent p-1 outline-none" 
+                      type="tel" className="w-full font-bold text-xl bg-transparent p-1 outline-none" 
                       value={customer.contact} 
                       onChange={e => setCustomer({...customer, contact: e.target.value})} 
-                      placeholder="919876543210" 
+                      placeholder="91XXXXXXXXXX" 
                     />
                 </InputWrapper>
             </div>
@@ -370,44 +386,41 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
       {step === 3 && (
         <div className="space-y-4 animate-fadeIn py-6">
             <div className="flex justify-between items-end">
-                <h3 className="text-lg font-black text-slate-800 ml-1">Payment Strategy</h3>
-                <p className="text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">Total: ₹{cartTotal.toLocaleString()}</p>
+                <h3 className="text-lg font-black text-slate-800 ml-1">Financial Settlement Plan</h3>
+                <p className="text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase tracking-tighter">Agreement Total: ₹{cartTotal.toLocaleString()}</p>
             </div>
 
             <div className="pos-card p-6 space-y-6">
                 <div className="grid grid-cols-2 gap-6">
-                    <InputWrapper label="Duration (Months)">
+                    <InputWrapper label="Installment Period (Months)">
                         <input 
-                          type="number" 
-                          className="w-full font-black text-xl bg-transparent" 
+                          type="number" className="w-full font-black text-xl bg-transparent" 
                           value={plan.months} 
                           onChange={e => setPlan({...plan, months: parseInt(e.target.value) || 1})} 
                         />
                     </InputWrapper>
-                    <InputWrapper label="Downpayment %">
+                    <InputWrapper label="Booking Advance %">
                         <input 
-                          type="number" 
-                          className="w-full font-black text-xl bg-transparent" 
+                          type="number" className="w-full font-black text-xl bg-transparent" 
                           value={plan.advancePercentage} 
                           onChange={e => setPlan({...plan, advancePercentage: parseInt(e.target.value) || 0})} 
                         />
                     </InputWrapper>
                 </div>
                 
-                <div className="bg-emerald-900 text-white p-5 rounded-[1.5rem] flex items-start gap-4 shadow-xl">
+                <div className="bg-emerald-900 text-white p-5 rounded-[1.5rem] flex items-start gap-4 shadow-xl border border-emerald-800">
                     <div className="p-2 bg-emerald-800 rounded-lg"><Lock className="text-amber-400" size={24} /></div>
                     <div>
                         <div className="flex items-center gap-2 mb-1">
                             <span className="font-black text-sm uppercase tracking-widest">Rate Protection Active</span>
                             <input 
-                              type="checkbox" 
-                              className="w-5 h-5 accent-amber-500" 
+                              type="checkbox" className="w-5 h-5 accent-amber-500" 
                               checked={plan.goldRateProtection} 
                               onChange={e => setPlan({...plan, goldRateProtection: e.target.checked})} 
                             />
                         </div>
                         <p className="text-[10px] text-emerald-200/70 leading-relaxed italic">
-                            Rate locked at ₹{orderRate}/g. This benefit is valid only for on-time payments.
+                            Gold price locked at ₹{orderRate}/g. This protection is only maintained if installments are cleared by due dates.
                         </p>
                     </div>
                 </div>
@@ -415,24 +428,23 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
         </div>
       )}
 
-      {/* Action Bar */}
+      {/* Persistent Navigation */}
       <div className="action-zone">
          <div className="max-w-4xl mx-auto flex gap-3">
             {step > 1 && (
-                <button onClick={() => setStep(step - 1)} className="flex-1 bg-slate-200 text-slate-700 py-4 rounded-2xl font-black uppercase text-xs">Back</button>
+                <button onClick={() => setStep(step - 1)} className="flex-1 bg-slate-200 text-slate-700 py-4 rounded-2xl font-black uppercase text-xs tracking-widest transition-all">Back</button>
             )}
-            
             {step < 3 ? (
                 <button 
                   disabled={step === 1 && cartItems.length === 0}
                   onClick={() => setStep(step + 1)} 
-                  className="flex-[2] bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 shadow-xl disabled:opacity-50"
+                  className="flex-[2] bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 shadow-xl disabled:opacity-50 tracking-widest"
                 >
                     Continue <ChevronRight size={18} />
                 </button>
             ) : (
-                <button onClick={submitOrder} className="flex-[2] bg-emerald-600 text-white py-4 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 shadow-xl">
-                    Generate Order <Sparkles size={18} />
+                <button onClick={submitOrder} className="flex-[2] bg-emerald-600 text-white py-4 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 shadow-xl tracking-widest">
+                    Generate Contract <Sparkles size={18} />
                 </button>
             )}
          </div>
@@ -445,7 +457,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
 const InputWrapper = ({ label, children }: any) => (
     <div className="space-y-1">
         <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{label}</label>
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-amber-500 focus-within:bg-white transition-all">
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-amber-500 focus-within:bg-white transition-all shadow-sm">
             {children}
         </div>
     </div>

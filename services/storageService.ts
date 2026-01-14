@@ -11,41 +11,61 @@ export interface AppState {
   lastUpdated: number;
 }
 
-/**
- * Authoritative empty state. 
- * The app will not populate these until the server confirms the connection.
- */
-const AUTHORITATIVE_EMPTY_STATE: AppState = {
+const STORAGE_KEY = 'aura_gold_app_state';
+
+const DEFAULT_STATE: AppState = {
   orders: [],
   logs: [],
-  templates: [],
-  planTemplates: [],
+  templates: INITIAL_TEMPLATES,
+  planTemplates: INITIAL_PLAN_TEMPLATES,
   settings: INITIAL_SETTINGS,
-  lastUpdated: 0
+  lastUpdated: Date.now()
 };
 
 class StorageService {
-  private state: AppState = AUTHORITATIVE_EMPTY_STATE;
+  private state: AppState = DEFAULT_STATE;
   private listeners: (() => void)[] = [];
-  private syncStatus: 'CONNECTED' | 'OFFLINE' | 'SYNCING' | 'ERROR' = 'OFFLINE';
+  private syncStatus: 'CONNECTED' | 'LOCAL_FALLBACK' | 'SYNCING' | 'ERROR' = 'LOCAL_FALLBACK';
 
-  constructor() {}
+  constructor() {
+    this.loadFromLocal();
+  }
+
+  private loadFromLocal() {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        this.state = JSON.parse(saved);
+      }
+    } catch (e) {
+      console.warn("Failed to load local storage", e);
+    }
+  }
+
+  private saveToLocal() {
+    try {
+      this.state.lastUpdated = Date.now();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+    } catch (e) {
+      console.error("Failed to save to local storage", e);
+    }
+  }
 
   public getSyncStatus() {
     return this.syncStatus;
   }
 
   /**
-   * Authoritative sync from MySQL backend via Express API. 
-   * This is a hard requirement for the app to function.
+   * Attempts to pull the latest state from MySQL.
+   * If it fails, we stick with the local state.
    */
-  public async syncFromServer(): Promise<{ success: boolean; error?: string; code?: number }> {
+  public async syncFromServer(): Promise<{ success: boolean; message: string }> {
     this.syncStatus = 'SYNCING';
     this.notify();
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
 
       const res = await fetch('/api/state', {
         headers: { 'Accept': 'application/json' },
@@ -54,53 +74,34 @@ class StorageService {
       clearTimeout(timeoutId);
 
       if (!res.ok) {
-        this.syncStatus = 'ERROR';
-        this.notify();
-        return { 
-          success: false, 
-          error: `HTTP Error ${res.status}: ${res.statusText}`,
-          code: res.status
-        };
-      }
-
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        this.syncStatus = 'ERROR';
-        this.notify();
-        return { 
-          success: false, 
-          error: "The server returned HTML instead of JSON. This typically happens when a 404 page is served by Hostinger/Apache instead of the Node.js API." 
-        };
+        throw new Error(res.status === 503 ? "Database Link Down" : "Network Error");
       }
 
       const serverData = await res.json();
       
-      // Hydrate authoritative state
-      this.state = {
-        ...AUTHORITATIVE_EMPTY_STATE,
-        ...serverData,
-        lastUpdated: serverData.lastUpdated || Date.now()
-      };
+      // If server data is newer or local is empty, prioritize server
+      if (serverData && serverData.lastUpdated > (this.state.lastUpdated || 0)) {
+          this.state = { ...DEFAULT_STATE, ...serverData };
+          this.saveToLocal();
+      }
 
       this.syncStatus = 'CONNECTED';
       this.notify();
-      return { success: true };
+      return { success: true, message: "Live Database Linked" };
 
     } catch (e: any) {
-      this.syncStatus = 'OFFLINE';
+      console.warn("Backend sync failed, falling back to local storage:", e.message);
+      this.syncStatus = 'LOCAL_FALLBACK';
       this.notify();
-      const message = e.name === 'AbortError' 
-        ? "Connection Timeout: The database is taking too long to respond." 
-        : (e.message || "Network Gateway Failure: Cannot reach /api/state");
-      return { success: false, error: message };
+      return { success: false, message: "Local Fallback Mode Active" };
     }
   }
 
   /**
-   * Persists authoritative state to live MySQL backend.
+   * Pushes current state to MySQL.
    */
   private async syncToBackend() {
-    this.syncStatus = 'SYNCING';
+    this.saveToLocal();
     this.notify();
 
     try {
@@ -113,15 +114,16 @@ class StorageService {
       if (res.ok) {
         this.syncStatus = 'CONNECTED';
       } else {
-        this.syncStatus = 'ERROR';
+        this.syncStatus = 'LOCAL_FALLBACK';
       }
     } catch (e) {
-      this.syncStatus = 'OFFLINE';
+      this.syncStatus = 'LOCAL_FALLBACK';
     } finally {
       this.notify();
     }
   }
 
+  // Authoritative Getters/Setters
   public getOrders() { return this.state.orders; }
   public setOrders(orders: Order[]) { 
     this.state.orders = orders; 
@@ -162,12 +164,7 @@ class StorageService {
   }
 
   public async forceSync(): Promise<{ success: boolean; message: string }> {
-    const res = await this.syncFromServer();
-    if (res.success) {
-      return { success: true, message: "Database connection healthy. Data synchronized." };
-    } else {
-      return { success: false, message: res.error || "Handshake failed." };
-    }
+    return this.syncFromServer();
   }
 }
 

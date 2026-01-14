@@ -1,5 +1,5 @@
 
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import mysql from 'mysql2/promise';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -17,7 +17,7 @@ const PORT = process.env.PORT || 3000;
 
 // Production Middleware
 app.use(cors());
-app.use(express.json({ limit: '50mb' }) as any);
+app.use(express.json({ limit: '50mb' }));
 
 // Database configuration
 const dbConfig = {
@@ -28,18 +28,19 @@ const dbConfig = {
   port: parseInt(process.env.DB_PORT || '3306'),
   waitForConnections: true,
   connectionLimit: 10,
-  maxIdle: 10, // Max idle connections
-  idleTimeout: 60000, // Idle connections timeout in ms
-  queueLimit: 0,
+  maxIdle: 10,
+  idleTimeout: 60000,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0
 };
 
-const pool = mysql.createPool(dbConfig);
+let pool: mysql.Pool;
+let isDbHealthy = false;
 
-// Initialize Database Table
+// Initialize Database Pool
 async function initDb() {
   try {
+    pool = mysql.createPool(dbConfig);
     const connection = await pool.getConnection();
     await connection.query(`
       CREATE TABLE IF NOT EXISTS aura_app_state (
@@ -49,17 +50,31 @@ async function initDb() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
     connection.release();
+    isDbHealthy = true;
     console.log('✅ AuraGold Backend: Database Pool Initialized');
   } catch (err: any) {
+    isDbHealthy = false;
     console.error('❌ AuraGold Backend: Database connection failure:', err.message);
   }
 }
 
 initDb();
 
+// Middleware to check DB health
+// Properly typed middleware to avoid return type mismatch in Express chain.
+const checkDbHealth = (req: Request, res: Response, next: NextFunction): void => {
+  if (!isDbHealthy) {
+    res.status(503).json({ 
+      error: "Database Connectivity Lost", 
+      details: "The Node.js server cannot reach the MySQL instance. Check DB_HOST and DB credentials." 
+    });
+    return;
+  }
+  next();
+};
+
 // API: Get App State
-app.get('/api/state', async (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
+app.get('/api/state', checkDbHealth, async (req: Request, res: Response) => {
   try {
     const [rows]: any = await pool.query('SELECT content FROM aura_app_state WHERE id = 1');
     if (rows.length > 0) {
@@ -68,14 +83,12 @@ app.get('/api/state', async (req, res) => {
       res.json({ orders: [], logs: [], lastUpdated: 0 });
     }
   } catch (err: any) {
-    console.error('State GET Error:', err.message);
     res.status(500).json({ error: `Database Access Error: ${err.message}` });
   }
 });
 
 // API: Save App State
-app.post('/api/state', async (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
+app.post('/api/state', checkDbHealth, async (req: Request, res: Response) => {
   try {
     const content = JSON.stringify(req.body);
     const lastUpdated = Date.now();
@@ -86,30 +99,50 @@ app.post('/api/state', async (req, res) => {
     `, [content, lastUpdated]);
     res.json({ success: true, timestamp: lastUpdated });
   } catch (err: any) {
-    console.error('State POST Error:', err.message);
     res.status(500).json({ error: `Database Write Failure: ${err.message}` });
   }
 });
 
-// Health Check Endpoint
-app.get('/api/ping', (req, res) => {
-  res.json({ 
-    status: 'online', 
-    engine: 'Node.js 20',
-    platform: process.platform,
-    timestamp: Date.now() 
+// API: Live Gold Rate
+app.get('/api/gold-rate', async (req: Request, res: Response) => {
+  https.get('https://www.goodreturns.in/gold-rates/', (sourceRes) => {
+    let data = '';
+    sourceRes.on('data', (chunk) => data += chunk);
+    sourceRes.on('end', () => {
+      try {
+        const match = data.match(/24\s*Carat\s*Gold.*?>\s*₹\s*([\d,]+)/i);
+        if (match && match[1]) {
+          const rate10g = parseFloat(match[1].replace(/,/g, ''));
+          const rate24K = Math.round(rate10g / 10);
+          const rate22K = Math.round(rate24K * 0.916);
+          res.json({ success: true, k24: rate24K, k22: rate22K });
+        } else {
+          res.status(500).json({ success: false, error: 'Could not parse rates' });
+        }
+      } catch (e) {
+        res.status(500).json({ success: false, error: 'Rate fetch failed' });
+      }
+    });
+  }).on('error', () => res.status(503).json({ success: false, error: 'Market source offline' }));
+});
+
+// Serve Static Files (Production)
+const distPath = path.join(__dirname, 'dist');
+app.use(express.static(distPath));
+
+// Fallback for SPA routing
+// Explicit typing of route handlers ensures correct resolution of Express method overloads.
+app.get('*', (req: Request, res: Response) => {
+  const indexFile = path.join(distPath, 'index.html');
+  res.sendFile(indexFile, (err) => {
+    if (err) {
+      // If dist/index.html doesn't exist, we might be in development or build failed
+      res.status(404).send("AuraGold: Frontend build not found. Please run 'npm run build' if in production.");
+    }
   });
 });
 
-// Serve Frontend
-const distPath = path.join(__dirname, 'dist');
-app.use(express.static(distPath) as any);
-
-// Fallback for SPA Routing
-app.get('*', (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
-});
-
 app.listen(PORT, () => {
-  console.log(`🚀 Server listening on Port ${PORT}`);
+  console.log(`🚀 AuraGold Server active on Port ${PORT}`);
+  console.log(`📡 Database status: ${isDbHealthy ? 'Connected' : 'Disconnected'}`);
 });

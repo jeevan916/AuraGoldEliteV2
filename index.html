@@ -6,96 +6,104 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>AuraGold | Jewellery POS</title>
     
-    <!-- 1. Preconnect to Fonts -->
+    <!-- 1. Tailwind Play CDN (Fixes 'tailwind cdn issue') -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              gold: '#B8860B',
+              'gold-light': '#FFD700',
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            animation: {
+              fadeIn: 'fadeIn 0.3s ease-in-out',
+              slideUp: 'slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+            },
+            keyframes: {
+              fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
+              slideUp: { '0%': { transform: 'translateY(100%)' }, '100%': { transform: 'translateY(0)' } }
+            }
+          }
+        }
+      }
+    </script>
+
+    <!-- 2. Preconnect to Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
 
-    <!-- 2. Global Styles (Vite will inject built CSS here) -->
-    <style>
-        :root { 
-            --gold: #B8860B; 
-            --gold-light: #FFD700;
-            --bg: #F3F4F6; 
-        }
-        body { 
-            font-family: 'Inter', sans-serif; 
-            background-color: var(--bg); 
-            overscroll-behavior-y: none;
-            -webkit-tap-highlight-color: transparent;
-        }
-        
-        .pos-card { 
-            background: white; 
-            border-radius: 16px; 
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
-            border: 1px solid #E5E7EB;
-        }
-
-        .action-zone {
-            position: fixed;
-            bottom: 84px;
-            left: 0;
-            right: 0;
-            padding: 12px 16px;
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(10px);
-            border-top: 1px solid #E5E7EB;
-            z-index: 40;
-        }
-
-        @media (min-width: 1024px) {
-            .action-zone {
-                position: static;
-                padding: 0;
-                background: none;
-                backdrop-filter: none;
-                border: none;
+    <!-- 3. Global Styles -->
+    <style type="text/tailwindcss">
+        @layer base {
+            :root { 
+                --gold: #B8860B; 
+                --gold-light: #FFD700;
+                --bg: #F3F4F6; 
+            }
+            body { 
+                @apply antialiased text-slate-900 bg-slate-50;
+                font-family: 'Inter', sans-serif; 
+                overscroll-behavior-y: none;
+                -webkit-tap-highlight-color: transparent;
             }
         }
+        
+        @layer components {
+            .pos-card { 
+                @apply bg-white rounded-2xl border border-slate-200 shadow-sm;
+            }
 
-        .glass-nav {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(12px);
-            border-top: 1px solid #E5E7EB;
-            padding-bottom: env(safe-area-inset-bottom);
+            .action-zone {
+                @apply fixed bottom-[84px] left-0 right-0 p-3 bg-white/90 backdrop-blur-md border-t border-slate-200 z-40 lg:static lg:p-0 lg:bg-transparent lg:border-none;
+            }
+
+            .glass-nav {
+                @apply bg-white/95 backdrop-blur-md border-t border-slate-200;
+                padding-bottom: env(safe-area-inset-bottom);
+            }
+
+            .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+            .custom-scrollbar::-webkit-scrollbar-thumb { @apply bg-slate-300 rounded-full; }
         }
 
         input { font-size: 16px !important; }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 10px; }
     </style>
 
-    <!-- 3. Module Map -->
+    <!-- 4. Module Map -->
     <script type="importmap">
-    {
-      "imports": {
-        "react": "https://esm.sh/react@^19.2.3",
-        "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-        "react/": "https://esm.sh/react@^19.2.3/",
-        "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
-        "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-        "recharts": "https://esm.sh/recharts@^3.6.0",
-        "qrcode": "https://esm.sh/qrcode@^1.5.4",
-        "jspdf": "https://esm.sh/jspdf@^4.0.0",
-        "jspdf-autotable": "https://esm.sh/jspdf-autotable@^5.0.7",
-        "vite": "https://esm.sh/vite@^7.3.1",
-        "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-        "express": "https://esm.sh/express@^5.2.1",
-        "path": "https://esm.sh/path@^0.12.7",
-        "url": "https://esm.sh/url@^0.11.4",
-        "mysql2/": "https://esm.sh/mysql2@^3.16.0/",
-        "cors": "https://esm.sh/cors@^2.8.5",
-        "dotenv": "https://esm.sh/dotenv@^17.2.3",
-        "https": "https://esm.sh/https@^1.0.0",
-        "fs": "https://esm.sh/fs@^0.0.1-security"
-      }
-    }
-    </script>
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "recharts": "https://esm.sh/recharts@^3.6.0",
+    "qrcode": "https://esm.sh/qrcode@^1.5.4",
+    "jspdf": "https://esm.sh/jspdf@^4.0.0",
+    "jspdf-autotable": "https://esm.sh/jspdf-autotable@^5.0.7",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "express": "https://esm.sh/express@^5.2.1",
+    "mysql2/": "https://esm.sh/mysql2@^3.16.0/",
+    "cors": "https://esm.sh/cors@^2.8.5",
+    "dotenv": "https://esm.sh/dotenv@^17.2.3",
+    "path": "https://esm.sh/path@^0.12.7",
+    "url": "https://esm.sh/url@^0.11.4",
+    "https": "https://esm.sh/https@^1.0.0"
+  }
+}
+</script>
 </head>
 <body class="antialiased text-slate-900 bg-slate-50">
     <div id="root"></div>
+    <!-- Entry point for the dev server. For production, the builder will replace this with the hashed JS bundle. -->
     <script type="module" src="/index.tsx"></script>
 </body>
 </html>
