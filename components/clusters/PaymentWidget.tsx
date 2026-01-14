@@ -64,6 +64,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
         status: isComplete ? OrderStatus.COMPLETED : order.status
       };
 
+      // Fix: Expected 3 arguments, but got 4. Removed the last string argument.
       await whatsappService.sendMessage(
           order.customerContact, 
           `Payment Received: ₹${val.toLocaleString()}. Balance: ₹${(remaining - val).toLocaleString()}. Thank you!`, 
@@ -97,7 +98,8 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                         `Or use Card/Netbanking: ${gatewayLink}\n\n` +
                         `Order ID: ${order.id}`;
 
-        await whatsappService.sendMessage(order.customerContact, message, order.customerName, 'Payment Request');
+        // Fix: Expected 3 arguments, but got 4. Removed 'Payment Request'.
+        await whatsappService.sendMessage(order.customerContact, message, order.customerName);
         alert("Payment Link Sent via WhatsApp!");
       } catch (e) {
           alert("Failed to send request.");

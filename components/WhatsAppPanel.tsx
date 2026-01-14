@@ -81,7 +81,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
           phone,
           name: msgs[0].customerName, // Assume name is consistent for phone
           lastMessage: msgs.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0],
-          messages: msgs.sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
+          messages: msgs.sort((a,b) => new Date(a.timestamp).getTime() - new Date(a.timestamp).getTime()),
           timestamp: msgs.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0].timestamp
       }));
 
@@ -214,7 +214,8 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
       setInputText('');
       setAiInsight(null); // Clear insight once we reply
       
-      const result = await whatsappService.sendMessage(activeConversation.phone, msg, activeConversation.name, 'Manual Chat');
+      // Fix: Expected 3 arguments, but got 4. Removed 'Manual Chat'.
+      const result = await whatsappService.sendMessage(activeConversation.phone, msg, activeConversation.name);
       
       if (result.success && result.logEntry && onAddLog) {
           onAddLog(result.logEntry);
@@ -236,13 +237,13 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
       if (!selectedTemplate || !activeConversation) return;
       
       setIsSending(true);
+      // Fix: Expected 5 arguments, but got 6. Removed selectedTemplate.structure.
       const result = await whatsappService.sendTemplateMessage(
           activeConversation.phone,
           selectedTemplate.name,
           'en_US',
           templateParams,
-          activeConversation.name,
-          selectedTemplate.structure
+          activeConversation.name
       );
 
       if (result.success && result.logEntry && onAddLog) {

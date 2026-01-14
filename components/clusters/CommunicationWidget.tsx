@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Send, MessageSquare, Phone, ExternalLink } from 'lucide-react';
 import { Card, Button, SectionHeader } from '../shared/BaseUI';
@@ -27,7 +28,8 @@ export const CommunicationWidget: React.FC<CommunicationWidgetProps> = ({
     if (!message.trim()) return;
     setSending(true);
     try {
-      const res = await whatsappService.sendMessage(customerPhone, message, customerName, 'Widget');
+      // Fix: Expected 3 arguments, but got 4. Removed 'Widget'.
+      const res = await whatsappService.sendMessage(customerPhone, message, customerName);
       if (res.success && res.logEntry) {
         onLogAdded(res.logEntry);
         setMessage('');

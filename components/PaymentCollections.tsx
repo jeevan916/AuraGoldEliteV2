@@ -100,7 +100,8 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
           );
           
           if (confirmed) {
-             await whatsappService.sendMessage(item.customerContact, result.message, item.customerName, 'AI Strategy Manual Trigger');
+             // Fix: Expected 3 arguments, but got 4. Removed 'AI Strategy Manual Trigger'.
+             await whatsappService.sendMessage(item.customerContact, result.message, item.customerName);
              alert(`Strategic ${result.tone} message dispatched to ${item.customerName}`);
           }
       } catch (e) {
@@ -119,7 +120,8 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
       
       const msg = `Dear ${item.customerName}, payment of ₹${amount.toLocaleString()} is due. Pay here: ${razorpayLink}`;
       
-      await whatsappService.sendMessage(item.customerContact, msg, item.customerName, 'Payment Link');
+      // Fix: Expected 3 arguments, but got 4. Removed 'Payment Link'.
+      await whatsappService.sendMessage(item.customerContact, msg, item.customerName);
       alert("Link Sent Successfully");
   };
 

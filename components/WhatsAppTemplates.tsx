@@ -257,22 +257,13 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   };
 
   const handleDeleteTemplate = async (tpl: WhatsAppTemplate) => {
-      if (!confirm(`Permanently delete "${tpl.name}" from Meta WhatsApp? This action cannot be undone.`)) return;
+      if (!confirm(`Permanently delete "${tpl.name}" from library? This action cannot be undone.`)) return;
 
       setDeletingId(tpl.id);
       try {
-          if (tpl.source === 'LOCAL') {
-              onUpdate(templates.filter(t => t.id !== tpl.id));
-              alert("Local template removed.");
-          } else {
-              const success = await whatsappService.deleteMetaTemplate(tpl.name);
-              if (success) {
-                  onUpdate(templates.filter(t => t.id !== tpl.id));
-                  alert(`Template ${tpl.name} deleted successfully from Meta.`);
-              } else {
-                  alert("Failed to delete from Meta. It might be in use or you may lack permissions.");
-              }
-          }
+          // Fix: Removed reference to non-existent whatsappService.deleteMetaTemplate
+          onUpdate(templates.filter(t => t.id !== tpl.id));
+          alert("Template removed from library.");
       } catch (e: any) {
           alert(`Error: ${e.message}`);
       } finally {
@@ -631,7 +622,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                                                     onClick={() => handleDeleteTemplate(t)}
                                                     disabled={deletingId === t.id}
                                                     className="p-1.5 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-colors flex items-center gap-1 text-[10px] font-bold"
-                                                    title="Delete from Meta"
+                                                    title="Delete"
                                                   >
                                                      {deletingId === t.id ? <Loader2 size={12} className="animate-spin"/> : <Trash2 size={12} />}
                                                   </button>

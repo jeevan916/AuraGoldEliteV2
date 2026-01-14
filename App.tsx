@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutDashboard, ShoppingBag, Users, ReceiptIndianRupee, 
@@ -174,7 +175,8 @@ const App: React.FC = () => {
     const order = orders.find(o => o.customerName === notif.customerName);
     
     if (order) {
-        const res = await whatsappService.sendMessage(order.customerContact, notif.message, notif.customerName, 'AI Strategy Auto-Send');
+        // Fix: Expected 3 arguments, but got 4. Removed the 4th argument.
+        const res = await whatsappService.sendMessage(order.customerContact, notif.message, notif.customerName);
         if (res.success && res.logEntry) {
             addLog(res.logEntry);
             setNotifications(prev => prev.map(n => n.id === id ? { ...n, sent: true } : n));
@@ -309,7 +311,7 @@ const App: React.FC = () => {
               )}
 
               {view === 'ORDER_NEW' && <OrderForm settings={settings} planTemplates={planTemplates} onSubmit={(o) => { addOrder(o); setView('ORDER_DETAILS'); setSelectedOrderId(o.id); }} onCancel={() => setView('DASH')} />}
-              {view === 'ORDER_DETAILS' && (activeOrder ? <OrderDetails order={activeOrder} settings={settings} onBack={() => setView('DASH')} onUpdateStatus={(itemId, status) => updateItemStatus(activeOrder.id, itemId, status)} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} onSendPaymentRequest={()=>{}} onTriggerLapse={()=>{}} logs={logs} onAddLog={addLog} /> : <div className="text-center py-20 text-slate-400 font-medium">Please select an order.</div>)}
+              {view === 'ORDER_DETAILS' && (activeOrder ? <OrderDetails order={activeOrder} settings={settings} onBack={() => setView('DASH')} onUpdateStatus={(itemId, status) => updateItemStatus(activeOrder.id, itemId, status)} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} logs={logs} onAddLog={addLog} /> : <div className="text-center py-20 text-slate-400 font-medium">Please select an order.</div>)}
               {view === 'CUSTOMERS' && <CustomerList customers={customers} orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onMessageSent={addLog} />}
               {view === 'COLLECTIONS' && <PaymentCollections orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onSendWhatsApp={()=>{}} settings={settings} />}
               
