@@ -1,7 +1,7 @@
 {
-  "name": "AuraGold Jewellery POS",
-  "description": "Enterprise jewellery order management system with backend synchronization.",
   "requestFramePermissions": [
     "camera"
-  ]
+  ],
+  "name": "",
+  "description": ""
 }
