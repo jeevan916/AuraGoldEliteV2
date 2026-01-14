@@ -2,8 +2,8 @@
 import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate } from '../types';
 import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES } from '../constants';
 
-// Use a strict relative path for the Hostinger Node.js proxy
-const API_ENDPOINT = 'api/storage';
+// Use a root-relative path to ensure consistency across the application
+const API_ENDPOINT = '/api/storage';
 const SYNC_INTERVAL = 30000; 
 
 export interface AppState {
@@ -46,7 +46,7 @@ class StorageService {
         };
       }
     } catch (e) {
-      console.warn("[Storage] Cache load failed");
+      console.warn("[Storage] Local cache load failed");
     }
   }
 
@@ -66,9 +66,11 @@ class StorageService {
           this.state = { ...this.state, ...serverData };
           this.saveToLocal();
         }
+      } else {
+        console.error(`[Storage] Server returned ${response.status} on pull`);
       }
     } catch (e) {
-      console.warn("[Storage] Cloud sync pull failed");
+      console.warn("[Storage] Cloud sync pull failed", e);
     } finally {
       this.isSyncing = false;
     }
@@ -79,13 +81,16 @@ class StorageService {
     this.isSyncing = true;
     try {
        const payload = { ...this.state, lastUpdated: Date.now() };
-       await fetch(API_ENDPOINT, {
+       const response = await fetch(API_ENDPOINT, {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify(payload)
        });
+       if (!response.ok) {
+         console.error(`[Storage] Server returned ${response.status} on push`);
+       }
     } catch (e) {
-        console.warn("[Storage] Cloud sync push failed");
+        console.warn("[Storage] Cloud sync push failed", e);
     } finally {
         this.isSyncing = false;
     }

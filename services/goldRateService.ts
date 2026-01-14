@@ -24,8 +24,13 @@ export const goldRateService = {
     }
 
     try {
-        // Use relative path for the Node.js Express proxy
-        const response = await fetch('api/rates');
+        // Root-relative path to the backend rate proxy
+        const response = await fetch('/api/rates');
+        
+        if (!response.ok) {
+            throw new Error(`Server returned status ${response.status}`);
+        }
+        
         const result = await response.json();
 
         if (!result.success) {
@@ -40,12 +45,12 @@ export const goldRateService = {
             }));
         } catch (e) { }
 
-        errorService.logActivity('STATUS_UPDATE', `Gold Rate Synced: ₹${result.rate24K}/g via Node Proxy`);
+        errorService.logActivity('STATUS_UPDATE', `Gold Rate Synced: ₹${result.rate24K}/g`);
         return { 
             rate24K: result.rate24K, 
             rate22K: result.rate22K, 
             success: true, 
-            source: "Node Proxy" 
+            source: "Backend Proxy" 
         };
 
     } catch (e: any) {
