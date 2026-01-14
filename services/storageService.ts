@@ -36,9 +36,10 @@ class StorageService {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         this.state = JSON.parse(saved);
+        console.log("[Storage] Local state loaded.");
       }
     } catch (e) {
-      console.warn("Failed to load local storage", e);
+      console.warn("[Storage] Failed to load local storage", e);
     }
   }
 
@@ -47,7 +48,7 @@ class StorageService {
       this.state.lastUpdated = Date.now();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
     } catch (e) {
-      console.error("Failed to save to local storage", e);
+      console.error("[Storage] Failed to save to local storage", e);
     }
   }
 
@@ -56,16 +57,16 @@ class StorageService {
   }
 
   /**
-   * Attempts to pull the latest state from MySQL.
-   * If it fails, we stick with the local state.
+   * Attempts to pull the latest state from the backend.
    */
   public async syncFromServer(): Promise<{ success: boolean; message: string }> {
     this.syncStatus = 'SYNCING';
     this.notify();
 
     try {
+      console.log("[Storage] Pinging backend /api/state...");
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       const res = await fetch('/api/state', {
         headers: { 'Accept': 'application/json' },
@@ -74,15 +75,20 @@ class StorageService {
       clearTimeout(timeoutId);
 
       if (!res.ok) {
+        const errorText = await res.text();
+        console.error(`[Storage] Backend returned error: ${res.status} ${errorText}`);
         throw new Error(res.status === 503 ? "Database Link Down" : "Network Error");
       }
 
       const serverData = await res.json();
+      console.log("[Storage] Sync SUCCESS. Received state from server.");
       
-      // If server data is newer or local is empty, prioritize server
       if (serverData && serverData.lastUpdated > (this.state.lastUpdated || 0)) {
+          console.log("[Storage] Server state is newer. Updating local cache.");
           this.state = { ...DEFAULT_STATE, ...serverData };
           this.saveToLocal();
+      } else {
+          console.log("[Storage] Local state is up to date.");
       }
 
       this.syncStatus = 'CONNECTED';
@@ -90,7 +96,7 @@ class StorageService {
       return { success: true, message: "Live Database Linked" };
 
     } catch (e: any) {
-      console.warn("Backend sync failed, falling back to local storage:", e.message);
+      console.warn("[Storage] Backend sync failed, using local storage:", e.message);
       this.syncStatus = 'LOCAL_FALLBACK';
       this.notify();
       return { success: false, message: "Local Fallback Mode Active" };
@@ -112,11 +118,14 @@ class StorageService {
       });
       
       if (res.ok) {
+        console.log("[Storage] State pushed to backend successfully.");
         this.syncStatus = 'CONNECTED';
       } else {
+        console.warn("[Storage] State push failed.");
         this.syncStatus = 'LOCAL_FALLBACK';
       }
     } catch (e) {
+      console.error("[Storage] Push error:", e);
       this.syncStatus = 'LOCAL_FALLBACK';
     } finally {
       this.notify();
