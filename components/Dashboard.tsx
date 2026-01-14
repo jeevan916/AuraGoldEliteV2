@@ -24,7 +24,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates }) => {
     <div className="space-y-8 pb-24 animate-fadeIn">
       
       {/* 1. AI CASH FLOW ENGINE (Renamed from Recovery) */}
-      <div className="bg-gradient-to-r from-emerald-900 to-slate-900 rounded-[2rem] p-6 text-white relative overflow-hidden shadow-xl border border-emerald-500/30">
+      <div className="bg-slate-900 bg-gradient-to-r from-emerald-900 to-slate-900 rounded-[2rem] p-6 text-white relative overflow-hidden shadow-xl border border-emerald-500/30">
         <div className="relative z-10">
             <div className="flex justify-between items-start">
                 <div>

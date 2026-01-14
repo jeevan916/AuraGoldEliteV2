@@ -1,5 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-/* 
-   Styles are currently handled via Tailwind CDN in index.html 
-   to ensure the UI renders correctly in all preview environments.
-*/
+@layer base {
+  body {
+    @apply antialiased text-slate-900 bg-slate-50;
+  }
+}

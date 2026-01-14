@@ -1,4 +1,3 @@
-
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -11,7 +10,7 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load environment variables from various possible locations on Hostinger
+// Load environment variables
 const envPaths = [
   path.join(__dirname, '.env'),
   path.join(__dirname, '..', '.env')
@@ -20,7 +19,7 @@ const envPaths = [
 for (const p of envPaths) {
   if (fs.existsSync(p)) {
     dotenv.config({ path: p });
-    console.log(`[AuraGold Server] Environment loaded: ${p}`);
+    console.log(`[AuraGold Server] Environment loaded from: ${p}`);
     break;
   }
 }
@@ -31,7 +30,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// Database Setup
+// Database Connection
 const dbConfig = {
   host: process.env.DB_HOST || '127.0.0.1',
   user: process.env.DB_USER,
@@ -48,13 +47,13 @@ let pool = null;
 
 const initDb = async () => {
   if (!dbConfig.user || !dbConfig.database) {
-    console.warn('[AuraGold Server] Database credentials missing in environment.');
+    console.warn('[AuraGold Server] Database configuration incomplete. Skipping initialization.');
     return;
   }
   try {
     pool = mysql.createPool(dbConfig);
     const conn = await pool.getConnection();
-    console.log('[AuraGold Server] MySQL Connected');
+    console.log('[AuraGold Server] MySQL Pool Initialized');
     await conn.query(`
       CREATE TABLE IF NOT EXISTS aura_storage (
         id INT PRIMARY KEY DEFAULT 1,
@@ -64,15 +63,15 @@ const initDb = async () => {
     `);
     conn.release();
   } catch (err) {
-    console.error('[AuraGold Server] DB Error:', err.message);
+    console.error('[AuraGold Server] Database Connection Failed:', err.message);
   }
 };
 
-// --- API ---
-app.get('/api/health', (req, res) => res.json({ status: 'ok', db: !!pool }));
+// API Endpoints
+app.get('/api/health', (req, res) => res.json({ status: 'ok', db: !!pool, timestamp: new Date().toISOString() }));
 
 app.get('/api/storage', async (req, res) => {
-  if (!pool) return res.status(503).json({ error: 'DB not available' });
+  if (!pool) return res.status(503).json({ error: 'Database service unavailable' });
   try {
     const [rows] = await pool.query('SELECT data FROM aura_storage WHERE id = 1');
     res.json(rows[0] ? JSON.parse(rows[0].data) : { orders: [], lastUpdated: 0 });
@@ -80,7 +79,7 @@ app.get('/api/storage', async (req, res) => {
 });
 
 app.post('/api/storage', async (req, res) => {
-  if (!pool) return res.status(503).json({ error: 'DB not available' });
+  if (!pool) return res.status(503).json({ error: 'Database service unavailable' });
   try {
     const data = JSON.stringify(req.body);
     await pool.query('INSERT INTO aura_storage (id, data) VALUES (1, ?) ON DUPLICATE KEY UPDATE data = ?', [data, data]);
@@ -97,29 +96,31 @@ app.get('/api/rates', (req, res) => {
         const parsed = JSON.parse(data);
         const rate24K = parseFloat(parsed?.data?.[0]?.[0]?.gSell || 0);
         res.json({ rate24K, rate22K: Math.round(rate24K * 0.916), success: true });
-      } catch (e) { res.status(500).json({ error: 'Parse error' }); }
+      } catch (e) { res.status(500).json({ error: 'Failed to parse market rates' }); }
     });
-  }).on('error', e => res.status(500).json({ error: 'Service down' }));
+  }).on('error', e => res.status(500).json({ error: 'Market rate service unreachable' }));
 });
 
-// --- SERVE PRODUCTION BUILD ---
+// Serving the compiled build folder
 const distPath = path.join(__dirname, 'dist');
 
 if (fs.existsSync(distPath)) {
-  console.log(`[AuraGold Server] Serving from dist: ${distPath}`);
+  console.log(`[AuraGold Server] Serving build from: ${distPath}`);
   app.use(express.static(distPath));
   
-  // SPA routing: Send index.html for any request that isn't an API call
+  // SPA Fallback: serve index.html for unknown routes
   app.get('*', (req, res) => {
-    if (req.url.startsWith('/api/')) return res.status(404).json({ error: 'API not found' });
+    if (req.url.startsWith('/api/')) return res.status(404).json({ error: 'API route not found' });
     res.sendFile(path.join(distPath, 'index.html'));
   });
 } else {
-  console.error(`[AuraGold Server] DIST FOLDER NOT FOUND AT: ${distPath}`);
-  app.get('*', (req, res) => res.status(404).send('Production build not found. Please run "npm run build".'));
+  console.error(`[AuraGold Server] ERROR: 'dist' folder not found. Please run 'npm run build' before starting the server.`);
+  app.get('/', (req, res) => {
+      res.send('<h1>AuraGold Server Active</h1><p>Frontend build not found. Please run <code>npm run build</code>.</p>');
+  });
 }
 
 app.listen(PORT, '0.0.0.0', async () => {
-  console.log(`[AuraGold Server] Running on port ${PORT}`);
+  console.log(`[AuraGold Server] Live on port ${PORT}`);
   await initDb();
 });

@@ -65,6 +65,8 @@ export interface JewelryDetail {
   customizationDetails: string;
   productionStatus: ProductionStatus;
   photoUrls: string[];
+  huid?: string;
+  size?: string;
 }
 
 export interface Payment {

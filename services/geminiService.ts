@@ -1,11 +1,11 @@
 import { GoogleGenAI } from "@google/genai";
 import { Order, CollectionTone, Customer, WhatsAppLogEntry, CreditworthinessReport, AiChatInsight, WhatsAppTemplate, AppResolutionPath, ActivityLogEntry, MetaCategory, AppTemplateGroup, PsychologicalTactic, PaymentPlanTemplate } from "../types";
 
-// Always use named parameter for apiKey and initialize inside or just before use
+// Safe access to API_KEY from environment
+// The guidelines state: The API key must be obtained exclusively from the environment variable process.env.API_KEY.
+// Assume this variable is pre-configured, valid, and accessible in the execution context.
 const getAI = () => {
-    const key = process.env.API_KEY;
-    if (!key) return null;
-    return new GoogleGenAI({ apiKey: key });
+    return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 export const geminiService = {
@@ -19,13 +19,12 @@ export const geminiService = {
     }).join('\n');
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: `Analyze these overdue jewelry accounts: \n${riskSummary}\nProvide a 3-point executive recovery strategy for a high-end jewelry store.`,
       config: {
-        thinkingConfig: { thinkingBudget: 2000 }
+        
       }
     });
-    // Corrected: use .text property, not .text()
     return response.text || "Unable to analyze risk.";
   },
 
@@ -35,8 +34,7 @@ export const geminiService = {
     currentGoldRate: number
   ): Promise<{ message: string, tone: CollectionTone, reasoning: string }> {
     const ai = getAI();
-    if (!ai) throw new Error("API Key Missing");
-
+    
     const paid = order.payments.reduce((acc, p) => acc + p.amount, 0);
     const balance = order.totalAmount - paid;
 
@@ -48,16 +46,14 @@ export const geminiService = {
         systemInstruction: "You are an elite jewelry store manager. Use high-end, persuasive language. Return JSON with keys: message, tone (POLITE, FIRM, URGENT, ENCOURAGING), reasoning."
       }
     });
-    // Corrected: use .text property, not .text()
     return JSON.parse(response.text || "{}");
   },
 
   async generateDeepCustomerAnalysis(customer: Customer, orders: Order[], logs: WhatsAppLogEntry[]): Promise<CreditworthinessReport> {
     const ai = getAI();
-    if (!ai) throw new Error("API Key Missing");
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: `Analyze this customer for a luxury jewelry boutique: 
       Profile: ${JSON.stringify(customer)}
       Purchase History: ${JSON.stringify(orders)}
@@ -67,13 +63,11 @@ export const geminiService = {
         systemInstruction: "Perform a behavioral and financial analysis. Return JSON with keys: riskLevel (LOW, MODERATE, HIGH, CRITICAL), persona (a luxury-centric title), nextBestAction, communicationStrategy, negotiationLeverage."
       }
     });
-    // Corrected: use .text property, not .text()
     return JSON.parse(response.text || "{}");
   },
 
   async analyzeChatContext(messages: WhatsAppLogEntry[], templates: WhatsAppTemplate[], customerName: string): Promise<AiChatInsight> {
     const ai = getAI();
-    if (!ai) throw new Error("API Key Missing");
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -85,13 +79,11 @@ export const geminiService = {
         systemInstruction: "Determine customer intent. Suggest a high-quality reply and recommend a template if appropriate. Return JSON with keys: intent, tone, suggestedReply, recommendedTemplateId."
       }
     });
-    // Corrected: use .text property, not .text()
     return JSON.parse(response.text || "{}");
   },
 
   async generateTemplateFromPrompt(prompt: string): Promise<{ suggestedName: string, content: string, metaCategory: MetaCategory, appGroup: AppTemplateGroup, tactic: PsychologicalTactic, examples: string[] }> {
     const ai = getAI();
-    if (!ai) throw new Error("API Key Missing");
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -101,13 +93,11 @@ export const geminiService = {
         systemInstruction: "Design a template for a jewelry store. Suggested name must be snake_case. Return JSON with keys: suggestedName, content (use {{1}}, {{2}} for variables), metaCategory (UTILITY, MARKETING), appGroup (PAYMENT_COLLECTION, ORDER_STATUS, etc.), tactic, examples (array of matching strings for placeholders)."
       }
     });
-    // Corrected: use .text property, not .text()
     return JSON.parse(response.text || "{}");
   },
 
   async generatePaymentPlan(prompt: string): Promise<Partial<PaymentPlanTemplate>> {
     const ai = getAI();
-    if (!ai) throw new Error("API Key Missing");
 
     const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -122,7 +112,6 @@ export const geminiService = {
 
   async diagnoseError(message: string, source: string): Promise<{ explanation: string, path: AppResolutionPath, cta: string, action?: 'REPAIR_TEMPLATE' | 'RETRY_API', suggestedFixData?: any }> {
     const ai = getAI();
-    if (!ai) throw new Error("API Key Missing");
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -132,23 +121,20 @@ export const geminiService = {
         systemInstruction: "Analyze technical errors in the AuraGold jewelry app. Provide a fix path. Return JSON with keys: explanation, path (settings, templates, whatsapp, none), cta (call to action text), action, suggestedFixData."
       }
     });
-    // Corrected: use .text property, not .text()
     return JSON.parse(response.text || "{}");
   },
 
   async analyzeSystemLogsForImprovements(activities: ActivityLogEntry[]): Promise<any> {
     const ai = getAI();
-    if (!ai) throw new Error("API Key Missing");
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: `Analyze these system activities for performance or business bottlenecks: ${JSON.stringify(activities.slice(0, 30))}`,
       config: {
         responseMimeType: "application/json",
         systemInstruction: "As a CTO advisor, find patterns and optimization opportunities. Return JSON with detailed insights and actionable advice."
       }
     });
-    // Corrected: use .text property, not .text()
     return JSON.parse(response.text || "{}");
   }
 };

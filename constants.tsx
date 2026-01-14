@@ -1,16 +1,32 @@
 
 import { GlobalSettings, PaymentPlanTemplate, WhatsAppTemplate } from './types';
 
+// Helper to safely access environment variables in both Node and Browser
+const getEnv = (key: string): string => {
+  try {
+    // Vite-style env access - casting to any to fix "Property 'env' does not exist on type 'ImportMeta'"
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env[key]) {
+      return (import.meta as any).env[key];
+    }
+    // Node-style env access
+    if (typeof process !== 'undefined' && process.env && (process.env as any)[key]) {
+      return (process.env as any)[key] as string;
+    }
+  } catch (e) {
+    // Silent fail for environment access
+  }
+  return '';
+};
+
 export const INITIAL_SETTINGS: GlobalSettings = {
   currentGoldRate24K: 7200,
   currentGoldRate22K: 6600,
   currentGoldRate18K: 5400,
   defaultTaxRate: 3,
   goldRateProtectionMax: 500,
-  // Production Keys injected via Vite Environment Variables
-  whatsappPhoneNumberId: process.env.VITE_WHATSAPP_PHONE_ID || '',
-  whatsappBusinessAccountId: process.env.VITE_WHATSAPP_WABA_ID || '',
-  whatsappBusinessToken: process.env.VITE_WHATSAPP_TOKEN || ''
+  whatsappPhoneNumberId: getEnv('VITE_WHATSAPP_PHONE_ID'),
+  whatsappBusinessAccountId: getEnv('VITE_WHATSAPP_WABA_ID'),
+  whatsappBusinessToken: getEnv('VITE_WHATSAPP_TOKEN')
 };
 
 export const JEWELRY_CATEGORIES = [

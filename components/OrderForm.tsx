@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   Plus, ShoppingBag, Trash2, ShieldCheck, 
   Calculator, User, ChevronRight, X, Loader2, Sparkles, Zap, Image as ImageIcon, Camera, Trash, 
-  IndianRupee, ArrowRight, Lock, Calendar
+  IndianRupee, ArrowRight, Lock, Calendar, Scale, Tag, Ruler
 } from 'lucide-react';
 import { 
   Order, JewelryDetail, OrderStatus, GlobalSettings, 
@@ -26,7 +26,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   const initialItem: Partial<JewelryDetail> = {
     category: 'Ring', purity: '22K', metalColor: 'Yellow Gold',
     grossWeight: 0, netWeight: 0, wastagePercentage: 12, makingChargesPerGram: 450, 
-    stoneCharges: 0, photoUrls: []
+    stoneCharges: 0, photoUrls: [], huid: '', size: ''
   };
   const [currentItem, setCurrentItem] = useState<Partial<JewelryDetail>>(initialItem);
   const [isCompressing, setIsCompressing] = useState(false);
@@ -63,6 +63,12 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
     };
     setCartItems([...cartItems, item]);
     setCurrentItem(initialItem);
+  };
+
+  const handleGrossWeightChange = (val: number) => {
+      // Auto-calc net weight if stone weight implies something, but for now just update gross
+      setCurrentItem({...currentItem, grossWeight: val});
+      if(!currentItem.netWeight) setCurrentItem(prev => ({...prev, netWeight: val, grossWeight: val}));
   };
 
   const generateMilestones = (total: number): Milestone[] => {
@@ -141,10 +147,14 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
           </div>
 
           <div className="pos-card p-5 space-y-5">
+            <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2 uppercase tracking-wide">
+                <Scale size={16} className="text-amber-500" /> Jewellery Specifications
+            </h3>
+            
             <div className="grid grid-cols-2 gap-4">
                 <InputWrapper label="Category">
                     <select className="w-full font-bold bg-transparent outline-none" value={currentItem.category} onChange={e => setCurrentItem({...currentItem, category: e.target.value})}>
-                        {['Ring', 'Necklace', 'Earrings', 'Bangle', 'Bracelet', 'Chain'].map(c => <option key={c}>{c}</option>)}
+                        {['Ring', 'Necklace', 'Earrings', 'Bangle', 'Bracelet', 'Chain', 'Pendant', 'Set', 'Mangalsutra'].map(c => <option key={c}>{c}</option>)}
                     </select>
                 </InputWrapper>
                 <InputWrapper label="Purity">
@@ -157,13 +167,27 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <InputWrapper label="Net Wt (g)"><input type="number" step="0.001" className="w-full font-black text-lg bg-transparent" value={currentItem.netWeight || ''} onChange={e => setCurrentItem({...currentItem, netWeight: parseFloat(e.target.value) || 0})} placeholder="0.000" /></InputWrapper>
+                <InputWrapper label="Gross Wt (g)">
+                    <input type="number" step="0.001" className="w-full font-black text-lg bg-transparent" value={currentItem.grossWeight || ''} onChange={e => handleGrossWeightChange(parseFloat(e.target.value) || 0)} placeholder="0.000" />
+                </InputWrapper>
+                <InputWrapper label="Net Wt (g)">
+                    <input type="number" step="0.001" className="w-full font-black text-lg bg-transparent text-emerald-700" value={currentItem.netWeight || ''} onChange={e => setCurrentItem({...currentItem, netWeight: parseFloat(e.target.value) || 0})} placeholder="0.000" />
+                </InputWrapper>
+                <InputWrapper label="Size / Dim">
+                    <input type="text" className="w-full font-bold text-lg bg-transparent" value={currentItem.size || ''} onChange={e => setCurrentItem({...currentItem, size: e.target.value})} placeholder="Size 12" />
+                </InputWrapper>
+                <InputWrapper label="HUID Code">
+                    <input type="text" className="w-full font-black text-lg bg-transparent text-slate-500" value={currentItem.huid || ''} onChange={e => setCurrentItem({...currentItem, huid: e.target.value.toUpperCase()})} placeholder="X1Y2Z3" />
+                </InputWrapper>
+            </div>
+
+            <div className="border-t border-slate-100 pt-4 grid grid-cols-3 gap-4">
                 <InputWrapper label="VA %"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.wastagePercentage || ''} onChange={e => setCurrentItem({...currentItem, wastagePercentage: parseFloat(e.target.value) || 0})} placeholder="12" /></InputWrapper>
                 <InputWrapper label="Making/g"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.makingChargesPerGram || ''} onChange={e => setCurrentItem({...currentItem, makingChargesPerGram: parseFloat(e.target.value) || 0})} placeholder="450" /></InputWrapper>
                 <InputWrapper label="Stone Cost"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.stoneCharges || ''} onChange={e => setCurrentItem({...currentItem, stoneCharges: parseFloat(e.target.value) || 0})} placeholder="0" /></InputWrapper>
             </div>
 
-            <div className="bg-amber-50 p-5 rounded-2xl border border-amber-200 flex justify-between items-center shadow-inner">
+            <div className="bg-amber-50 p-5 rounded-2xl border border-amber-200 flex justify-between items-center shadow-inner mt-2">
                 <div>
                     <p className="text-[9px] font-black uppercase text-amber-600 mb-1">Item Appraisal</p>
                     <p className="text-2xl font-black text-slate-900">₹{Math.round(pricing.total).toLocaleString()}</p>
@@ -189,7 +213,10 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                                   </div>
                                   <div>
                                       <p className="font-black text-sm text-slate-800">{item.category}</p>
-                                      <p className="text-[10px] text-slate-400 uppercase font-bold">{item.netWeight}g • VA {item.wastagePercentage}%</p>
+                                      <p className="text-[10px] text-slate-400 uppercase font-bold">
+                                          {item.netWeight}g • VA {item.wastagePercentage}%
+                                          {item.huid && <span className="ml-2 text-emerald-600">HUID: {item.huid}</span>}
+                                      </p>
                                   </div>
                               </div>
                               <div className="flex items-center gap-4">
