@@ -247,3 +247,4 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
     </div>
   );
 };
+    

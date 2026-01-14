@@ -20,7 +20,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
     if (remaining > 0) {
         const amount = nextPayment ? nextPayment.targetAmount : remaining;
         const upi = `upi://pay?pa=auragold@upi&pn=AuraGold%20Jewellers&tr=${order.id}&am=${amount}&cu=INR`;
-        // Reliable external QR generator - no build dependencies required
+        // Use QuickChart API for reliable QR generation without build dependencies
         setQrUrl(`https://quickchart.io/qr?text=${encodeURIComponent(upi)}&margin=2&size=300`);
     }
   }, [remaining, nextPayment, order.id]);
@@ -114,3 +114,4 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
 };
 
 export default CustomerOrderView;
+    

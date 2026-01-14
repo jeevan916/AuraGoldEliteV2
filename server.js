@@ -1,4 +1,3 @@
-
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -45,11 +44,10 @@ const dbConfig = {
 };
 
 let pool = null;
-const LOCAL_DB_FILE = path.join(__dirname, 'local_db.json');
 
 const initDb = async () => {
   if (!dbConfig.user || !dbConfig.database) {
-    console.warn('[AuraGold Server] MySQL configuration incomplete. Using local file system for storage.');
+    console.warn('[AuraGold Server] Database configuration incomplete. Skipping initialization.');
     return;
   }
   try {
@@ -65,56 +63,26 @@ const initDb = async () => {
     `);
     conn.release();
   } catch (err) {
-    console.error('[AuraGold Server] Database Connection Failed (Using local file fallback):', err.message);
+    console.error('[AuraGold Server] Database Connection Failed:', err.message);
   }
-};
-
-// Helper: Local File Storage Fallback
-const getLocalData = () => {
-    if (fs.existsSync(LOCAL_DB_FILE)) {
-        try {
-            return JSON.parse(fs.readFileSync(LOCAL_DB_FILE, 'utf8'));
-        } catch (e) {
-            console.error('Failed to read local DB', e);
-        }
-    }
-    return { orders: [], logs: [], templates: [], settings: {}, lastUpdated: 0 };
-};
-
-const saveLocalData = (data) => {
-    try {
-        fs.writeFileSync(LOCAL_DB_FILE, JSON.stringify(data, null, 2));
-    } catch (e) {
-        console.error('Failed to save local DB', e);
-    }
 };
 
 // API Endpoints
-app.get('/api/health', (req, res) => res.json({ status: 'ok', mode: pool ? 'mysql' : 'local_fs', timestamp: new Date().toISOString() }));
+app.get('/api/health', (req, res) => res.json({ status: 'ok', db: !!pool, timestamp: new Date().toISOString() }));
 
 app.get('/api/storage', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database service unavailable' });
   try {
-    if (pool) {
-        const [rows] = await pool.query('SELECT data FROM aura_storage WHERE id = 1');
-        res.json(rows[0] ? JSON.parse(rows[0].data) : { orders: [], lastUpdated: 0 });
-    } else {
-        // Fallback to local file
-        res.json(getLocalData());
-    }
-  } catch (err) { 
-      res.status(500).json({ error: err.message }); 
-  }
+    const [rows] = await pool.query('SELECT data FROM aura_storage WHERE id = 1');
+    res.json(rows[0] ? JSON.parse(rows[0].data) : { orders: [], lastUpdated: 0 });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/storage', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database service unavailable' });
   try {
     const data = JSON.stringify(req.body);
-    if (pool) {
-        await pool.query('INSERT INTO aura_storage (id, data) VALUES (1, ?) ON DUPLICATE KEY UPDATE data = ?', [data, data]);
-    } else {
-        // Fallback to local file
-        saveLocalData(req.body);
-    }
+    await pool.query('INSERT INTO aura_storage (id, data) VALUES (1, ?) ON DUPLICATE KEY UPDATE data = ?', [data, data]);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -146,9 +114,9 @@ if (fs.existsSync(distPath)) {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 } else {
-  console.error(`[AuraGold Server] WARNING: 'dist' folder not found. Please run 'npm run build' before starting the server.`);
+  console.error(`[AuraGold Server] ERROR: 'dist' folder not found. Please run 'npm run build' before starting the server.`);
   app.get('/', (req, res) => {
-      res.send('<h1>AuraGold Server Active</h1><p>Frontend build not found. Please run <code>npm run build</code> to generate the UI.</p>');
+      res.send('<h1>AuraGold Server Active</h1><p>Frontend build not found. Please run <code>npm run build</code>.</p>');
   });
 }
 
