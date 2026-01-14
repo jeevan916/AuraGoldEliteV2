@@ -64,11 +64,18 @@ class StorageService {
   }
 
   // 3. OPTIONAL: Backend Sync (Silent)
-  // This tries to send data to a Node.js server if it exists, but ignores errors if it doesn't.
+  // This tries to send data to an external API if VITE_API_BASE_URL is defined.
   private async backgroundSync() {
-    // Safe access to import.meta.env
-    const env = (import.meta as any).env;
-    const apiBaseUrl = env?.VITE_API_BASE_URL;
+    let apiBaseUrl: string | undefined;
+
+    // Robust environment access to prevent "Cannot read properties of undefined (reading 'VITE_API_BASE_URL')"
+    try {
+      if (typeof import.meta !== 'undefined' && import.meta.env) {
+        apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+      }
+    } catch (e) {
+      console.log("[Storage] Environment variable access skipped.");
+    }
 
     if (!apiBaseUrl) {
       console.log("[Storage] No VITE_API_BASE_URL found, running in offline-only mode.");
@@ -79,18 +86,23 @@ class StorageService {
 
     try {
         // Attempt to pull remote changes
-        const res = await fetch(apiUrl, { method: 'GET', signal: AbortSignal.timeout(2000) });
+        const res = await fetch(apiUrl, { 
+          method: 'GET', 
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(3000) 
+        });
+        
         if (res.ok) {
             const serverData = await res.json();
-            if (serverData.lastUpdated > this.state.lastUpdated) {
+            if (serverData && serverData.lastUpdated > this.state.lastUpdated) {
                 this.state = serverData;
                 this.saveToLocal();
-                console.log("[Storage] Synced with backend");
+                console.log("[Storage] Synced with external backend");
             }
         }
     } catch (e) {
-        // Backend not available - that's fine, we are in Serverless mode.
-        console.warn("[Storage] Backend sync skipped:", (e as Error).message);
+        // Backend not available - that's fine, we are a purely frontend app with offline support.
+        console.warn("[Storage] External API sync skipped or unreachable.");
     }
   }
 
@@ -136,12 +148,12 @@ class StorageService {
 
   // --- Utilities ---
   public async forceSync(): Promise<{ success: boolean; message: string }> {
-      // In serverless mode, force sync just ensures LocalStorage is healthy
       try {
-          this.loadFromLocal(); // Reload from disk
-          return { success: true, message: "Local Database is Healthy" };
+          this.loadFromLocal();
+          await this.backgroundSync();
+          return { success: true, message: "Storage Sync Initialized" };
       } catch (e) {
-          return { success: false, message: "Local Storage Error" };
+          return { success: false, message: "Storage Sync Failed" };
       }
   }
 }
