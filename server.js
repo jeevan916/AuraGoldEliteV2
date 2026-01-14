@@ -1,2 +1,1 @@
-
-// File intentionally removed to adhere to FRONTEND-ONLY architecture.
+// This file is deprecated. Use backend/server.js for production.

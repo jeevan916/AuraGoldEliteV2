@@ -2,394 +2,335 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { 
-  ShoppingBag, Plus, Trash2, ShieldCheck, Scale, 
-  IndianRupee, Lock, ChevronRight, Calculator, 
-  Database, HardDrive, Wifi, WifiOff, Loader2, Sparkles, Gem, ArrowLeft
+  LayoutDashboard, ShoppingBag, Users, ReceiptIndianRupee, 
+  MessageSquare, Globe, Settings as SettingsIcon, AlertTriangle, 
+  Plus, ShieldCheck, LogOut, Briefcase, Menu, X, ArrowLeft, Home,
+  MoreHorizontal, PlusCircle, Sparkles, Zap, BrainCircuit, FileText, 
+  ScrollText, Activity, Server, Calculator, Loader2, WifiOff, Cloud, CloudOff, RefreshCw, ServerCrash, Database, ShieldAlert, AlertCircle, HardDrive
 } from 'lucide-react';
 
-// --- Types ---
-type Purity = '18K' | '22K' | '24K';
-type MetalColor = 'Yellow Gold' | 'Rose Gold' | 'White Gold';
+// Modules (Assuming they exist in the root components/ folder as per file list)
+import Dashboard from './components/Dashboard';
+import OrderForm from './components/OrderForm';
+import OrderDetails from './components/OrderDetails';
+import CustomerList from './components/CustomerList';
+import PaymentCollections from './components/PaymentCollections';
+import WhatsAppPanel from './components/WhatsAppPanel';
+import WhatsAppTemplates from './components/WhatsAppTemplates';
+import WhatsAppLogs from './components/WhatsAppLogs';
+import NotificationCenter from './components/NotificationCenter';
+import PlanManager from './components/PlanManager';
+import MarketIntelligence from './components/MarketIntelligence';
+import Settings from './components/Settings';
+import ErrorLogPanel from './components/ErrorLogPanel';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
-interface JewelryItem {
-  id: string;
-  category: string;
-  purity: Purity;
-  metalColor: MetalColor;
-  grossWeight: number;
-  netWeight: number;
-  stoneWeight: number;
-  wastagePercentage: number;
-  makingChargesPerGram: number;
-  stoneCharges: number;
-  huid: string;
-  totalValue: number;
-}
+// Hooks & Services
+import { useOrders } from './hooks/useOrders';
+import { useWhatsApp } from './hooks/useWhatsApp';
+import { errorService } from './services/errorService';
+import { goldRateService } from './services/goldRateService';
+import { storageService } from './services/storageService';
+import { geminiService } from './services/geminiService';
+import { whatsappService } from './services/whatsappService';
+import { Order, GlobalSettings, AppResolutionPath, Customer, NotificationTrigger, PaymentPlanTemplate } from './types';
 
-interface Order {
-  id: string;
-  customerName: string;
-  customerContact: string;
-  items: JewelryItem[];
-  goldRateAtBooking: number;
-  taxRate: number;
-  totalAmount: number;
-  createdAt: string;
-}
+type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'CUSTOMERS' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU';
 
-interface AppState {
-  orders: Order[];
-  settings: {
-    rate24K: number;
-    rate22K: number;
-    rate18K: number;
-    defaultTax: number;
-  };
-}
+const TabBarItem = ({ icon, label, active, onClick }: any) => (
+  <button 
+    onClick={onClick}
+    className={`flex flex-col items-center gap-1 w-14 transition-all ${active ? 'text-amber-600' : 'text-slate-400 opacity-60'}`}
+  >
+    <div className={`p-1.5 rounded-xl ${active ? 'bg-amber-50' : ''}`}>
+        {React.cloneElement(icon, { size: 22 })}
+    </div>
+    <span className={`text-[9px] font-black uppercase tracking-tighter ${active ? 'opacity-100' : 'opacity-80'}`}>{label}</span>
+  </button>
+);
 
-// --- Storage Service with Fallback ---
-const STORAGE_KEY = 'auragold_storage_v1';
-const API_URL = '/api/state';
+const MenuItem = ({ icon, label, desc, onClick, colorClass }: any) => (
+  <button 
+    onClick={onClick}
+    className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all flex flex-col gap-3 text-left active:scale-[0.98]"
+  >
+    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${colorClass}`}>
+       {React.cloneElement(icon, { size: 24 })}
+    </div>
+    <div>
+       <h3 className="font-bold text-slate-800 text-sm">{label}</h3>
+       <p className="text-[10px] text-slate-500 font-medium leading-tight mt-1">{desc}</p>
+    </div>
+  </button>
+);
 
-const initialAppState: AppState = {
-  orders: [],
-  settings: {
-    rate24K: 7800,
-    rate22K: 7150,
-    rate18K: 5850,
-    defaultTax: 3
-  }
-};
-
-const StorageManager = {
-  isLocalOnly: false,
-
-  async load(): Promise<AppState> {
-    try {
-      const res = await fetch(API_URL);
-      if (res.ok) {
-        this.isLocalOnly = false;
-        return await res.json();
-      }
-    } catch (e) {
-      console.warn("Backend unavailable, using Local Fallback.");
-    }
-    
-    this.isLocalOnly = true;
-    const local = localStorage.getItem(STORAGE_KEY);
-    return local ? JSON.parse(local) : initialAppState;
-  },
-
-  async save(state: AppState) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    try {
-      await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(state)
-      });
-      this.isLocalOnly = false;
-    } catch (e) {
-      this.isLocalOnly = true;
-    }
-  }
-};
-
-// --- Main App Component ---
 const App: React.FC = () => {
-  const [view, setView] = useState<'DASHBOARD' | 'FORM'>('DASHBOARD');
-  const [state, setState] = useState<AppState>(initialAppState);
-  const [loading, setLoading] = useState(true);
-  const [syncMode, setSyncMode] = useState<'LIVE' | 'LOCAL'>('LIVE');
+  const [view, setView] = useState<MainView>('DASH');
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [syncStatus, setSyncStatus] = useState(storageService.getSyncStatus());
+  
+  const { orders, addOrder, recordPayment, updateItemStatus, updateOrder } = useOrders();
+  const { logs, templates, addLog, setTemplates } = useWhatsApp();
+  const [settings, setSettingsState] = useState<GlobalSettings>(storageService.getSettings());
+  const [planTemplates, setPlanTemplates] = useState<PaymentPlanTemplate[]>(storageService.getPlanTemplates());
 
-  // Form State
-  const [orderHeader, setOrderHeader] = useState({ customerName: '', customerContact: '' });
-  const [cart, setCart] = useState<JewelryItem[]>([]);
-  const [editingItem, setEditingItem] = useState<Partial<JewelryItem>>({
-    category: 'Ring', purity: '22K', metalColor: 'Yellow Gold',
-    grossWeight: 0, netWeight: 0, stoneWeight: 0,
-    wastagePercentage: 12, makingChargesPerGram: 450, stoneCharges: 0, huid: ''
-  });
+  const [notifications, setNotifications] = useState<NotificationTrigger[]>([]);
+  const [isStrategyLoading, setStrategyLoading] = useState(false);
+  const [sendingNotifId, setSendingNotifId] = useState<string | null>(null);
+
+  const setSettings = (newSettings: GlobalSettings) => {
+    setSettingsState(newSettings);
+    storageService.setSettings(newSettings);
+  };
+  
+  const handleUpdatePlans = (newPlans: PaymentPlanTemplate[]) => {
+      setPlanTemplates(newPlans);
+      storageService.setPlanTemplates(newPlans);
+  };
+
+  const [errors, setErrors] = useState<any[]>([]);
+  const [activities, setActivities] = useState<any[]>([]);
+
+  const startApp = async () => {
+    setIsInitializing(true);
+    try {
+      // Handshake with backend
+      await storageService.syncFromServer();
+      
+      const rateRes = await goldRateService.fetchLiveRate();
+      if (rateRes.success) {
+          const currentSettings = storageService.getSettings();
+          setSettings({
+              ...currentSettings,
+              currentGoldRate24K: rateRes.rate24K,
+              currentGoldRate22K: rateRes.rate22K
+          });
+      }
+    } catch (e: any) {
+      console.warn("Initial sync handshake failed, using local state.");
+    } finally {
+      setIsInitializing(false);
+    }
+  };
 
   useEffect(() => {
-    const init = async () => {
-      const loaded = await StorageManager.load();
-      setState(loaded);
-      setSyncMode(StorageManager.isLocalOnly ? 'LOCAL' : 'LIVE');
-      setLoading(false);
+    (window as any).dispatchView = (v: MainView) => setView(v);
+    errorService.initGlobalListeners();
+    
+    const unsubStorage = storageService.subscribe(() => {
+       setSettingsState(storageService.getSettings());
+       setSyncStatus(storageService.getSyncStatus());
+       setPlanTemplates(storageService.getPlanTemplates());
+    });
+
+    const unsubErrors = errorService.subscribe((errs, acts) => {
+      setErrors(errs);
+      setActivities(acts);
+    });
+
+    startApp();
+    
+    return () => {
+      unsubStorage();
+      unsubErrors();
     };
-    init();
   }, []);
 
-  const saveState = async (newState: AppState) => {
-    setState(newState);
-    await StorageManager.save(newState);
-    setSyncMode(StorageManager.isLocalOnly ? 'LOCAL' : 'LIVE');
+  const handleRunStrategy = async () => {
+    setStrategyLoading(true);
+    try {
+        const triggers: NotificationTrigger[] = [];
+        const overdueOrders = orders.filter(o => {
+            const paid = o.payments.reduce((a,c) => a + c.amount, 0);
+            return paid < o.totalAmount && o.paymentPlan.milestones.some(m => m.status !== 'PAID' && m.dueDate < new Date().toISOString());
+        });
+
+        for (const o of overdueOrders.slice(0, 5)) {
+            const strat = await geminiService.generateStrategicNotification(o, 'OVERDUE', settings.currentGoldRate24K);
+            triggers.push({
+                id: `strat-${o.id}-${Date.now()}`,
+                customerName: o.customerName,
+                type: 'OVERDUE',
+                message: strat.message || `Reminder: Payment pending for Order #${o.id}`,
+                date: new Date().toISOString(),
+                sent: false,
+                tone: strat.tone || 'POLITE',
+                strategyReasoning: strat.reasoning || 'Automated scheduled check.'
+            });
+        }
+        setNotifications(triggers);
+    } catch(e) {
+        errorService.logError('AI Strategy', 'Failed to generate strategies', 'MEDIUM');
+    } finally {
+        setStrategyLoading(false);
+    }
   };
 
-  const currentRate = useMemo(() => {
-    if (editingItem.purity === '24K') return state.settings.rate24K;
-    if (editingItem.purity === '18K') return state.settings.rate18K;
-    return state.settings.rate22K;
-  }, [editingItem.purity, state.settings]);
+  const handleSendNotification = async (id: string) => {
+    setSendingNotifId(id);
+    const notif = notifications.find(n => n.id === id);
+    if (!notif) return setSendingNotifId(null);
 
-  const itemCalculation = useMemo(() => {
-    const metalValue = (editingItem.netWeight || 0) * currentRate;
-    const wastageValue = metalValue * ((editingItem.wastagePercentage || 0) / 100);
-    const labor = (editingItem.makingChargesPerGram || 0) * (editingItem.netWeight || 0);
-    const subTotal = metalValue + wastageValue + labor + (editingItem.stoneCharges || 0);
-    return { subTotal };
-  }, [editingItem, currentRate]);
-
-  const cartTotal = useMemo(() => cart.reduce((s, i) => s + i.totalValue, 0), [cart]);
-  const finalTax = cartTotal * (state.settings.defaultTax / 100);
-
-  const handleAddItem = () => {
-    if (!editingItem.netWeight || editingItem.netWeight <= 0) return alert("Net weight is required.");
-    const newItem: JewelryItem = {
-      ...editingItem as any,
-      id: `ITEM-${Date.now()}`,
-      totalValue: itemCalculation.subTotal
-    };
-    setCart([...cart, newItem]);
-    setEditingItem({ ...editingItem, grossWeight: 0, netWeight: 0, stoneWeight: 0, huid: '' });
+    const order = orders.find(o => o.customerName === notif.customerName);
+    if (order) {
+        const res = await whatsappService.sendMessage(order.customerContact, notif.message, notif.customerName);
+        if (res.success && res.logEntry) {
+            addLog(res.logEntry);
+            setNotifications(prev => prev.map(n => n.id === id ? { ...n, sent: true } : n));
+        } else {
+            alert("Failed to send: " + res.error);
+        }
+    }
+    setSendingNotifId(null);
   };
 
-  const handleFinalSubmit = () => {
-    if (cart.length === 0) return alert("Add at least one item.");
-    if (!orderHeader.customerName) return alert("Customer name required.");
+  const customers = useMemo(() => {
+    const map = new Map<string, Customer>();
+    orders.forEach(o => {
+      const key = o.customerContact;
+      if (!map.has(key)) {
+        map.set(key, {
+          id: `CUST-${key}`,
+          name: o.customerName,
+          contact: key,
+          email: o.customerEmail,
+          orderIds: [o.id],
+          totalSpent: o.payments.reduce((acc, p) => acc + p.amount, 0),
+          joinDate: o.createdAt
+        });
+      } else {
+        const c = map.get(key)!;
+        c.orderIds.push(o.id);
+        c.totalSpent += o.payments.reduce((acc, p) => acc + p.amount, 0);
+      }
+    });
+    return Array.from(map.values());
+  }, [orders]);
 
-    const newOrder: Order = {
-      id: `ORD-${Date.now()}`,
-      ...orderHeader,
-      items: cart,
-      goldRateAtBooking: state.settings.rate22K,
-      taxRate: state.settings.defaultTax,
-      totalAmount: cartTotal + finalTax,
-      createdAt: new Date().toISOString()
-    };
+  const activeOrder = orders.find(o => o.id === selectedOrderId);
 
-    saveState({ ...state, orders: [newOrder, ...state.orders] });
-    setView('DASHBOARD');
-    setCart([]);
-    setOrderHeader({ customerName: '', customerContact: '' });
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
+        <Loader2 className="animate-spin text-amber-500 mb-6" size={48} />
+        <h2 className="text-xl font-black uppercase tracking-widest">AuraGold Elite</h2>
+        <p className="text-slate-400 text-xs mt-2 font-medium">Booting System Logic...</p>
+      </div>
+    );
+  }
+
+  const getViewTitle = () => {
+    switch(view) {
+      case 'DASH': return 'Collection Queue';
+      case 'ORDER_NEW': return 'New Booking';
+      case 'ORDER_DETAILS': return 'Order Ledger';
+      case 'CUSTOMERS': return 'Client Directory';
+      case 'COLLECTIONS': return 'Revenue Recovery';
+      case 'WHATSAPP': return 'Secure Chats';
+      case 'STRATEGY': return 'AI Collection Strategy';
+      case 'TEMPLATES': return 'Template Architect';
+      case 'PLANS': return 'Payment Schemes';
+      case 'LOGS': return 'Communication Logs';
+      case 'MARKET': return 'Market Intelligence';
+      case 'SYS_LOGS': return 'System Diagnostics';
+      case 'SETTINGS': return 'System Settings';
+      case 'MENU': return 'Command Center';
+      default: return 'AuraGold';
+    }
   };
-
-  if (loading) return (
-    <div className="min-h-screen bg-luxury flex flex-col items-center justify-center text-white">
-      <Loader2 className="animate-spin text-gold mb-4" size={48} />
-      <p className="font-black uppercase tracking-widest text-xs">Authenticating AuraGold Console...</p>
-    </div>
-  );
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 pb-24">
-      {/* Header Stat Area */}
-      <header className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-black text-luxury tracking-tighter flex items-center gap-2">
-            <Gem className="text-gold" /> AuraGold Elite
-          </h1>
-          <div className="flex items-center gap-2 mt-1">
-            {syncMode === 'LIVE' ? (
-              <span className="text-[10px] font-black uppercase text-emerald-600 flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                <Database size={10} /> Live Database Active
-              </span>
-            ) : (
-              <span className="text-[10px] font-black uppercase text-amber-600 flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
-                <HardDrive size={10} /> Local Fallback Mode
-              </span>
-            )}
-          </div>
-        </div>
-        {view === 'DASHBOARD' && (
-          <button onClick={() => setView('FORM')} className="btn-gold flex items-center gap-2">
-            <Plus size={18} /> New Booking
-          </button>
-        )}
-      </header>
-
-      {view === 'DASHBOARD' ? (
-        <div className="animate-fadeIn space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <StatCard label="Live 22K Rate" value={`₹${state.settings.rate22K}`} color="text-gold" />
-            <StatCard label="Total Bookings" value={state.orders.length.toString()} color="text-luxury" />
-            <StatCard label="Revenue Locked" value={`₹${state.orders.reduce((s, o) => s + o.totalAmount, 0).toLocaleString()}`} color="text-emerald-600" />
-          </div>
-
-          <div className="pos-card p-6">
-            <h2 className="font-black uppercase text-xs tracking-widest text-slate-400 mb-6">Recent Order Ledger</h2>
-            <div className="space-y-4">
-              {state.orders.map(order => (
-                <div key={order.id} className="p-4 border rounded-2xl flex justify-between items-center hover:bg-slate-50 transition-colors">
-                  <div>
-                    <p className="font-bold text-luxury">{order.customerName}</p>
-                    <p className="text-[10px] font-black text-slate-400 uppercase">{order.items.length} Items • {new Date(order.createdAt).toLocaleDateString()}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-black text-luxury">₹{order.totalAmount.toLocaleString()}</p>
-                    <span className="text-[9px] font-black bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded uppercase tracking-tighter">Active Contract</span>
-                  </div>
-                </div>
-              ))}
-              {state.orders.length === 0 && <p className="text-center py-10 text-slate-400 font-bold italic">No active contracts found.</p>}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="animate-slideUp space-y-6">
-          <button onClick={() => setView('DASHBOARD')} className="flex items-center gap-2 text-slate-400 font-bold text-sm hover:text-luxury transition-colors">
-            <ArrowLeft size={18} /> Exit Booking
-          </button>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-8 space-y-6">
-              {/* Item Entry Form */}
-              <div className="pos-card p-8 space-y-8">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-black text-luxury uppercase tracking-widest text-sm flex items-center gap-2">
-                    <Calculator size={16} /> Jewellery Spec Entry
-                  </h3>
-                  <span className="text-[10px] font-black bg-gold-pale text-gold-dark px-3 py-1 rounded-full border border-gold-light">
-                    Rate: ₹{currentRate}/g
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <InputGroup label="Category">
-                    <select className="input-gold" value={editingItem.category} onChange={e => setEditingItem({...editingItem, category: e.target.value})}>
-                      {['Ring', 'Necklace', 'Earrings', 'Bangle', 'Bracelet', 'Chain', 'Pendant', 'Mangalsutra'].map(c => <option key={c}>{c}</option>)}
-                    </select>
-                  </InputGroup>
-                  <InputGroup label="Purity">
-                    <select className="input-gold" value={editingItem.purity} onChange={e => setEditingItem({...editingItem, purity: e.target.value as Purity})}>
-                      <option value="22K">22K Hallmark</option>
-                      <option value="24K">24K Bullion</option>
-                      <option value="18K">18K Studded</option>
-                    </select>
-                  </InputGroup>
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <InputGroup label="Net Wt (g)">
-                    <input type="number" step="0.001" className="input-gold text-emerald-700" placeholder="0.000" value={editingItem.netWeight || ''} onChange={e => setEditingItem({...editingItem, netWeight: parseFloat(e.target.value) || 0})} />
-                  </InputGroup>
-                  <InputGroup label="VA (Wastage) %">
-                    <input type="number" className="input-gold" placeholder="12" value={editingItem.wastagePercentage || ''} onChange={e => setEditingItem({...editingItem, wastagePercentage: parseFloat(e.target.value) || 0})} />
-                  </InputGroup>
-                  <InputGroup label="Labor / g">
-                    <input type="number" className="input-gold" placeholder="450" value={editingItem.makingChargesPerGram || ''} onChange={e => setEditingItem({...editingItem, makingChargesPerGram: parseFloat(e.target.value) || 0})} />
-                  </InputGroup>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <InputGroup label="Stone Charges">
-                    <input type="number" className="input-gold" placeholder="0" value={editingItem.stoneCharges || ''} onChange={e => setEditingItem({...editingItem, stoneCharges: parseFloat(e.target.value) || 0})} />
-                  </InputGroup>
-                  <InputGroup label="HUID ID">
-                    <input type="text" className="input-gold uppercase" placeholder="ABC123" value={editingItem.huid || ''} onChange={e => setEditingItem({...editingItem, huid: e.target.value})} />
-                  </InputGroup>
-                </div>
-
-                <div className="bg-luxury p-6 rounded-[2rem] flex justify-between items-center text-white shadow-2xl">
-                  <div>
-                    <p className="text-[9px] font-black uppercase text-gold tracking-widest mb-1">Estimated Item Quote</p>
-                    <p className="text-3xl font-black">₹{Math.round(itemCalculation.subTotal).toLocaleString()}</p>
-                  </div>
-                  <button onClick={handleAddItem} className="bg-gold text-luxury px-8 py-3 rounded-xl font-black uppercase text-xs hover:bg-gold-light transition-all shadow-lg active:scale-95">
-                    Add Item
+    <ErrorBoundary>
+      <div className="flex h-[100dvh] overflow-hidden bg-[#F3F4F6] text-slate-900">
+        <main className="flex-1 flex flex-col h-full relative w-full overflow-hidden">
+          <header className="bg-white border-b px-4 py-4 flex items-center justify-between z-40 sticky top-0 shadow-sm">
+             <div className="flex items-center gap-3">
+               {view !== 'DASH' ? (
+                 <button onClick={() => setView('DASH')} className="p-1 text-slate-900 active:scale-90 transition-transform">
+                    <ArrowLeft size={24} />
+                 </button>
+               ) : (
+                  <button onClick={() => setView('MENU')} className="w-9 h-9 bg-slate-900 rounded-xl flex items-center justify-center shadow-lg active:scale-90 transition-transform relative">
+                    <Menu size={20} className="text-white" />
                   </button>
-                </div>
-              </div>
+               )}
+               <div>
+                    <h1 className="text-xl font-black tracking-tight text-slate-900 truncate max-w-[200px] leading-tight">{getViewTitle()}</h1>
+                    <div className="flex items-center gap-1">
+                        {syncStatus === 'CONNECTED' ? (
+                            <span className="text-[8px] font-black uppercase text-emerald-600 flex items-center gap-1">
+                                <Cloud size={10} /> Live Database Linked
+                            </span>
+                        ) : syncStatus === 'SYNCING' ? (
+                            <span className="text-[8px] font-black uppercase text-blue-600 flex items-center gap-1">
+                                <Loader2 size={10} className="animate-spin" /> Synchronizing...
+                            </span>
+                        ) : (
+                            <span className="text-[8px] font-black uppercase text-amber-600 flex items-center gap-1">
+                                <HardDrive size={10} /> Local Fallback Mode
+                            </span>
+                        )}
+                    </div>
+               </div>
+             </div>
+             <div className="flex items-center gap-3">
+                 <button onClick={()=>setView('SETTINGS')} className="p-2 text-slate-400 active:rotate-90 transition-all"><SettingsIcon size={20}/></button>
+                 {view === 'DASH' && (
+                    <button onClick={() => setView('ORDER_NEW')} className="w-11 h-11 bg-amber-600 text-white rounded-2xl flex items-center justify-center shadow-xl active:scale-90 transition-transform">
+                      <Plus size={28} />
+                    </button>
+                 )}
+             </div>
+          </header>
 
-              {/* Cart Review */}
-              {cart.length > 0 && (
-                <div className="pos-card overflow-hidden">
-                  <div className="bg-slate-50 p-4 border-b">
-                    <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Order Summary ({cart.length} Items)</h4>
-                  </div>
-                  <div className="divide-y">
-                    {cart.map((item, idx) => (
-                      <div key={item.id} className="p-4 flex justify-between items-center bg-white group hover:bg-slate-50 transition-colors">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-luxury/5 rounded-full flex items-center justify-center text-gold">
-                            <Gem size={18} />
-                          </div>
-                          <div>
-                            <p className="font-bold text-sm text-luxury">{item.category} • {item.metalColor}</p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase">{item.purity} • {item.netWeight}g {item.huid && `• HUID: ${item.huid}`}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <p className="font-black text-sm">₹{Math.round(item.totalValue).toLocaleString()}</p>
-                          <button onClick={() => setCart(cart.filter(i => i.id !== item.id))} className="text-rose-500 p-2 hover:bg-rose-50 rounded-lg"><Trash2 size={16} /></button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-4 lg:p-10 w-full pb-[120px]">
+            <div className="max-w-4xl mx-auto">
+              {view === 'DASH' && <Dashboard orders={orders} currentRates={{ k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K }} />}
+              {view === 'MENU' && (
+                <div className="animate-fadeIn">
+                   <div className="mb-6">
+                      <h2 className="text-2xl font-black text-slate-800">Apps & Tools</h2>
+                      <p className="text-sm text-slate-500 font-medium">Manage automation, templates, and system health.</p>
+                   </div>
+                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <MenuItem icon={<BrainCircuit />} label="AI Strategy" desc="Automated Collection Engine" colorClass="bg-amber-100 text-amber-600" onClick={() => setView('STRATEGY')} />
+                      <MenuItem icon={<Calculator />} label="Plan Manager" desc="AI Payment Schemes" colorClass="bg-violet-100 text-violet-600" onClick={() => setView('PLANS')} />
+                      <MenuItem icon={<FileText />} label="Templates" desc="Meta WhatsApp Manager" colorClass="bg-blue-100 text-blue-600" onClick={() => setView('TEMPLATES')} />
+                      <MenuItem icon={<ScrollText />} label="Message Logs" desc="Audit Communication History" colorClass="bg-emerald-100 text-emerald-600" onClick={() => setView('LOGS')} />
+                      <MenuItem icon={<Globe />} label="Market Intel" desc="Live Rates & Charts" colorClass="bg-indigo-100 text-indigo-600" onClick={() => setView('MARKET')} />
+                      <MenuItem icon={<Activity />} label="System Logs" desc="Diagnostics & Repair" colorClass="bg-slate-100 text-slate-600" onClick={() => setView('SYS_LOGS')} />
+                      <MenuItem icon={<SettingsIcon />} label="Settings" desc="Global Configuration" colorClass="bg-gray-100 text-gray-600" onClick={() => setView('SETTINGS')} />
+                   </div>
                 </div>
               )}
-            </div>
-
-            <div className="lg:col-span-4 space-y-6">
-              <div className="pos-card p-6 space-y-6 sticky top-8">
-                <h3 className="font-black text-luxury uppercase tracking-widest text-xs">Contract Details</h3>
-                
-                <InputGroup label="Customer Full Name">
-                  <input type="text" className="input-gold" value={orderHeader.customerName} onChange={e => setOrderHeader({...orderHeader, customerName: e.target.value})} placeholder="Ex: Rahul Sharma" />
-                </InputGroup>
-                <InputGroup label="WhatsApp Contact">
-                  <input type="tel" className="input-gold" value={orderHeader.customerContact} onChange={e => setOrderHeader({...orderHeader, customerContact: e.target.value})} placeholder="91XXXXXXXXXX" />
-                </InputGroup>
-
-                <div className="bg-slate-50 p-6 rounded-[2rem] space-y-4">
-                  <div className="flex justify-between text-xs font-bold text-slate-500 uppercase">
-                    <span>Subtotal</span>
-                    <span>₹{cartTotal.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between text-xs font-bold text-slate-500 uppercase">
-                    <span>GST ({state.settings.defaultTax}%)</span>
-                    <span>₹{Math.round(finalTax).toLocaleString()}</span>
-                  </div>
-                  <div className="pt-4 border-t border-slate-200 flex justify-between items-end">
-                    <span className="text-[10px] font-black uppercase text-luxury tracking-widest">Total Payable</span>
-                    <span className="text-3xl font-black text-luxury tracking-tighter">₹{Math.round(cartTotal + finalTax).toLocaleString()}</span>
-                  </div>
-                </div>
-
-                <button 
-                  onClick={handleFinalSubmit}
-                  disabled={cart.length === 0}
-                  className="w-full bg-gold text-luxury py-5 rounded-2xl font-black uppercase text-sm tracking-widest shadow-xl shadow-gold/20 hover:bg-gold-light transition-all disabled:opacity-50 disabled:grayscale"
-                >
-                  Generate Order
-                </button>
-
-                <div className="flex items-center gap-2 justify-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  <ShieldCheck size={14} className="text-emerald-500" /> Bureau of Indian Standards
-                </div>
-              </div>
+              {view === 'ORDER_NEW' && <OrderForm settings={settings} planTemplates={planTemplates} onSubmit={(o) => { addOrder(o); setView('ORDER_DETAILS'); setSelectedOrderId(o.id); }} onCancel={() => setView('DASH')} />}
+              {view === 'ORDER_DETAILS' && (activeOrder ? <OrderDetails order={activeOrder} settings={settings} onBack={() => setView('DASH')} onUpdateStatus={(itemId, status) => updateItemStatus(activeOrder.id, itemId, status)} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} logs={logs} onAddLog={addLog} /> : <div className="text-center py-20 text-slate-400 font-medium">Please select an order.</div>)}
+              {view === 'CUSTOMERS' && <CustomerList customers={customers} orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onMessageSent={addLog} />}
+              {view === 'COLLECTIONS' && <PaymentCollections orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onSendWhatsApp={()=>{}} settings={settings} />}
+              {view === 'STRATEGY' && <NotificationCenter notifications={notifications} onRefresh={handleRunStrategy} loading={isStrategyLoading} onSend={handleSendNotification} isSending={sendingNotifId} />}
+              {view === 'TEMPLATES' && <WhatsAppTemplates templates={templates} onUpdate={setTemplates} />}
+              {view === 'PLANS' && <PlanManager templates={planTemplates} onUpdate={handleUpdatePlans} />}
+              {view === 'LOGS' && <WhatsAppLogs logs={logs} onViewChat={(phone) => { setView('WHATSAPP'); (window as any).initialChatContact = phone; }} />}
+              {view === 'WHATSAPP' && <WhatsAppPanel logs={logs} customers={customers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} initialContact={(window as any).initialChatContact} />}
+              {view === 'MARKET' && <MarketIntelligence />}
+              {view === 'SYS_LOGS' && <ErrorLogPanel errors={errors} onClear={() => errorService.clearErrors()} activities={activities} onResolveAction={(path) => path !== 'none' && (path === 'whatsapp' ? setView('WHATSAPP') : path === 'templates' ? setView('TEMPLATES') : setView('SETTINGS'))} />}
+              {view === 'SETTINGS' && <Settings settings={settings} onUpdate={setSettings} />}
             </div>
           </div>
-        </div>
-      )}
-    </div>
+
+          <div className="glass-nav fixed bottom-0 left-0 right-0 h-[84px] flex justify-around items-center px-2 z-[50] shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
+             <TabBarItem icon={<Home />} label="Queue" active={view === 'DASH'} onClick={() => setView('DASH')} />
+             <TabBarItem icon={<PlusCircle />} label="Book" active={view === 'ORDER_NEW'} onClick={() => setView('ORDER_NEW')} />
+             <TabBarItem icon={<ReceiptIndianRupee />} label="Ledger" active={view === 'COLLECTIONS' || view === 'ORDER_DETAILS'} onClick={() => setView('COLLECTIONS')} />
+             <TabBarItem icon={<Users />} label="Clients" active={view === 'CUSTOMERS'} onClick={() => setView('CUSTOMERS')} />
+             <TabBarItem icon={<MessageSquare />} label="Chats" active={view === 'WHATSAPP'} onClick={() => setView('WHATSAPP')} />
+          </div>
+        </main>
+      </div>
+    </ErrorBoundary>
   );
 };
-
-const StatCard = ({ label, value, color }: { label: string, value: string, color: string }) => (
-  <div className="pos-card p-6 text-center">
-    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{label}</p>
-    <p className={`text-2xl font-black ${color} tracking-tighter`}>{value}</p>
-  </div>
-);
-
-const InputGroup = ({ label, children }: { label: string, children: React.ReactNode }) => (
-  <div className="space-y-1.5">
-    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{label}</label>
-    {children}
-  </div>
-);
 
 const container = document.getElementById('root');
 if (container) {
