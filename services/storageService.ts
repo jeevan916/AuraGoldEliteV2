@@ -29,17 +29,14 @@ class StorageService {
 
   constructor() {
     this.state = this.loadFromLocal();
-    // Try to sync, but don't crash if env is missing
     this.backgroundSync();
   }
 
-  // 1. PRIMARY: Load from Browser LocalStorage
   private loadFromLocal(): AppState {
     try {
       const serialized = localStorage.getItem(KEY_STATE);
       if (serialized) {
         const parsed = JSON.parse(serialized);
-        // Merge with defaults to ensure all fields exist (in case of schema updates)
         return {
           ...DEFAULT_STATE,
           ...parsed,
@@ -52,44 +49,31 @@ class StorageService {
     return DEFAULT_STATE;
   }
 
-  // 2. PRIMARY: Save to Browser LocalStorage
   private saveToLocal() {
     this.state.lastUpdated = Date.now();
     try {
         localStorage.setItem(KEY_STATE, JSON.stringify(this.state));
         this.notify();
     } catch (e) {
-        console.error("[Storage] Quota exceeded or write error", e);
+        console.error("[Storage] Write error", e);
     }
   }
 
-  // 3. OPTIONAL: Backend Sync (Silent)
-  // This tries to send data to an external API if VITE_API_BASE_URL is defined.
   private async backgroundSync() {
-    let apiBaseUrl: string | undefined;
-
-    // Robust environment access to prevent "Cannot read properties of undefined (reading 'VITE_API_BASE_URL')"
-    try {
-      if (typeof import.meta !== 'undefined' && import.meta.env) {
-        apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-      }
-    } catch (e) {
-      console.log("[Storage] Environment variable access skipped.");
-    }
+    // Safe access to environment variables in Vite
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
     if (!apiBaseUrl) {
-      console.log("[Storage] No VITE_API_BASE_URL found, running in offline-only mode.");
+      console.warn("[Storage] VITE_API_BASE_URL not defined. Running in Offline/Local-Only mode.");
       return;
     }
 
-    const apiUrl = `${apiBaseUrl}/api/storage`;
+    const apiUrl = `${apiBaseUrl}/api/storage.php`;
 
     try {
-        // Attempt to pull remote changes
         const res = await fetch(apiUrl, { 
-          method: 'GET', 
-          headers: { 'Accept': 'application/json' },
-          signal: AbortSignal.timeout(3000) 
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
         });
         
         if (res.ok) {
@@ -97,21 +81,34 @@ class StorageService {
             if (serverData && serverData.lastUpdated > this.state.lastUpdated) {
                 this.state = serverData;
                 this.saveToLocal();
-                console.log("[Storage] Synced with external backend");
+                console.log("[Storage] Synced with backend");
             }
         }
     } catch (e) {
-        // Backend not available - that's fine, we are a purely frontend app with offline support.
-        console.warn("[Storage] External API sync skipped or unreachable.");
+        console.warn("[Storage] Backend sync skipped: Offline or Server Unreachable.");
     }
   }
-
-  // --- Getters & Setters ---
 
   public getOrders() { return this.state.orders; }
   public setOrders(orders: Order[]) { 
       this.state.orders = orders; 
       this.saveToLocal(); 
+      this.syncToBackend();
+  }
+
+  private async syncToBackend() {
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+    if (!apiBaseUrl) return;
+
+    try {
+      await fetch(`${apiBaseUrl}/api/storage.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.state)
+      });
+    } catch (e) {
+      console.error("[Storage] Failed to sync to backend", e);
+    }
   }
 
   public getLogs() { return this.state.logs; }
@@ -138,7 +135,6 @@ class StorageService {
       this.saveToLocal(); 
   }
   
-  // --- Event System ---
   public subscribe(cb: () => void) {
       this.listeners.push(cb);
       return () => { this.listeners = this.listeners.filter(l => l !== cb); };
@@ -146,14 +142,15 @@ class StorageService {
   
   private notify() { this.listeners.forEach(cb => cb()); }
 
-  // --- Utilities ---
   public async forceSync(): Promise<{ success: boolean; message: string }> {
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+      if (!apiBaseUrl) return { success: false, message: "No Backend Configured" };
+
       try {
-          this.loadFromLocal();
           await this.backgroundSync();
-          return { success: true, message: "Storage Sync Initialized" };
+          return { success: true, message: "Storage Sync Successful" };
       } catch (e) {
-          return { success: false, message: "Storage Sync Failed" };
+          return { success: false, message: "Sync Failed" };
       }
   }
 }
