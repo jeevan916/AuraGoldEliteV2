@@ -1,8 +1,9 @@
+
 import React, { useState, useMemo } from 'react';
 import { 
   Plus, ShoppingBag, Trash2, ShieldCheck, 
   Calculator, User, ChevronRight, X, Loader2, Sparkles, Zap, Image as ImageIcon, Camera, Trash, 
-  IndianRupee, ArrowRight, Lock, Calendar, Scale, Tag, Ruler
+  IndianRupee, ArrowRight, Lock, Calendar, Scale, Tag, Ruler, Upload
 } from 'lucide-react';
 import { 
   Order, JewelryDetail, OrderStatus, GlobalSettings, 
@@ -65,8 +66,31 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
     setCurrentItem(initialItem);
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setIsCompressing(true);
+      try {
+        const compressed = await compressImage(e.target.files[0]);
+        setCurrentItem(prev => ({
+          ...prev,
+          photoUrls: [...(prev.photoUrls || []), compressed]
+        }));
+      } catch (error) {
+        alert("Failed to process image. Try a smaller file.");
+      } finally {
+        setIsCompressing(false);
+      }
+    }
+  };
+
+  const removePhoto = (index: number) => {
+    setCurrentItem(prev => ({
+        ...prev,
+        photoUrls: (prev.photoUrls || []).filter((_, i) => i !== index)
+    }));
+  };
+
   const handleGrossWeightChange = (val: number) => {
-      // Auto-calc net weight if stone weight implies something, but for now just update gross
       setCurrentItem({...currentItem, grossWeight: val});
       if(!currentItem.netWeight) setCurrentItem(prev => ({...prev, netWeight: val, grossWeight: val}));
   };
@@ -124,7 +148,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
       <div className="flex bg-white rounded-2xl border overflow-hidden p-1 shadow-sm">
         {[1, 2, 3].map(s => (
           <div key={s} className={`flex-1 py-3 text-center text-[10px] font-black uppercase tracking-widest transition-all ${step === s ? 'bg-slate-900 text-white rounded-xl' : 'text-slate-400'}`}>
-            {s === 1 ? 'Details' : s === 2 ? 'Customer' : 'Collection Plan'}
+            {s === 1 ? 'Jewellery Details' : s === 2 ? 'Client' : 'Milestone Logic'}
           </div>
         ))}
       </div>
@@ -134,30 +158,30 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
           {/* Rate Entry */}
           <div className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center text-white shadow-xl">
             <div>
-               <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">Rate Lock for Customer</p>
+               <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">Locked Booking Rate</p>
                <div className="flex items-center gap-2">
                  <span className="text-amber-500 font-black">₹</span>
                  <input type="number" className="bg-transparent text-3xl font-black outline-none w-36 border-b border-white/10" value={orderRate} onChange={e => setOrderRate(parseFloat(e.target.value) || 0)} />
                </div>
             </div>
             <div className="text-right">
-                <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">Est. Total</p>
+                <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">Est. Grand Total</p>
                 <p className="text-3xl font-black text-amber-400">₹{cartTotal.toLocaleString()}</p>
             </div>
           </div>
 
           <div className="pos-card p-5 space-y-5">
             <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2 uppercase tracking-wide">
-                <Scale size={16} className="text-amber-500" /> Jewellery Specifications
+                <Scale size={16} className="text-amber-500" /> Item Specifications
             </h3>
             
             <div className="grid grid-cols-2 gap-4">
-                <InputWrapper label="Category">
+                <InputWrapper label="Product Category">
                     <select className="w-full font-bold bg-transparent outline-none" value={currentItem.category} onChange={e => setCurrentItem({...currentItem, category: e.target.value})}>
                         {['Ring', 'Necklace', 'Earrings', 'Bangle', 'Bracelet', 'Chain', 'Pendant', 'Set', 'Mangalsutra'].map(c => <option key={c}>{c}</option>)}
                     </select>
                 </InputWrapper>
-                <InputWrapper label="Purity">
+                <InputWrapper label="Gold Purity">
                     <select className="w-full font-bold bg-transparent outline-none" value={currentItem.purity} onChange={e => setCurrentItem({...currentItem, purity: e.target.value as Purity})}>
                         <option value="22K">22K Standard</option>
                         <option value="24K">24K Pure</option>
@@ -173,18 +197,51 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                 <InputWrapper label="Net Wt (g)">
                     <input type="number" step="0.001" className="w-full font-black text-lg bg-transparent text-emerald-700" value={currentItem.netWeight || ''} onChange={e => setCurrentItem({...currentItem, netWeight: parseFloat(e.target.value) || 0})} placeholder="0.000" />
                 </InputWrapper>
-                <InputWrapper label="Size / Dim">
-                    <input type="text" className="w-full font-bold text-lg bg-transparent" value={currentItem.size || ''} onChange={e => setCurrentItem({...currentItem, size: e.target.value})} placeholder="Size 12" />
-                </InputWrapper>
-                <InputWrapper label="HUID Code">
+                <InputWrapper label="HUID / Tag">
                     <input type="text" className="w-full font-black text-lg bg-transparent text-slate-500" value={currentItem.huid || ''} onChange={e => setCurrentItem({...currentItem, huid: e.target.value.toUpperCase()})} placeholder="X1Y2Z3" />
+                </InputWrapper>
+                <InputWrapper label="Size / Length">
+                    <input type="text" className="w-full font-bold text-lg bg-transparent" value={currentItem.size || ''} onChange={e => setCurrentItem({...currentItem, size: e.target.value})} placeholder="12 / 18''" />
                 </InputWrapper>
             </div>
 
-            <div className="border-t border-slate-100 pt-4 grid grid-cols-3 gap-4">
-                <InputWrapper label="VA %"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.wastagePercentage || ''} onChange={e => setCurrentItem({...currentItem, wastagePercentage: parseFloat(e.target.value) || 0})} placeholder="12" /></InputWrapper>
-                <InputWrapper label="Making/g"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.makingChargesPerGram || ''} onChange={e => setCurrentItem({...currentItem, makingChargesPerGram: parseFloat(e.target.value) || 0})} placeholder="450" /></InputWrapper>
-                <InputWrapper label="Stone Cost"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.stoneCharges || ''} onChange={e => setCurrentItem({...currentItem, stoneCharges: parseFloat(e.target.value) || 0})} placeholder="0" /></InputWrapper>
+            <div className="grid grid-cols-3 gap-4">
+                <InputWrapper label="VA % (Wastage)"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.wastagePercentage || ''} onChange={e => setCurrentItem({...currentItem, wastagePercentage: parseFloat(e.target.value) || 0})} placeholder="12" /></InputWrapper>
+                <InputWrapper label="Labor / g"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.makingChargesPerGram || ''} onChange={e => setCurrentItem({...currentItem, makingChargesPerGram: parseFloat(e.target.value) || 0})} placeholder="450" /></InputWrapper>
+                <InputWrapper label="Stone Value"><input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.stoneCharges || ''} onChange={e => setCurrentItem({...currentItem, stoneCharges: parseFloat(e.target.value) || 0})} placeholder="0" /></InputWrapper>
+            </div>
+
+            <div className="border-t border-slate-100 pt-4">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Item Photos</label>
+                <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
+                    {/* Upload Button */}
+                    <div className="relative shrink-0">
+                        <input 
+                            type="file" 
+                            accept="image/*" 
+                            className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                            onChange={handleImageUpload}
+                            disabled={isCompressing}
+                        />
+                        <div className="w-20 h-20 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 hover:bg-slate-50 transition-colors">
+                            {isCompressing ? <Loader2 className="animate-spin" size={20} /> : <Camera size={20} />}
+                            <span className="text-[8px] font-bold uppercase mt-1">Capture</span>
+                        </div>
+                    </div>
+
+                    {/* Previews */}
+                    {(currentItem.photoUrls || []).map((url, idx) => (
+                        <div key={idx} className="relative shrink-0 w-20 h-20 group">
+                            <img src={url} className="w-full h-full object-cover rounded-xl border border-slate-200" />
+                            <button 
+                                onClick={() => removePhoto(idx)}
+                                className="absolute -top-1 -right-1 bg-rose-500 text-white p-1 rounded-full shadow-md hover:bg-rose-600 transition-colors"
+                            >
+                                <X size={10} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
             </div>
 
             <div className="bg-amber-50 p-5 rounded-2xl border border-amber-200 flex justify-between items-center shadow-inner mt-2">
@@ -193,7 +250,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                     <p className="text-2xl font-black text-slate-900">₹{Math.round(pricing.total).toLocaleString()}</p>
                 </div>
                 <button onClick={handleAddItem} className="bg-slate-900 text-white px-8 py-3.5 rounded-xl font-black text-xs uppercase flex items-center gap-2 active:scale-95 shadow-lg">
-                    <Plus size={18} /> Append Item
+                    <Plus size={18} /> Append to Order
                 </button>
             </div>
           </div>
@@ -208,8 +265,12 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                       {cartItems.map(item => (
                           <div key={item.id} className="p-4 flex justify-between items-center bg-white group hover:bg-slate-50 transition-colors">
                               <div className="flex items-center gap-4">
-                                  <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400">
-                                    <ImageIcon size={20} />
+                                  <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 overflow-hidden shrink-0">
+                                    {item.photoUrls && item.photoUrls.length > 0 ? (
+                                        <img src={item.photoUrls[0]} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <ImageIcon size={20} />
+                                    )}
                                   </div>
                                   <div>
                                       <p className="font-black text-sm text-slate-800">{item.category}</p>
@@ -238,7 +299,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                 <InputWrapper label="Full Name">
                     <input className="w-full font-bold text-xl bg-transparent p-1 outline-none" value={customer.name} onChange={e => setCustomer({...customer, name: e.target.value})} placeholder="Ex: Rahul Sharma" />
                 </InputWrapper>
-                <InputWrapper label="WhatsApp Number (With Country Code)">
+                <InputWrapper label="WhatsApp Number">
                     <input type="tel" className="w-full font-bold text-xl bg-transparent p-1 outline-none" value={customer.contact} onChange={e => setCustomer({...customer, contact: e.target.value})} placeholder="919876543210" />
                 </InputWrapper>
                 <p className="text-[10px] text-slate-400 italic">Messages will be sent to this number for collection reminders.</p>
@@ -297,7 +358,6 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                 </div>
             </div>
 
-            {/* Schedule Table */}
             <div className="pos-card overflow-hidden">
                 <div className="bg-slate-900 p-4"><p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Projected Collection Ledger</p></div>
                 <div className="divide-y divide-slate-100">
@@ -339,7 +399,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
 
             {step === 3 && (
                 <button onClick={submitOrder} className="flex-[2] bg-emerald-600 text-white py-4 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 shadow-xl active:scale-95 transition-all">
-                    Create Gold Contract <Sparkles size={18} />
+                    Generate Contract <Sparkles size={18} />
                 </button>
             )}
          </div>

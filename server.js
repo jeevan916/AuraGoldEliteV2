@@ -1,4 +1,3 @@
-
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -11,23 +10,27 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Ensure .env is loaded
-const envPaths = [path.join(__dirname, '.env'), path.join(__dirname, '..', '.env')];
+// Load environment variables
+const envPaths = [
+  path.join(__dirname, '.env'),
+  path.join(__dirname, '..', '.env')
+];
+
 for (const p of envPaths) {
   if (fs.existsSync(p)) {
     dotenv.config({ path: p });
+    console.log(`[AuraGold Server] Environment loaded from: ${p}`);
     break;
   }
 }
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const LOCAL_DB_PATH = path.join(__dirname, 'local_db.json');
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// Database Configuration
+// Database Connection
 const dbConfig = {
   host: process.env.DB_HOST || '127.0.0.1',
   user: process.env.DB_USER,
@@ -37,107 +40,54 @@ const dbConfig = {
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  connectTimeout: 5000 // Fast failover to local file
+  connectTimeout: 15000
 };
 
 let pool = null;
-let serverMode = 'local_fs'; // 'mysql' | 'local_fs'
 
-// Initialize Database or Fallback
-const initSystem = async () => {
-  console.log('🔄 [Server] Initializing Storage Engine...');
-  
-  // 1. Try MySQL if credentials exist
-  if (dbConfig.user && dbConfig.database) {
-    try {
-      pool = mysql.createPool(dbConfig);
-      const conn = await pool.getConnection();
-      console.log('✅ [Server] Connected to MySQL Database (Enterprise Mode)');
-      
-      // Init Table
-      await conn.query(`
-        CREATE TABLE IF NOT EXISTS aura_storage (
-          id INT PRIMARY KEY DEFAULT 1,
-          data LONGTEXT,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        )
-      `);
-      conn.release();
-      serverMode = 'mysql';
-      return;
-    } catch (err) {
-      console.warn(`⚠️ [Server] MySQL Connection Failed: ${err.message}`);
-      console.warn('🔄 [Server] Switching to Local File System Mode (Fallback)');
-    }
-  } else {
-    console.log('ℹ️ [Server] No MySQL credentials found. Using Local File System Mode.');
+const initDb = async () => {
+  if (!dbConfig.user || !dbConfig.database) {
+    console.warn('[AuraGold Server] Database configuration incomplete. Skipping initialization.');
+    return;
   }
-
-  // 2. Fallback: Check/Create Local File
-  if (!fs.existsSync(LOCAL_DB_PATH)) {
-    try {
-      fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify({ orders: [], lastUpdated: Date.now() }));
-      console.log('✅ [Server] Created local_db.json for storage');
-    } catch(e) {
-      console.error('❌ [Server] Failed to create local DB file:', e.message);
-    }
+  try {
+    pool = mysql.createPool(dbConfig);
+    const conn = await pool.getConnection();
+    console.log('[AuraGold Server] MySQL Pool Initialized');
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS aura_storage (
+        id INT PRIMARY KEY DEFAULT 1,
+        data LONGTEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+    conn.release();
+  } catch (err) {
+    console.error('[AuraGold Server] Database Connection Failed:', err.message);
   }
-  serverMode = 'local_fs';
 };
 
-// --- Endpoints (Aliased to handle both /api/storage and /api/storage.php) ---
+// API Endpoints
+app.get('/api/health', (req, res) => res.json({ status: 'ok', db: !!pool, timestamp: new Date().toISOString() }));
 
-// Health Check
-app.get(['/api/health', '/api/health.php'], (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    mode: serverMode, 
-    timestamp: new Date().toISOString() 
-  });
-});
-
-// Get Data
-app.get(['/api/storage', '/api/storage.php'], async (req, res) => {
+app.get('/api/storage', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database service unavailable' });
   try {
-    if (serverMode === 'mysql' && pool) {
-      const [rows] = await pool.query('SELECT data FROM aura_storage WHERE id = 1');
-      const data = rows[0] ? JSON.parse(rows[0].data) : { orders: [], lastUpdated: 0 };
-      return res.json(data);
-    } else {
-      // Local FS
-      if (fs.existsSync(LOCAL_DB_PATH)) {
-        const raw = fs.readFileSync(LOCAL_DB_PATH, 'utf8');
-        return res.json(JSON.parse(raw));
-      }
-      return res.json({ orders: [], lastUpdated: 0 });
-    }
-  } catch (err) {
-    console.error('Read Error:', err);
-    res.status(500).json({ error: 'Storage read failed', details: err.message });
-  }
+    const [rows] = await pool.query('SELECT data FROM aura_storage WHERE id = 1');
+    res.json(rows[0] ? JSON.parse(rows[0].data) : { orders: [], lastUpdated: 0 });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Save Data
-app.post(['/api/storage', '/api/storage.php'], async (req, res) => {
+app.post('/api/storage', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database service unavailable' });
   try {
-    const dataStr = JSON.stringify(req.body);
-    
-    if (serverMode === 'mysql' && pool) {
-      await pool.query('INSERT INTO aura_storage (id, data) VALUES (1, ?) ON DUPLICATE KEY UPDATE data = ?', [dataStr, dataStr]);
-    } else {
-      // Local FS
-      fs.writeFileSync(LOCAL_DB_PATH, dataStr);
-    }
-    
-    res.json({ success: true, mode: serverMode });
-  } catch (err) {
-    console.error('Write Error:', err);
-    res.status(500).json({ error: 'Storage write failed', details: err.message });
-  }
+    const data = JSON.stringify(req.body);
+    await pool.query('INSERT INTO aura_storage (id, data) VALUES (1, ?) ON DUPLICATE KEY UPDATE data = ?', [data, data]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Gold Rates Proxy
-app.get(['/api/rates', '/api/rates.php'], (req, res) => {
+app.get('/api/rates', (req, res) => {
   https.get('https://uat.batuk.in/augmont/gold', (apiRes) => {
     let data = '';
     apiRes.on('data', d => data += d);
@@ -151,18 +101,26 @@ app.get(['/api/rates', '/api/rates.php'], (req, res) => {
   }).on('error', e => res.status(500).json({ error: 'Market rate service unreachable' }));
 });
 
-// Static Files
+// Serving the compiled build folder
 const distPath = path.join(__dirname, 'dist');
+
 if (fs.existsSync(distPath)) {
+  console.log(`[AuraGold Server] Serving build from: ${distPath}`);
   app.use(express.static(distPath));
+  
+  // SPA Fallback: serve index.html for unknown routes
   app.get('*', (req, res) => {
     if (req.url.startsWith('/api/')) return res.status(404).json({ error: 'API route not found' });
     res.sendFile(path.join(distPath, 'index.html'));
   });
+} else {
+  console.error(`[AuraGold Server] ERROR: 'dist' folder not found. Please run 'npm run build' before starting the server.`);
+  app.get('/', (req, res) => {
+      res.send('<h1>AuraGold Server Active</h1><p>Frontend build not found. Please run <code>npm run build</code>.</p>');
+  });
 }
 
-// Start
 app.listen(PORT, '0.0.0.0', async () => {
-  console.log(`🚀 [Server] Running on http://localhost:${PORT}`);
-  await initSystem();
+  console.log(`[AuraGold Server] Live on port ${PORT}`);
+  await initDb();
 });

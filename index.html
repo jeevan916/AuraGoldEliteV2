@@ -11,7 +11,46 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
 
-    <!-- 2. Global Styles -->
+    <!-- 2. Tailwind CSS CDN (Failsafe for styling) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        gold: '#B8860B',
+                        'gold-light': '#FFD700',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        serif: ['Playfair Display', 'serif'],
+                        'serif-elite': ['Playfair Display', 'serif'],
+                    },
+                    animation: {
+                        fadeIn: 'fadeIn 0.3s ease-in-out',
+                        slideUp: 'slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+                        slideDown: 'slideDown 0.3s ease-out',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        slideDown: {
+                            '0%': { transform: 'translateY(-20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- 3. Global Styles -->
     <style>
         :root { 
             --gold: #B8860B; 
@@ -66,7 +105,7 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 10px; }
     </style>
 
-    <!-- 3. Module Map (Preserved for ESM environments) -->
+    <!-- 4. Module Map (Preserved for ESM environments) -->
     <script type="importmap">
     {
       "imports": {
