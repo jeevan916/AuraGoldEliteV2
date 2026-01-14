@@ -1,8 +1,13 @@
 
+# Force Hostinger to route /api requests to the Node.js process
 RewriteEngine On
-RewriteBase /
 
-# Ensure all requests are handled by the Node.js entry point
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^(.*)$ server.js/$1 [L]
+# 1. Allow existing files and directories to be served normally
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# 2. Redirect everything else (including /api) to your Node application
+# Note: Hostinger Node apps usually listen on a dynamic port proxied by the server
+# This rule ensures that if it's not a real file, Express handles it.
+RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]

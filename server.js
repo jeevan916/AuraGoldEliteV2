@@ -6,26 +6,30 @@ import mysql from 'mysql2/promise';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import https from 'https';
-
-dotenv.config();
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// 1. Resolve .env from your specific protected path
+// Hostinger absolute path typically: /home/u123456789/domains/yourdomain.com/public_html/.builds/config/.env
+const envPath = path.join(__dirname, '.builds', 'config', '.env');
+
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+  console.log(`[AuraGold] Environment loaded from: ${envPath}`);
+} else {
+  dotenv.config(); // Fallback to root .env
+  console.log(`[AuraGold] .env not found at ${envPath}, attempting root fallback.`);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Logging Middleware
-app.use((req, res, next) => {
-  console.log(`[AuraGold] ${new Date().toISOString()} | ${req.method} ${req.url}`);
-  next();
-});
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// 1. Enhanced Database Configuration
-// Note: Hostinger often requires 127.0.0.1 instead of 'localhost'
+// 2. Database Connection
 const dbConfig = {
   host: process.env.DB_HOST || '127.0.0.1',
   user: process.env.DB_USER,
@@ -35,23 +39,20 @@ const dbConfig = {
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  connectTimeout: 10000 // 10 seconds
+  connectTimeout: 10000
 };
 
 let pool = null;
 
 const initDb = async () => {
   if (!dbConfig.user || !dbConfig.database) {
-    console.error('[AuraGold] CRITICAL: DB Credentials missing in environment variables.');
-    return false;
+    console.warn('[AuraGold] DB Credentials missing. Storage API will be restricted.');
+    return;
   }
-
   try {
     pool = mysql.createPool(dbConfig);
-    // Test connection immediately
     const conn = await pool.getConnection();
-    console.log('[AuraGold] Database Connection Successful');
-    
+    console.log('[AuraGold] Database connected successfully');
     await conn.query(`
       CREATE TABLE IF NOT EXISTS aura_storage (
         id INT PRIMARY KEY DEFAULT 1,
@@ -60,54 +61,23 @@ const initDb = async () => {
       )
     `);
     conn.release();
-    return true;
   } catch (err) {
-    console.error('[AuraGold] Database Initialization Failed:', err.message);
-    return false;
+    console.error('[AuraGold] Database Connection Failed:', err.message);
   }
 };
 
-// 2. Health & Debug Endpoints
-app.get('/api/debug', (req, res) => {
-  res.json({
-    status: 'Online',
-    timestamp: new Date().toISOString(),
-    nodeVersion: process.version,
-    dbReady: pool !== null,
-    config: {
-      host: dbConfig.host,
-      user: dbConfig.user ? 'Set' : 'Missing',
-      db: dbConfig.database ? 'Set' : 'Missing'
-    }
+// 3. API Endpoints (Prefix with /api)
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    db: !!pool, 
+    envFound: fs.existsSync(envPath),
+    time: new Date().toISOString() 
   });
 });
 
-app.get('/api/db-check', async (req, res) => {
-  if (!pool) {
-    return res.status(500).json({ 
-      success: false, 
-      error: "DB Pool not initialized",
-      tip: "Check your Hostinger Environment Variables for DB_USER, DB_NAME, etc."
-    });
-  }
-  
-  try {
-    const conn = await pool.getConnection();
-    const [rows] = await conn.query('SELECT 1 + 1 AS solution');
-    conn.release();
-    res.json({ success: true, message: "Database is connected", data: rows[0] });
-  } catch (err) {
-    res.status(500).json({ 
-      success: false, 
-      error: err.code || "CONNECTION_ERROR", 
-      message: err.message 
-    });
-  }
-});
-
-// 3. Application Storage Endpoints
 app.get('/api/storage', async (req, res) => {
-  if (!pool) return res.status(503).json({ error: 'Database Unavailable' });
+  if (!pool) return res.status(503).json({ error: 'DB not connected' });
   try {
     const [rows] = await pool.query('SELECT data FROM aura_storage WHERE id = 1');
     if (rows.length > 0 && rows[0].data) {
@@ -121,7 +91,7 @@ app.get('/api/storage', async (req, res) => {
 });
 
 app.post('/api/storage', async (req, res) => {
-  if (!pool) return res.status(503).json({ error: 'Database Unavailable' });
+  if (!pool) return res.status(503).json({ error: 'DB not connected' });
   try {
     const data = JSON.stringify(req.body);
     await pool.query(
@@ -135,39 +105,35 @@ app.post('/api/storage', async (req, res) => {
 });
 
 app.get('/api/rates', async (req, res) => {
-  try {
-    https.get('https://uat.batuk.in/augmont/gold', (apiRes) => {
-      let data = '';
-      apiRes.on('data', (chunk) => data += chunk);
-      apiRes.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          const rate24K = parseFloat(parsed?.data?.[0]?.[0]?.gSell || 0);
-          const rate22K = Math.round(rate24K * 0.916);
-          res.json({ rate24K, rate22K, success: true });
-        } catch (e) {
-          res.status(500).json({ success: false, error: 'JSON Parse Error' });
-        }
-      });
-    }).on('error', (err) => {
-      res.status(500).json({ success: false, error: err.message });
+  https.get('https://uat.batuk.in/augmont/gold', (apiRes) => {
+    let data = '';
+    apiRes.on('data', (chunk) => data += chunk);
+    apiRes.on('end', () => {
+      try {
+        const parsed = JSON.parse(data);
+        const rate24K = parseFloat(parsed?.data?.[0]?.[0]?.gSell || 0);
+        const rate22K = Math.round(rate24K * 0.916);
+        res.json({ rate24K, rate22K, success: true });
+      } catch (e) {
+        res.status(500).json({ error: 'Rates Parse Error' });
+      }
     });
-  } catch (err) {
-    res.status(500).json({ success: false, error: 'Fetch initiation failed' });
-  }
+  }).on('error', (err) => {
+    res.status(500).json({ error: err.message });
+  });
 });
 
-// 4. Static Files & Routing
-// Serve static files from the current directory
-app.use(express.static(__dirname));
+// 4. Static Frontend Assets
+// The build process puts the frontend in the /dist folder
+app.use(express.static(path.join(__dirname, 'dist')));
 
+// 5. Single Page Application (SPA) Fallback
 app.get('*', (req, res) => {
-  // If request is for an API that doesn't exist, return 404
+  // If it's an API route that wasn't caught, return 404 instead of HTML
   if (req.url.startsWith('/api/')) {
-    return res.status(404).json({ error: 'API route not found' });
+    return res.status(404).json({ error: 'API not found' });
   }
-  // Otherwise serve the index.html (SPA routing)
-  res.sendFile(path.join(__dirname, 'index.html'));
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 // Start Server
