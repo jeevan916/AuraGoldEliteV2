@@ -103,15 +103,21 @@ export const geminiService = {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `This WhatsApp template was REJECTED by Meta.
+      
       Name: ${template.name}
       Content: "${template.content}"
       Category: ${template.category}
+      META REJECTION REASON: "${template.rejectionReason || 'Generic Policy Violation'}"
       
-      Act as a Meta Policy Expert. Diagnose why it was rejected (e.g. promotional words in Utility, threatening language, vague parameters).
-      Then rewrite it to be strictly compliant while keeping the intent.`,
+      Act as a Meta Policy Expert. Analyze the rejection reason and the content. 
+      Common reasons include: Promotional content in Utility category, vague variables, abusive formatting, or collecting sensitive info.
+      
+      Rewrite the template to be STRICTLY compliant with the rejection reason in mind. 
+      If it was rejected for 'promotional', shift the language to be purely transactional or suggest switching category to MARKETING.
+      `,
       config: {
         responseMimeType: "application/json",
-        systemInstruction: "Return JSON with keys: diagnosis (short explanation of rejection), fixedContent (the rewritten compliant text), category (the correct category, usually UTILITY or MARKETING), fixedName (original name with _v2 appended)."
+        systemInstruction: "Return JSON with keys: diagnosis (explain specifically why it was rejected based on the log), fixedContent (the rewritten compliant text), category (the correct category), fixedName (original name with _v2 appended)."
       }
     });
     return JSON.parse(response.text || "{}");

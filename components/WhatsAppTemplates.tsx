@@ -4,7 +4,7 @@ import {
   MessageSquare, BrainCircuit, Sparkles, Save, Edit, 
   Copy, RefreshCw, Zap, ShieldAlert, Users, Star, Cloud, CheckCircle, UploadCloud, Globe, Laptop,
   Activity, AlertTriangle, AlertCircle, RefreshCcw, Loader2, Terminal, Check, Server, PlusCircle, Code, Trash2, FolderOpen,
-  Wrench, ArrowRight, GitMerge, FileJson, XCircle, Stethoscope
+  Wrench, ArrowRight, GitMerge, FileJson, XCircle, Stethoscope, Search, FileWarning
 } from 'lucide-react';
 import { WhatsAppTemplate, PsychologicalTactic, RiskProfile, MetaCategory, AppTemplateGroup, SystemTrigger } from '../types';
 import { PSYCHOLOGICAL_TACTICS, RISK_PROFILES, REQUIRED_SYSTEM_TEMPLATES, SYSTEM_TRIGGER_MAP } from '../constants';
@@ -132,12 +132,19 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                       structure: mt.components,
                       source: 'META',
                       status: mt.status,
+                      rejectionReason: mt.rejected_reason, // Capture the specific reason from Meta
                       category: mt.category,
                       appGroup: existingGroup // Maintain app context
                   };
 
                   if (existingIndex >= 0) {
-                      updatedList[existingIndex] = { ...updatedList[existingIndex], status: mt.status, structure: mt.components, category: mt.category };
+                      updatedList[existingIndex] = { 
+                          ...updatedList[existingIndex], 
+                          status: mt.status, 
+                          rejectionReason: mt.rejected_reason,
+                          structure: mt.components, 
+                          category: mt.category 
+                      };
                   } else {
                       // Infer group for new ones
                       tplObj.appGroup = inferGroup(tplObj);
@@ -494,6 +501,17 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                                       <h4 className="font-bold text-slate-800 text-sm">{tpl.name}</h4>
                                       <span className="text-[10px] font-mono text-slate-400 bg-slate-50 px-2 rounded">{tpl.category}</span>
                                   </div>
+                                  
+                                  {tpl.rejectionReason && (
+                                      <div className="mb-3 bg-rose-50 p-2 rounded-lg border border-rose-200 flex items-start gap-2">
+                                          <FileWarning size={14} className="text-rose-600 shrink-0 mt-0.5" />
+                                          <div>
+                                              <p className="text-[10px] font-black uppercase text-rose-800">Meta Rejection Reason</p>
+                                              <p className="text-xs text-rose-700">{tpl.rejectionReason}</p>
+                                          </div>
+                                      </div>
+                                  )}
+
                                   <div className="bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 text-xs text-slate-600 italic font-mono mb-3">
                                       "{tpl.content}"
                                   </div>

@@ -222,6 +222,7 @@ export interface WhatsAppTemplate {
   isAiGenerated: boolean;
   source: 'LOCAL' | 'META';
   status?: string;
+  rejectionReason?: string; // New field for Meta rejection logs
   category?: MetaCategory;
   appGroup?: AppTemplateGroup;
   structure?: any[];
