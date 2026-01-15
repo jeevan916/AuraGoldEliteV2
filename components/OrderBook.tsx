@@ -2,18 +2,20 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Search, Package, CheckCircle2, Archive, Clock, ChevronRight, 
-  BookOpen, Calendar 
+  Filter, BookOpen, AlertCircle, Calendar, CheckCheck 
 } from 'lucide-react';
-import { Order, OrderStatus } from '../types';
+import { Order, OrderStatus, ProductionStatus } from '../types';
+import { Card, Badge, Button } from './shared/BaseUI';
 
 interface OrderBookProps {
   orders: Order[];
   onViewOrder: (id: string) => void;
+  onUpdateOrder?: (order: Order) => void; // Optional for safety if not passed
 }
 
 type BookTab = 'ACTIVE' | 'READY' | 'ARCHIVE';
 
-const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder }) => {
+const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrder }) => {
   const [activeTab, setActiveTab] = useState<BookTab>('ACTIVE');
   const [search, setSearch] = useState('');
 
@@ -47,6 +49,19 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder }) => {
         o.customerContact.includes(search)
     );
   }, [orders, activeTab, search]);
+
+  const handleQuickDeliver = (e: React.MouseEvent, order: Order) => {
+      e.stopPropagation();
+      if (!onUpdateOrder) return;
+      if (confirm(`Mark order for ${order.customerName} as DELIVERED? This will move it to archives.`)) {
+          const updated: Order = {
+              ...order,
+              status: OrderStatus.DELIVERED,
+              items: order.items.map(i => ({...i, productionStatus: ProductionStatus.DELIVERED}))
+          };
+          onUpdateOrder(updated);
+      }
+  };
 
   const getStatusColor = (status: OrderStatus) => {
     switch(status) {
@@ -124,7 +139,7 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder }) => {
                     <div 
                         key={order.id} 
                         onClick={() => onViewOrder(order.id)}
-                        className="p-6 hover:bg-slate-50 transition-colors cursor-pointer group"
+                        className="p-6 hover:bg-slate-50 transition-colors cursor-pointer group relative"
                     >
                         <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
                             <div className="flex items-center gap-4">
@@ -161,7 +176,17 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder }) => {
                                         {balance > 0 ? `₹${balance.toLocaleString()}` : 'Paid'}
                                     </p>
                                 </div>
-                                <ChevronRight className="text-slate-300 group-hover:text-amber-500 transition-colors" />
+                                
+                                {activeTab === 'READY' && onUpdateOrder ? (
+                                    <button 
+                                        onClick={(e) => handleQuickDeliver(e, order)}
+                                        className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 transition-all flex items-center gap-2 shadow-md z-10"
+                                    >
+                                        <CheckCheck size={14} /> Deliver
+                                    </button>
+                                ) : (
+                                    <ChevronRight className="text-slate-300 group-hover:text-amber-500 transition-colors" />
+                                )}
                             </div>
                         </div>
                         

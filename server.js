@@ -4,6 +4,7 @@ import mysql from 'mysql2/promise';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 // Load environment variables
@@ -18,6 +19,17 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Determine Static Folder (Dist vs Root)
+// If server.js is inside dist/ (production), serve from current dir.
+// If server.js is in project root (dev testing/local), serve from dist/.
+let staticPath = __dirname;
+if (!fs.existsSync(path.join(__dirname, 'index.html')) && fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
+    staticPath = path.join(__dirname, 'dist');
+    console.log(`[SERVER] Switching static root to: ${staticPath}`);
+} else {
+    console.log(`[SERVER] Serving static from root: ${staticPath}`);
+}
 
 // Database state
 let pool = null;
@@ -64,6 +76,7 @@ async function initDb() {
     const connection = await pool.getConnection();
     console.log(`✅ [DB SUCCESS] Handshake successful for ${config.database}`);
     
+    // Auto-Schema Migration
     await connection.query(`
       CREATE TABLE IF NOT EXISTS aura_app_state (
         id INT PRIMARY KEY,
@@ -98,10 +111,17 @@ const ensureDb = async (req, res, next) => {
     next();
 };
 
-// --- STATIC FILES FIX ---
-// Serve static files from the root (where server.js and index.html reside in dist)
-// Explicitly set Content-Type for JS files to avoid MIME type strict checking errors
-app.use(express.static(__dirname, {
+// --- MIME TYPE FIX MIDDLEWARE ---
+// Explicitly enforce Content-Type for JS files before express.static
+app.use((req, res, next) => {
+  if (req.url.endsWith('.js') || req.url.endsWith('.mjs')) {
+    res.setHeader('Content-Type', 'application/javascript');
+  }
+  next();
+});
+
+// Serve Static Files
+app.use(express.static(staticPath, {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
       res.setHeader('Content-Type', 'application/javascript');
@@ -246,9 +266,10 @@ app.get('*', (req, res, next) => {
 // 2. For everything else (routes like /dashboard, /orders), return index.html
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api')) return res.status(404).json({ error: "Route Not Found" });
-  res.sendFile(path.resolve(__dirname, 'index.html'));
+  res.sendFile(path.join(staticPath, 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 AuraGold Elite Server Active: Port ${PORT}`);
+  console.log(`📂 Serving static files from: ${staticPath}`);
 });
