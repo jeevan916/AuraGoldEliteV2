@@ -33,14 +33,36 @@ export const whatsappService = {
   },
 
   async fetchMetaTemplates(): Promise<any[]> {
-     // Template management still requires direct API or sophisticated proxying. 
-     // For now, we return empty or implement a proxy route if strictly needed.
-     // Skipping mainly to focus on Messaging reliability.
-     return [];
+     const settings = this.getSettings();
+     if (!settings.whatsappBusinessAccountId || !settings.whatsappBusinessToken) {
+         console.warn("[WhatsApp] Credentials missing for template fetch.");
+         return [];
+     }
+
+     try {
+         // Call our backend proxy
+         const response = await fetch('/api/whatsapp/templates', {
+             method: 'GET',
+             headers: {
+                 'Content-Type': 'application/json',
+                 'x-waba-id': settings.whatsappBusinessAccountId,
+                 'x-auth-token': settings.whatsappBusinessToken
+             }
+         });
+
+         const data = await response.json();
+         if (!data.success) throw new Error(data.error || "Failed to fetch templates via proxy");
+         
+         return data.data || [];
+     } catch (e: any) {
+         errorService.logError("WhatsApp API", `Template Fetch Failed: ${e.message}`, "MEDIUM");
+         return [];
+     }
   },
 
   async createMetaTemplate(template: WhatsAppTemplate): Promise<{ success: boolean; finalName?: string; error?: any; debugPayload?: any; rawResponse?: any }> {
      // Simplified for stability. In a real app, this would POST to Facebook Graph API via proxy.
+     // For now, we mock success if in local mode, or implement a POST proxy if needed.
      return { 
         success: false, 
         error: { message: "Template creation requires advanced proxy setup." },
@@ -61,10 +83,12 @@ export const whatsappService = {
         // Call OUR backend, not Meta directly
         const response = await fetch('/api/whatsapp/send', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'x-phone-id': settings.whatsappPhoneNumberId,
+                'x-auth-token': settings.whatsappBusinessToken
+            },
             body: JSON.stringify({
-                phoneId: settings.whatsappPhoneNumberId,
-                token: settings.whatsappBusinessToken,
                 to: recipient,
                 templateName,
                 language: languageCode,
@@ -102,10 +126,12 @@ export const whatsappService = {
       // Call OUR backend
       const response = await fetch('/api/whatsapp/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+            'Content-Type': 'application/json',
+            'x-phone-id': settings.whatsappPhoneNumberId,
+            'x-auth-token': settings.whatsappBusinessToken
+        },
         body: JSON.stringify({
-            phoneId: settings.whatsappPhoneNumberId,
-            token: settings.whatsappBusinessToken,
             to: recipient,
             message
         })

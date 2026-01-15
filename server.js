@@ -1,3 +1,4 @@
+
 import express from 'express';
 import mysql from 'mysql2/promise';
 import cors from 'cors';
@@ -258,8 +259,101 @@ app.post('/api/state', ensureDb, async (req, res) => {
     }
 });
 
+// --- META WHATSAPP PROXY ---
+
+// 1. Fetch Templates (GET)
+app.get('/api/whatsapp/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+
+    if (!wabaId || !token) {
+        return res.status(400).json({ success: false, error: "Missing WABA ID or Token headers" });
+    }
+
+    try {
+        const metaUrl = `https://graph.facebook.com/v21.0/${wabaId}/message_templates?limit=100`;
+        log(`Proxying Template Fetch to Meta: ${metaUrl}`, 'INFO');
+        
+        const response = await fetch(metaUrl, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            log(`Meta Template Error: ${data.error.message}`, 'ERROR');
+            return res.status(400).json({ success: false, error: data.error.message });
+        }
+
+        res.json({ success: true, data: data.data });
+    } catch (e) {
+        log(`Template Proxy Exception: ${e.message}`, 'ERROR');
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 2. Send Message (POST)
 app.post('/api/whatsapp/send', async (req, res) => {
-    res.json({ success: true, messageId: `mock-${Date.now()}` });
+    const phoneId = req.headers['x-phone-id'];
+    const token = req.headers['x-auth-token'];
+    const { to, templateName, language, variables, message } = req.body;
+
+    if (!phoneId || !token || !to) {
+        return res.status(400).json({ success: false, error: "Missing required fields (phoneId, token, to)" });
+    }
+
+    try {
+        const metaUrl = `https://graph.facebook.com/v21.0/${phoneId}/messages`;
+        let payload = {};
+
+        if (templateName) {
+            // Template Message
+            payload = {
+                messaging_product: "whatsapp",
+                to: to,
+                type: "template",
+                template: {
+                    name: templateName,
+                    language: { code: language || "en_US" },
+                    components: variables && variables.length > 0 ? [{
+                        type: "body",
+                        parameters: variables.map(v => ({ type: "text", text: v }))
+                    }] : []
+                }
+            };
+        } else if (message) {
+            // Text Message
+            payload = {
+                messaging_product: "whatsapp",
+                to: to,
+                type: "text",
+                text: { body: message }
+            };
+        } else {
+            return res.status(400).json({ success: false, error: "No message or template provided" });
+        }
+
+        log(`Proxying Message to Meta: ${to}`, 'INFO');
+        const response = await fetch(metaUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            log(`Meta Send Error: ${data.error.message}`, 'ERROR');
+            return res.status(400).json({ success: false, error: data.error.message });
+        }
+
+        res.json({ success: true, data });
+    } catch (e) {
+        log(`Message Proxy Exception: ${e.message}`, 'ERROR');
+        res.status(500).json({ success: false, error: e.message });
+    }
 });
 
 app.get('*', (req, res) => {
