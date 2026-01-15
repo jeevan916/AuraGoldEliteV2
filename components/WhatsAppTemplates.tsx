@@ -157,24 +157,24 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
 
   const handleAutoHeal = async () => {
       setRepairing(true);
-      addLog("Initializing Auto-Heal Engine...");
+      addLog("Initializing Core Intelligence Auto-Heal...");
       
       const missing = REQUIRED_SYSTEM_TEMPLATES.filter(req => 
           !templates.some(t => t.name === req.name || t.name.startsWith(req.name))
       );
 
       if (missing.length === 0) {
-          addLog("System Healthy. No missing templates detected.");
+          addLog("All Core Intelligence templates are active.");
           setRepairing(false);
           return;
       }
 
-      addLog(`Critical: Found ${missing.length} missing system templates.`);
+      addLog(`Critical: Found ${missing.length} missing automated templates.`);
       let restoredCount = 0;
       let currentTemplates = [...templates];
 
       for (const req of missing) {
-          addLog(`Attempting to repair: ${req.name}...`);
+          addLog(`Deploying Core Template: ${req.name}...`);
           try {
               // Construct template object compatible with createMetaTemplate
               const payload: WhatsAppTemplate = {
@@ -187,13 +187,13 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                   source: 'LOCAL',
                   category: req.category as MetaCategory,
                   variableExamples: req.examples,
-                  appGroup: 'SYSTEM_NOTIFICATIONS' // Force group for system templates
+                  appGroup: req.appGroup as AppTemplateGroup
               };
 
               const result = await whatsappService.createMetaTemplate(payload);
               
               if (result.success) {
-                  addLog(`SUCCESS: ${req.name} repaired. Active as: ${result.finalName}`);
+                  addLog(`SUCCESS: ${req.name} deployed. Active as: ${result.finalName}`);
                   restoredCount++;
                   const newTpl: WhatsAppTemplate = { ...payload, name: result.finalName!, source: 'META', status: 'PENDING' };
                   currentTemplates = [newTpl, ...currentTemplates];
@@ -206,7 +206,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           }
       }
 
-      addLog(`Auto-Heal Cycle Complete. Restored ${restoredCount}/${missing.length} templates.`);
+      addLog(`Core Regeneration Cycle Complete. Restored ${restoredCount}/${missing.length} templates.`);
       setRepairing(false);
       handleSyncFromMeta(true); 
   };
@@ -373,7 +373,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                                 className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all flex items-center gap-2 disabled:opacity-50 shadow-sm"
                              >
                                 {repairing ? <Loader2 size={12} className="animate-spin" /> : <Wrench size={12} />}
-                                Auto-Heal
+                                Regenerate Core
                              </button>
                         </div>
                     </div>
@@ -417,7 +417,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
             <div className="space-y-6">
                 <div className="bg-black/90 rounded-3xl p-6 font-mono text-xs text-emerald-400 overflow-y-auto h-[300px] border border-slate-800 shadow-inner">
                      <div className="flex items-center gap-2 mb-4 border-b border-white/10 pb-2 text-slate-400">
-                        <Terminal size={14} /> System Logs
+                        <Terminal size={14} /> Intelligence Logs
                      </div>
                      {repairLogs.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-slate-600 opacity-50">

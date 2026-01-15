@@ -68,7 +68,7 @@ export const RISK_PROFILES = [
   { id: 'HIGH_RISK', label: 'High Risk / Defaulter', color: 'bg-rose-100 text-rose-800' }
 ];
 
-// --- DETERMINISTIC AUTOMATION TEMPLATES ---
+// --- DETERMINISTIC AUTOMATION TEMPLATES (Local Logic) ---
 export const AUTOMATION_TEMPLATES = {
     ORDER_CONFIRMATION: (name: string, items: string, total: number, months: number, milestones: string, token: string) => 
         `Dear ${name}, thank you for choosing AuraGold. We are pleased to share the details and payment schedule for your order of ${items}.\n\nTotal Order Value: ₹${total.toLocaleString()}\nPayment Terms: ${months} Months Installment\n\nPayment Milestones:\n${milestones}\n\nYou can view the detailed breakdown and track your order progress here: order.auragoldelite.com/token=${token}\nIt is a privilege to craft this piece for you.`,
@@ -140,29 +140,107 @@ export const INITIAL_TEMPLATES: WhatsAppTemplate[] = [
   }
 ];
 
+// --- CORE SYSTEM TEMPLATES FOR AUTO-HEAL ---
+// These are essential for the Auto-Pilot, Repopulation, and Lapse logic to work via WhatsApp API.
 export const REQUIRED_SYSTEM_TEMPLATES = [
+  // 1. Order Confirmation
   {
     name: 'auragold_order_confirmation',
     description: 'Sent immediately when an order is created.',
     category: 'UTILITY',
+    appGroup: 'ORDER_STATUS',
     variables: ['customer_name', 'order_id', 'total_amount', 'tracking_token'],
     content: "Hello {{1}}, thank you for shopping with AuraGold! Your order {{2}} ({{3}}) has been placed. Track your order here: https://order.auragoldelite.com/token={{4}} for details.",
     examples: ["John Doe", "ORD-12345", "₹50,000", "AbCd123"]
   },
+  // 2. Standard Payment Request
   {
     name: 'auragold_payment_request',
     description: 'Sent when a scheduled payment is due.',
     category: 'UTILITY',
+    appGroup: 'PAYMENT_COLLECTION',
     variables: ['customer_name', 'amount_due', 'due_date', 'payment_token'],
     content: "Dear {{1}}, a gentle reminder that your payment of {{2}} is due by {{3}}. Please complete the payment securely using this link: https://order.auragoldelite.com/token={{4}} securely.",
     examples: ["Sarah", "₹12,500", "25 Oct 2023", "XyZ987"]
   },
+  // 3. Production Update
   {
     name: 'auragold_production_update',
     description: 'Sent when the jewelry status changes.',
     category: 'UTILITY',
+    appGroup: 'ORDER_STATUS',
     variables: ['customer_name', 'item_category', 'new_status', 'tracking_token'],
     content: "Great news {{1}}! Your {{2}} has moved to the {{3}} stage. See photos and updates here: https://order.auragoldelite.com/token={{4}} on portal.",
     examples: ["Michael", "Ring", "Quality Check", "LmNoP456"]
+  },
+  // 4. Grace Period Warning (Urgent)
+  {
+    name: 'auragold_grace_warning',
+    description: 'Critical warning sent hours before lapse.',
+    category: 'UTILITY',
+    appGroup: 'PAYMENT_COLLECTION',
+    variables: ['customer_name', 'amount_due', 'hours_left'],
+    content: "URGENT: Dear {{1}}, payment of ₹{{2}} is overdue. Gold Rate Protection lapses in {{3}} hours. Pay now to retain your booked rate.",
+    examples: ["Aditi", "12500", "4"]
+  },
+  // 5. Protection Lapse Notice
+  {
+    name: 'auragold_protection_lapsed',
+    description: 'Sent when rate protection is revoked.',
+    category: 'UTILITY',
+    appGroup: 'SYSTEM_NOTIFICATIONS',
+    variables: ['customer_name', 'order_id', 'action_link'],
+    content: "Notice for {{1}}: Gold Rate Protection for Order {{2}} has LAPSED due to non-payment. Your order now floats at market price. Select action: https://order.auragoldelite.com/resolve/{{3}}",
+    examples: ["Raj", "ORD-99", "abc12345"]
+  },
+  // 6. Dynamic Lapse Quotation
+  {
+    name: 'auragold_lapse_quote',
+    description: 'Dynamic quote sent after lapse.',
+    category: 'UTILITY',
+    appGroup: 'PAYMENT_COLLECTION',
+    variables: ['customer_name', 'old_price', 'new_price', 'current_rate', 'link'],
+    content: "Action Required {{1}}: Order value increased. Old: ₹{{2}}, New Market Price: ₹{{3}} (@ ₹{{4}}/g). Accept or Cancel here: https://order.auragoldelite.com/quote/{{5}}",
+    examples: ["Priya", "50000", "52500", "7200", "token123"]
+  },
+  // 7. Repopulation Success
+  {
+    name: 'auragold_repopulation_success',
+    description: 'Sent when customer accepts new rate.',
+    category: 'UTILITY',
+    appGroup: 'ORDER_STATUS',
+    variables: ['customer_name', 'new_rate', 'next_due_date'],
+    content: "Done {{1}}. Your order is active at new rate ₹{{2}}/g. Next payment is due on {{3}}. Thank you.",
+    examples: ["Sneha", "7100", "25 Oct"]
+  },
+  // 8. Refund Processed
+  {
+    name: 'auragold_refund_processed',
+    description: 'Sent upon order cancellation and refund.',
+    category: 'UTILITY',
+    appGroup: 'GENERAL_SUPPORT',
+    variables: ['customer_name', 'refund_amount', 'order_id'],
+    content: "Dear {{1}}, your order {{3}} is cancelled. Refund of ₹{{2}} has been initiated. Allow 3-5 days for credit.",
+    examples: ["Amit", "10000", "ORD-123"]
+  },
+  // 9. Rate Enforcer Alert
+  {
+    name: 'auragold_rate_enforcer',
+    description: 'Alert when market rate crosses booked limit.',
+    category: 'UTILITY',
+    appGroup: 'PAYMENT_COLLECTION',
+    variables: ['customer_name', 'amount_due', 'booked_rate'],
+    content: "Alert {{1}}: Market gold rate has crossed your booked limit. Please pay ₹{{2}} immediately to hold your ₹{{3}}/g protected rate.",
+    examples: ["Karan", "5000", "6500"]
+  },
+  // 10. Auto-Pilot Check (Zero Dependency)
+  {
+    name: 'auragold_auto_pilot_check',
+    description: 'Zero API dependency check / General nudge.',
+    category: 'UTILITY',
+    appGroup: 'GENERAL_SUPPORT',
+    variables: ['customer_name', 'status'],
+    content: "Hello {{1}}, just a quick check on your order status: {{2}}. Let us know if you need assistance.",
+    examples: ["Rahul", "Pending Design"]
   }
 ];
