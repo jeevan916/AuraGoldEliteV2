@@ -21,28 +21,34 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 // --- STATIC FILE CONFIGURATION ---
-// We need to determine if server.js is running inside 'dist' or at the project root.
-let distPath = '';
+// Critical Fix: Correctly determine if we are in development (root with dist folder) 
+// or production (inside the build folder).
 
-if (fs.existsSync(path.join(__dirname, 'index.html'))) {
-    // server.js is INSIDE build folder (e.g. public_html/server.js)
-    distPath = __dirname;
+let staticPath = __dirname; // Default to current directory (Production/Hostinger behavior)
+const potentialDist = path.join(__dirname, 'dist');
+
+// If 'dist' folder exists and has index.html, we are likely at project root (Dev/Local)
+// We must serve 'dist', otherwise we mistakenly serve the source index.html which causes MIME errors.
+if (fs.existsSync(potentialDist) && fs.existsSync(path.join(potentialDist, 'index.html'))) {
+    staticPath = potentialDist;
+    console.log(`[SERVER] Detected 'dist' folder. Serving from: ${staticPath}`);
 } else {
-    // server.js is at root, serving from dist (e.g. root/dist)
-    distPath = path.join(__dirname, 'dist');
+    console.log(`[SERVER] No 'dist' subdirectory found. Serving from current directory: ${staticPath}`);
 }
 
-console.log(`[SERVER] Serving static files from: ${distPath}`);
-
-// 1. Force Content-Type for JS/CSS to prevent MIME errors
+// 1. Force Content-Type for JS/CSS to prevent strict MIME type checking errors in some environments
 app.use((req, res, next) => {
-    if (req.url.endsWith('.js')) res.setHeader('Content-Type', 'application/javascript');
-    if (req.url.endsWith('.css')) res.setHeader('Content-Type', 'text/css');
+    if (req.url.endsWith('.js') || req.url.endsWith('.mjs')) {
+        res.setHeader('Content-Type', 'application/javascript');
+    }
+    if (req.url.endsWith('.css')) {
+        res.setHeader('Content-Type', 'text/css');
+    }
     next();
 });
 
 // 2. Serve Static Assets
-app.use(express.static(distPath));
+app.use(express.static(staticPath));
 
 // 3. Database Connection
 let pool = null;
@@ -143,7 +149,14 @@ app.get('*', (req, res) => {
     if (req.path.includes('.') && !req.path.includes('.html')) {
         return res.status(404).send('Not Found');
     }
-    res.sendFile(path.join(distPath, 'index.html'));
+    
+    // Explicitly send the correct index.html
+    const indexPath = path.join(staticPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(404).send('Application Build Not Found. Please run "npm run build".');
+    }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
