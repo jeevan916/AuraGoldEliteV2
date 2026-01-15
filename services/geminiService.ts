@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { Order, CollectionTone, Customer, WhatsAppLogEntry, CreditworthinessReport, AiChatInsight, WhatsAppTemplate, AppResolutionPath, ActivityLogEntry, MetaCategory, AppTemplateGroup, PsychologicalTactic, PaymentPlanTemplate } from "../types";
 
@@ -91,6 +92,26 @@ export const geminiService = {
       config: {
         responseMimeType: "application/json",
         systemInstruction: "Design a template for a jewelry store. Suggested name must be snake_case. Return JSON with keys: suggestedName, content (use {{1}}, {{2}} for variables), metaCategory (UTILITY, MARKETING), appGroup (PAYMENT_COLLECTION, ORDER_STATUS, etc.), tactic, examples (array of matching strings for placeholders)."
+      }
+    });
+    return JSON.parse(response.text || "{}");
+  },
+
+  async fixRejectedTemplate(template: WhatsAppTemplate): Promise<{ diagnosis: string, fixedContent: string, category: MetaCategory, fixedName: string }> {
+    const ai = getAI();
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `This WhatsApp template was REJECTED by Meta.
+      Name: ${template.name}
+      Content: "${template.content}"
+      Category: ${template.category}
+      
+      Act as a Meta Policy Expert. Diagnose why it was rejected (e.g. promotional words in Utility, threatening language, vague parameters).
+      Then rewrite it to be strictly compliant while keeping the intent.`,
+      config: {
+        responseMimeType: "application/json",
+        systemInstruction: "Return JSON with keys: diagnosis (short explanation of rejection), fixedContent (the rewritten compliant text), category (the correct category, usually UTILITY or MARKETING), fixedName (original name with _v2 appended)."
       }
     });
     return JSON.parse(response.text || "{}");

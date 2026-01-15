@@ -4,7 +4,7 @@ import {
   MessageSquare, BrainCircuit, Sparkles, Save, Edit, 
   Copy, RefreshCw, Zap, ShieldAlert, Users, Star, Cloud, CheckCircle, UploadCloud, Globe, Laptop,
   Activity, AlertTriangle, AlertCircle, RefreshCcw, Loader2, Terminal, Check, Server, PlusCircle, Code, Trash2, FolderOpen,
-  Wrench, ArrowRight, GitMerge, FileJson
+  Wrench, ArrowRight, GitMerge, FileJson, XCircle, Stethoscope
 } from 'lucide-react';
 import { WhatsAppTemplate, PsychologicalTactic, RiskProfile, MetaCategory, AppTemplateGroup, SystemTrigger } from '../types';
 import { PSYCHOLOGICAL_TACTICS, RISK_PROFILES, REQUIRED_SYSTEM_TEMPLATES, SYSTEM_TRIGGER_MAP } from '../constants';
@@ -17,7 +17,7 @@ interface WhatsAppTemplatesProps {
 }
 
 const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'SYSTEM' | 'STRATEGY' | 'LIBRARY' | 'TRIGGERS'>('SYSTEM');
+  const [activeTab, setActiveTab] = useState<'SYSTEM' | 'STRATEGY' | 'LIBRARY' | 'TRIGGERS' | 'ISSUES'>('SYSTEM');
   
   // Prompt-Based Generator State
   const [promptText, setPromptText] = useState('');
@@ -31,6 +31,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   const [editingStructure, setEditingStructure] = useState<any[]>([]); // Preserves Buttons/Headers during edit
   const [variableExamples, setVariableExamples] = useState<string[]>([]);
   const [highlightEditor, setHighlightEditor] = useState(false); // Visual feedback
+  const [aiAnalysisReason, setAiAnalysisReason] = useState<string | null>(null);
 
   // Tactic State (Fallback/Legacy)
   const [selectedTactic, setSelectedTactic] = useState<PsychologicalTactic>('AUTHORITY');
@@ -40,6 +41,9 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   const [pushingMeta, setPushingMeta] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deployingTriggerId, setDeployingTriggerId] = useState<string | null>(null);
+  
+  // AI Fix State
+  const [isFixing, setIsFixing] = useState<string | null>(null);
 
   // Auto-Repair State
   const [repairing, setRepairing] = useState(false);
@@ -51,6 +55,8 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   const logsEndRef = useRef<HTMLDivElement>(null);
   const debugEndRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+
+  const rejectedTemplates = useMemo(() => templates.filter(t => t.status === 'REJECTED'), [templates]);
 
   useEffect(() => {
     if (logsEndRef.current) logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -249,6 +255,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       if (!finalText.trim()) return;
       
       setIsGenerating(true);
+      setAiAnalysisReason(null);
       try {
           const result = await geminiService.generateTemplateFromPrompt(finalText);
           
@@ -280,6 +287,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       setSelectedGroup(tpl.appGroup || inferGroup(tpl));
       setEditingStructure(tpl.structure || []); 
       setVariableExamples(tpl.variableExamples || []);
+      setAiAnalysisReason(null);
       setActiveTab('STRATEGY');
       
       setTimeout(() => {
@@ -301,12 +309,38 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       setSelectedGroup(requiredDef.appGroup as AppTemplateGroup);
       setVariableExamples(requiredDef.examples);
       setEditingStructure([]); // Reset structure to allow pure text rebuild if needed
+      setAiAnalysisReason(`Core Template Restoration: Replaced rejected content with safe default for ${requiredDef.name}.`);
       
       setActiveTab('STRATEGY');
       setHighlightEditor(true);
       setTimeout(() => setHighlightEditor(false), 2000);
       
       if (editorRef.current) editorRef.current.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleAiAutoFix = async (tpl: WhatsAppTemplate) => {
+      setIsFixing(tpl.id);
+      try {
+          const result = await geminiService.fixRejectedTemplate(tpl);
+          
+          setTemplateName(result.fixedName);
+          setGeneratedContent(result.fixedContent);
+          setSelectedCategory(result.category);
+          setSelectedGroup(tpl.appGroup || 'UNCATEGORIZED');
+          setVariableExamples([]); // Reset examples for new content
+          setEditingStructure([]); 
+          setAiAnalysisReason(result.diagnosis);
+          
+          setActiveTab('STRATEGY');
+          setHighlightEditor(true);
+          setTimeout(() => setHighlightEditor(false), 2000);
+          
+          if (editorRef.current) editorRef.current.scrollIntoView({ behavior: 'smooth' });
+      } catch (e: any) {
+          alert(`Auto-fix failed: ${e.message}`);
+      } finally {
+          setIsFixing(null);
+      }
   };
 
   const handleDeleteTemplate = async (tpl: WhatsAppTemplate) => {
@@ -331,6 +365,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       setSelectedGroup(trigger.appGroup);
       setVariableExamples(trigger.requiredVariables); // Hint for user
       setActiveTab('STRATEGY');
+      setAiAnalysisReason(null);
       
       setTimeout(() => {
           if (editorRef.current) editorRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -370,6 +405,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
               alert(`Template Fixed & Deployed! Active Name: ${result.finalName}`);
               const deployedTpl = { ...newTpl, name: result.finalName!, source: 'META' as const, status: 'PENDING' as const };
               onUpdate([deployedTpl, ...templates]);
+              setAiAnalysisReason(null);
           } else {
               alert(`Deployment Error: ${result.error?.message}. Check 'System Health' Raw Logs for details.`);
           }
@@ -420,8 +456,76 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                     {tab === 'SYSTEM' ? 'System Health' : tab === 'TRIGGERS' ? 'Automation Map' : tab === 'STRATEGY' ? 'AI Architect' : 'Library'}
                 </button>
             ))}
+            {rejectedTemplates.length > 0 && (
+                <button
+                    onClick={() => setActiveTab('ISSUES')}
+                    className={`px-4 py-2 rounded-lg text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'ISSUES' ? 'bg-rose-600 text-white shadow-md' : 'text-rose-600 bg-rose-50 hover:bg-rose-100'}`}
+                >
+                    <AlertTriangle size={12} /> Issues ({rejectedTemplates.length})
+                </button>
+            )}
         </div>
       </div>
+
+      {/* --- TAB: ISSUES (REJECTED LIST) --- */}
+      {activeTab === 'ISSUES' && (
+          <div className="space-y-6">
+              <div className="bg-rose-50 border-l-4 border-rose-500 p-6 rounded-r-2xl shadow-sm flex items-start gap-4">
+                  <div className="p-2 bg-white rounded-full text-rose-500"><ShieldAlert size={24}/></div>
+                  <div>
+                      <h3 className="text-lg font-black text-rose-800">Compliance Violations Detected</h3>
+                      <p className="text-sm text-rose-700 mt-1">
+                          Meta has rejected {rejectedTemplates.length} templates. This usually happens due to promotional language in Utility categories, abusive formatting, or vague variables.
+                      </p>
+                      <p className="text-xs font-bold text-rose-600 mt-2 uppercase tracking-wide">
+                          Use "Auto-Fix with AI" to generate a policy-compliant version instantly.
+                      </p>
+                  </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                  {rejectedTemplates.map(tpl => (
+                      <div key={tpl.id} className="bg-white p-5 rounded-2xl border border-rose-100 shadow-sm relative group overflow-hidden">
+                          <div className="absolute top-0 right-0 bg-rose-100 text-rose-700 text-[10px] font-black uppercase px-3 py-1 rounded-bl-xl">Rejected</div>
+                          
+                          <div className="flex flex-col md:flex-row gap-6">
+                              <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                      <h4 className="font-bold text-slate-800 text-sm">{tpl.name}</h4>
+                                      <span className="text-[10px] font-mono text-slate-400 bg-slate-50 px-2 rounded">{tpl.category}</span>
+                                  </div>
+                                  <div className="bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 text-xs text-slate-600 italic font-mono mb-3">
+                                      "{tpl.content}"
+                                  </div>
+                                  <div className="flex gap-2 text-[10px] font-bold text-slate-400">
+                                      <span>ID: {tpl.id}</span>
+                                      <span>•</span>
+                                      <span>Group: {tpl.appGroup || 'Uncategorized'}</span>
+                                  </div>
+                              </div>
+
+                              <div className="flex flex-col justify-center gap-2 min-w-[160px]">
+                                  <button 
+                                    onClick={() => handleAiAutoFix(tpl)}
+                                    disabled={isFixing === tpl.id}
+                                    className="bg-emerald-600 text-white px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg"
+                                  >
+                                      {isFixing === tpl.id ? <Loader2 size={14} className="animate-spin"/> : <Stethoscope size={14} />}
+                                      Auto-Fix with AI
+                                  </button>
+                                  <button 
+                                    onClick={() => handleDeleteTemplate(tpl)}
+                                    className="bg-white border border-rose-200 text-rose-600 px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-rose-50 transition-all flex items-center justify-center gap-2"
+                                  >
+                                      <Trash2 size={14} /> Delete
+                                  </button>
+                              </div>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
 
       {/* --- TAB: TRIGGER MAP --- */}
       {activeTab === 'TRIGGERS' && (
@@ -599,7 +703,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
         </div>
       )}
 
-      {/* --- TAB 2: AI STRATEGY (Prompt Box) --- */}
+      {/* --- TAB 2: AI STRATEGY (Prompt Box & Editor) --- */}
       {activeTab === 'STRATEGY' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
               <div className="lg:col-span-4 space-y-6">
@@ -666,6 +770,19 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                         </div>
                         {highlightEditor && <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold animate-pulse">Content Generated!</span>}
                       </div>
+
+                      {/* AI Reasoning Display (For Fixes) */}
+                      {aiAnalysisReason && (
+                          <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-6">
+                              <div className="flex items-center gap-2 mb-2 text-amber-700">
+                                  <Stethoscope size={16} />
+                                  <span className="text-xs font-black uppercase tracking-widest">AI Diagnosis & Fix</span>
+                              </div>
+                              <p className="text-sm text-slate-700 leading-relaxed italic">
+                                  "{aiAnalysisReason}"
+                              </p>
+                          </div>
+                      )}
                       
                       <div className="grid grid-cols-2 gap-4 mb-4">
                           <div>
