@@ -5,7 +5,7 @@ import {
   Clock, AlertCircle, Smartphone, ChevronRight, Download,
   TrendingUp, ArrowDownLeft, ArrowUpRight, BrainCircuit, Zap, Loader2, Link, Share2
 } from 'lucide-react';
-import { Order, OrderStatus, Milestone, PaymentRecord, CollectionTone, GlobalSettings } from '../types';
+import { Order, OrderStatus, Milestone, CollectionTone, GlobalSettings } from '../types';
 import { geminiService } from '../services/geminiService';
 import { whatsappService } from '../services/whatsappService';
 

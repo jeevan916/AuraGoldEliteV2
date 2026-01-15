@@ -1,11 +1,13 @@
-import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate } from '../types';
-import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES, INITIAL_TEMPLATES } from '../constants';
+
+import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate, CatalogItem } from '../types';
+import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES, INITIAL_TEMPLATES, INITIAL_CATALOG } from '../constants';
 
 export interface AppState {
   orders: Order[];
   logs: WhatsAppLogEntry[];
   templates: WhatsAppTemplate[];
   planTemplates: PaymentPlanTemplate[];
+  catalog: CatalogItem[];
   settings: GlobalSettings;
   lastUpdated: number;
 }
@@ -17,6 +19,7 @@ const DEFAULT_STATE: AppState = {
   logs: [],
   templates: INITIAL_TEMPLATES,
   planTemplates: INITIAL_PLAN_TEMPLATES,
+  catalog: INITIAL_CATALOG,
   settings: INITIAL_SETTINGS,
   lastUpdated: Date.now()
 };
@@ -34,7 +37,10 @@ class StorageService {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        this.state = JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        // Ensure catalog exists in loaded state (migration support)
+        if (!parsed.catalog) parsed.catalog = INITIAL_CATALOG;
+        this.state = parsed;
         console.log("[Storage] Local state loaded.");
       }
     } catch (e) {
@@ -55,9 +61,6 @@ class StorageService {
     return this.syncStatus;
   }
 
-  /**
-   * Attempts to pull the latest state from the backend.
-   */
   public async syncFromServer(): Promise<{ success: boolean; message: string }> {
     this.syncStatus = 'SYNCING';
     this.notify();
@@ -84,7 +87,9 @@ class StorageService {
       
       if (serverData && serverData.lastUpdated > (this.state.lastUpdated || 0)) {
           console.log("[Storage] Server state is newer. Syncing.");
+          // Merge defaults in case server data is old/partial
           this.state = { ...DEFAULT_STATE, ...serverData };
+          if(!this.state.catalog) this.state.catalog = INITIAL_CATALOG;
           this.saveToLocal();
       }
 
@@ -100,9 +105,6 @@ class StorageService {
     }
   }
 
-  /**
-   * Pushes current state to the persistent backend.
-   */
   private async syncToBackend() {
     this.saveToLocal();
     this.notify();
@@ -149,6 +151,12 @@ class StorageService {
   public setPlanTemplates(templates: PaymentPlanTemplate[]) { 
     this.state.planTemplates = templates; 
     this.syncToBackend(); 
+  }
+
+  public getCatalog() { return this.state.catalog; }
+  public setCatalog(catalog: CatalogItem[]) {
+    this.state.catalog = catalog;
+    this.syncToBackend();
   }
 
   public getSettings() { return this.state.settings; }

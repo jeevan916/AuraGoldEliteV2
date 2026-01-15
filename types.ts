@@ -3,9 +3,9 @@ export type Purity = '18K' | '22K' | '24K';
 
 export enum OrderStatus {
   ACTIVE = 'ACTIVE',
-  COMPLETED = 'COMPLETED', // Fully paid, but item still in custody
+  COMPLETED = 'COMPLETED',
   OVERDUE = 'OVERDUE',
-  DELIVERED = 'DELIVERED', // Handed over and archived
+  DELIVERED = 'DELIVERED',
   CANCELLED = 'CANCELLED'
 }
 
@@ -21,6 +21,17 @@ export enum ProtectionStatus {
   ACTIVE = 'ACTIVE',
   WARNING = 'WARNING',
   LAPSED = 'LAPSED'
+}
+
+export interface CatalogItem {
+  id: string;
+  category: string;
+  name: string;
+  metalColor: string;
+  purity: Purity;
+  wastagePercentage: number;
+  makingChargesPerGram: number;
+  stoneCharges?: number;
 }
 
 export interface Milestone {
@@ -126,7 +137,6 @@ export interface WhatsAppLogEntry {
 }
 
 export type CollectionTone = 'POLITE' | 'FIRM' | 'URGENT' | 'ENCOURAGING';
-
 export type AppResolutionPath = 'settings' | 'templates' | 'whatsapp' | 'none';
 
 export interface Customer {
@@ -146,11 +156,6 @@ export interface CreditworthinessReport {
   nextBestAction: string;
   communicationStrategy: string;
   negotiationLeverage: string;
-}
-
-export interface PaymentRecord extends Payment {
-  orderId: string;
-  customerName: string;
 }
 
 export type ErrorSeverity = 'LOW' | 'MEDIUM' | 'CRITICAL';

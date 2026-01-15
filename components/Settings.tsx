@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, Zap, Smartphone, Key, ShieldCheck, Info, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, Wifi, ExternalLink, CreditCard, MessageSquare } from 'lucide-react';
-import { GlobalSettings } from '../types';
+import { Save, RefreshCw, Zap, Smartphone, ShieldCheck, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, Wifi, CreditCard, LayoutGrid, Plus, Trash2 } from 'lucide-react';
+import { GlobalSettings, CatalogItem } from '../types';
 import { goldRateService } from '../services/goldRateService';
 import { storageService } from '../services/storageService';
 import { whatsappService } from '../services/whatsappService';
@@ -12,19 +12,24 @@ interface SettingsProps {
 }
 
 const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
+  const [activeTab, setActiveTab] = useState<'CONFIG' | 'CATALOG'>('CONFIG');
   const [localSettings, setLocalSettings] = useState(settings);
-  const [syncing, setSyncing] = useState(false);
+  const [catalog, setCatalog] = useState<CatalogItem[]>(storageService.getCatalog());
   
-  // DB Test State
+  const [syncing, setSyncing] = useState(false);
   const [dbStatus, setDbStatus] = useState<'IDLE' | 'TESTING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [dbMessage, setDbMessage] = useState('');
-
-  // WhatsApp Test State
   const [waStatus, setWaStatus] = useState<'IDLE' | 'TESTING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [waMessage, setWaMessage] = useState('');
 
+  // Catalog State
+  const [newItem, setNewItem] = useState<Partial<CatalogItem>>({
+      category: 'Ring', metalColor: 'Yellow Gold', purity: '22K'
+  });
+
   useEffect(() => {
     setLocalSettings(settings);
+    setCatalog(storageService.getCatalog());
   }, [settings]);
 
   const handleLiveSync = async () => {
@@ -45,12 +50,34 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
     }
   };
 
+  const handleAddCatalogItem = () => {
+      if (!newItem.name || !newItem.makingChargesPerGram) return alert("Name and Charges are required");
+      const item: CatalogItem = {
+          id: `cat-${Date.now()}`,
+          category: newItem.category || 'Ring',
+          name: newItem.name,
+          metalColor: newItem.metalColor || 'Yellow Gold',
+          purity: (newItem.purity || '22K') as any,
+          wastagePercentage: newItem.wastagePercentage || 0,
+          makingChargesPerGram: newItem.makingChargesPerGram,
+          stoneCharges: newItem.stoneCharges || 0
+      };
+      const updated = [...catalog, item];
+      setCatalog(updated);
+      storageService.setCatalog(updated);
+      setNewItem({ category: 'Ring', metalColor: 'Yellow Gold', purity: '22K', name: '', wastagePercentage: 0, makingChargesPerGram: 0 });
+  };
+
+  const handleDeleteCatalogItem = (id: string) => {
+      const updated = catalog.filter(c => c.id !== id);
+      setCatalog(updated);
+      storageService.setCatalog(updated);
+  };
+
   const handleTestDatabase = async () => {
       setDbStatus('TESTING');
       setDbMessage('Pinging AuraGold Backend...');
-      
       const result = await storageService.forceSync();
-      
       if (result.success) {
           setDbStatus('SUCCESS');
           setDbMessage(result.message);
@@ -64,7 +91,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
     onUpdate(localSettings);
     setWaStatus('TESTING');
     setWaMessage('Validating credentials with Meta Graph API...');
-
     try {
         const result = await whatsappService.validateCredentials();
         if (result.success) {
@@ -81,34 +107,136 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-12 animate-fadeIn py-4">
+    <div className="max-w-6xl mx-auto space-y-8 animate-fadeIn py-4">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
-          <h2 className="text-3xl md:text-4xl font-serif-elite font-black text-slate-900 tracking-tight">Console Configuration</h2>
-          <p className="text-slate-500 text-xs mt-2 font-medium">Control institutional pricing logic, communication, and payment gateways.</p>
+          <h2 className="text-3xl md:text-4xl font-serif-elite font-black text-slate-900 tracking-tight">System Console</h2>
+          <p className="text-slate-500 text-xs mt-2 font-medium">Manage pricing, inventory catalog, and integrations.</p>
         </div>
         <div className="flex gap-3">
-          <button 
-            disabled={syncing}
-            className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-5 py-2.5 rounded-2xl font-bold text-[10px] uppercase tracking-widest transition-all hover:bg-slate-50 disabled:opacity-50 shadow-sm"
-            onClick={handleLiveSync}
-          >
-            <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /> 
-            Sync Market
-          </button>
-          <button 
-            className="flex items-center gap-2 bg-slate-900 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-slate-800 shadow-xl transition-all active:scale-95"
-            onClick={() => onUpdate(localSettings)}
-          >
-            <Save size={16} /> Update Console
-          </button>
+             <button 
+                onClick={() => setActiveTab('CONFIG')}
+                className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'CONFIG' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
+             >
+                 Configuration
+             </button>
+             <button 
+                onClick={() => setActiveTab('CATALOG')}
+                className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'CATALOG' ? 'bg-amber-500 text-white shadow-lg' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
+             >
+                 <LayoutGrid size={14} /> Catalog
+             </button>
         </div>
       </header>
 
+      {activeTab === 'CATALOG' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-1 bg-white p-6 rounded-[2.5rem] border border-amber-100 shadow-sm h-fit">
+                  <h3 className="font-black text-slate-800 text-lg mb-6 flex items-center gap-2">
+                      <Plus size={20} className="text-amber-500" /> Add Product
+                  </h3>
+                  <div className="space-y-4">
+                      <div>
+                          <label className="text-[10px] font-black uppercase text-slate-400">Category</label>
+                          <select 
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold"
+                            value={newItem.category}
+                            onChange={e => setNewItem({...newItem, category: e.target.value})}
+                          >
+                              {['Ring', 'Necklace', 'Earrings', 'Bangle', 'Bracelet', 'Chain', 'Pendant', 'Set'].map(c => <option key={c}>{c}</option>)}
+                          </select>
+                      </div>
+                      <div>
+                          <label className="text-[10px] font-black uppercase text-slate-400">Product Name</label>
+                          <input 
+                             className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold"
+                             placeholder="Ex: Temple Haram"
+                             value={newItem.name || ''}
+                             onChange={e => setNewItem({...newItem, name: e.target.value})}
+                          />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[10px] font-black uppercase text-slate-400">Purity</label>
+                            <select 
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold"
+                                value={newItem.purity}
+                                onChange={e => setNewItem({...newItem, purity: e.target.value as any})}
+                            >
+                                <option>22K</option><option>24K</option><option>18K</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-black uppercase text-slate-400">Wastage %</label>
+                            <input 
+                                type="number"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold"
+                                value={newItem.wastagePercentage || ''}
+                                onChange={e => setNewItem({...newItem, wastagePercentage: parseFloat(e.target.value)})}
+                                placeholder="12"
+                            />
+                          </div>
+                      </div>
+                      <div>
+                            <label className="text-[10px] font-black uppercase text-slate-400">Making (₹/g)</label>
+                            <input 
+                                type="number"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold"
+                                value={newItem.makingChargesPerGram || ''}
+                                onChange={e => setNewItem({...newItem, makingChargesPerGram: parseFloat(e.target.value)})}
+                                placeholder="450"
+                            />
+                      </div>
+                      <button 
+                        onClick={handleAddCatalogItem}
+                        className="w-full bg-amber-500 text-white py-4 rounded-xl font-black uppercase tracking-widest hover:bg-amber-600 transition-all shadow-lg mt-2"
+                      >
+                          Add to Catalog
+                      </button>
+                  </div>
+              </div>
+
+              <div className="lg:col-span-2 space-y-4">
+                  <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-100">
+                      <h3 className="font-bold text-slate-700">Inventory Catalog ({catalog.length} Items)</h3>
+                      <span className="text-xs text-slate-400">Saved to Cloud Database</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {catalog.map(item => (
+                          <div key={item.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm relative group hover:border-amber-200 transition-all">
+                              <div className="flex justify-between items-start mb-2">
+                                  <div>
+                                      <h4 className="font-bold text-slate-800">{item.name}</h4>
+                                      <p className="text-xs text-slate-500">{item.category} • {item.metalColor} • {item.purity}</p>
+                                  </div>
+                                  <button onClick={() => handleDeleteCatalogItem(item.id)} className="text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={16}/></button>
+                              </div>
+                              <div className="flex gap-4 mt-3 pt-3 border-t border-slate-50">
+                                  <div>
+                                      <p className="text-[9px] font-black uppercase text-slate-400">VA %</p>
+                                      <p className="font-bold text-slate-700">{item.wastagePercentage}%</p>
+                                  </div>
+                                  <div>
+                                      <p className="text-[9px] font-black uppercase text-slate-400">MC / g</p>
+                                      <p className="font-bold text-slate-700">₹{item.makingChargesPerGram}</p>
+                                  </div>
+                              </div>
+                          </div>
+                      ))}
+                      {catalog.length === 0 && (
+                          <div className="col-span-2 py-12 text-center text-slate-400 italic">
+                              No items in catalog. Add one from the left panel.
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {activeTab === 'CONFIG' && (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <section className="lg:col-span-8 space-y-8">
           
-          {/* DATABASE DIAGNOSTICS */}
           <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200/60 shadow-sm space-y-6">
              <div className="flex items-center gap-3">
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${dbStatus === 'ERROR' ? 'bg-rose-100 text-rose-600' : dbStatus === 'SUCCESS' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}>
@@ -116,7 +244,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                 </div>
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Backend Connection</h3>
              </div>
-             
              <div className="flex flex-col gap-4">
                  <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
                     <button 
@@ -127,7 +254,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                         {dbStatus === 'TESTING' ? <Loader2 className="animate-spin" size={14}/> : <ServerCrash size={14} />}
                         Test Connection
                     </button>
-                    
                     <div className={`flex-1 p-3.5 rounded-xl text-xs font-medium flex items-start gap-3 ${
                         dbStatus === 'SUCCESS' ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' :
                         dbStatus === 'ERROR' ? 'bg-rose-50 text-rose-800 border border-rose-100' :
@@ -148,7 +274,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                 </div>
                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Market Pricing Matrix</h3>
              </div>
-
              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                 <PricingField 
                     label="24K Purity (/g)" 
@@ -161,74 +286,25 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                     onChange={v => setLocalSettings({...localSettings, currentGoldRate22K: v})}
                 />
              </div>
-          </div>
-
-          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200/60 shadow-sm space-y-8">
-             <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-600">
-                        <Smartphone size={16} />
-                    </div>
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Communication API</h3>
-                </div>
-                <button 
-                    onClick={handleTestWhatsApp}
-                    disabled={waStatus === 'TESTING'}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all ${
-                        waStatus === 'SUCCESS' ? 'bg-emerald-100 text-emerald-700' : 
-                        waStatus === 'ERROR' ? 'bg-rose-100 text-rose-700' : 
-                        'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                >
-                    {waStatus === 'TESTING' ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
-                    Verify Meta
-                </button>
-             </div>
-             
-             <div className="space-y-6">
-                <h4 className="text-[10px] font-black uppercase text-emerald-600">Meta WhatsApp (Official)</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <MetaField label="Phone Number ID" value={localSettings.whatsappPhoneNumberId || ''} onChange={v => setLocalSettings({...localSettings, whatsappPhoneNumberId: v})} placeholder="1016..." />
-                    <MetaField label="WABA Account ID" value={localSettings.whatsappBusinessAccountId || ''} onChange={v => setLocalSettings({...localSettings, whatsappBusinessAccountId: v})} placeholder="1056..." />
-                </div>
-                <div className="relative">
-                   <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2 block ml-1">System Access Token</label>
-                   <input 
-                    type="password" 
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-xs font-mono focus:bg-white transition-all outline-none" 
-                    value={localSettings.whatsappBusinessToken || ''}
-                    onChange={e => setLocalSettings({...localSettings, whatsappBusinessToken: e.target.value})}
-                   />
-                </div>
-                
-                <hr className="border-slate-100 my-4"/>
-                
-                <h4 className="text-[10px] font-black uppercase text-blue-600">Msg91 SMS (Offline Fallback)</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <MetaField label="Auth Key" value={localSettings.msg91AuthKey || ''} onChange={v => setLocalSettings({...localSettings, msg91AuthKey: v})} placeholder="3456..." />
-                    <MetaField label="Sender ID" value={localSettings.msg91SenderId || ''} onChange={v => setLocalSettings({...localSettings, msg91SenderId: v})} placeholder="AURGLD" />
-                </div>
+             <div className="flex justify-end">
+                  <button 
+                    disabled={syncing}
+                    className="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-bold text-[10px] uppercase tracking-widest hover:bg-slate-800 disabled:opacity-50 shadow-lg"
+                    onClick={handleLiveSync}
+                  >
+                    <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /> 
+                    Sync Live Rates
+                  </button>
              </div>
           </div>
-
-          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200/60 shadow-sm space-y-8">
-             <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600">
-                    <CreditCard size={16} />
-                </div>
-                <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Payment Gateways</h3>
-             </div>
-             
-             <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <MetaField label="Razorpay Key ID" value={localSettings.razorpayKeyId || ''} onChange={v => setLocalSettings({...localSettings, razorpayKeyId: v})} placeholder="rzp_test_..." />
-                    <MetaField label="Razorpay Secret" value={localSettings.razorpayKeySecret || ''} onChange={v => setLocalSettings({...localSettings, razorpayKeySecret: v})} placeholder="Secret Key" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <MetaField label="Setu Scheme ID" value={localSettings.setuSchemeId || ''} onChange={v => setLocalSettings({...localSettings, setuSchemeId: v})} placeholder="SCHEME_..." />
-                    <MetaField label="Setu Secret" value={localSettings.setuSecret || ''} onChange={v => setLocalSettings({...localSettings, setuSecret: v})} placeholder="Setu Secret" />
-                </div>
-             </div>
+          
+          <div className="flex justify-end pt-4">
+               <button 
+                className="flex items-center gap-2 bg-emerald-600 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-emerald-700 shadow-xl transition-all active:scale-95 w-full md:w-auto justify-center"
+                onClick={() => onUpdate(localSettings)}
+              >
+                <Save size={16} /> Save Configuration
+              </button>
           </div>
         </section>
 
@@ -238,13 +314,14 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                   <ShieldCheck size={32} className="text-amber-500" />
                   <h4 className="text-lg font-bold leading-tight">Institutional Integrity Policy</h4>
                   <p className="text-sm text-slate-400 leading-relaxed font-medium">
-                    Settings updates apply immediately. Payment keys are stored securely on your server environment, not in the browser bundle.
+                    Settings updates apply immediately. Payment keys are stored securely on your server environment.
                   </p>
                </div>
                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl group-hover:bg-amber-500/20 transition-all"></div>
             </div>
         </aside>
       </div>
+      )}
     </div>
   );
 };
@@ -261,19 +338,6 @@ const PricingField = ({ label, value, onChange }: { label: string, value: number
             onChange={e => onChange(parseFloat(e.target.value) || 0)}
         />
     </div>
-  </div>
-);
-
-const MetaField = ({ label, value, onChange, placeholder }: any) => (
-  <div className="space-y-2">
-    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">{label}</label>
-    <input 
-        type="text" 
-        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs font-bold focus:bg-white transition-all outline-none" 
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-    />
   </div>
 );
 

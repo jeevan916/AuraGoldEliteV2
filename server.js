@@ -21,56 +21,73 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// --- SMART STATIC PATH DETECTION & AUTO-BUILD ---
+// --- ROBUST STATIC PATH DETECTION ---
 let staticPath = null;
 const possibleDist = path.join(__dirname, 'dist');
-const hasViteConfig = fs.existsSync(path.join(__dirname, 'vite.config.ts'));
 
-// 1. Check if we are inside a built folder (Production Upload)
-if (!hasViteConfig && fs.existsSync(path.join(__dirname, 'index.html'))) {
-    staticPath = __dirname;
-    console.log(`[SERVER] Running inside build folder: ${staticPath}`);
-} 
-// 2. Check if dist exists in root (Dev/VPS)
-else if (fs.existsSync(possibleDist) && fs.existsSync(path.join(possibleDist, 'index.html'))) {
-    staticPath = possibleDist;
-    console.log(`[SERVER] Found existing build: ${staticPath}`);
-} 
-// 3. AUTO-BUILD RECOVERY
-else {
-    console.warn(`[SERVER] ⚠️ Build not found. Attempting to auto-build...`);
+/**
+ * Checks if the index.html at the given path is a Production Build.
+ * Returns FALSE if it contains references to .tsx files (Source Code).
+ */
+const isValidBuild = (dirPath) => {
+    const indexPath = path.join(dirPath, 'index.html');
+    if (!fs.existsSync(indexPath)) return false;
+    
     try {
-        console.log(`[SERVER] Running 'npm run build'...`);
-        execSync('npm run build', { stdio: 'inherit' });
+        const content = fs.readFileSync(indexPath, 'utf8');
+        // If HTML references .tsx, it is SOURCE code, not BUILD code.
+        if (content.includes('src="./index.tsx"') || content.includes('src="/index.tsx"')) {
+            return false;
+        }
+        return true;
+    } catch (e) {
+        return false;
+    }
+};
+
+// 1. Check if we are running inside a valid 'dist' folder (Production)
+if (isValidBuild(__dirname)) {
+    staticPath = __dirname;
+    console.log(`[SERVER] Running inside valid build folder: ${staticPath}`);
+} 
+// 2. Check if a valid 'dist' folder exists in root
+else if (isValidBuild(possibleDist)) {
+    staticPath = possibleDist;
+    console.log(`[SERVER] Found valid build in dist: ${staticPath}`);
+} 
+// 3. Auto-Build Recovery
+else {
+    console.warn(`[SERVER] ⚠️ Valid Build Not Found. Detected Source Code.`);
+    console.log(`[SERVER] Starting Auto-Build... (This may take 60s)`);
+    try {
+        // Attempt build
+        execSync('npm run build', { stdio: 'inherit', timeout: 120000 }); // 2 min timeout
         
-        if (fs.existsSync(possibleDist) && fs.existsSync(path.join(possibleDist, 'index.html'))) {
+        // Re-check after build
+        if (isValidBuild(possibleDist)) {
             staticPath = possibleDist;
-            console.log(`[SERVER] ✅ Auto-build successful! Serving from: ${staticPath}`);
+            console.log(`[SERVER] ✅ Auto-build success! Serving: ${staticPath}`);
         } else {
-            console.error(`[SERVER] ❌ Auto-build ran but 'dist/index.html' is still missing.`);
+            console.error(`[SERVER] ❌ Auto-build finished but 'dist/index.html' is still missing or invalid.`);
         }
     } catch (e) {
         console.error(`[SERVER] ❌ Auto-build failed:`, e.message);
     }
 }
 
-// 4. Force Content-Type for JS/CSS
-app.use((req, res, next) => {
-    if (req.url.endsWith('.js') || req.url.endsWith('.mjs')) {
-        res.setHeader('Content-Type', 'application/javascript');
-    }
-    if (req.url.endsWith('.css')) {
-        res.setHeader('Content-Type', 'text/css');
-    }
-    next();
-});
-
-// 5. Serve Static Assets (if path found)
+// 4. Serve Static Assets
 if (staticPath) {
+    // Force JS MIME type
+    app.use((req, res, next) => {
+        if (req.url.endsWith('.js')) {
+            res.setHeader('Content-Type', 'application/javascript');
+        }
+        next();
+    });
     app.use(express.static(staticPath));
 }
 
-// 6. Database Connection
+// 5. Database Connection
 let pool = null;
 const DB_CONFIG = {
     host: process.env.DB_HOST || 'localhost',
@@ -155,28 +172,35 @@ app.post('/api/whatsapp/send', async (req, res) => {
     res.json({ success: true, messageId: `mock-${Date.now()}` });
 });
 
-// --- CATCH-ALL ---
+// --- CATCH-ALL FOR SPA ---
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API Endpoint Not Found" });
     }
 
-    if (req.path.includes('.') && !req.path.endsWith('.html')) {
-        return res.status(404).send('Not Found');
+    // Determine correct index.html
+    let indexPath = null;
+    if (staticPath && fs.existsSync(path.join(staticPath, 'index.html'))) {
+        indexPath = path.join(staticPath, 'index.html');
     }
 
-    if (staticPath && fs.existsSync(path.join(staticPath, 'index.html'))) {
-        res.sendFile(path.join(staticPath, 'index.html'));
+    if (indexPath) {
+        res.sendFile(indexPath);
     } else {
-        res.status(500).send(`
+        // Fallback Maintenance Page if build failed entirely
+        res.status(503).send(`
             <html>
-            <head><title>AuraGold - Generating Build...</title><meta http-equiv="refresh" content="10"></head>
-            <body style="font-family:sans-serif; text-align:center; padding:50px; color:#333;">
-                <h1 style="color:#eab308;">System Initializing</h1>
-                <p>The server is compiling the application for the first time. This may take 30-60 seconds.</p>
-                <p><strong>Please refresh this page in a minute.</strong></p>
-                <br/>
-                <small style="color:#999;">If this persists, check server logs for 'npm run build' errors.</small>
+            <head>
+                <title>AuraGold - System Building</title>
+                <meta http-equiv="refresh" content="10">
+                <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#f8fafc;color:#334155;}</style>
+            </head>
+            <body>
+                <h1 style="color:#eab308;">System Optimization in Progress</h1>
+                <p>The application is compiling its assets for first-time use.</p>
+                <p>This page will automatically refresh in 10 seconds.</p>
+                <hr style="max-width:300px;opacity:0.2;margin:30px auto;">
+                <small>Server Status: Active | Build: Pending</small>
             </body>
             </html>
         `);

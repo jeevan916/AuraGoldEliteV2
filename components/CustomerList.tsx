@@ -6,7 +6,7 @@ import {
   CreditCard, TrendingUp, AlertTriangle, CheckCircle2, History, MessageSquare,
   ArrowRight, Activity, Plus, X, ArrowLeft, Calendar, MapPin, LayoutGrid, List, ReceiptIndianRupee
 } from 'lucide-react';
-import { Customer, Order, WhatsAppLogEntry, CreditworthinessReport, PaymentRecord } from '../types';
+import { Customer, Order, WhatsAppLogEntry, CreditworthinessReport } from '../types';
 import { geminiService } from '../services/geminiService';
 
 interface CustomerListProps {

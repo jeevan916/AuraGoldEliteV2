@@ -1,20 +1,16 @@
 
-import { GlobalSettings, PaymentPlanTemplate, WhatsAppTemplate } from './types';
+import { GlobalSettings, PaymentPlanTemplate, WhatsAppTemplate, CatalogItem } from './types';
 
-// Helper to safely access environment variables in both Node and Browser
+// Helper to safely access environment variables
 const getEnv = (key: string): string => {
   try {
-    // Vite-style env access - casting to any to fix "Property 'env' does not exist on type 'ImportMeta'"
     if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env[key]) {
       return (import.meta as any).env[key];
     }
-    // Node-style env access
     if (typeof process !== 'undefined' && process.env && (process.env as any)[key]) {
       return (process.env as any)[key] as string;
     }
-  } catch (e) {
-    // Silent fail for environment access
-  }
+  } catch (e) {}
   return '';
 };
 
@@ -29,8 +25,15 @@ export const INITIAL_SETTINGS: GlobalSettings = {
   whatsappBusinessToken: getEnv('VITE_WHATSAPP_TOKEN')
 };
 
+export const INITIAL_CATALOG: CatalogItem[] = [
+  { id: 'c1', category: 'Ring', name: 'Standard Wedding Band', metalColor: 'Yellow Gold', purity: '22K', wastagePercentage: 12, makingChargesPerGram: 450, stoneCharges: 0 },
+  { id: 'c2', category: 'Necklace', name: 'Antique Temple Haram', metalColor: 'Yellow Gold', purity: '22K', wastagePercentage: 18, makingChargesPerGram: 600, stoneCharges: 2500 },
+  { id: 'c3', category: 'Earrings', name: 'Diamond Studded Tops', metalColor: 'Rose Gold', purity: '18K', wastagePercentage: 15, makingChargesPerGram: 800, stoneCharges: 15000 },
+  { id: 'c4', category: 'Bangle', name: 'Daily Wear Kadas', metalColor: 'Yellow Gold', purity: '22K', wastagePercentage: 10, makingChargesPerGram: 400, stoneCharges: 0 },
+];
+
 export const JEWELRY_CATEGORIES = [
-  'Ring', 'Necklace', 'Earrings', 'Bracelet', 'Bangle', 'Pendant', 'Chain'
+  'Ring', 'Necklace', 'Earrings', 'Bracelet', 'Bangle', 'Pendant', 'Chain', 'Mangalsutra', 'Set', 'Coins', 'Kada'
 ];
 
 export const PURITY_OPTIONS = ['22K', '24K', '18K'];
