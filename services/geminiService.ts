@@ -97,7 +97,7 @@ export const geminiService = {
     return JSON.parse(response.text || "{}");
   },
 
-  async fixRejectedTemplate(template: WhatsAppTemplate): Promise<{ diagnosis: string, fixedContent: string, category: MetaCategory, fixedName: string }> {
+  async fixRejectedTemplate(template: WhatsAppTemplate): Promise<{ diagnosis: string, fixedContent: string, category: MetaCategory, fixedName: string, variableExamples: string[] }> {
     const ai = getAI();
 
     const response = await ai.models.generateContent({
@@ -110,14 +110,17 @@ export const geminiService = {
       META REJECTION REASON: "${template.rejectionReason || 'Generic Policy Violation'}"
       
       Act as a Meta Policy Expert. Analyze the rejection reason and the content. 
-      Common reasons include: Promotional content in Utility category, vague variables, abusive formatting, or collecting sensitive info.
       
-      Rewrite the template to be STRICTLY compliant with the rejection reason in mind. 
-      If it was rejected for 'promotional', shift the language to be purely transactional or suggest switching category to MARKETING.
+      CRITICAL COMPLIANCE RULES:
+      1. Naming: unprofessional naming convention with repeated '_v2' suffixes is PROHIBITED. Use descriptive names like 'payment_reminder_urgent' or append a unique hash.
+      2. Utility Tone: The 'UTILITY' category requires a strictly transactional tone. DO NOT use generic greetings like 'Hello {{1}}'. DO NOT use promotional phrases or 'ensure your order is processed'.
+      3. Variables: Provide valid 'variableExamples'.
+      
+      Rewrite the template to be STRICTLY compliant.
       `,
       config: {
         responseMimeType: "application/json",
-        systemInstruction: "Return JSON with keys: diagnosis (explain specifically why it was rejected based on the log), fixedContent (the rewritten compliant text), category (the correct category), fixedName (original name with _v2 appended)."
+        systemInstruction: "Return JSON with keys: diagnosis (explain specifically why it was rejected based on the log), fixedContent (the rewritten compliant text), category (the correct category), fixedName (clean snake_case name without multiple versions), variableExamples (array of strings matching {{1}}, {{2}} variables - MANDATORY)."
       }
     });
     return JSON.parse(response.text || "{}");

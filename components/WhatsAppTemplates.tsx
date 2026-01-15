@@ -334,7 +334,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           setGeneratedContent(result.fixedContent);
           setSelectedCategory(result.category);
           setSelectedGroup(tpl.appGroup || 'UNCATEGORIZED');
-          setVariableExamples([]); // Reset examples for new content
+          setVariableExamples(result.variableExamples || []); // Use AI generated examples
           setEditingStructure([]); 
           setAiAnalysisReason(result.diagnosis);
           

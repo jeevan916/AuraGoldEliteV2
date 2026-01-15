@@ -76,10 +76,17 @@ export const whatsappService = {
      if (template.structure && template.structure.length > 0) {
          components.push(...template.structure);
      } else if (template.content) {
-         components.push({
+         const bodyComponent: any = {
              type: "BODY",
              text: template.content
-         });
+         };
+         
+         // IMPORTANT: Add sample text for variables to avoid rejection
+         if (template.variableExamples && template.variableExamples.length > 0) {
+             bodyComponent.example = { body_text: [template.variableExamples] };
+         }
+         
+         components.push(bodyComponent);
      }
      
      // 3. Payload
