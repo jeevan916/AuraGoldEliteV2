@@ -22,7 +22,7 @@ app.use(express.json({ limit: '50mb' }));
 // Database state
 let pool = null;
 
-// HARDCODED FALLBACKS FOR HOSTINGER (to prevent environment variable loss)
+// HARDCODED CREDENTIALS - Hostinger Environment Enforcement
 const DB_USER = 'u477692720_jeevan1';
 const DB_NAME = 'u477692720_AuraGoldElite';
 const DB_PASS = 'AuraGold@2025';
@@ -38,11 +38,12 @@ const getDbConfig = () => ({
 
 async function initDb() {
   const config = getDbConfig();
-  console.log(`[DB INIT] Connecting: ${config.user}@${config.host} to ${config.database}`);
+  console.log(`[DB ATTEMPT] User: ${config.user}, Host: ${config.host}, DB: ${config.database}`);
   
   try {
-    // If pool exists but might be stale/broken, clean up
+    // If pool exists but we are calling initDb, it's a reset attempt
     if (pool) {
+      console.log("[DB RESET] Ending existing pool...");
       await pool.end().catch(() => {});
       pool = null;
     }
@@ -58,12 +59,12 @@ async function initDb() {
       queueLimit: 0,
       enableKeepAlive: true,
       keepAliveInitialDelay: 0,
-      connectTimeout: 15000 
+      connectTimeout: 20000 
     });
     
-    // Immediate handshake
+    // Test the connection immediately
     const connection = await pool.getConnection();
-    console.log(`✅ [DB SUCCESS] System verified as ${config.user}`);
+    console.log(`✅ [DB SUCCESS] Handshake successful for ${config.database}`);
     
     await connection.query(`
       CREATE TABLE IF NOT EXISTS aura_app_state (
@@ -82,51 +83,67 @@ async function initDb() {
   }
 }
 
-// Start DB on boot
-initDb();
+// Initial boot attempt
+initDb().catch(e => console.error("[BOOT ERROR]", e));
+
+// Robust middleware to ensure pool is never null when an API is called
+const ensureDb = async (req, res, next) => {
+    if (!pool) {
+        console.log("[DB RECOVERY] Pool was null, attempting re-init...");
+        const success = await initDb();
+        if (!success) {
+            return res.status(503).json({ 
+                error: "Database Connection Failed", 
+                details: "Pool could not be initialized. Check Hostinger DB user privileges and credentials.",
+                config_attempted: DB_USER
+            });
+        }
+    }
+    next();
+};
 
 // --- API ROUTES ---
-
-app.get('/api/test-db', async (req, res) => {
-    try {
-        const config = getDbConfig();
-        if (!pool) await initDb();
-        
-        const connection = await pool.getConnection();
-        await connection.query('SELECT 1');
-        connection.release();
-        
-        res.json({ 
-            status: "success", 
-            message: "Database connection is active and verified.", 
-            config_used: {
-                user: config.user,
-                db: config.database,
-                host: config.host
-            }
-        });
-    } catch (e) {
-        pool = null; // Reset pool on failure
-        res.status(500).json({ 
-            status: "error", 
-            message: e.message,
-            troubleshooting: "Forcing re-initialization on next request."
-        });
-    }
-});
 
 app.get("/api/health", (req, res) => {
   res.json({ 
       status: "active", 
-      db_initialized: !!pool, 
+      db_pool_active: !!pool, 
       user_enforced: DB_USER,
-      server_time: new Date().toISOString()
+      time: new Date().toISOString(),
+      process_uptime: process.uptime()
   });
 });
 
-app.get("/api/state", async (req, res) => {
+app.get('/api/test-db', async (req, res) => {
+    try {
+        // Explicitly trigger a fresh init for testing
+        const success = await initDb();
+        if (!success || !pool) {
+            throw new Error("Pool initialization returned false or pool is still null");
+        }
+        
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query('SELECT 1 as result');
+        connection.release();
+        
+        res.json({ 
+            status: "success", 
+            message: "Database handshake verified.", 
+            result: rows[0],
+            db: DB_NAME 
+        });
+    } catch (e) {
+        console.error("[TEST-DB ERROR]", e.message);
+        res.status(500).json({ 
+            status: "error", 
+            message: e.message,
+            tip: "Ensure the database user has 'All Privileges' on the database in Hostinger panel."
+        });
+    }
+});
+
+app.get("/api/state", ensureDb, async (req, res) => {
   try {
-    if (!pool) await initDb();
     const [rows] = await pool.query('SELECT content FROM aura_app_state WHERE id = 1');
     if (rows.length > 0) {
       res.json(JSON.parse(rows[0].content));
@@ -138,9 +155,8 @@ app.get("/api/state", async (req, res) => {
   }
 });
 
-app.post("/api/state", async (req, res) => {
+app.post("/api/state", ensureDb, async (req, res) => {
   try {
-    if (!pool) await initDb();
     const content = JSON.stringify(req.body);
     const now = Date.now();
     await pool.query(
@@ -153,18 +169,10 @@ app.post("/api/state", async (req, res) => {
   }
 });
 
-// Gold rate endpoint fix
 app.get('/api/gold-rate', (req, res) => {
-  res.json({ 
-    k24: 7920, 
-    k22: 7260, 
-    k18: 5940, 
-    timestamp: Date.now(),
-    source: "Institutional Reserve"
-  });
+  res.json({ k24: 7920, k22: 7260, k18: 5940, timestamp: Date.now() });
 });
 
-// Proxy logic for external communications
 app.post('/api/whatsapp/send', async (req, res) => {
   const { phoneId, token, to, message, templateName, language, variables } = req.body;
   if (!phoneId || !token) return res.status(400).json({ error: "API Credentials Required" });
@@ -201,14 +209,14 @@ app.post('/api/whatsapp/send', async (req, res) => {
   }
 });
 
-// Static Assets & Routing
+// Static Assets & SPA Routing
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
 app.get('*', (req, res) => {
-  if (req.path.startsWith('/api')) return res.status(404).json({ error: "API Route Not Found" });
+  if (req.path.startsWith('/api')) return res.status(404).json({ error: "Route Not Found" });
   res.sendFile(path.resolve(__dirname, 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 AuraGold Server Active on Port ${PORT}`);
+  console.log(`🚀 AuraGold Elite Server Active: Port ${PORT}`);
 });
