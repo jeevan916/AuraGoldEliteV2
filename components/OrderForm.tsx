@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Plus, ShoppingBag, Trash2, ShieldCheck, 
   Calculator, User, ChevronRight, X, Loader2, Sparkles, Zap, Image as ImageIcon, Camera, Trash, 
-  IndianRupee, ArrowRight, Lock, Calendar, Scale, Tag, Ruler, Upload, Gem, LayoutGrid
+  IndianRupee, ArrowRight, Lock, Calendar, Scale, Tag, Ruler, Upload, Gem, LayoutGrid, BrainCircuit, CheckCircle2
 } from 'lucide-react';
 import { 
   Order, JewelryDetail, OrderStatus, GlobalSettings, 
@@ -48,7 +48,11 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   const [isCompressing, setIsCompressing] = useState(false);
 
   const [plan, setPlan] = useState<Partial<PaymentPlan>>({
-    months: 6, advancePercentage: 10, goldRateProtection: true
+    months: 6, 
+    advancePercentage: 10, 
+    interestPercentage: 0,
+    goldRateProtection: true,
+    type: 'MANUAL'
   });
 
   useEffect(() => {
@@ -79,6 +83,27 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
           stoneCharges: catItem.stoneCharges || 0
       });
       setShowCatalog(false);
+  };
+
+  const handleApplyTemplate = (t: PaymentPlanTemplate) => {
+      setPlan({
+          ...plan,
+          type: 'PRE_CREATED',
+          templateId: t.id,
+          months: t.months,
+          advancePercentage: t.advancePercentage,
+          interestPercentage: t.interestPercentage,
+          goldRateProtection: true // Templates default to protected
+      });
+  };
+
+  const handleManualPlanChange = (key: keyof PaymentPlan, value: any) => {
+      setPlan(prev => ({
+          ...prev,
+          [key]: value,
+          type: 'MANUAL',
+          templateId: undefined // Clear template selection on manual edit
+      }));
   };
 
   const handleAddItem = () => {
@@ -130,7 +155,13 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   const generateMilestones = (total: number): Milestone[] => {
     const advance = total * ((plan.advancePercentage || 10) / 100);
     const remaining = total - advance;
-    const perMonth = remaining / (plan.months || 1);
+    
+    // Simple Interest Logic: (Principal * Rate * Time_in_years) / 100
+    // Time is months/12
+    const interest = remaining * ((plan.interestPercentage || 0) / 100) * ((plan.months || 1) / 12);
+    const finalRemaining = remaining + interest;
+    
+    const perMonth = finalRemaining / (plan.months || 1);
     const milestones: Milestone[] = [];
     
     milestones.push({ 
@@ -437,43 +468,89 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
       )}
 
       {step === 3 && (
-        <div className="space-y-4 animate-fadeIn py-6">
-            <div className="flex justify-between items-end">
-                <h3 className="text-lg font-black text-slate-800 ml-1">Financial Settlement Plan</h3>
+        <div className="space-y-6 animate-fadeIn py-4">
+            <div>
+                <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <BrainCircuit size={16} /> Select Plan Template
+                </h3>
+                <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
+                    {planTemplates.map(t => (
+                        <div 
+                            key={t.id} 
+                            onClick={() => handleApplyTemplate(t)}
+                            className={`min-w-[180px] p-4 rounded-2xl border cursor-pointer transition-all ${
+                                plan.templateId === t.id ? 'bg-slate-900 text-white border-slate-900 shadow-xl scale-105' : 'bg-white text-slate-600 border-slate-200 hover:border-amber-400'
+                            }`}
+                        >
+                            <div className="flex justify-between items-start mb-2">
+                                <span className="font-black text-xs uppercase tracking-wide opacity-80">{t.months} Months</span>
+                                {plan.templateId === t.id && <CheckCircle2 size={16} className="text-emerald-400" />}
+                            </div>
+                            <h4 className="font-bold text-sm leading-tight mb-2">{t.name}</h4>
+                            <div className="text-[10px] font-bold opacity-70">
+                                <div>Interest: {t.interestPercentage}%</div>
+                                <div>Advance: {t.advancePercentage}%</div>
+                            </div>
+                        </div>
+                    ))}
+                    {planTemplates.length === 0 && <div className="text-xs text-slate-400 italic p-4">No templates found. Configure manually.</div>}
+                </div>
+            </div>
+
+            <div className="flex justify-between items-end border-t pt-4">
+                <h3 className="text-lg font-black text-slate-800 ml-1">Manual Configuration</h3>
                 <p className="text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase tracking-tighter">Agreement Total: ₹{cartTotal.toLocaleString()}</p>
             </div>
 
             <div className="pos-card p-6 space-y-6">
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
                     <InputWrapper label="Installment Period (Months)">
                         <input 
                           type="number" className="w-full font-black text-xl bg-transparent" 
                           value={plan.months} 
-                          onChange={e => setPlan({...plan, months: parseInt(e.target.value) || 1})} 
+                          onChange={e => handleManualPlanChange('months', parseInt(e.target.value) || 1)} 
                         />
                     </InputWrapper>
                     <InputWrapper label="Booking Advance %">
                         <input 
                           type="number" className="w-full font-black text-xl bg-transparent" 
                           value={plan.advancePercentage} 
-                          onChange={e => setPlan({...plan, advancePercentage: parseInt(e.target.value) || 0})} 
+                          onChange={e => handleManualPlanChange('advancePercentage', parseFloat(e.target.value) || 0)} 
+                        />
+                    </InputWrapper>
+                    <InputWrapper label="Interest % (Flat)">
+                        <input 
+                          type="number" className="w-full font-black text-xl bg-transparent" 
+                          value={plan.interestPercentage || 0} 
+                          onChange={e => handleManualPlanChange('interestPercentage', parseFloat(e.target.value) || 0)} 
                         />
                     </InputWrapper>
                 </div>
                 
-                <div className="bg-emerald-900 text-white p-5 rounded-[1.5rem] flex items-start gap-4 shadow-xl border border-emerald-800">
-                    <div className="p-2 bg-emerald-800 rounded-lg"><Lock className="text-amber-400" size={24} /></div>
-                    <div>
-                        <div className="flex items-center gap-2 mb-1">
-                            <span className="font-black text-sm uppercase tracking-widest">Rate Protection Active</span>
-                            <input 
-                              type="checkbox" className="w-5 h-5 accent-amber-500" 
-                              checked={plan.goldRateProtection} 
-                              onChange={e => setPlan({...plan, goldRateProtection: e.target.checked})} 
-                            />
+                <div className={`p-5 rounded-[1.5rem] flex items-start gap-4 shadow-xl border transition-colors ${plan.goldRateProtection ? 'bg-emerald-900 border-emerald-800 text-white' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
+                    <div className={`p-2 rounded-lg ${plan.goldRateProtection ? 'bg-emerald-800' : 'bg-slate-200'}`}>
+                        <Lock className={plan.goldRateProtection ? "text-amber-400" : "text-slate-400"} size={24} />
+                    </div>
+                    <div className="flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                            <span className="font-black text-sm uppercase tracking-widest">Rate Protection</span>
+                            <div className="relative inline-block w-10 h-6 align-middle select-none transition duration-200 ease-in">
+                                <input 
+                                    type="checkbox" 
+                                    name="toggle" 
+                                    id="toggle" 
+                                    className="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer translate-x-1"
+                                    style={{ right: plan.goldRateProtection ? '2px' : 'auto', left: plan.goldRateProtection ? 'auto' : '2px', top: '4px' }}
+                                    checked={plan.goldRateProtection} 
+                                    onChange={e => handleManualPlanChange('goldRateProtection', e.target.checked)}
+                                />
+                                <label htmlFor="toggle" className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${plan.goldRateProtection ? 'bg-emerald-500' : 'bg-slate-300'}`}></label>
+                            </div>
                         </div>
-                        <p className="text-[10px] text-emerald-200/70 leading-relaxed italic">
-                            Gold price locked at ₹{orderRate}/g. This protection is only maintained if installments are cleared by due dates.
+                        <p className={`text-[10px] leading-relaxed italic ${plan.goldRateProtection ? 'text-emerald-200/70' : 'text-slate-400'}`}>
+                            {plan.goldRateProtection 
+                                ? `Gold price locked at ₹${orderRate}/g. This protection is only maintained if installments are cleared by due dates.` 
+                                : "Rate is NOT protected. Final billing will be based on the gold rate at the time of delivery."}
                         </p>
                     </div>
                 </div>

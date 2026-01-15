@@ -1,6 +1,6 @@
 
-import React from 'react';
-import { Zap, ArrowRight, CheckCircle2, BrainCircuit, MessageSquare, FileText, ScrollText, TrendingUp, BookOpen } from 'lucide-react';
+import React, { useState } from 'react';
+import { Zap, ArrowRight, CheckCircle2, BrainCircuit, MessageSquare, FileText, ScrollText, TrendingUp, BookOpen, RefreshCw, Loader2 } from 'lucide-react';
 import { Order, OrderStatus } from '../types';
 import { Card, SectionHeader, Badge, Button } from './shared/BaseUI';
 import { PaymentWidget } from './clusters/PaymentWidget';
@@ -8,10 +8,12 @@ import { PaymentWidget } from './clusters/PaymentWidget';
 interface DashboardProps {
   orders: Order[];
   currentRates?: { k24: number, k22: number };
+  onRefreshRates?: () => Promise<void>;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates }) => {
+const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRates }) => {
   const today = new Date().toISOString().split('T')[0];
+  const [refreshing, setRefreshing] = useState(false);
   
   // Filter: Exclude Archived/Delivered orders from "Live" Dashboard
   const liveOrders = orders.filter(o => o.status !== OrderStatus.DELIVERED && o.status !== OrderStatus.CANCELLED);
@@ -20,6 +22,14 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates }) => {
   const criticalOrders = liveOrders.filter(o => 
     o.paymentPlan.milestones.some(m => m.status !== 'PAID' && m.dueDate <= today)
   );
+
+  const handleRefresh = async () => {
+      if (onRefreshRates) {
+          setRefreshing(true);
+          await onRefreshRates();
+          setRefreshing(false);
+      }
+  };
 
   return (
     <div className="space-y-8 pb-24 animate-fadeIn">
@@ -62,8 +72,17 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates }) => {
 
       {/* 2. Live Rates & Quick Links */}
       <div className="grid grid-cols-2 gap-3">
-         <Card className="p-4 bg-white border-slate-200">
-            <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Standard 22K</p>
+         <Card className="p-4 bg-white border-slate-200 relative overflow-hidden">
+            <div className="flex justify-between items-start">
+                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Standard 22K</p>
+                <button 
+                    onClick={handleRefresh} 
+                    disabled={refreshing}
+                    className="text-slate-300 hover:text-amber-500 transition-colors active:rotate-180"
+                >
+                    {refreshing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                </button>
+            </div>
             <div className="flex items-end gap-1">
                 <p className="text-xl font-black text-slate-800">₹{currentRates?.k22?.toLocaleString()}</p>
                 <span className="text-[9px] font-bold text-slate-400 mb-1">/g</span>

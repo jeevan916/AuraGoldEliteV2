@@ -20,6 +20,8 @@ export const INITIAL_SETTINGS: GlobalSettings = {
   currentGoldRate18K: 5400,
   defaultTaxRate: 3,
   goldRateProtectionMax: 500,
+  gracePeriodHours: 24, // Default 24 hours grace
+  followUpIntervalDays: 3, // Default follow up every 3 days
   whatsappPhoneNumberId: getEnv('VITE_WHATSAPP_PHONE_ID'),
   whatsappBusinessAccountId: getEnv('VITE_WHATSAPP_WABA_ID'),
   whatsappBusinessToken: getEnv('VITE_WHATSAPP_TOKEN')
@@ -66,6 +68,45 @@ export const RISK_PROFILES = [
   { id: 'HIGH_RISK', label: 'High Risk / Defaulter', color: 'bg-rose-100 text-rose-800' }
 ];
 
+// --- DETERMINISTIC AUTOMATION TEMPLATES ---
+export const AUTOMATION_TEMPLATES = {
+    ORDER_CONFIRMATION: (name: string, items: string, total: number, months: number, milestones: string, token: string) => 
+        `Dear ${name}, thank you for choosing AuraGold. We are pleased to share the details and payment schedule for your order of ${items}.\n\nTotal Order Value: ₹${total.toLocaleString()}\nPayment Terms: ${months} Months Installment\n\nPayment Milestones:\n${milestones}\n\nYou can view the detailed breakdown and track your order progress here: order.auragoldelite.com/token=${token}\nIt is a privilege to craft this piece for you.`,
+    
+    PAYMENT_DUE_TODAY: (name: string, amount: number, orderId: string) => 
+        `Hello ${name}, a gentle reminder that your scheduled payment of ₹${amount.toLocaleString()} for Order #${orderId} is due today. Timely payment helps maintain your Gold Rate Protection benefit.`,
+    
+    PAYMENT_OVERDUE: (name: string, amount: number, date: string) => 
+        `Dear ${name}, we missed your payment of ₹${amount.toLocaleString()} which was due on ${new Date(date).toLocaleDateString()}. Please clear this at your earliest convenience to keep your order active.`,
+    
+    GOLD_RATE_WARNING: (name: string, amount: number) => 
+        `⚠️ Urgent: Dear ${name}, your Gold Rate Protection is at risk of lapsing due to the overdue payment of ₹${amount.toLocaleString()}. Please clear dues immediately to avoid repricing at current higher market rates.`,
+        
+    STATUS_UPDATE: (name: string, item: string, status: string, token: string) => 
+        `Update for ${name}: Your ${item} has moved to the '${status}' stage! Our craftsmen are ensuring perfection. Track live status here: order.auragoldelite.com/token=${token}`,
+
+    // Multi-Language Warning Cycle
+    GRACE_WARNING_1: (name: string, amount: number) => 
+        `[URGENT] Dear ${name}, your payment of ₹${amount} is critically overdue. Protection lapses in a few hours. Pay Now to save rate.`,
+    
+    GRACE_WARNING_2: (name: string, amount: number) => 
+        `नमस्ते ${name}, आपकी ₹${amount} की पेमेंट बाकी है। गोल्ड रेट सुरक्षा समाप्त होने वाली है। कृपया तुरंत भुगतान करें।`,
+        
+    GRACE_WARNING_3: (name: string, amount: number) => 
+        `Attention ${name}: Final hours to save your Gold Rate Booking. Pay ₹${amount} immediately via UPI to avoid contract cancellation.`,
+        
+    GRACE_WARNING_4: (name: string, amount: number) => 
+        `LAST REMINDER: ${name}, do not ignore. Pay ₹${amount} or order will be re-calculated at today's high gold rate.`,
+
+    // Lapse & Follow-up
+    PROTECTION_LAPSED: (name: string, token: string) => 
+        `NOTICE: Dear ${name}, due to non-payment, your Gold Rate Protection has LAPSED. Your order is now floating at market price. Select action: order.auragoldelite.com/token=${token}`,
+        
+    // Dynamic Quotation on Lapse Event
+    LAPSE_DYNAMIC_QUOTE: (name: string, oldTotal: number, newTotal: number, currentRate: number, token: string) => 
+        `[ACTION REQUIRED] ${name}, your order value has increased due to lapse.\n\n📉 Old Locked Price: ₹${oldTotal.toLocaleString()}\n📈 New Market Price: ₹${newTotal.toLocaleString()} (@ ₹${currentRate}/g)\n\nThis quote is valid for 1 hour. Options:\n1. REPOPULATE: Accept new rate & continue payment plan.\n2. REFUND: Cancel order.\n\nClick to Decide: order.auragoldelite.com/token=${token}`
+};
+
 export const INITIAL_TEMPLATES: WhatsAppTemplate[] = [
   {
     id: 't0',
@@ -105,7 +146,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     description: 'Sent immediately when an order is created.',
     category: 'UTILITY',
     variables: ['customer_name', 'order_id', 'total_amount', 'tracking_token'],
-    content: "Hello {{1}}, thank you for shopping with AuraGold! Your order {{2}} ({{3}}) has been placed. Track your order here: https://auragold.com/view/{{4}} for details.",
+    content: "Hello {{1}}, thank you for shopping with AuraGold! Your order {{2}} ({{3}}) has been placed. Track your order here: https://order.auragoldelite.com/token={{4}} for details.",
     examples: ["John Doe", "ORD-12345", "₹50,000", "AbCd123"]
   },
   {
@@ -113,7 +154,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     description: 'Sent when a scheduled payment is due.',
     category: 'UTILITY',
     variables: ['customer_name', 'amount_due', 'due_date', 'payment_token'],
-    content: "Dear {{1}}, a gentle reminder that your payment of {{2}} is due by {{3}}. Please complete the payment securely using this link: https://auragold.com/pay/{{4}} securely.",
+    content: "Dear {{1}}, a gentle reminder that your payment of {{2}} is due by {{3}}. Please complete the payment securely using this link: https://order.auragoldelite.com/token={{4}} securely.",
     examples: ["Sarah", "₹12,500", "25 Oct 2023", "XyZ987"]
   },
   {
@@ -121,7 +162,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     description: 'Sent when the jewelry status changes.',
     category: 'UTILITY',
     variables: ['customer_name', 'item_category', 'new_status', 'tracking_token'],
-    content: "Great news {{1}}! Your {{2}} has moved to the {{3}} stage. See photos and updates here: https://auragold.com/status/{{4}} on portal.",
+    content: "Great news {{1}}! Your {{2}} has moved to the {{3}} stage. See photos and updates here: https://order.auragoldelite.com/token={{4}} on portal.",
     examples: ["Michael", "Ring", "Quality Check", "LmNoP456"]
   }
 ];

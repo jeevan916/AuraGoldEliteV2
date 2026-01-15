@@ -69,7 +69,7 @@ export interface JewelryDetail {
   makingChargesPerGram: number;
   totalLaborValue: number;
   stoneCharges: number;
-  stoneDetails?: string; // Added field
+  stoneDetails?: string; 
   purity: Purity;
   taxAmount: number;
   finalAmount: number;
@@ -90,6 +90,14 @@ export interface Payment {
   orderId?: string;
 }
 
+export interface OrderSnapshot {
+  timestamp: string;
+  originalTotal: number;
+  originalRate: number;
+  itemsSnapshot: JewelryDetail[];
+  reason: string;
+}
+
 export interface Order {
   id: string;
   customerName: string;
@@ -104,6 +112,7 @@ export interface Order {
   paymentPlan: PaymentPlan;
   status: OrderStatus;
   createdAt: string;
+  originalSnapshot?: OrderSnapshot; // Stores the proof of contract before lapse
 }
 
 export interface GlobalSettings {
@@ -112,6 +121,8 @@ export interface GlobalSettings {
   currentGoldRate18K: number;
   defaultTaxRate: number;
   goldRateProtectionMax: number;
+  gracePeriodHours: number; // New: Hours before lapse triggers
+  followUpIntervalDays: number; // New: Days between post-lapse reminders
   whatsappPhoneNumberId?: string;
   whatsappBusinessAccountId?: string;
   whatsappBusinessToken?: string;
@@ -181,7 +192,7 @@ export interface AppError {
 export interface ActivityLogEntry {
   id: string;
   timestamp: string;
-  actionType: 'ORDER_CREATED' | 'STATUS_UPDATE' | 'TEMPLATE_SENT' | 'MANUAL_MESSAGE_SENT' | 'PAYMENT_RECORDED';
+  actionType: 'ORDER_CREATED' | 'STATUS_UPDATE' | 'TEMPLATE_SENT' | 'MANUAL_MESSAGE_SENT' | 'PAYMENT_RECORDED' | 'PROTECTION_LAPSED';
   details: string;
   metadata?: any;
 }
