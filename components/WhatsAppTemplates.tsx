@@ -4,10 +4,10 @@ import {
   MessageSquare, BrainCircuit, Sparkles, Save, Edit, 
   Copy, RefreshCw, Zap, ShieldAlert, Users, Star, Cloud, CheckCircle, UploadCloud, Globe, Laptop,
   Activity, AlertTriangle, AlertCircle, RefreshCcw, Loader2, Terminal, Check, Server, PlusCircle, Code, Trash2, FolderOpen,
-  Wrench, ArrowRight
+  Wrench, ArrowRight, GitMerge, FileJson
 } from 'lucide-react';
-import { WhatsAppTemplate, PsychologicalTactic, RiskProfile, MetaCategory, AppTemplateGroup } from '../types';
-import { PSYCHOLOGICAL_TACTICS, RISK_PROFILES, REQUIRED_SYSTEM_TEMPLATES } from '../constants';
+import { WhatsAppTemplate, PsychologicalTactic, RiskProfile, MetaCategory, AppTemplateGroup, SystemTrigger } from '../types';
+import { PSYCHOLOGICAL_TACTICS, RISK_PROFILES, REQUIRED_SYSTEM_TEMPLATES, SYSTEM_TRIGGER_MAP } from '../constants';
 import { geminiService } from '../services/geminiService';
 import { whatsappService } from '../services/whatsappService';
 
@@ -17,7 +17,7 @@ interface WhatsAppTemplatesProps {
 }
 
 const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'SYSTEM' | 'STRATEGY' | 'LIBRARY'>('SYSTEM');
+  const [activeTab, setActiveTab] = useState<'SYSTEM' | 'STRATEGY' | 'LIBRARY' | 'TRIGGERS'>('SYSTEM');
   
   // Prompt-Based Generator State
   const [promptText, setPromptText] = useState('');
@@ -39,6 +39,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   const [syncingMeta, setSyncingMeta] = useState(false);
   const [pushingMeta, setPushingMeta] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deployingTriggerId, setDeployingTriggerId] = useState<string | null>(null);
 
   // Auto-Repair State
   const [repairing, setRepairing] = useState(false);
@@ -211,6 +212,38 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       handleSyncFromMeta(true); 
   };
 
+  const handleDeployStandard = async (trigger: SystemTrigger, def: any) => {
+      setDeployingTriggerId(trigger.id);
+      try {
+          const payload: WhatsAppTemplate = {
+              id: `std-${Date.now()}`,
+              name: def.name,
+              content: def.content,
+              tactic: 'AUTHORITY',
+              targetProfile: 'REGULAR',
+              isAiGenerated: false,
+              source: 'LOCAL',
+              category: def.category as MetaCategory,
+              variableExamples: def.examples,
+              appGroup: def.appGroup as AppTemplateGroup
+          };
+
+          const result = await whatsappService.createMetaTemplate(payload);
+          
+          if (result.success) {
+              const newTpl: WhatsAppTemplate = { ...payload, name: result.finalName!, source: 'META', status: 'PENDING' };
+              onUpdate([newTpl, ...templates]);
+              alert(`Deployed: ${result.finalName}`);
+          } else {
+              alert(`Failed: ${result.error?.message}`);
+          }
+      } catch (e: any) {
+          alert(`Error: ${e.message}`);
+      } finally {
+          setDeployingTriggerId(null);
+      }
+  };
+
   const handlePromptGeneration = async (textOverride?: string) => {
       const finalText = textOverride || promptText;
       if (!finalText.trim()) return;
@@ -261,7 +294,6 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
 
       setDeletingId(tpl.id);
       try {
-          // Fix: Removed reference to non-existent whatsappService.deleteMetaTemplate
           onUpdate(templates.filter(t => t.id !== tpl.id));
           alert("Template removed from library.");
       } catch (e: any) {
@@ -269,6 +301,20 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       } finally {
           setDeletingId(null);
       }
+  };
+
+  const handleCreateVariant = (trigger: SystemTrigger) => {
+      setTemplateName(`${trigger.defaultTemplateName}_v2`);
+      const placeholderText = trigger.requiredVariables.map((v, i) => `{{${i+1}}}`).join(' ');
+      setGeneratedContent(`New variant for ${trigger.label}: ${placeholderText}...`);
+      setSelectedCategory('UTILITY');
+      setSelectedGroup(trigger.appGroup);
+      setVariableExamples(trigger.requiredVariables); // Hint for user
+      setActiveTab('STRATEGY');
+      
+      setTimeout(() => {
+          if (editorRef.current) editorRef.current.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
   };
 
   const handleSaveLocalOrDeploy = async (action: 'LOCAL' | 'META') => {
@@ -344,18 +390,114 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           </h2>
           <p className="text-slate-500 text-sm">Meta Compliance Engine & AI Strategy Generator</p>
         </div>
-        <div className="flex bg-slate-100 p-1 rounded-xl">
-            {(['SYSTEM', 'STRATEGY', 'LIBRARY'] as const).map(tab => (
+        <div className="flex bg-slate-100 p-1 rounded-xl overflow-x-auto">
+            {(['SYSTEM', 'TRIGGERS', 'STRATEGY', 'LIBRARY'] as const).map(tab => (
                 <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                 >
-                    {tab === 'SYSTEM' ? 'System Health' : tab === 'STRATEGY' ? 'AI Architect' : 'Library'}
+                    {tab === 'SYSTEM' ? 'System Health' : tab === 'TRIGGERS' ? 'Automation Map' : tab === 'STRATEGY' ? 'AI Architect' : 'Library'}
                 </button>
             ))}
         </div>
       </div>
+
+      {/* --- TAB: TRIGGER MAP --- */}
+      {activeTab === 'TRIGGERS' && (
+          <div className="space-y-6">
+              <div className="bg-slate-900 text-white p-6 rounded-[2rem] relative overflow-hidden">
+                  <div className="relative z-10">
+                      <h3 className="text-lg font-black flex items-center gap-2 mb-2">
+                          <GitMerge className="text-amber-400" /> Trigger Architecture
+                      </h3>
+                      <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
+                          Visual map of system events and their corresponding WhatsApp templates.
+                          Missing templates (marked red) must be deployed for automation to function.
+                      </p>
+                  </div>
+                  <div className="absolute right-0 bottom-0 opacity-10">
+                      <BrainCircuit size={150} />
+                  </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                  {SYSTEM_TRIGGER_MAP.map((trigger, idx) => {
+                      const match = templates.find(t => t.name === trigger.defaultTemplateName || t.name.startsWith(trigger.defaultTemplateName));
+                      const requiredDef = REQUIRED_SYSTEM_TEMPLATES.find(r => r.name === trigger.defaultTemplateName);
+                      const isMissing = !match;
+                      
+                      return (
+                          <div key={trigger.id} className={`bg-white p-5 rounded-2xl border shadow-sm flex flex-col gap-4 ${isMissing ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-emerald-500'}`}>
+                              
+                              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                  <div className="flex items-start gap-4">
+                                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm ${isMissing ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                          {idx + 1}
+                                      </div>
+                                      <div>
+                                          <div className="flex items-center gap-2">
+                                              <h4 className="font-bold text-slate-800 text-sm">{trigger.label}</h4>
+                                              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${isMissing ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                  {isMissing ? 'MISSING TEMPLATE' : 'ACTIVE'}
+                                              </span>
+                                          </div>
+                                          <p className="text-xs text-slate-500 mt-1">{trigger.description}</p>
+                                      </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                      {isMissing && requiredDef && (
+                                          <button 
+                                            onClick={() => handleDeployStandard(trigger, requiredDef)}
+                                            disabled={deployingTriggerId === trigger.id}
+                                            className="text-[10px] font-bold bg-slate-900 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition-all whitespace-nowrap shadow-md flex items-center gap-2"
+                                          >
+                                              {deployingTriggerId === trigger.id ? <Loader2 size={12} className="animate-spin"/> : <UploadCloud size={12} />}
+                                              Deploy Standard
+                                          </button>
+                                      )}
+                                      <button 
+                                        onClick={() => handleCreateVariant(trigger)}
+                                        className="text-[10px] font-bold bg-white border border-slate-200 text-slate-600 px-3 py-2 rounded-lg hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 transition-all whitespace-nowrap shadow-sm"
+                                      >
+                                          + Create Variant
+                                      </button>
+                                  </div>
+                              </div>
+
+                              {/* Details Panel */}
+                              <div className="bg-slate-50 p-4 rounded-xl flex flex-col md:flex-row gap-6 text-xs border border-slate-100">
+                                  <div className="flex-1">
+                                      <p className="font-black text-slate-400 uppercase tracking-widest mb-2">Required Variables</p>
+                                      <div className="flex flex-wrap gap-2">
+                                          {trigger.requiredVariables.map(v => (
+                                              <span key={v} className="bg-white border px-2 py-1 rounded text-slate-600 font-mono font-medium">{v}</span>
+                                          ))}
+                                      </div>
+                                  </div>
+                                  
+                                  <div className="flex-1 border-l pl-6 border-slate-200">
+                                       <p className="font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                           {isMissing ? 'Recommended Template Content' : 'Active Template Content'}
+                                           <FileJson size={12} />
+                                       </p>
+                                       <div className="font-mono text-slate-600 italic bg-white p-3 rounded-lg border border-dashed border-slate-200">
+                                           "{match ? match.content : requiredDef?.content || 'No default definition found.'}"
+                                       </div>
+                                       {isMissing && (
+                                           <p className="text-[10px] text-rose-500 mt-2 font-medium flex items-center gap-1">
+                                               <AlertCircle size={10} /> Automation will fail until this template is deployed.
+                                           </p>
+                                       )}
+                                  </div>
+                              </div>
+                          </div>
+                      );
+                  })}
+              </div>
+          </div>
+      )}
 
       {/* --- TAB 1: SYSTEM HEALTH --- */}
       {activeTab === 'SYSTEM' && (

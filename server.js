@@ -292,7 +292,7 @@ app.get('/api/whatsapp/templates', async (req, res) => {
     }
 });
 
-// 2. Create Template (POST) - NEW
+// 2. Create Template (POST)
 app.post('/api/whatsapp/templates', async (req, res) => {
     const wabaId = req.headers['x-waba-id'];
     const token = req.headers['x-auth-token'];

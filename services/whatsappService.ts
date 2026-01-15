@@ -72,8 +72,10 @@ export const whatsappService = {
      // 2. Construct Components
      const components = [];
      
-     // Body (Text)
-     if (template.content) {
+     // Use existing structure if available (e.g. from editor), otherwise wrap content in BODY
+     if (template.structure && template.structure.length > 0) {
+         components.push(...template.structure);
+     } else if (template.content) {
          components.push({
              type: "BODY",
              text: template.content
@@ -112,7 +114,7 @@ export const whatsappService = {
 
          return {
              success: true,
-             finalName: data.data.name || finalName, // Meta usually returns id, we fallback to name if needed
+             finalName: data.data.name || finalName, // Meta usually returns id/name
              rawResponse: data
          };
 

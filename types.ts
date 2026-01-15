@@ -228,6 +228,15 @@ export interface WhatsAppTemplate {
   variableExamples?: string[];
 }
 
+export interface SystemTrigger {
+  id: string;
+  label: string;
+  description: string;
+  requiredVariables: string[]; // e.g., ["name", "amount"]
+  defaultTemplateName: string;
+  appGroup: AppTemplateGroup;
+}
+
 export interface PaymentPlanTemplate {
   id: string;
   name: string;

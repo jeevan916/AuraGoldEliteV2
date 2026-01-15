@@ -1,5 +1,5 @@
 
-import { GlobalSettings, PaymentPlanTemplate, WhatsAppTemplate, CatalogItem } from './types';
+import { GlobalSettings, PaymentPlanTemplate, WhatsAppTemplate, CatalogItem, SystemTrigger } from './types';
 
 // Helper to safely access environment variables
 const getEnv = (key: string): string => {
@@ -66,6 +66,17 @@ export const RISK_PROFILES = [
   { id: 'REGULAR', label: 'Standard Customer', color: 'bg-blue-100 text-blue-800' },
   { id: 'FORGETFUL', label: 'Forgetful Payer', color: 'bg-amber-100 text-amber-800' },
   { id: 'HIGH_RISK', label: 'High Risk / Defaulter', color: 'bg-rose-100 text-rose-800' }
+];
+
+export const SYSTEM_TRIGGER_MAP: SystemTrigger[] = [
+    { id: 'TRIG_1', label: 'Order Created', description: 'Sent immediately after booking.', requiredVariables: ['Customer Name', 'Order ID', 'Total Amount', 'Token'], defaultTemplateName: 'auragold_order_confirmation', appGroup: 'ORDER_STATUS' },
+    { id: 'TRIG_2', label: 'Status Update', description: 'Jewelry stage change (e.g. Polishing).', requiredVariables: ['Customer Name', 'Item Category', 'New Status', 'Token'], defaultTemplateName: 'auragold_production_update', appGroup: 'ORDER_STATUS' },
+    { id: 'TRIG_3', label: 'Payment Receipt', description: 'Sent when payment is recorded.', requiredVariables: ['Customer Name', 'Amount Paid', 'Balance Remaining'], defaultTemplateName: 'auragold_payment_receipt', appGroup: 'PAYMENT_COLLECTION' },
+    { id: 'TRIG_4', label: 'Payment Request', description: 'Scheduled manual or auto request.', requiredVariables: ['Customer Name', 'Amount Due', 'Due Date', 'Link'], defaultTemplateName: 'auragold_payment_request', appGroup: 'PAYMENT_COLLECTION' },
+    { id: 'TRIG_5', label: 'Grace Warning', description: 'Urgent nudge before lapse.', requiredVariables: ['Customer Name', 'Amount Due', 'Hours Left'], defaultTemplateName: 'auragold_grace_warning', appGroup: 'PAYMENT_COLLECTION' },
+    { id: 'TRIG_6', label: 'Protection Lapsed', description: 'Contract violation notice.', requiredVariables: ['Customer Name', 'Order ID', 'Link'], defaultTemplateName: 'auragold_protection_lapsed', appGroup: 'SYSTEM_NOTIFICATIONS' },
+    { id: 'TRIG_7', label: 'Lapse Quote', description: 'New market rate offer post-lapse.', requiredVariables: ['Customer Name', 'Old Price', 'New Price', 'Rate', 'Link'], defaultTemplateName: 'auragold_lapse_quote', appGroup: 'PAYMENT_COLLECTION' },
+    { id: 'TRIG_8', label: 'Refund/Cancel', description: 'Order cancellation notice.', requiredVariables: ['Customer Name', 'Refund Amount', 'Order ID'], defaultTemplateName: 'auragold_refund_processed', appGroup: 'GENERAL_SUPPORT' }
 ];
 
 // --- DETERMINISTIC AUTOMATION TEMPLATES (Local Logic) ---
