@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
-import { createRoot } from 'react-dom/client';
 import { 
   Plus, Home, ReceiptIndianRupee, Users, MessageSquare, 
   Menu, ArrowLeft, Cloud, Loader2, HardDrive, Settings as SettingsIcon,
@@ -392,7 +391,6 @@ const App: React.FC = () => {
           {/* Bottom Navigation */}
           <div className="glass-nav">
              <TabBarItem icon={<Home />} label="Queue" active={view === 'DASH'} onClick={() => setView('DASH')} />
-             {/* FIXED: Point to ORDER_BOOK instead of ORDER_NEW */}
              <TabBarItem icon={<ShoppingBag />} label="Orders" active={view === 'ORDER_BOOK'} onClick={() => setView('ORDER_BOOK')} />
              <TabBarItem icon={<ReceiptIndianRupee />} label="Ledger" active={view === 'COLLECTIONS'} onClick={() => setView('COLLECTIONS')} />
              <TabBarItem icon={<Users />} label="Clients" active={view === 'CUSTOMERS'} onClick={() => setView('CUSTOMERS')} />
@@ -404,8 +402,4 @@ const App: React.FC = () => {
   );
 };
 
-const container = document.getElementById('root');
-if (container) {
-  const root = createRoot(container);
-  root.render(<App />);
-}
+export default App;

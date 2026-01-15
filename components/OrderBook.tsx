@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Search, Package, CheckCircle2, Archive, Clock, ChevronRight, 
-  BookOpen, CheckCheck, Plus 
+  BookOpen, CheckCheck, Plus, AlertCircle 
 } from 'lucide-react';
 import { Order, OrderStatus, ProductionStatus } from '../types';
 
@@ -18,23 +18,26 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
   const [activeTab, setActiveTab] = useState<BookTab>('ACTIVE');
   const [search, setSearch] = useState('');
 
+  // Safeguard against undefined orders prop
+  const safeOrders = orders || [];
+
   const filteredOrders = useMemo(() => {
     let subset = [];
     
     switch(activeTab) {
         case 'ACTIVE':
             // Active means ongoing payment plans or production, not fully paid yet
-            subset = orders.filter(o => 
+            subset = safeOrders.filter(o => 
                 (o.status === OrderStatus.ACTIVE || o.status === OrderStatus.OVERDUE)
             );
             break;
         case 'READY':
             // Completed payment but not yet delivered
-            subset = orders.filter(o => o.status === OrderStatus.COMPLETED);
+            subset = safeOrders.filter(o => o.status === OrderStatus.COMPLETED);
             break;
         case 'ARCHIVE':
             // Delivered or Cancelled
-            subset = orders.filter(o => 
+            subset = safeOrders.filter(o => 
                 o.status === OrderStatus.DELIVERED || o.status === OrderStatus.CANCELLED
             );
             break;
@@ -47,7 +50,7 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
         o.id.toLowerCase().includes(search.toLowerCase()) ||
         o.customerContact.includes(search)
     );
-  }, [orders, activeTab, search]);
+  }, [safeOrders, activeTab, search]);
 
   const handleQuickDeliver = (e: React.MouseEvent, order: Order) => {
       e.stopPropagation();
@@ -74,7 +77,7 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
   };
 
   return (
-    <div className="space-y-6 animate-fadeIn pb-24">
+    <div className="space-y-6 animate-fadeIn pb-24 h-full flex flex-col">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 shrink-0">
         <div>
@@ -115,8 +118,8 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
       </div>
 
       {/* Search & List */}
-      <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden">
-        <div className="p-6 border-b bg-slate-50/50 flex flex-col md:flex-row gap-4">
+      <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden flex-1 flex flex-col min-h-0">
+        <div className="p-6 border-b bg-slate-50/50 flex flex-col md:flex-row gap-4 shrink-0">
           <div className="relative flex-1">
              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
              <input 
@@ -129,9 +132,9 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
           </div>
         </div>
 
-        <div className="p-0">
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
           {filteredOrders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center text-slate-400 space-y-4 py-20">
+            <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4 py-20">
                <Package size={48} className="opacity-20" />
                <p className="font-bold text-sm uppercase tracking-widest">No orders found in {activeTab.toLowerCase()}</p>
                {activeTab === 'ACTIVE' && (
