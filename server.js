@@ -23,7 +23,7 @@ app.use(express.json({ limit: '50mb' }));
 
 // --- SYSTEM DIAGNOSTICS & AUTO-BUILD ---
 let staticPath = null;
-let systemLog = []; // Capture logs to show in browser
+let systemLog = [];
 
 const log = (msg, type = 'INFO') => {
     const entry = `[${new Date().toLocaleTimeString()}] [${type}] ${msg}`;
@@ -31,15 +31,17 @@ const log = (msg, type = 'INFO') => {
     systemLog.push(entry);
 };
 
+// Robust command runner that captures output
 const runCommand = (command) => {
     log(`Executing: ${command}`);
     try {
-        const output = execSync(command, { encoding: 'utf8', stdio: 'pipe' });
+        // Increase buffer size for large logs
+        const output = execSync(command, { encoding: 'utf8', stdio: 'pipe', maxBuffer: 1024 * 1024 * 10 });
         log(output);
         return true;
     } catch (e) {
         log(`COMMAND FAILED: ${command}`, 'ERROR');
-        log(e.message, 'ERROR');
+        log(`Error Message: ${e.message}`, 'ERROR');
         if (e.stdout) log(`STDOUT: ${e.stdout}`, 'ERROR');
         if (e.stderr) log(`STDERR: ${e.stderr}`, 'ERROR');
         return false;
@@ -48,26 +50,32 @@ const runCommand = (command) => {
 
 const possibleDist = path.join(__dirname, 'dist');
 
-// Check Function
 const isValidBuild = (dirPath) => {
     const indexPath = path.join(dirPath, 'index.html');
     if (!fs.existsSync(indexPath)) return false;
     try {
         const content = fs.readFileSync(indexPath, 'utf8');
-        return !content.includes('src="./index.tsx"'); // True if it's NOT source code
+        return !content.includes('src="./index.tsx"'); 
     } catch (e) { return false; }
 };
 
 // --- INITIALIZATION SEQUENCE ---
 log("Starting Server Initialization...");
 
-// 1. Dependency Check
-if (!fs.existsSync(path.join(__dirname, 'node_modules'))) {
-    log("node_modules not found. Attempting 'npm install'...", 'WARN');
-    runCommand('npm install');
+// 1. Dependency Check & Fix
+const nodeModulesPath = path.join(__dirname, 'node_modules');
+if (!fs.existsSync(nodeModulesPath)) {
+    log("node_modules not found. Running install...", 'WARN');
+    // Using --legacy-peer-deps to bypass React version conflicts if any remain
+    const success = runCommand('npm install --legacy-peer-deps');
+    if (!success) {
+        log("Initial install failed. Attempting clean install...", 'WARN');
+        if (fs.existsSync('package-lock.json')) fs.unlinkSync('package-lock.json');
+        runCommand('npm install --legacy-peer-deps');
+    }
 }
 
-// 2. Locate or Build App
+// 2. Build Logic
 if (isValidBuild(__dirname)) {
     staticPath = __dirname;
     log(`Serving pre-built app from root.`);
@@ -77,14 +85,16 @@ if (isValidBuild(__dirname)) {
 } else {
     log("Valid build not found. Starting Auto-Build...", 'WARN');
     
-    // Attempt Build
-    const success = runCommand('npm run build');
+    // Explicitly run vite build
+    const buildSuccess = runCommand('npx vite build');
     
-    if (success && isValidBuild(possibleDist)) {
+    if (buildSuccess && isValidBuild(possibleDist)) {
         staticPath = possibleDist;
         log("Auto-Build Successful!", 'SUCCESS');
     } else {
-        log("Auto-Build Failed. Check logs below.", 'CRITICAL');
+        log("Auto-Build Failed. This is critical.", 'CRITICAL');
+        // If build fails, we might try to serve source as fallback if configured, 
+        // but for a React app, we really need the build.
     }
 }
 
@@ -201,13 +211,14 @@ app.get('*', (req, res) => {
                     body { font-family: monospace; background: #0f172a; color: #f8fafc; padding: 20px; }
                     .container { max-width: 900px; margin: 0 auto; }
                     h1 { color: #f59e0b; border-bottom: 1px solid #334155; padding-bottom: 10px; }
-                    .log-window { background: #1e293b; padding: 15px; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; border: 1px solid #334155; }
-                    .entry { margin-bottom: 5px; }
+                    .log-window { background: #1e293b; padding: 15px; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; border: 1px solid #334155; max-height: 70vh; }
+                    .entry { margin-bottom: 5px; border-bottom: 1px solid #334155; padding-bottom: 2px; }
                     .ERROR { color: #ef4444; font-weight: bold; }
                     .SUCCESS { color: #10b981; font-weight: bold; }
                     .WARN { color: #f59e0b; }
                     .INFO { color: #94a3b8; }
-                    .refresh { margin-top: 20px; padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+                    .refresh { margin-top: 20px; padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 16px; }
+                    .refresh:hover { background: #1d4ed8; }
                 </style>
             </head>
             <body>
@@ -224,7 +235,12 @@ app.get('*', (req, res) => {
                         }).join('')}
                     </div>
 
-                    <button class="refresh" onclick="window.location.reload()">Retry / Refresh</button>
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button class="refresh" onclick="window.location.reload()">Retry / Refresh</button>
+                        <form action="/api/health" method="GET">
+                            <button class="refresh" style="background:#475569">Check API Health</button>
+                        </form>
+                    </div>
                 </div>
             </body>
             </html>
