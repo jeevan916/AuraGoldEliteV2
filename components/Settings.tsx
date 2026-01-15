@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, Zap, ShieldCheck, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, LayoutGrid, Plus, Trash2, Info, Key, Server, Clock, Calendar } from 'lucide-react';
+import { Save, RefreshCw, Zap, ShieldCheck, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, LayoutGrid, Plus, Trash2, Info, Key, Server, Clock, Calendar, MessageSquare, CreditCard, Smartphone } from 'lucide-react';
 import { GlobalSettings, CatalogItem } from '../types';
 import { goldRateService } from '../services/goldRateService';
 import { storageService } from '../services/storageService';
@@ -163,13 +163,11 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
 
       {activeTab === 'CATALOG' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Catalog Code Omitted for brevity - same as before */}
               <div className="lg:col-span-1 bg-white p-6 rounded-[2.5rem] border border-amber-100 shadow-sm h-fit">
                   <h3 className="font-black text-slate-800 text-lg mb-6 flex items-center gap-2">
                       <Plus size={20} className="text-amber-500" /> Add Product
                   </h3>
                   <div className="space-y-4">
-                      {/* Inputs... */}
                       <div>
                           <label className="text-[10px] font-black uppercase text-slate-400">Category</label>
                           <select 
@@ -273,7 +271,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                 </div>
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Backend Connection</h3>
              </div>
-             {/* DB Logic same as before */}
              {debugInfo && (
                  <div className="bg-slate-900 text-slate-300 p-4 rounded-xl text-xs font-mono overflow-auto">
                      <p className="text-amber-400 font-bold mb-2">Diagnostic Report:</p>
@@ -364,6 +361,133 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                             />
                             <p className="text-[9px] text-slate-400 mt-2 ml-1">Frequency of reminders after lapse event.</p>
                         </div>
+                     </div>
+                 </div>
+             </div>
+
+             {/* Integrations Section */}
+             <div className="pt-6 border-t border-slate-100 space-y-6">
+                 <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600">
+                        <Key size={16} />
+                    </div>
+                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">API Integrations</h3>
+                 </div>
+                 
+                 {/* WhatsApp Config */}
+                 <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-4">
+                     <h4 className="font-bold text-slate-700 flex items-center gap-2 text-sm">
+                        <MessageSquare size={16} className="text-emerald-500" /> WhatsApp Business API (Meta)
+                     </h4>
+                     <div className="grid grid-cols-1 gap-4">
+                         <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Phone Number ID</label>
+                            <input 
+                                className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-medium outline-none focus:border-blue-500"
+                                value={localSettings.whatsappPhoneNumberId || ''}
+                                onChange={e => setLocalSettings({...localSettings, whatsappPhoneNumberId: e.target.value})}
+                                placeholder="100609..."
+                            />
+                         </div>
+                         <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Business Account ID (WABA)</label>
+                            <input 
+                                className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-medium outline-none focus:border-blue-500"
+                                value={localSettings.whatsappBusinessAccountId || ''}
+                                onChange={e => setLocalSettings({...localSettings, whatsappBusinessAccountId: e.target.value})}
+                                placeholder="100609..."
+                            />
+                         </div>
+                         <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Permanent Access Token</label>
+                            <input 
+                                type="password"
+                                className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-medium outline-none focus:border-blue-500"
+                                value={localSettings.whatsappBusinessToken || ''}
+                                onChange={e => setLocalSettings({...localSettings, whatsappBusinessToken: e.target.value})}
+                                placeholder="EAAG..."
+                            />
+                         </div>
+                     </div>
+                 </div>
+
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                     {/* Razorpay Config */}
+                     <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-4">
+                         <h4 className="font-bold text-slate-700 flex items-center gap-2 text-sm">
+                            <CreditCard size={16} className="text-indigo-500" /> Razorpay
+                         </h4>
+                         <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Key ID</label>
+                            <input 
+                                className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-medium outline-none focus:border-indigo-500"
+                                value={localSettings.razorpayKeyId || ''}
+                                onChange={e => setLocalSettings({...localSettings, razorpayKeyId: e.target.value})}
+                                placeholder="rzp_live_..."
+                            />
+                         </div>
+                         <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Key Secret</label>
+                            <input 
+                                type="password"
+                                className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-medium outline-none focus:border-indigo-500"
+                                value={localSettings.razorpayKeySecret || ''}
+                                onChange={e => setLocalSettings({...localSettings, razorpayKeySecret: e.target.value})}
+                                placeholder="Keep secret..."
+                            />
+                         </div>
+                     </div>
+
+                     {/* Msg91 Config */}
+                     <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-4">
+                         <h4 className="font-bold text-slate-700 flex items-center gap-2 text-sm">
+                            <Smartphone size={16} className="text-blue-500" /> Msg91 SMS
+                         </h4>
+                         <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Auth Key</label>
+                            <input 
+                                type="password"
+                                className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-medium outline-none focus:border-blue-500"
+                                value={localSettings.msg91AuthKey || ''}
+                                onChange={e => setLocalSettings({...localSettings, msg91AuthKey: e.target.value})}
+                                placeholder="324..."
+                            />
+                         </div>
+                         <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Sender ID</label>
+                            <input 
+                                className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-medium outline-none focus:border-blue-500"
+                                value={localSettings.msg91SenderId || ''}
+                                onChange={e => setLocalSettings({...localSettings, msg91SenderId: e.target.value})}
+                                placeholder="AURGLD"
+                            />
+                         </div>
+                     </div>
+
+                     {/* Setu UPI Config */}
+                     <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-4">
+                         <h4 className="font-bold text-slate-700 flex items-center gap-2 text-sm">
+                            <Zap size={16} className="text-amber-500" /> Setu UPI
+                         </h4>
+                         <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Scheme ID</label>
+                            <input 
+                                className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-medium outline-none focus:border-amber-500"
+                                value={localSettings.setuSchemeId || ''}
+                                onChange={e => setLocalSettings({...localSettings, setuSchemeId: e.target.value})}
+                                placeholder="SCHEME_..."
+                            />
+                         </div>
+                         <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Secret (Optional)</label>
+                            <input 
+                                type="password"
+                                className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-medium outline-none focus:border-amber-500"
+                                value={localSettings.setuSecret || ''}
+                                onChange={e => setLocalSettings({...localSettings, setuSecret: e.target.value})}
+                                placeholder="Keep secret..."
+                            />
+                         </div>
                      </div>
                  </div>
              </div>
