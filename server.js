@@ -11,6 +11,10 @@ import { execSync } from 'child_process';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// --- CONFIGURATION PATH ---
+// Rewired to .builds/config/.env as requested
+const ENV_PATH = path.join(__dirname, '.builds', 'config', '.env');
+
 // --- SYSTEM DIAGNOSTICS & LOGGING ---
 let systemLog = [];
 const log = (msg, type = 'INFO') => {
@@ -20,12 +24,12 @@ const log = (msg, type = 'INFO') => {
     if (systemLog.length > 500) systemLog.shift();
 };
 
-// Load environment variables immediately and log status
-const envResult = dotenv.config();
+// Load environment variables immediately from custom path
+const envResult = dotenv.config({ path: ENV_PATH });
 if (envResult.error) {
-    log("No .env file found in root. Using default hardcoded credentials.", 'WARN');
+    log(`No .env file found at ${ENV_PATH}. Using default/runtime credentials.`, 'WARN');
 } else {
-    log("Configuration loaded from .env file.", 'SUCCESS');
+    log(`Configuration loaded from ${ENV_PATH}`, 'SUCCESS');
 }
 
 const app = express();
@@ -157,7 +161,8 @@ app.get('/api/debug/db', async (req, res) => {
             DB_HOST: process.env.DB_HOST ? 'Set' : 'Missing',
             DB_USER: process.env.DB_USER ? 'Set' : 'Missing',
             DB_PASS: process.env.DB_PASSWORD ? 'Set' : 'Missing',
-            DB_NAME: process.env.DB_NAME ? 'Set' : 'Missing'
+            DB_NAME: process.env.DB_NAME ? 'Set' : 'Missing',
+            ENV_PATH: ENV_PATH // Show where we are looking
         }
     });
 });
@@ -185,10 +190,16 @@ app.post('/api/debug/configure', async (req, res) => {
         return res.status(400).json({ success: false, error: e.message });
     }
 
-    // 2. Write to .env file
+    // 2. Write to .env file at the new location
     const envContent = `DB_HOST=${host || '127.0.0.1'}\nDB_USER=${user}\nDB_PASSWORD=${password}\nDB_NAME=${database}\nPORT=${PORT}\n`;
     try {
-        fs.writeFileSync(path.join(__dirname, '.env'), envContent);
+        // Ensure directory exists
+        const envDir = path.dirname(ENV_PATH);
+        if (!fs.existsSync(envDir)) {
+            fs.mkdirSync(envDir, { recursive: true });
+        }
+        
+        fs.writeFileSync(ENV_PATH, envContent);
         
         // 3. Update runtime process.env
         process.env.DB_HOST = host || '127.0.0.1';
@@ -199,10 +210,10 @@ app.post('/api/debug/configure', async (req, res) => {
         // 4. Re-initialize global DB connection
         await initDb();
         
-        log("Configuration updated successfully via UI.", 'SUCCESS');
+        log(`Configuration updated successfully at ${ENV_PATH}.`, 'SUCCESS');
         res.json({ success: true });
     } catch(e) {
-        log(`Failed to save .env: ${e.message}`, 'ERROR');
+        log(`Failed to save .env to ${ENV_PATH}: ${e.message}`, 'ERROR');
         res.status(500).json({ success: false, error: "Failed to save configuration file." });
     }
 });
