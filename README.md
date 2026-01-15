@@ -1,73 +1,71 @@
+
 # 💎 AuraGold Elite - System Architecture
 
-**Version:** 3.3.1 (MySQL Edition)
-**Stack:** React 19, Vite, PHP (PDO), MySQL, Tailwind CSS, Gemini AI.
+**Version:** 5.0.0 (Node.js Edition)
+**Stack:** React 19, Vite, Node.js (Express), MySQL, Tailwind CSS, Gemini AI.
 
-## 🧠 Business Logic & Core Philosophy
+## 🧠 Application Structure
+
+This is a **Full-Stack JavaScript Application**.
+
+1.  **Frontend:** A pure React Single Page Application (SPA).
+2.  **Backend:** A Node.js Express server (`server.js`) that serves the React app and handles API requests.
+3.  **Database:** MySQL.
 
 ### 1. Purpose: Cash Flow Assurance Engine
-This application is **not** a standard POS or a Debt Recovery tool for bad debts. It is a **proactive "Promise Keeper" system**.
-*   **Context:** The jewelry is **retained** by the jeweler (in the vault) until the final payment is made.
-*   **Goal:** Ensure the customer honors their payment schedule to maintain their contract benefits.
-*   **Mechanism:** The app uses AI to nudge customers *before* or *immediately after* a due date to prevent cash flow gaps, ensuring the jeweler has the liquidity they planned for.
+This application is a proactive "Promise Keeper" system for high-end jewelry management.
+*   **Context:** The jewelry is **retained** by the jeweler until the final payment.
+*   **Goal:** Ensure customers honor payment schedules.
+*   **Mechanism:** AI-driven nudges and "Gold Rate Protection" contracts.
 
-### 2. The Gold Rate Protection Contract
-The core value proposition is protecting the customer from gold price hikes, but this is treated as a **Conditional Liability**.
-
-*   **The Deal:** "We (the Jeweler) lock your rate at **₹6,600/g** today. You (the Customer) promise to pay **₹10k/month**."
-*   **The Condition:** If the customer pays on time, the Jeweler absorbs the market volatility (Liability).
-*   **The Breach (Lapse):** If the customer defaults on the payment schedule and ignores reminders, the "Rate Protection" is **REVOKED**.
-    *   **Status: ACTIVE (Protected):** Final Price = Net Weight × **Booked Rate** (+ Making/Tax).
-    *   **Status: LAPSED (Revoked):** Final Price = Net Weight × **Current Market Rate** (+ Making/Tax).
-
-### 3. Order Lifecycle
-1.  **Booking:** Order created, Rate locked, Payment Plan defined. Status: `ACTIVE`.
-2.  **Collection:** Monthly payments tracked. AI "Cash Flow Engine" sends specific reminders based on "Loss Aversion" (don't lose your rate!).
-3.  **Completion:** All milestones paid. Balance hits 0. Status: `COMPLETED` (Item ready for pickup).
-4.  **Handover:** Physical item is given to the customer. Status: `DELIVERED`.
-    *   *Note:* `DELIVERED` orders are **Archived** and excluded from live dashboard metrics to keep the financial view focused on pending cash flow.
+### 2. Order Lifecycle
+1.  **Booking:** Rate locked, Payment Plan defined. Status: `ACTIVE`.
+2.  **Collection:** Monthly payments tracked.
+3.  **Completion:** Balance hits 0. Status: `COMPLETED`.
+4.  **Handover:** Item delivered. Status: `DELIVERED` (Archived).
 
 ---
 
-## 💾 Critical Installation Step (Hostinger)
+## 🚀 Deployment Instructions (Hostinger VPS / Shared Node.js)
 
-Because of deployment restrictions, the PHP files are generated as `.md` files. **You must rename them manually.**
+Since this app uses a Node.js backend, you must use the **Node.js Selector** or a VPS. **Do not** treat this as a static HTML/PHP site.
 
-1.  **Upload** the contents of the `dist/` folder to your Hostinger `public_html/` folder.
-2.  Open **Hostinger File Manager** and navigate to `public_html/api/`.
-3.  **Rename the files**:
-    *   `db_config.md`  ➡️  `db_config.php`
-    *   `server.md`     ➡️  `server.php`
-    *   `test_db.md`    ➡️  `test_db.php`
-4.  **Edit `db_config.php`**:
-    *   Open the file.
-    *   Replace `'YOUR_DB_PASSWORD'` with your actual database password.
-    *   Save.
+### Step 1: Prepare Database
+1.  Create a MySQL Database in your control panel.
+2.  Note down the: `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`.
+3.  The application will **automatically** create the necessary tables (`aura_app_state`) on the first run.
 
-### Testing
-Once renamed, open `https://your-domain.com/api/test_db.php` in your browser. It should return a JSON response saying "Success".
+### Step 2: Configure Environment
+In your hosting panel (or `.env` file), set these variables:
+*   `DB_HOST`
+*   `DB_USER`
+*   `DB_PASSWORD`
+*   `DB_NAME`
+*   `API_KEY` (Your Google Gemini API Key)
+*   `PORT` (Usually handled automatically by Hostinger, but can be set to 3000)
+
+### Step 3: Deployment
+The GitHub Action is configured to:
+1.  Build the React App (`npm run build`).
+2.  Move `server.js` and `package.json` into the build folder.
+3.  Upload everything to `public_html`.
+
+**After upload:**
+1.  Go to your hosting panel's **Node.js Selector**.
+2.  Select the `public_html` folder.
+3.  **IMPORTANT:** Set "Application Startup File" to `server.js`.
+4.  Click **Run NPM Install**.
+5.  Click **Restart Application**.
+
+---
 
 ## 🛑 CORE PROTOCOLS
 
-### 1. Mobile-First Design Language (iOS)
-*   **Viewport:** Must use `viewport-fit=cover` to handle iPhone notches.
-*   **Input Handling:** All inputs must have `font-size: 16px` to prevent iOS Safari from zooming.
+### 1. Mobile-First Design
+*   **Viewport:** Uses `viewport-fit=cover` for notch support.
+*   **Input Handling:** Font sizes optimized to prevent iOS Safari zooming.
 
-### 2. Pricing Engine Logic
-1.  **Metal Value** = Net Weight × Purity Rate (24K/22K/18K).
-2.  **Wastage (VA)** = Metal Value × Percentage.
-3.  **Labor (Making)** = Rate per gram × Net Weight.
-4.  **Stone Charges** = Flat fee added.
-5.  **Subtotal** = Metal + Wastage + Labor + Stone.
-6.  **Final Total** = Subtotal + GST (default 3%).
+### 2. Pricing Engine
+1.  **Metal Value** = Net Weight × Purity Rate.
+2.  **Final Total** = Metal + Wastage + Labor + Stone + GST.
 
----
-
-## 🛠 Setup & Environment
-
-1.  **Environment Variables:**
-    Ensure `.env` exists with `VITE_API_KEY` (Gemini).
-    
-2.  **Deployment:**
-    Upload `dist/` contents to `public_html/`.
-    Ensure `api/` folder is uploaded and `db_config.php` is updated.

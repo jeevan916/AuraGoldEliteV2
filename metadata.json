@@ -1,6 +1,7 @@
 {
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "geolocation"
   ],
   "name": "AuraGoldEliteV2",
   "description": ""

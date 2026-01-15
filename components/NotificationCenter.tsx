@@ -1,10 +1,11 @@
+
 import React, { useState } from 'react';
 import { Bell, Send, CheckCircle, Clock, AlertCircle, MessageSquare, Zap, Loader2, BrainCircuit, ShieldAlert, TrendingUp, Smartphone, Mail } from 'lucide-react';
 import { NotificationTrigger, CollectionTone } from '../types';
 
 interface NotificationCenterProps {
   notifications: NotificationTrigger[];
-  onSend: (id: string) => void;
+  onSend: (id: string, channel: 'WHATSAPP' | 'SMS') => void;
   onRefresh: () => void;
   loading: boolean;
   isSending?: string | null;
@@ -106,7 +107,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, 
 
               {!notif.sent && (
                 <button 
-                  onClick={() => onSend(notif.id)}
+                  onClick={() => onSend(notif.id, channel)}
                   disabled={!!isSending}
                   className={`bg-slate-900 text-white px-5 py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-all shadow-lg ${isSending === notif.id ? 'opacity-70 cursor-wait' : ''}`}
                 >

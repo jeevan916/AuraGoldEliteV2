@@ -32,6 +32,7 @@ import { goldRateService } from './services/goldRateService';
 import { storageService } from './services/storageService';
 import { geminiService } from './services/geminiService';
 import { whatsappService } from './services/whatsappService';
+import { smsService } from './services/smsService';
 import { Order, GlobalSettings, AppResolutionPath, Customer, NotificationTrigger, PaymentPlanTemplate } from './types';
 
 type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'CUSTOMERS' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU';
@@ -167,14 +168,20 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSendNotification = async (id: string) => {
+  const handleSendNotification = async (id: string, channel: 'WHATSAPP' | 'SMS' = 'WHATSAPP') => {
     setSendingNotifId(id);
     const notif = notifications.find(n => n.id === id);
     if (!notif) return setSendingNotifId(null);
 
     const order = orders.find(o => o.customerName === notif.customerName);
     if (order) {
-        const res = await whatsappService.sendMessage(order.customerContact, notif.message, notif.customerName);
+        let res;
+        if (channel === 'SMS') {
+            res = await smsService.sendSMS(order.customerContact, notif.message, notif.customerName);
+        } else {
+            res = await whatsappService.sendMessage(order.customerContact, notif.message, notif.customerName);
+        }
+        
         if (res.success && res.logEntry) {
             addLog(res.logEntry);
             setNotifications(prev => prev.map(n => n.id === id ? { ...n, sent: true } : n));

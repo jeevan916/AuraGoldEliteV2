@@ -1,4 +1,3 @@
-
 import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate } from '../types';
 import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES, INITIAL_TEMPLATES } from '../constants';
 
@@ -58,18 +57,16 @@ class StorageService {
 
   /**
    * Attempts to pull the latest state from the backend.
-   * Uses relative pathing which is required for Hostinger same-origin deployments.
    */
   public async syncFromServer(): Promise<{ success: boolean; message: string }> {
     this.syncStatus = 'SYNCING';
     this.notify();
 
     try {
-      console.log("[Storage] Syncing with local backend...");
+      console.log("[Storage] Syncing with /api/state...");
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-      // Using relative URL ensures it works regardless of the domain (e.g., hostingersite.com)
       const res = await fetch('/api/state', {
         headers: { 
           'Accept': 'application/json',
@@ -80,33 +77,31 @@ class StorageService {
       clearTimeout(timeoutId);
 
       if (!res.ok) {
-        throw new Error(`Backend Error: ${res.status}`);
+        throw new Error(`Server status: ${res.status}`);
       }
 
       const serverData = await res.json();
       
       if (serverData && serverData.lastUpdated > (this.state.lastUpdated || 0)) {
-          console.log("[Storage] Remote state is newer. Merging...");
+          console.log("[Storage] Server state is newer. Syncing.");
           this.state = { ...DEFAULT_STATE, ...serverData };
           this.saveToLocal();
-      } else if (serverData) {
-          console.log("[Storage] Remote state found but local is newer or equal.");
       }
 
       this.syncStatus = 'CONNECTED';
       this.notify();
-      return { success: true, message: "Database Linked" };
+      return { success: true, message: "Synced with Cloud" };
 
     } catch (e: any) {
-      console.warn("[Storage] Remote sync skipped or failed. Using Local Cache.", e.message);
+      console.warn("[Storage] Sync failed, using local fallback:", e.message);
       this.syncStatus = 'LOCAL_FALLBACK';
       this.notify();
-      return { success: false, message: "Local Mode" };
+      return { success: false, message: "Local Cache Active" };
     }
   }
 
   /**
-   * Pushes current state to the backend database.
+   * Pushes current state to the persistent backend.
    */
   private async syncToBackend() {
     this.saveToLocal();
@@ -125,6 +120,7 @@ class StorageService {
         this.syncStatus = 'LOCAL_FALLBACK';
       }
     } catch (e) {
+      console.error("[Storage] Backend push error:", e);
       this.syncStatus = 'LOCAL_FALLBACK';
     } finally {
       this.notify();
