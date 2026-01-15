@@ -334,7 +334,47 @@ app.post('/api/whatsapp/templates', async (req, res) => {
     }
 });
 
-// 3. Delete Template (DELETE)
+// 3. Edit Template (POST /:id) - NEW ROUTE FOR FIXING TEMPLATES
+app.post('/api/whatsapp/templates/:id', async (req, res) => {
+    const token = req.headers['x-auth-token'];
+    const { id } = req.params;
+    const { components, category } = req.body;
+
+    if (!token || !id) {
+        return res.status(400).json({ success: false, error: "Missing Token or Template ID" });
+    }
+
+    try {
+        const metaUrl = `https://graph.facebook.com/v21.0/${id}`;
+        log(`Editing Template on Meta: ${id}`, 'INFO');
+
+        const response = await fetch(metaUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                components,
+                // Only pass category if provided; Meta may restrict this based on template status
+                ...(category && { category }) 
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            log(`Meta Edit Error: ${data.error.message}`, 'ERROR');
+            return res.status(400).json({ success: false, error: data.error.message });
+        }
+
+        res.json({ success: true, data });
+    } catch (e) {
+        log(`Template Edit Exception: ${e.message}`, 'ERROR');
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 4. Delete Template (DELETE)
 app.delete('/api/whatsapp/templates', async (req, res) => {
     const wabaId = req.headers['x-waba-id'];
     const token = req.headers['x-auth-token'];
@@ -366,7 +406,7 @@ app.delete('/api/whatsapp/templates', async (req, res) => {
     }
 });
 
-// 4. Send Message (POST)
+// 5. Send Message (POST)
 app.post('/api/whatsapp/send', async (req, res) => {
     const phoneId = req.headers['x-phone-id'];
     const token = req.headers['x-auth-token'];
