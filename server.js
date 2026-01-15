@@ -26,8 +26,9 @@ let pool = null;
 const DB_USER = 'u477692720_jeevan1';
 const DB_NAME = 'u477692720_AuraGoldElite';
 const DB_PASS = 'AuraGold@2025';
-// Use 127.0.0.1 instead of localhost to prevent IPv6 lookup issues on some hosts
-const DB_HOST = '127.0.0.1'; 
+// Reverted to localhost. The error "Access denied for user ... @127.0.0.1" indicates 
+// the user is strictly bound to 'localhost' in MySQL privileges.
+const DB_HOST = 'localhost'; 
 
 const getDbConfig = () => ({
   host: process.env.DB_HOST || DB_HOST,
