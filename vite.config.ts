@@ -5,14 +5,13 @@ import process from 'node:process';
 import path from 'path';
 
 export default defineConfig(({ mode }) => {
-  // Update env loading to new path
   const envDir = path.resolve(process.cwd(), '.builds', 'config');
   const env = loadEnv(mode, envDir, '');
 
   return {
     plugins: [react()],
     base: './', 
-    envDir: '.builds/config', // Explicitly set envDir for Vite
+    envDir: '.builds/config',
     define: {
       'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),
     },
@@ -22,6 +21,15 @@ export default defineConfig(({ mode }) => {
       target: 'esnext',
       modulePreload: {
         polyfill: false
+      },
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom'],
+            'vendor-ui': ['lucide-react', 'recharts'],
+            'vendor-utils': ['jspdf', 'jspdf-autotable', '@google/genai'],
+          }
+        }
       }
     },
     server: {
