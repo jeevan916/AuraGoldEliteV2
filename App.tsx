@@ -315,7 +315,7 @@ const App: React.FC = () => {
               {view === 'ORDER_DETAILS' && (activeOrder ? <OrderDetails order={activeOrder} settings={settings} onBack={() => setView('DASH')} onUpdateStatus={(itemId, status) => updateItemStatus(activeOrder.id, itemId, status)} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} logs={logs} onAddLog={addLog} /> : <div className="text-center py-20 text-slate-400 font-medium">Please select an order.</div>)}
               {view === 'CUSTOMERS' && <CustomerList customers={customers} orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onMessageSent={addLog} />}
               {view === 'COLLECTIONS' && <PaymentCollections orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onSendWhatsApp={()=>{}} settings={settings} />}
-              {view === 'STRATEGY' && <NotificationCenter notifications={notifications} onRefresh={handleRunStrategy} loading={isStrategyLoading} onSend={handleSendNotification} isSending={sendingNotifId} />}
+              {view === 'STRATEGY' && <NotificationCenter notifications={notifications} customers={customers} onRefresh={handleRunStrategy} loading={isStrategyLoading} onSend={handleSendNotification} isSending={sendingNotifId} />}
               {view === 'TEMPLATES' && <WhatsAppTemplates templates={templates} onUpdate={setTemplates} />}
               {view === 'PLANS' && <PlanManager templates={planTemplates} onUpdate={handleUpdatePlans} />}
               {view === 'LOGS' && <WhatsAppLogs logs={logs} onViewChat={(phone) => { setView('WHATSAPP'); (window as any).initialChatContact = phone; }} />}

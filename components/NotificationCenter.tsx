@@ -1,23 +1,51 @@
 
 import React, { useState } from 'react';
-import { Bell, Send, CheckCircle, Clock, AlertCircle, MessageSquare, Zap, Loader2, BrainCircuit, ShieldAlert, TrendingUp, Smartphone, Mail } from 'lucide-react';
-import { NotificationTrigger, CollectionTone } from '../types';
+import { Send, CheckCircle, Clock, AlertCircle, MessageSquare, Zap, Loader2, BrainCircuit, TrendingUp, Smartphone } from 'lucide-react';
+import { NotificationTrigger, CollectionTone, Customer, RiskProfile } from '../types';
 
 interface NotificationCenterProps {
   notifications: NotificationTrigger[];
+  customers?: Customer[]; // Added to calculate risk
   onSend: (id: string, channel: 'WHATSAPP' | 'SMS') => void;
   onRefresh: () => void;
   loading: boolean;
   isSending?: string | null;
 }
 
-const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, onSend, onRefresh, loading, isSending }) => {
+const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, customers = [], onSend, onRefresh, loading, isSending }) => {
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'SENT'>('PENDING');
-  const [channel, setChannel] = useState<'WHATSAPP' | 'SMS'>('WHATSAPP');
+  const [channelOverride, setChannelOverride] = useState<'AUTO' | 'WHATSAPP' | 'SMS'>('AUTO');
 
   const filtered = notifications.filter(n => 
     filter === 'ALL' ? true : (filter === 'SENT' ? n.sent : !n.sent)
   );
+
+  // Auto Configuration according to Customer Grade / Risk
+  const getCustomerGrade = (customerName: string): RiskProfile => {
+      const customer = customers.find(c => c.name === customerName);
+      if (!customer) return 'REGULAR';
+      
+      // Simple heuristic: VIP if spent > 5L, High Risk if not found or overdue (assumed by trigger type)
+      if (customer.totalSpent > 500000) return 'VIP';
+      return 'REGULAR';
+  };
+
+  const getRecommendedChannel = (notif: NotificationTrigger) => {
+      const grade = getCustomerGrade(notif.customerName);
+      
+      // Debt Recovery Logic:
+      // High urgency or High Risk customers get SMS (Offline/Guaranteed Delivery)
+      if (notif.type === 'OVERDUE' || notif.tone === 'URGENT') return 'SMS';
+      if (grade === 'HIGH_RISK') return 'SMS';
+      
+      // VIP/Regulars get WhatsApp (Rich Media/Personal)
+      return 'WHATSAPP'; 
+  };
+
+  const handleSmartSend = (id: string, notif: NotificationTrigger) => {
+      const targetChannel = channelOverride === 'AUTO' ? getRecommendedChannel(notif) : channelOverride;
+      onSend(id, targetChannel);
+  };
 
   const getToneStyle = (tone?: CollectionTone) => {
       switch(tone) {
@@ -37,7 +65,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, 
             <BrainCircuit className="text-emerald-600" /> Payment Assurance Engine
           </h2>
           <p className="text-xs text-slate-500 font-medium mt-1">
-             AI-driven milestone enforcement & contract compliance.
+             AI-driven debt recovery & contract compliance.
           </p>
         </div>
         <button 
@@ -64,25 +92,33 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, 
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto justify-center">
-             <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Channel:</span>
+             <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Channel Mode:</span>
              <button 
-                onClick={() => setChannel('WHATSAPP')} 
-                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 transition-all ${channel === 'WHATSAPP' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-white border text-slate-400'}`}
+                onClick={() => setChannelOverride('AUTO')} 
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 transition-all ${channelOverride === 'AUTO' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-white border text-slate-400'}`}
              >
-                <MessageSquare size={12} /> WhatsApp
+                <BrainCircuit size={12} /> Auto (Risk Graded)
              </button>
              <button 
-                onClick={() => setChannel('SMS')} 
-                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 transition-all ${channel === 'SMS' ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-white border text-slate-400'}`}
+                onClick={() => setChannelOverride('WHATSAPP')} 
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 transition-all ${channelOverride === 'WHATSAPP' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-white border text-slate-400'}`}
              >
-                <Smartphone size={12} /> Msg91 SMS
+                <MessageSquare size={12} /> WA
+             </button>
+             <button 
+                onClick={() => setChannelOverride('SMS')} 
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 transition-all ${channelOverride === 'SMS' ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-white border text-slate-400'}`}
+             >
+                <Smartphone size={12} /> SMS
              </button>
           </div>
       </div>
 
       {/* Notification List */}
       <div className="space-y-4">
-        {filtered.map(notif => (
+        {filtered.map(notif => {
+          const activeChannel = channelOverride === 'AUTO' ? getRecommendedChannel(notif) : channelOverride;
+          return (
           <div key={notif.id} className={`bg-white p-6 rounded-[2rem] border-2 transition-all flex flex-col gap-4 ${notif.sent ? 'opacity-60 border-slate-100' : 'hover:border-emerald-400 border-slate-50 shadow-sm'}`}>
             <div className="flex justify-between items-start">
               <div className="flex gap-4">
@@ -107,14 +143,17 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, 
 
               {!notif.sent && (
                 <button 
-                  onClick={() => onSend(notif.id, channel)}
+                  onClick={() => handleSmartSend(notif.id, notif)}
                   disabled={!!isSending}
                   className={`bg-slate-900 text-white px-5 py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-all shadow-lg ${isSending === notif.id ? 'opacity-70 cursor-wait' : ''}`}
                 >
                   {isSending === notif.id ? (
                     <><Loader2 size={14} className="animate-spin" /> Sending...</>
                   ) : (
-                    <><Send size={14} /> Send {channel}</>
+                    <>
+                        <Send size={14} /> 
+                        {activeChannel === 'WHATSAPP' ? 'WhatsApp' : 'Msg91 SMS'}
+                    </>
                   )}
                 </button>
               )}
@@ -124,7 +163,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, 
                 <div className="bg-gradient-to-r from-amber-50 to-white p-4 rounded-2xl border border-amber-100 flex gap-3">
                    <BrainCircuit className="text-amber-600 shrink-0" size={18} />
                    <div className="text-xs text-amber-900/80 font-medium leading-relaxed">
-                      <span className="font-bold text-amber-900 uppercase text-[10px] tracking-wider block mb-1">AI Reasoning</span>
+                      <span className="font-bold text-amber-900 uppercase text-[10px] tracking-wider block mb-1">AI Reasoning ({activeChannel} Selected)</span>
                       {notif.strategyReasoning}
                    </div>
                 </div>
@@ -138,21 +177,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, 
                     <TrendingUp size={24} />
                 </div>
             </div>
-
-            <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-               <span>Generated {new Date(notif.date).toLocaleDateString()}</span>
-               {notif.sent && <span className="text-emerald-600 flex items-center gap-1"><CheckCircle size={12} /> Successfully Dispatched</span>}
-            </div>
           </div>
-        ))}
-
-        {filtered.length === 0 && (
-          <div className="py-24 text-center text-slate-400 bg-white border-2 border-dashed border-slate-200 rounded-[2.5rem]">
-            <BrainCircuit className="w-16 h-16 mx-auto mb-4 opacity-10" />
-            <p className="font-black text-sm uppercase tracking-widest">No active triggers</p>
-            <p className="text-xs mt-2 font-medium opacity-60">Run the strategy scan to identify collection opportunities.</p>
-          </div>
-        )}
+        )})}
       </div>
     </div>
   );

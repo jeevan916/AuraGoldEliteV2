@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, Zap, Smartphone, Key, ShieldCheck, Info, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, Wifi, ExternalLink } from 'lucide-react';
+import { Save, RefreshCw, Zap, Smartphone, Key, ShieldCheck, Info, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, Wifi, ExternalLink, CreditCard, MessageSquare } from 'lucide-react';
 import { GlobalSettings } from '../types';
 import { goldRateService } from '../services/goldRateService';
 import { storageService } from '../services/storageService';
@@ -85,7 +85,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
       <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
           <h2 className="text-3xl md:text-4xl font-serif-elite font-black text-slate-900 tracking-tight">Console Configuration</h2>
-          <p className="text-slate-500 text-xs mt-2 font-medium">Control institutional pricing logic and automated communication protocols.</p>
+          <p className="text-slate-500 text-xs mt-2 font-medium">Control institutional pricing logic, communication, and payment gateways.</p>
         </div>
         <div className="flex gap-3">
           <button 
@@ -138,23 +138,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                         <p>{dbMessage || "Click 'Test Connection' to verify server status."}</p>
                     </div>
                  </div>
-
-                 {dbStatus === 'ERROR' && (
-                     <div className="bg-slate-900 text-slate-300 p-5 rounded-2xl text-[11px] leading-relaxed space-y-3 border border-slate-700">
-                        <p className="font-bold text-white flex items-center gap-2">
-                            <Info size={14} className="text-amber-500" /> Troubleshooting Hostinger 404
-                        </p>
-                        <ul className="list-disc ml-4 space-y-1 opacity-80">
-                            <li>Ensure the <strong>Node.js Selector</strong> in Hostinger is active.</li>
-                            <li>The Application Startup File should be <code>server.js</code> (built from server.ts).</li>
-                            <li>Check your <code>public_html/.htaccess</code> file—it must route requests to your Node process.</li>
-                            <li>Verify <strong>DB_HOST, DB_USER, DB_PASSWORD</strong> are set in your Hostinger environment variables.</li>
-                        </ul>
-                        <button onClick={() => window.open('https://hpanel.hostinger.com', '_blank')} className="text-amber-400 font-bold hover:underline flex items-center gap-1">
-                            Open Hostinger Panel <ExternalLink size={10} />
-                        </button>
-                     </div>
-                 )}
              </div>
           </div>
 
@@ -178,19 +161,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                     onChange={v => setLocalSettings({...localSettings, currentGoldRate22K: v})}
                 />
              </div>
-
-             <div className="pt-8 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-10">
-                <PricingField 
-                    label="Policy Tax (GST) %" 
-                    value={localSettings.defaultTaxRate} 
-                    onChange={v => setLocalSettings({...localSettings, defaultTaxRate: v})}
-                />
-                <PricingField 
-                    label="Rate Protection Cap" 
-                    value={localSettings.goldRateProtectionMax} 
-                    onChange={v => setLocalSettings({...localSettings, goldRateProtectionMax: v})}
-                />
-             </div>
           </div>
 
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200/60 shadow-sm space-y-8">
@@ -199,7 +169,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                     <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-600">
                         <Smartphone size={16} />
                     </div>
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Communication API (Meta)</h3>
+                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Communication API</h3>
                 </div>
                 <button 
                     onClick={handleTestWhatsApp}
@@ -211,17 +181,12 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                     }`}
                 >
                     {waStatus === 'TESTING' ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
-                    Verify Connection
+                    Verify Meta
                 </button>
              </div>
              
-             {waMessage && (
-                 <div className={`p-3 rounded-xl text-xs font-bold border ${waStatus === 'SUCCESS' ? 'bg-emerald-50 border-emerald-100 text-emerald-800' : 'bg-rose-50 border-rose-100 text-rose-800'}`}>
-                     {waMessage}
-                 </div>
-             )}
-             
              <div className="space-y-6">
+                <h4 className="text-[10px] font-black uppercase text-emerald-600">Meta WhatsApp (Official)</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <MetaField label="Phone Number ID" value={localSettings.whatsappPhoneNumberId || ''} onChange={v => setLocalSettings({...localSettings, whatsappPhoneNumberId: v})} placeholder="1016..." />
                     <MetaField label="WABA Account ID" value={localSettings.whatsappBusinessAccountId || ''} onChange={v => setLocalSettings({...localSettings, whatsappBusinessAccountId: v})} placeholder="1056..." />
@@ -234,7 +199,34 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                     value={localSettings.whatsappBusinessToken || ''}
                     onChange={e => setLocalSettings({...localSettings, whatsappBusinessToken: e.target.value})}
                    />
-                   <Key size={14} className="absolute right-5 bottom-4 text-slate-300" />
+                </div>
+                
+                <hr className="border-slate-100 my-4"/>
+                
+                <h4 className="text-[10px] font-black uppercase text-blue-600">Msg91 SMS (Offline Fallback)</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <MetaField label="Auth Key" value={localSettings.msg91AuthKey || ''} onChange={v => setLocalSettings({...localSettings, msg91AuthKey: v})} placeholder="3456..." />
+                    <MetaField label="Sender ID" value={localSettings.msg91SenderId || ''} onChange={v => setLocalSettings({...localSettings, msg91SenderId: v})} placeholder="AURGLD" />
+                </div>
+             </div>
+          </div>
+
+          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200/60 shadow-sm space-y-8">
+             <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600">
+                    <CreditCard size={16} />
+                </div>
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Payment Gateways</h3>
+             </div>
+             
+             <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <MetaField label="Razorpay Key ID" value={localSettings.razorpayKeyId || ''} onChange={v => setLocalSettings({...localSettings, razorpayKeyId: v})} placeholder="rzp_test_..." />
+                    <MetaField label="Razorpay Secret" value={localSettings.razorpayKeySecret || ''} onChange={v => setLocalSettings({...localSettings, razorpayKeySecret: v})} placeholder="Secret Key" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <MetaField label="Setu Scheme ID" value={localSettings.setuSchemeId || ''} onChange={v => setLocalSettings({...localSettings, setuSchemeId: v})} placeholder="SCHEME_..." />
+                    <MetaField label="Setu Secret" value={localSettings.setuSecret || ''} onChange={v => setLocalSettings({...localSettings, setuSecret: v})} placeholder="Setu Secret" />
                 </div>
              </div>
           </div>
@@ -246,19 +238,10 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                   <ShieldCheck size={32} className="text-amber-500" />
                   <h4 className="text-lg font-bold leading-tight">Institutional Integrity Policy</h4>
                   <p className="text-sm text-slate-400 leading-relaxed font-medium">
-                    All rate modifications are logged and applied to new contract generation instantly. Rate protection locks for existing VIP clients remain until the specific contract matures.
+                    Settings updates apply immediately. Payment keys are stored securely on your server environment, not in the browser bundle.
                   </p>
                </div>
                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl group-hover:bg-amber-500/20 transition-all"></div>
-            </div>
-
-            <div className="bg-amber-50 border border-amber-100 p-6 rounded-[2.5rem] space-y-4">
-               <div className="flex items-center gap-2 text-amber-800 font-black text-xs uppercase tracking-widest">
-                  <Info size={14} /> Audit Notice
-               </div>
-               <p className="text-xs text-amber-900/70 leading-relaxed font-medium">
-                  Ensure the **WhatsApp Token** has `whatsapp_business_messaging` and `whatsapp_business_management` permissions active in the Meta Developer Portal.
-               </p>
             </div>
         </aside>
       </div>
