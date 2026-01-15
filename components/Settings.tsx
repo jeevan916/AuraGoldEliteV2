@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, Zap, Smartphone, ShieldCheck, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, Wifi, CreditCard, LayoutGrid, Plus, Trash2 } from 'lucide-react';
+import { Save, RefreshCw, Zap, ShieldCheck, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, LayoutGrid, Plus, Trash2, Info } from 'lucide-react';
 import { GlobalSettings, CatalogItem } from '../types';
 import { goldRateService } from '../services/goldRateService';
 import { storageService } from '../services/storageService';
@@ -19,8 +19,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
   const [syncing, setSyncing] = useState(false);
   const [dbStatus, setDbStatus] = useState<'IDLE' | 'TESTING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [dbMessage, setDbMessage] = useState('');
-  const [waStatus, setWaStatus] = useState<'IDLE' | 'TESTING' | 'SUCCESS' | 'ERROR'>('IDLE');
-  const [waMessage, setWaMessage] = useState('');
+  const [debugInfo, setDebugInfo] = useState<any>(null);
 
   // Catalog State
   const [newItem, setNewItem] = useState<Partial<CatalogItem>>({
@@ -76,34 +75,34 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
 
   const handleTestDatabase = async () => {
       setDbStatus('TESTING');
-      setDbMessage('Pinging AuraGold Backend...');
-      const result = await storageService.forceSync();
-      if (result.success) {
-          setDbStatus('SUCCESS');
-          setDbMessage(result.message);
-      } else {
+      setDbMessage('Diagnosing connection...');
+      setDebugInfo(null);
+      
+      try {
+          // First try the standard sync
+          const result = await storageService.forceSync();
+          if (result.success) {
+              setDbStatus('SUCCESS');
+              setDbMessage(result.message);
+          } else {
+              // If standard sync fails, call the detailed debug endpoint
+              setDbStatus('ERROR');
+              setDbMessage("Connection Failed. Fetching diagnostics...");
+              
+              const debugRes = await fetch('/api/debug/db');
+              const debugData = await debugRes.json();
+              
+              setDebugInfo(debugData);
+              if (debugData.error) {
+                  setDbMessage(`Error: ${debugData.error}`);
+              } else {
+                  setDbMessage("Unknown Connection Error");
+              }
+          }
+      } catch (e: any) {
           setDbStatus('ERROR');
-          setDbMessage(result.message);
+          setDbMessage(`Network Error: ${e.message}`);
       }
-  };
-
-  const handleTestWhatsApp = async () => {
-    onUpdate(localSettings);
-    setWaStatus('TESTING');
-    setWaMessage('Validating credentials with Meta Graph API...');
-    try {
-        const result = await whatsappService.validateCredentials();
-        if (result.success) {
-            setWaStatus('SUCCESS');
-            setWaMessage(result.message);
-        } else {
-            setWaStatus('ERROR');
-            setWaMessage(result.message);
-        }
-    } catch (e: any) {
-        setWaStatus('ERROR');
-        setWaMessage(e.message || "Unknown Validation Error");
-    }
   };
 
   return (
@@ -244,6 +243,18 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                 </div>
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Backend Connection</h3>
              </div>
+             
+             {debugInfo && (
+                 <div className="bg-slate-900 text-slate-300 p-4 rounded-xl text-xs font-mono overflow-auto">
+                     <p className="text-amber-400 font-bold mb-2">Diagnostic Report:</p>
+                     <p>Host: {debugInfo.config?.host}</p>
+                     <p>Database: {debugInfo.config?.database}</p>
+                     <p>User: {debugInfo.config?.user}</p>
+                     <p>Connected: {debugInfo.connected ? 'YES' : 'NO'}</p>
+                     {debugInfo.error && <p className="text-rose-400 mt-2">Error: {debugInfo.error}</p>}
+                 </div>
+             )}
+
              <div className="flex flex-col gap-4">
                  <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
                     <button 
