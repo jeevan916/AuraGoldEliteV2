@@ -8,11 +8,25 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 
-// Load environment variables immediately
-dotenv.config();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// --- SYSTEM DIAGNOSTICS & LOGGING ---
+let systemLog = [];
+const log = (msg, type = 'INFO') => {
+    const entry = `[${new Date().toLocaleTimeString()}] [${type}] ${msg}`;
+    console.log(entry);
+    systemLog.push(entry);
+    if (systemLog.length > 500) systemLog.shift();
+};
+
+// Load environment variables immediately and log status
+const envResult = dotenv.config();
+if (envResult.error) {
+    log("No .env file found in root. Using default hardcoded credentials.", 'WARN');
+} else {
+    log("Configuration loaded from .env file.", 'SUCCESS');
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,27 +35,12 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// --- SYSTEM DIAGNOSTICS & LOGGING ---
-let systemLog = [];
-const log = (msg, type = 'INFO') => {
-    const entry = `[${new Date().toLocaleTimeString()}] [${type}] ${msg}`;
-    console.log(entry);
-    systemLog.push(entry);
-    // Keep log size manageable
-    if (systemLog.length > 500) systemLog.shift();
-};
-
 // --- DATABASE CONFIGURATION ---
 let pool = null;
 
-// Helper to mask password in logs
-const maskConfig = (config) => ({
-    ...config,
-    password: config.password ? '****' : '(none)'
-});
-
-const DB_CONFIG = {
-    host: process.env.DB_HOST || 'localhost',
+// Dynamic configuration getter
+const getConfig = () => ({
+    host: process.env.DB_HOST || '127.0.0.1', // Force IPv4
     user: process.env.DB_USER || 'u477692720_jeevan1',
     password: process.env.DB_PASSWORD || 'AuraGold@2025',
     database: process.env.DB_NAME || 'u477692720_AuraGoldElite',
@@ -49,17 +48,30 @@ const DB_CONFIG = {
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    connectTimeout: 10000 // 10s timeout
-};
+    connectTimeout: 10000
+});
+
+// Helper to mask password
+const maskConfig = (config) => ({
+    ...config,
+    password: config.password ? '****' : '(none)'
+});
 
 async function initDb() {
-    log(`Attempting Database Connection to ${DB_CONFIG.host}...`, 'INFO');
+    const config = getConfig();
+    log(`Attempting Database Connection to ${config.host}...`, 'INFO');
+    
+    // Close existing pool if any
+    if (pool) {
+        try { await pool.end(); } catch(e) {}
+        pool = null;
+    }
+
     try {
-        pool = mysql.createPool(DB_CONFIG);
+        pool = mysql.createPool(config);
         const connection = await pool.getConnection();
-        log(`Database Connected Successfully: ${DB_CONFIG.database}`, 'SUCCESS');
+        log(`Database Connected Successfully: ${config.database}`, 'SUCCESS');
         
-        // Ensure table exists
         await connection.query(`
             CREATE TABLE IF NOT EXISTS aura_app_state (
                 id INT PRIMARY KEY,
@@ -71,11 +83,6 @@ async function initDb() {
         return { success: true };
     } catch (err) {
         log(`Database Connection Failed: ${err.message}`, 'ERROR');
-        // If pool was created but connection failed, end it to prevent leaks
-        if (pool) {
-            try { await pool.end(); } catch(e) {}
-            pool = null;
-        }
         return { success: false, error: err.message };
     }
 }
@@ -83,7 +90,6 @@ async function initDb() {
 // Initial connection attempt
 initDb();
 
-// Middleware to ensure DB is connected or try reconnecting
 const ensureDb = async (req, res, next) => {
     if (!pool) {
         const result = await initDb();
@@ -91,7 +97,7 @@ const ensureDb = async (req, res, next) => {
             return res.status(503).json({ 
                 error: "Database unavailable", 
                 details: result.error,
-                config: maskConfig(DB_CONFIG) // Send masked config for debugging
+                config: maskConfig(getConfig())
             });
         }
     }
@@ -107,13 +113,10 @@ const isValidBuild = (dirPath) => {
     if (!fs.existsSync(indexPath)) return false;
     try {
         const content = fs.readFileSync(indexPath, 'utf8');
-        // Basic check to see if it's a built file (usually has hashed filenames in scripts) or the raw source
-        // If it contains src="./index.tsx", it's likely the source file, not built.
         return !content.includes('src="./index.tsx"'); 
     } catch (e) { return false; }
 };
 
-// Auto-Build Logic
 if (isValidBuild(__dirname)) {
     staticPath = __dirname;
     log(`Serving pre-built app from root.`);
@@ -123,24 +126,14 @@ if (isValidBuild(__dirname)) {
 } else {
     log("Valid build not found. Triggering Auto-Build...", 'WARN');
     try {
-        // Clean previous failed builds
         if (fs.existsSync(path.join(__dirname, 'node_modules', '.vite'))) {
             fs.rmSync(path.join(__dirname, 'node_modules', '.vite'), { recursive: true, force: true });
         }
-        
         const buildOutput = execSync('npm install && npx vite build', { encoding: 'utf8', stdio: 'pipe' });
         log(buildOutput);
-        
-        if (isValidBuild(possibleDist)) {
-            staticPath = possibleDist;
-            log("Auto-Build Successful!", 'SUCCESS');
-        } else {
-            log("Auto-Build finished but valid index.html not found.", 'ERROR');
-        }
+        if (isValidBuild(possibleDist)) staticPath = possibleDist;
     } catch (e) {
         log(`Auto-Build Failed: ${e.message}`, 'CRITICAL');
-        if (e.stdout) log(e.stdout);
-        if (e.stderr) log(e.stderr);
     }
 }
 
@@ -150,18 +143,16 @@ if (staticPath) {
 
 // --- API ROUTES ---
 
-// Health Check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', uptime: process.uptime(), db: !!pool });
 });
 
-// Detailed Database Diagnostic Endpoint
 app.get('/api/debug/db', async (req, res) => {
     const result = await initDb();
     res.json({
         connected: result.success,
         error: result.error || null,
-        config: maskConfig(DB_CONFIG),
+        config: maskConfig(getConfig()),
         env: {
             DB_HOST: process.env.DB_HOST ? 'Set' : 'Missing',
             DB_USER: process.env.DB_USER ? 'Set' : 'Missing',
@@ -169,6 +160,51 @@ app.get('/api/debug/db', async (req, res) => {
             DB_NAME: process.env.DB_NAME ? 'Set' : 'Missing'
         }
     });
+});
+
+// Endpoint to update credentials from UI
+app.post('/api/debug/configure', async (req, res) => {
+    const { host, user, password, database } = req.body;
+    
+    // 1. Test the new credentials
+    log(`Testing new configuration for user: ${user}`, 'INFO');
+    try {
+        const tempPool = mysql.createPool({ 
+            host: host || '127.0.0.1', 
+            user, 
+            password, 
+            database, 
+            connectTimeout: 5000 
+        });
+        const conn = await tempPool.getConnection();
+        await conn.ping();
+        conn.release();
+        await tempPool.end();
+    } catch(e) {
+        log(`Configuration test failed: ${e.message}`, 'ERROR');
+        return res.status(400).json({ success: false, error: e.message });
+    }
+
+    // 2. Write to .env file
+    const envContent = `DB_HOST=${host || '127.0.0.1'}\nDB_USER=${user}\nDB_PASSWORD=${password}\nDB_NAME=${database}\nPORT=${PORT}\n`;
+    try {
+        fs.writeFileSync(path.join(__dirname, '.env'), envContent);
+        
+        // 3. Update runtime process.env
+        process.env.DB_HOST = host || '127.0.0.1';
+        process.env.DB_USER = user;
+        process.env.DB_PASSWORD = password;
+        process.env.DB_NAME = database;
+        
+        // 4. Re-initialize global DB connection
+        await initDb();
+        
+        log("Configuration updated successfully via UI.", 'SUCCESS');
+        res.json({ success: true });
+    } catch(e) {
+        log(`Failed to save .env: ${e.message}`, 'ERROR');
+        res.status(500).json({ success: false, error: "Failed to save configuration file." });
+    }
 });
 
 app.get('/api/gold-rate', (req, res) => {
@@ -206,16 +242,12 @@ app.post('/api/whatsapp/send', async (req, res) => {
     res.json({ success: true, messageId: `mock-${Date.now()}` });
 });
 
-// Catch-all handler
 app.get('*', (req, res) => {
-    if (req.path.startsWith('/api')) {
-        return res.status(404).json({ error: "API Endpoint Not Found" });
-    }
-    
+    if (req.path.startsWith('/api')) return res.status(404).json({ error: "API Endpoint Not Found" });
     if (staticPath && fs.existsSync(path.join(staticPath, 'index.html'))) {
         res.sendFile(path.join(staticPath, 'index.html'));
     } else {
-        res.status(500).send(`<h1>Server Error</h1><p>Application build not found. Check server logs.</p><pre>${systemLog.join('\n')}</pre>`);
+        res.status(500).send(`<h1>Server Error</h1><p>Application build not found.</p><pre>${systemLog.join('\n')}</pre>`);
     }
 });
 

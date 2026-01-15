@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, Zap, ShieldCheck, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, LayoutGrid, Plus, Trash2, Info } from 'lucide-react';
+import { Save, RefreshCw, Zap, ShieldCheck, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, LayoutGrid, Plus, Trash2, Info, Key, Server } from 'lucide-react';
 import { GlobalSettings, CatalogItem } from '../types';
 import { goldRateService } from '../services/goldRateService';
 import { storageService } from '../services/storageService';
@@ -20,6 +20,10 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
   const [dbStatus, setDbStatus] = useState<'IDLE' | 'TESTING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [dbMessage, setDbMessage] = useState('');
   const [debugInfo, setDebugInfo] = useState<any>(null);
+  
+  // DB Config Form
+  const [dbConfig, setDbConfig] = useState({ host: '127.0.0.1', user: '', password: '', database: '' });
+  const [savingDb, setSavingDb] = useState(false);
 
   // Catalog State
   const [newItem, setNewItem] = useState<Partial<CatalogItem>>({
@@ -79,13 +83,11 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
       setDebugInfo(null);
       
       try {
-          // First try the standard sync
           const result = await storageService.forceSync();
           if (result.success) {
               setDbStatus('SUCCESS');
               setDbMessage(result.message);
           } else {
-              // If standard sync fails, call the detailed debug endpoint
               setDbStatus('ERROR');
               setDbMessage("Connection Failed. Fetching diagnostics...");
               
@@ -95,6 +97,15 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
               setDebugInfo(debugData);
               if (debugData.error) {
                   setDbMessage(`Error: ${debugData.error}`);
+                  // Pre-fill form if data available
+                  if(debugData.config) {
+                      setDbConfig(prev => ({
+                          ...prev,
+                          host: debugData.config.host || '127.0.0.1',
+                          user: debugData.config.user || '',
+                          database: debugData.config.database || ''
+                      }));
+                  }
               } else {
                   setDbMessage("Unknown Connection Error");
               }
@@ -102,6 +113,29 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
       } catch (e: any) {
           setDbStatus('ERROR');
           setDbMessage(`Network Error: ${e.message}`);
+      }
+  };
+
+  const handleSaveDbConfig = async () => {
+      setSavingDb(true);
+      try {
+          const res = await fetch('/api/debug/configure', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify(dbConfig)
+          });
+          const data = await res.json();
+          if(data.success) {
+              setDbStatus('SUCCESS');
+              setDbMessage('Credentials Saved & Connected!');
+              setDebugInfo(null);
+          } else {
+              alert("Failed: " + data.error);
+          }
+      } catch(e: any) {
+          alert("Error: " + e.message);
+      } finally {
+          setSavingDb(false);
       }
   };
 
@@ -252,6 +286,40 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                      <p>User: {debugInfo.config?.user}</p>
                      <p>Connected: {debugInfo.connected ? 'YES' : 'NO'}</p>
                      {debugInfo.error && <p className="text-rose-400 mt-2">Error: {debugInfo.error}</p>}
+                 </div>
+             )}
+
+             {/* Auto-Configuration Form */}
+             {dbStatus === 'ERROR' && (
+                 <div className="bg-amber-50 p-5 rounded-2xl border border-amber-100 animate-fadeIn">
+                     <h4 className="font-bold text-amber-800 text-sm mb-4 flex items-center gap-2">
+                         <Key size={16} /> Update Database Credentials
+                     </h4>
+                     <div className="grid grid-cols-2 gap-4">
+                         <div>
+                             <label className="text-[10px] font-black uppercase text-amber-700/60 block mb-1">Host</label>
+                             <input className="w-full p-2 rounded-lg border-none text-sm font-mono" value={dbConfig.host} onChange={e => setDbConfig({...dbConfig, host: e.target.value})} placeholder="127.0.0.1" />
+                         </div>
+                         <div>
+                             <label className="text-[10px] font-black uppercase text-amber-700/60 block mb-1">Database Name</label>
+                             <input className="w-full p-2 rounded-lg border-none text-sm font-mono" value={dbConfig.database} onChange={e => setDbConfig({...dbConfig, database: e.target.value})} placeholder="u123_db" />
+                         </div>
+                         <div>
+                             <label className="text-[10px] font-black uppercase text-amber-700/60 block mb-1">User</label>
+                             <input className="w-full p-2 rounded-lg border-none text-sm font-mono" value={dbConfig.user} onChange={e => setDbConfig({...dbConfig, user: e.target.value})} placeholder="u123_user" />
+                         </div>
+                         <div>
+                             <label className="text-[10px] font-black uppercase text-amber-700/60 block mb-1">Password</label>
+                             <input className="w-full p-2 rounded-lg border-none text-sm font-mono" type="password" value={dbConfig.password} onChange={e => setDbConfig({...dbConfig, password: e.target.value})} placeholder="*****" />
+                         </div>
+                     </div>
+                     <button 
+                        onClick={handleSaveDbConfig}
+                        disabled={savingDb}
+                        className="mt-4 w-full bg-amber-600 text-white py-3 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-amber-700 transition-all flex items-center justify-center gap-2"
+                     >
+                         {savingDb ? <Loader2 className="animate-spin" /> : <Server size={14} />} Connect & Save
+                     </button>
                  </div>
              )}
 
