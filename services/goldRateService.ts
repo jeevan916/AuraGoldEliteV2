@@ -4,19 +4,20 @@ export interface GoldRateResponse {
   rate22K: number;
   success: boolean;
   error?: string;
+  source?: string;
 }
 
 export const goldRateService = {
   /**
-   * Fetches the live gold rate from the unified backend API.
-   * Uses an absolute path starting with / to avoid sub-route 404s.
+   * Fetches the live gold rate from the backend database.
    */
   async fetchLiveRate(): Promise<GoldRateResponse> {
     try {
         const origin = window.location.origin;
-        const apiUrl = `${origin}/api/gold-rate`;
+        // Use relative path to work in both dev (proxy) and prod
+        const apiUrl = `/api/gold-rate`;
         
-        console.log("[GoldRateService] Fetching from:", apiUrl);
+        console.log("[GoldRateService] Fetching from DB:", apiUrl);
         
         const response = await fetch(apiUrl, {
           headers: { 
@@ -34,7 +35,8 @@ export const goldRateService = {
         return {
             rate24K: data.k24 || 0,
             rate22K: data.k22 || 0,
-            success: true
+            success: true,
+            source: data.source
         };
     } catch (e: any) {
         console.error("[GoldRateService] Fetch Error:", e.message);
