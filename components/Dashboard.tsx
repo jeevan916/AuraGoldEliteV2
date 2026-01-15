@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { Zap, ArrowRight, CheckCircle2, BrainCircuit, MessageSquare, FileText, ScrollText, TrendingUp } from 'lucide-react';
+import { Zap, ArrowRight, CheckCircle2, BrainCircuit, MessageSquare, FileText, ScrollText, TrendingUp, BookOpen } from 'lucide-react';
 import { Order, OrderStatus } from '../types';
 import { Card, SectionHeader, Badge, Button } from './shared/BaseUI';
 import { PaymentWidget } from './clusters/PaymentWidget';
@@ -69,13 +70,13 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates }) => {
             </div>
          </Card>
          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => (window as any).dispatchView('ORDER_BOOK')} className="bg-emerald-50 hover:bg-emerald-100 rounded-2xl flex flex-col items-center justify-center text-emerald-700 transition-colors">
+                <BookOpen size={18} />
+                <span className="text-[8px] font-black uppercase mt-1">Book</span>
+            </button>
             <button onClick={() => (window as any).dispatchView('TEMPLATES')} className="bg-blue-50 hover:bg-blue-100 rounded-2xl flex flex-col items-center justify-center text-blue-700 transition-colors">
                 <FileText size={18} />
                 <span className="text-[8px] font-black uppercase mt-1">Templates</span>
-            </button>
-            <button onClick={() => (window as any).dispatchView('LOGS')} className="bg-emerald-50 hover:bg-emerald-100 rounded-2xl flex flex-col items-center justify-center text-emerald-700 transition-colors">
-                <ScrollText size={18} />
-                <span className="text-[8px] font-black uppercase mt-1">Logs</span>
             </button>
          </div>
       </div>

@@ -5,13 +5,14 @@ import {
   MessageSquare, Globe, Settings as SettingsIcon, AlertTriangle, 
   Plus, ShieldCheck, LogOut, Briefcase, Menu, X, ArrowLeft, Home,
   MoreHorizontal, PlusCircle, Sparkles, Zap, BrainCircuit, FileText, 
-  ScrollText, Activity, Server, Calculator, Loader2, WifiOff, Cloud, CloudOff, RefreshCw, ServerCrash, Database, ShieldAlert, AlertCircle, HardDrive
+  ScrollText, Activity, Server, Calculator, Loader2, WifiOff, Cloud, CloudOff, RefreshCw, ServerCrash, Database, ShieldAlert, AlertCircle, HardDrive, BookOpen
 } from 'lucide-react';
 
 // Modules
 import Dashboard from './components/Dashboard';
 import OrderForm from './components/OrderForm';
 import OrderDetails from './components/OrderDetails';
+import OrderBook from './components/OrderBook';
 import CustomerList from './components/CustomerList';
 import PaymentCollections from './components/PaymentCollections';
 import WhatsAppPanel from './components/WhatsAppPanel';
@@ -35,7 +36,7 @@ import { whatsappService } from './services/whatsappService';
 import { smsService } from './services/smsService';
 import { Order, GlobalSettings, AppResolutionPath, Customer, NotificationTrigger, PaymentPlanTemplate } from './types';
 
-type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'CUSTOMERS' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU';
+type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU';
 
 const TabBarItem = ({ icon, label, active, onClick }: any) => (
   <button 
@@ -232,6 +233,7 @@ const App: React.FC = () => {
       case 'DASH': return 'Collection Queue';
       case 'ORDER_NEW': return 'New Booking';
       case 'ORDER_DETAILS': return 'Order Ledger';
+      case 'ORDER_BOOK': return 'Order Repository';
       case 'CUSTOMERS': return 'Client Directory';
       case 'COLLECTIONS': return 'Revenue Recovery';
       case 'WHATSAPP': return 'Secure Chats';
@@ -301,6 +303,7 @@ const App: React.FC = () => {
                       <p className="text-sm text-slate-500 font-medium">Manage automation, templates, and system health.</p>
                    </div>
                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      <MenuItem icon={<BookOpen />} label="Order Book" desc="Active & Archives" colorClass="bg-emerald-100 text-emerald-600" onClick={() => setView('ORDER_BOOK')} />
                       <MenuItem icon={<BrainCircuit />} label="AI Strategy" desc="Automated Collection Engine" colorClass="bg-amber-100 text-amber-600" onClick={() => setView('STRATEGY')} />
                       <MenuItem icon={<Calculator />} label="Plan Manager" desc="AI Payment Schemes" colorClass="bg-violet-100 text-violet-600" onClick={() => setView('PLANS')} />
                       <MenuItem icon={<FileText />} label="Templates" desc="Meta WhatsApp Manager" colorClass="bg-blue-100 text-blue-600" onClick={() => setView('TEMPLATES')} />
@@ -313,6 +316,7 @@ const App: React.FC = () => {
               )}
               {view === 'ORDER_NEW' && <OrderForm settings={settings} planTemplates={planTemplates} onSubmit={(o) => { addOrder(o); setView('ORDER_DETAILS'); setSelectedOrderId(o.id); }} onCancel={() => setView('DASH')} />}
               {view === 'ORDER_DETAILS' && (activeOrder ? <OrderDetails order={activeOrder} settings={settings} onBack={() => setView('DASH')} onUpdateStatus={(itemId, status) => updateItemStatus(activeOrder.id, itemId, status)} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} logs={logs} onAddLog={addLog} /> : <div className="text-center py-20 text-slate-400 font-medium">Please select an order.</div>)}
+              {view === 'ORDER_BOOK' && <OrderBook orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} />}
               {view === 'CUSTOMERS' && <CustomerList customers={customers} orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onMessageSent={addLog} />}
               {view === 'COLLECTIONS' && <PaymentCollections orders={orders} onViewOrder={(id)=>{setSelectedOrderId(id); setView('ORDER_DETAILS');}} onSendWhatsApp={()=>{}} settings={settings} />}
               {view === 'STRATEGY' && <NotificationCenter notifications={notifications} customers={customers} onRefresh={handleRunStrategy} loading={isStrategyLoading} onSend={handleSendNotification} isSending={sendingNotifId} />}

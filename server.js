@@ -99,8 +99,8 @@ const ensureDb = async (req, res, next) => {
 };
 
 // --- STATIC FILES FIX ---
-// 1. Force Content-Type header to application/javascript for .js files
-// 2. Serve from root (__dirname) because server.js is inside dist/ in production
+// Serve static files from the root (where server.js and index.html reside in dist)
+// Explicitly set Content-Type for JS files to avoid MIME type strict checking errors
 app.use(express.static(__dirname, {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
