@@ -1,4 +1,3 @@
-
 import express from 'express';
 import mysql from 'mysql2/promise';
 import cors from 'cors';
@@ -43,17 +42,24 @@ app.use(express.json({ limit: '50mb' }));
 let pool = null;
 
 // Dynamic configuration getter
-const getConfig = () => ({
-    host: process.env.DB_HOST || '127.0.0.1', // Force IPv4
-    user: process.env.DB_USER || 'u477692720_jeevan1',
-    password: process.env.DB_PASSWORD || 'AuraGold@2025',
-    database: process.env.DB_NAME || 'u477692720_AuraGoldElite',
-    port: 3306,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-    connectTimeout: 10000
-});
+const getConfig = () => {
+    let host = process.env.DB_HOST || '127.0.0.1';
+    // Fix: MySQL Node drivers sometimes default to ::1 for localhost, causing access denied if user is set for 127.0.0.1
+    // We strictly enforce IPv4 mapping here to fix the "Access denied for user ... @'::1'" error.
+    if (host === 'localhost') host = '127.0.0.1'; 
+    
+    return {
+        host: host, 
+        user: process.env.DB_USER || 'u477692720_jeevan1',
+        password: process.env.DB_PASSWORD || 'AuraGold@2025',
+        database: process.env.DB_NAME || 'u477692720_AuraGoldElite',
+        port: 3306,
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0,
+        connectTimeout: 10000
+    };
+};
 
 // Helper to mask password
 const maskConfig = (config) => ({
@@ -63,7 +69,7 @@ const maskConfig = (config) => ({
 
 async function initDb() {
     const config = getConfig();
-    log(`Attempting Database Connection to ${config.host}...`, 'INFO');
+    log(`Attempting Database Connection to ${config.host} as ${config.user}...`, 'INFO');
     
     // Close existing pool if any
     if (pool) {
@@ -169,10 +175,13 @@ app.get('/api/debug/db', async (req, res) => {
 
 // Endpoint to update credentials from UI
 app.post('/api/debug/configure', async (req, res) => {
-    const { host, user, password, database } = req.body;
+    let { host, user, password, database } = req.body;
     
+    // Auto-fix localhost to 127.0.0.1
+    if (host === 'localhost') host = '127.0.0.1';
+
     // 1. Test the new credentials
-    log(`Testing new configuration for user: ${user}`, 'INFO');
+    log(`Testing new configuration for user: ${user} on ${host}`, 'INFO');
     try {
         const tempPool = mysql.createPool({ 
             host: host || '127.0.0.1', 

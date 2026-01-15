@@ -36,6 +36,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
     grossWeight: 0, 
     netWeight: 0, 
     stoneCharges: 0,
+    stoneDetails: '',
     wastagePercentage: 12, 
     makingChargesPerGram: 450, 
     photoUrls: [], 
@@ -321,15 +322,21 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                 </InputWrapper>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
+                 <InputWrapper label="Stone Charges">
+                    <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.stoneCharges || ''} onChange={e => setCurrentItem({...currentItem, stoneCharges: parseFloat(e.target.value) || 0})} placeholder="0" />
+                </InputWrapper>
+                <InputWrapper label="Stone Details">
+                    <input type="text" className="w-full font-bold text-sm bg-transparent" value={currentItem.stoneDetails || ''} onChange={e => setCurrentItem({...currentItem, stoneDetails: e.target.value})} placeholder="Ex: 5pcs CZ / 0.10ct Diamond" />
+                </InputWrapper>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
                 <InputWrapper label="Wastage (VA %)">
                     <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.wastagePercentage || ''} onChange={e => setCurrentItem({...currentItem, wastagePercentage: parseFloat(e.target.value) || 0})} placeholder="12" />
                 </InputWrapper>
                 <InputWrapper label="Labor / g">
                     <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.makingChargesPerGram || ''} onChange={e => setCurrentItem({...currentItem, makingChargesPerGram: parseFloat(e.target.value) || 0})} placeholder="450" />
-                </InputWrapper>
-                <InputWrapper label="Stone Charges">
-                    <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.stoneCharges || ''} onChange={e => setCurrentItem({...currentItem, stoneCharges: parseFloat(e.target.value) || 0})} placeholder="0" />
                 </InputWrapper>
             </div>
 
@@ -390,6 +397,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                                           {item.purity} • {item.netWeight}g
                                           {item.huid && <span className="ml-2 text-emerald-600 font-mono tracking-tighter">[{item.huid}]</span>}
                                       </p>
+                                      {item.stoneDetails && <p className="text-[9px] text-amber-700 italic font-medium">{item.stoneDetails}</p>}
                                   </div>
                               </div>
                               <div className="flex items-center gap-4">

@@ -69,6 +69,7 @@ export interface JewelryDetail {
   makingChargesPerGram: number;
   totalLaborValue: number;
   stoneCharges: number;
+  stoneDetails?: string; // Added field
   purity: Purity;
   taxAmount: number;
   finalAmount: number;
