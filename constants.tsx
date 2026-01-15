@@ -184,14 +184,14 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     content: "Great news {{1}}! Your {{2}} has moved to the {{3}} stage. See photos and updates here: https://order.auragoldelite.com/token={{4}} on portal.",
     examples: ["Michael", "Ring", "Quality Check", "LmNoP456"]
   },
-  // 4. Grace Period Warning (Urgent)
+  // 4. Grace Period Warning (Urgent) - REVISED FOR COMPLIANCE
   {
     name: 'auragold_grace_warning',
     description: 'Critical warning sent hours before lapse.',
     category: 'UTILITY',
     appGroup: 'PAYMENT_COLLECTION',
     variables: ['customer_name', 'amount_due', 'hours_left'],
-    content: "URGENT: Dear {{1}}, payment of ₹{{2}} is overdue. Gold Rate Protection lapses in {{3}} hours. Pay now to retain your booked rate.",
+    content: "Dear {{1}}, payment of ₹{{2}} is pending. Your Gold Rate Protection expires in {{3}} hours. Please complete payment to retain your booked rate.",
     examples: ["Aditi", "12500", "4"]
   },
   // 5. Protection Lapse Notice
@@ -214,14 +214,14 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     content: "Action Required {{1}}: Order value increased. Old: ₹{{2}}, New Market Price: ₹{{3}} (@ ₹{{4}}/g). Accept or Cancel here: https://order.auragoldelite.com/quote/{{5}}",
     examples: ["Priya", "50000", "52500", "7200", "token123"]
   },
-  // 7. Repopulation Success
+  // 7. Repopulation Success - REVISED FOR COMPLIANCE
   {
     name: 'auragold_repopulation_success',
     description: 'Sent when customer accepts new rate.',
     category: 'UTILITY',
     appGroup: 'ORDER_STATUS',
     variables: ['customer_name', 'new_rate', 'next_due_date'],
-    content: "Done {{1}}. Your order is active at new rate ₹{{2}}/g. Next payment is due on {{3}}. Thank you.",
+    content: "Success {{1}}. Your order is active at the new rate of ₹{{2}}/g. Your next payment is due on {{3}}. Thank you.",
     examples: ["Sneha", "7100", "25 Oct"]
   },
   // 8. Refund Processed
@@ -234,14 +234,14 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     content: "Dear {{1}}, your order {{3}} is cancelled. Refund of ₹{{2}} has been initiated. Allow 3-5 days for credit.",
     examples: ["Amit", "10000", "ORD-123"]
   },
-  // 9. Rate Enforcer Alert
+  // 9. Rate Enforcer Alert - REVISED FOR COMPLIANCE
   {
     name: 'auragold_rate_enforcer',
     description: 'Alert when market rate crosses booked limit.',
     category: 'UTILITY',
     appGroup: 'PAYMENT_COLLECTION',
     variables: ['customer_name', 'amount_due', 'booked_rate'],
-    content: "Alert {{1}}: Market gold rate has crossed your booked limit. Please pay ₹{{2}} immediately to hold your ₹{{3}}/g protected rate.",
+    content: "Update for {{1}}: The market gold rate has crossed your booked limit. A payment of ₹{{2}} is required to maintain your protected rate of ₹{{3}}/g.",
     examples: ["Karan", "5000", "6500"]
   },
   // 10. Auto-Pilot Check (Zero Dependency)

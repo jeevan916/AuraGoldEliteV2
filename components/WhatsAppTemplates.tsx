@@ -289,6 +289,26 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       }, 100);
   };
 
+  // Special handler to fix rejected system templates by creating a fresh v2
+  const handleFixSystemTemplate = (tpl: WhatsAppTemplate, requiredDef: any) => {
+      // Create a unique name version to avoid Meta conflicts
+      const newName = `${requiredDef.name}_v${Math.floor(Date.now() / 1000).toString().slice(-4)}`;
+      
+      setTemplateName(newName);
+      // LOAD THE SAFE CONTENT FROM CONSTANTS, NOT THE REJECTED CONTENT
+      setGeneratedContent(requiredDef.content);
+      setSelectedCategory(requiredDef.category as MetaCategory);
+      setSelectedGroup(requiredDef.appGroup as AppTemplateGroup);
+      setVariableExamples(requiredDef.examples);
+      setEditingStructure([]); // Reset structure to allow pure text rebuild if needed
+      
+      setActiveTab('STRATEGY');
+      setHighlightEditor(true);
+      setTimeout(() => setHighlightEditor(false), 2000);
+      
+      if (editorRef.current) editorRef.current.scrollIntoView({ behavior: 'smooth' });
+  };
+
   const handleDeleteTemplate = async (tpl: WhatsAppTemplate) => {
       if (!confirm(`Permanently delete "${tpl.name}" from library? This action cannot be undone.`)) return;
 
@@ -541,11 +561,11 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                                         )}
                                         {match && (match.status === 'REJECTED' || match.source === 'LOCAL') && (
                                             <button 
-                                                onClick={() => handleEditTemplate(match)}
-                                                className="text-amber-600 hover:text-amber-800"
-                                                title="Fix & Redeploy"
+                                                onClick={() => handleFixSystemTemplate(match, req)}
+                                                className="text-amber-600 hover:text-amber-800 bg-amber-50 px-2 py-1 rounded text-[10px] font-bold border border-amber-200"
+                                                title="Fix by creating new version with safe content"
                                             >
-                                                <Edit size={14} />
+                                                Fix & Redeploy
                                             </button>
                                         )}
                                     </div>
