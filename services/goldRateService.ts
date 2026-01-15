@@ -1,3 +1,4 @@
+
 export interface GoldRateResponse {
   rate24K: number;
   rate22K: number;
@@ -8,13 +9,16 @@ export interface GoldRateResponse {
 export const goldRateService = {
   /**
    * Fetches the live gold rate from the unified backend API.
-   * Uses a relative path to ensure origin-matching on Hostinger Node.js proxy.
+   * Uses an absolute path starting with / to avoid sub-route 404s.
    */
   async fetchLiveRate(): Promise<GoldRateResponse> {
     try {
-        console.log("[GoldRateService] Fetching from /api/gold-rate");
-        // Using a strictly relative URL to ensure it hits the current domain/port
-        const response = await fetch('/api/gold-rate', {
+        const origin = window.location.origin;
+        const apiUrl = `${origin}/api/gold-rate`;
+        
+        console.log("[GoldRateService] Fetching from:", apiUrl);
+        
+        const response = await fetch(apiUrl, {
           headers: { 
             'Accept': 'application/json',
             'Cache-Control': 'no-cache' 

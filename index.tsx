@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { 
@@ -282,7 +283,7 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="glass-nav fixed bottom-0 left-0 right-0 h-[84px] flex justify-around items-center px-2 z-[50] shadow-lg">
+          <div className="glass-nav">
              <TabBarItem icon={<Home />} label="Queue" active={view === 'DASH'} onClick={() => setView('DASH')} />
              <TabBarItem icon={<PlusCircle />} label="Book" active={view === 'ORDER_NEW'} onClick={() => setView('ORDER_NEW')} />
              <TabBarItem icon={<ReceiptIndianRupee />} label="Ledger" active={view === 'COLLECTIONS'} onClick={() => setView('COLLECTIONS')} />
