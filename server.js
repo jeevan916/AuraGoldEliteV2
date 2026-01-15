@@ -334,7 +334,39 @@ app.post('/api/whatsapp/templates', async (req, res) => {
     }
 });
 
-// 3. Send Message (POST)
+// 3. Delete Template (DELETE)
+app.delete('/api/whatsapp/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    const { name } = req.query;
+
+    if (!wabaId || !token || !name) {
+        return res.status(400).json({ success: false, error: "Missing WABA ID, Token or Name" });
+    }
+
+    try {
+        const metaUrl = `https://graph.facebook.com/v21.0/${wabaId}/message_templates?name=${name}`;
+        log(`Deleting Template on Meta: ${name}`, 'INFO');
+
+        const response = await fetch(metaUrl, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            log(`Meta Deletion Error: ${data.error.message}`, 'ERROR');
+            return res.status(400).json({ success: false, error: data.error.message });
+        }
+
+        res.json({ success: true, data });
+    } catch (e) {
+        log(`Template Deletion Exception: ${e.message}`, 'ERROR');
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 4. Send Message (POST)
 app.post('/api/whatsapp/send', async (req, res) => {
     const phoneId = req.headers['x-phone-id'];
     const token = req.headers['x-auth-token'];

@@ -112,15 +112,15 @@ export const geminiService = {
       Act as a Meta Policy Expert. Analyze the rejection reason and the content. 
       
       CRITICAL COMPLIANCE RULES:
-      1. Naming: unprofessional naming convention with repeated '_v2' suffixes is PROHIBITED. Use descriptive names like 'payment_reminder_urgent' or append a unique hash.
+      1. Naming: DO NOT CHANGE THE NAME. DO NOT ADD SUFFIXES LIKE '_v2'. We will use the Edit API to fix it in-place to avoid spam filters.
       2. Utility Tone: The 'UTILITY' category requires a strictly transactional tone. DO NOT use generic greetings like 'Hello {{1}}'. DO NOT use promotional phrases or 'ensure your order is processed'.
       3. Variables: Provide valid 'variableExamples'.
       
-      Rewrite the template to be STRICTLY compliant.
+      Rewrite the template content to be STRICTLY compliant.
       `,
       config: {
         responseMimeType: "application/json",
-        systemInstruction: "Return JSON with keys: diagnosis (explain specifically why it was rejected based on the log), fixedContent (the rewritten compliant text), category (the correct category), fixedName (clean snake_case name without multiple versions), variableExamples (array of strings matching {{1}}, {{2}} variables - MANDATORY)."
+        systemInstruction: "Return JSON with keys: diagnosis (explain specifically why it was rejected based on the log), fixedContent (the rewritten compliant text), category (the correct category), fixedName (MUST BE IDENTICAL to original name), variableExamples (array of strings matching {{1}}, {{2}} variables - MANDATORY)."
       }
     });
     return JSON.parse(response.text || "{}");

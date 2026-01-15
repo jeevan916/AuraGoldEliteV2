@@ -130,6 +130,75 @@ export const whatsappService = {
      }
   },
 
+  async editMetaTemplate(templateId: string, template: WhatsAppTemplate): Promise<{ success: boolean; error?: any; debugPayload?: any; rawResponse?: any }> {
+      const settings = this.getSettings();
+      if (!settings.whatsappBusinessAccountId || !settings.whatsappBusinessToken) {
+          return { success: false, error: { message: "Credentials missing" } };
+      }
+
+      // Construct Components (Same logic as create)
+      const components = [];
+      if (template.structure && template.structure.length > 0) {
+          components.push(...template.structure);
+      } else if (template.content) {
+          const bodyComponent: any = { type: "BODY", text: template.content };
+          if (template.variableExamples && template.variableExamples.length > 0) {
+              bodyComponent.example = { body_text: [template.variableExamples] };
+          }
+          components.push(bodyComponent);
+      }
+
+      const payload = {
+          components: components
+      };
+
+      try {
+          const response = await fetch(`/api/whatsapp/templates/${templateId}`, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'x-waba-id': settings.whatsappBusinessAccountId,
+                  'x-auth-token': settings.whatsappBusinessToken
+              },
+              body: JSON.stringify(payload)
+          });
+
+          const data = await response.json();
+          if (!data.success) {
+              return { success: false, error: { message: data.error || "Edit Failed" }, debugPayload: payload, rawResponse: data };
+          }
+
+          return { success: true, rawResponse: data };
+
+      } catch (e: any) {
+          return { success: false, error: e, debugPayload: payload };
+      }
+  },
+
+  async deleteMetaTemplate(templateName: string): Promise<{ success: boolean; error?: string }> {
+      const settings = this.getSettings();
+      if (!settings.whatsappBusinessAccountId || !settings.whatsappBusinessToken) {
+          return { success: false, error: "Credentials missing in Settings" };
+      }
+
+      try {
+          const response = await fetch(`/api/whatsapp/templates?name=${templateName}`, {
+              method: 'DELETE',
+              headers: {
+                  'x-waba-id': settings.whatsappBusinessAccountId,
+                  'x-auth-token': settings.whatsappBusinessToken
+              }
+          });
+
+          const data = await response.json();
+          if (!data.success) throw new Error(data.error || "Deletion Failed");
+          
+          return { success: true };
+      } catch (e: any) {
+          return { success: false, error: e.message };
+      }
+  },
+
   async sendTemplateMessage(to: string, templateName: string, languageCode: string = 'en_US', variables: string[] = [], customerName: string): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
     const settings = this.getSettings();

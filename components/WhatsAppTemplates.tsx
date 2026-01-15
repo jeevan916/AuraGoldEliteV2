@@ -32,6 +32,9 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   const [variableExamples, setVariableExamples] = useState<string[]>([]);
   const [highlightEditor, setHighlightEditor] = useState(false); // Visual feedback
   const [aiAnalysisReason, setAiAnalysisReason] = useState<string | null>(null);
+  
+  // Track Meta ID for Editing (Crucial for In-Place Fixes)
+  const [editingMetaId, setEditingMetaId] = useState<string | null>(null);
 
   // Tactic State (Fallback/Legacy)
   const [selectedTactic, setSelectedTactic] = useState<PsychologicalTactic>('AUTHORITY');
@@ -263,6 +266,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       
       setIsGenerating(true);
       setAiAnalysisReason(null);
+      setEditingMetaId(null); // New generation, not an edit
       try {
           const result = await geminiService.generateTemplateFromPrompt(finalText);
           
@@ -295,6 +299,14 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       setEditingStructure(tpl.structure || []); 
       setVariableExamples(tpl.variableExamples || []);
       setAiAnalysisReason(null);
+      
+      // Capture Meta ID for In-Place Edits
+      if (tpl.source === 'META') {
+          setEditingMetaId(tpl.id);
+      } else {
+          setEditingMetaId(null);
+      }
+
       setActiveTab('STRATEGY');
       
       setTimeout(() => {
@@ -317,6 +329,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       setVariableExamples(requiredDef.examples);
       setEditingStructure([]); // Reset structure to allow pure text rebuild if needed
       setAiAnalysisReason(`Core Template Restoration: Replaced rejected content with safe default for ${requiredDef.name}.`);
+      setEditingMetaId(null); // Force creation of new safe version
       
       setActiveTab('STRATEGY');
       setHighlightEditor(true);
@@ -338,6 +351,13 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           setEditingStructure([]); 
           setAiAnalysisReason(result.diagnosis);
           
+          // IMPORTANT: Set ID for in-place edit if it exists
+          if (tpl.source === 'META' && tpl.id) {
+              setEditingMetaId(tpl.id);
+          } else {
+              setEditingMetaId(null);
+          }
+          
           setActiveTab('STRATEGY');
           setHighlightEditor(true);
           setTimeout(() => setHighlightEditor(false), 2000);
@@ -351,14 +371,25 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   };
 
   const handleDeleteTemplate = async (tpl: WhatsAppTemplate) => {
-      if (!confirm(`Permanently delete "${tpl.name}" from library? This action cannot be undone.`)) return;
+      const isMeta = tpl.source === 'META';
+      const msg = isMeta 
+          ? `WARNING: This will permanently DELETE "${tpl.name}" from your Meta WhatsApp Account. This cannot be undone. Proceed?`
+          : `Delete "${tpl.name}" from local library?`;
+
+      if (!confirm(msg)) return;
 
       setDeletingId(tpl.id);
       try {
+          if (isMeta) {
+              const res = await whatsappService.deleteMetaTemplate(tpl.name);
+              if (!res.success) {
+                  throw new Error(res.error);
+              }
+          }
           onUpdate(templates.filter(t => t.id !== tpl.id));
-          alert("Template removed from library.");
+          alert("Template deleted successfully.");
       } catch (e: any) {
-          alert(`Error: ${e.message}`);
+          alert(`Delete Failed: ${e.message}`);
       } finally {
           setDeletingId(null);
       }
@@ -373,6 +404,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       setVariableExamples(trigger.requiredVariables); // Hint for user
       setActiveTab('STRATEGY');
       setAiAnalysisReason(null);
+      setEditingMetaId(null);
       
       setTimeout(() => {
           if (editorRef.current) editorRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -401,18 +433,40 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           alert("Saved to Local Library");
       } else {
           setPushingMeta(true);
-          const result = await whatsappService.createMetaTemplate(newTpl);
-          addDebugLog(`Edit/Deploy: ${templateName}`, {
+          let result;
+          
+          // DECISION: EDIT vs CREATE
+          if (editingMetaId && !editingMetaId.startsWith('local-')) {
+              // Edit In-Place
+              result = await whatsappService.editMetaTemplate(editingMetaId, newTpl);
+              if (result.success) {
+                  alert("Template Edited Successfully!");
+              }
+          } else {
+              // Create New
+              result = await whatsappService.createMetaTemplate(newTpl);
+              if (result.success) {
+                  alert(`Template Deployed! Active Name: ${result.finalName}`);
+              }
+          }
+
+          addDebugLog(`Deploy: ${templateName}`, {
               PAYLOAD_SENT: result.debugPayload,
               META_RESPONSE: result.rawResponse
           }, !result.success);
+          
           setPushingMeta(false);
           
           if (result.success) {
-              alert(`Template Fixed & Deployed! Active Name: ${result.finalName}`);
-              const deployedTpl = { ...newTpl, name: result.finalName!, source: 'META' as const, status: 'PENDING' as const };
-              onUpdate([deployedTpl, ...templates]);
+              const deployedTpl = { ...newTpl, name: result.finalName || templateName, source: 'META' as const, status: 'PENDING' as const };
+              // Replace if editing, otherwise add
+              if (editingMetaId) {
+                  onUpdate(templates.map(t => t.id === editingMetaId ? { ...deployedTpl, id: editingMetaId } : t));
+              } else {
+                  onUpdate([deployedTpl, ...templates]);
+              }
               setAiAnalysisReason(null);
+              setEditingMetaId(null);
           } else {
               alert(`Deployment Error: ${result.error?.message}. Check 'System Health' Raw Logs for details.`);
           }
@@ -787,6 +841,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                             </p>
                         </div>
                         {highlightEditor && <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold animate-pulse">Content Generated!</span>}
+                        {editingMetaId && <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold border border-amber-200 flex items-center gap-1"><Wrench size={10}/> Editing Existing Template</span>}
                       </div>
 
                       {/* AI Reasoning Display (For Fixes) */}
@@ -808,8 +863,10 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                             <input 
                                 value={templateName}
                                 onChange={e => setTemplateName(e.target.value)}
-                                className="w-full font-mono text-sm border rounded-lg p-2 outline-none focus:border-blue-500"
+                                className={`w-full font-mono text-sm border rounded-lg p-2 outline-none focus:border-blue-500 ${editingMetaId ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`}
                                 placeholder="template_name"
+                                readOnly={!!editingMetaId}
+                                title={editingMetaId ? "Name cannot be changed during in-place edit" : ""}
                             />
                           </div>
                           <div>
@@ -856,7 +913,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                             className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-bold text-xs shadow-md hover:bg-emerald-700 flex items-center justify-center gap-2"
                           >
                              {pushingMeta ? <Loader2 className="animate-spin" /> : <UploadCloud size={16} />}
-                             Deploy to Meta
+                             {editingMetaId ? 'Update Meta Template' : 'Deploy to Meta'}
                           </button>
                           <button 
                             onClick={() => handleSaveLocalOrDeploy('LOCAL')} 
