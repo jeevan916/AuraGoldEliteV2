@@ -292,7 +292,49 @@ app.get('/api/whatsapp/templates', async (req, res) => {
     }
 });
 
-// 2. Send Message (POST)
+// 2. Create Template (POST) - NEW
+app.post('/api/whatsapp/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    const { name, category, components, language } = req.body;
+
+    if (!wabaId || !token) {
+        return res.status(400).json({ success: false, error: "Missing WABA ID or Token headers" });
+    }
+
+    try {
+        const metaUrl = `https://graph.facebook.com/v21.0/${wabaId}/message_templates`;
+        log(`Creating Template on Meta: ${name}`, 'INFO');
+
+        const response = await fetch(metaUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                name,
+                category,
+                allow_category_change: true,
+                language: language || "en_US",
+                components
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            log(`Meta Creation Error: ${data.error.message}`, 'ERROR');
+            return res.status(400).json({ success: false, error: data.error.message });
+        }
+
+        res.json({ success: true, data });
+    } catch (e) {
+        log(`Template Creation Exception: ${e.message}`, 'ERROR');
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 3. Send Message (POST)
 app.post('/api/whatsapp/send', async (req, res) => {
     const phoneId = req.headers['x-phone-id'];
     const token = req.headers['x-auth-token'];

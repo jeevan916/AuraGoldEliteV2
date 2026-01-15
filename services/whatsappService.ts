@@ -61,14 +61,64 @@ export const whatsappService = {
   },
 
   async createMetaTemplate(template: WhatsAppTemplate): Promise<{ success: boolean; finalName?: string; error?: any; debugPayload?: any; rawResponse?: any }> {
-     // Simplified for stability. In a real app, this would POST to Facebook Graph API via proxy.
-     // For now, we mock success if in local mode, or implement a POST proxy if needed.
-     return { 
-        success: false, 
-        error: { message: "Template creation requires advanced proxy setup." },
-        debugPayload: { template },
-        rawResponse: { status: 'mock_not_implemented' }
+     const settings = this.getSettings();
+     if (!settings.whatsappBusinessAccountId || !settings.whatsappBusinessToken) {
+         return { success: false, error: { message: "Credentials missing in Settings" } };
+     }
+
+     // 1. Format Name (snake_case)
+     const finalName = template.name.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+
+     // 2. Construct Components
+     const components = [];
+     
+     // Body (Text)
+     if (template.content) {
+         components.push({
+             type: "BODY",
+             text: template.content
+         });
+     }
+     
+     // 3. Payload
+     const payload = {
+         name: finalName,
+         category: template.category || "UTILITY",
+         language: "en_US",
+         components: components
      };
+
+     try {
+         const response = await fetch('/api/whatsapp/templates', {
+             method: 'POST',
+             headers: {
+                 'Content-Type': 'application/json',
+                 'x-waba-id': settings.whatsappBusinessAccountId,
+                 'x-auth-token': settings.whatsappBusinessToken
+             },
+             body: JSON.stringify(payload)
+         });
+
+         const data = await response.json();
+         
+         if (!data.success) {
+             return { 
+                 success: false, 
+                 error: { message: data.error }, 
+                 debugPayload: payload,
+                 rawResponse: data 
+             };
+         }
+
+         return {
+             success: true,
+             finalName: data.data.name || finalName, // Meta usually returns id, we fallback to name if needed
+             rawResponse: data
+         };
+
+     } catch (e: any) {
+         return { success: false, error: e, debugPayload: payload };
+     }
   },
 
   async sendTemplateMessage(to: string, templateName: string, languageCode: string = 'en_US', variables: string[] = [], customerName: string): Promise<WhatsAppResponse> {
