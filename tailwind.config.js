@@ -1,3 +1,4 @@
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -9,11 +10,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        gold: '#B8860B',
-        'gold-light': '#FFD700',
+        gold: {
+          DEFAULT: '#B8860B',
+          light: '#FFD700',
+          dark: '#8B6508',
+          pale: '#EEE8AA'
+        },
+        luxury: '#0F172A'
       },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
+        serif: ['Playfair Display', 'serif']
       },
       animation: {
         fadeIn: 'fadeIn 0.3s ease-in-out',

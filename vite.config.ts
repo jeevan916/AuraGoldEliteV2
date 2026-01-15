@@ -8,7 +8,6 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    // Base must be './' for relative asset loading in subdirectories
     base: './', 
     define: {
       'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),
@@ -16,7 +15,10 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       emptyOutDir: true,
-      target: 'esnext'
+      target: 'esnext',
+      modulePreload: {
+        polyfill: false
+      }
     },
     server: {
       port: 3000,

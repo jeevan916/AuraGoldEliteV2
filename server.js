@@ -8,7 +8,6 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 
-// Load environment variables
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,7 +16,6 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
@@ -31,11 +29,9 @@ const log = (msg, type = 'INFO') => {
     systemLog.push(entry);
 };
 
-// Robust command runner that captures output
 const runCommand = (command) => {
     log(`Executing: ${command}`);
     try {
-        // Increase buffer size for large logs
         const output = execSync(command, { encoding: 'utf8', stdio: 'pipe', maxBuffer: 1024 * 1024 * 10 });
         log(output);
         return true;
@@ -62,20 +58,25 @@ const isValidBuild = (dirPath) => {
 // --- INITIALIZATION SEQUENCE ---
 log("Starting Server Initialization...");
 
-// 1. Dependency Check & Fix
-const nodeModulesPath = path.join(__dirname, 'node_modules');
-if (!fs.existsSync(nodeModulesPath)) {
-    log("node_modules not found. Running install...", 'WARN');
-    // Using --legacy-peer-deps to bypass React version conflicts if any remain
-    const success = runCommand('npm install --legacy-peer-deps');
-    if (!success) {
-        log("Initial install failed. Attempting clean install...", 'WARN');
-        if (fs.existsSync('package-lock.json')) fs.unlinkSync('package-lock.json');
-        runCommand('npm install --legacy-peer-deps');
+// 1. Clean Vite Cache (Fix for css/postcss ghost errors)
+const viteCachePath = path.join(__dirname, 'node_modules', '.vite');
+if (fs.existsSync(viteCachePath)) {
+    log("Cleaning Vite cache...", 'WARN');
+    try {
+        fs.rmSync(viteCachePath, { recursive: true, force: true });
+    } catch (e) {
+        log("Failed to clean Vite cache: " + e.message, 'ERROR');
     }
 }
 
-// 2. Build Logic
+// 2. Dependency Check
+const nodeModulesPath = path.join(__dirname, 'node_modules');
+if (!fs.existsSync(nodeModulesPath)) {
+    log("node_modules not found. Running install...", 'WARN');
+    runCommand('npm install --legacy-peer-deps');
+}
+
+// 3. Build Logic
 if (isValidBuild(__dirname)) {
     staticPath = __dirname;
     log(`Serving pre-built app from root.`);
@@ -85,20 +86,22 @@ if (isValidBuild(__dirname)) {
 } else {
     log("Valid build not found. Starting Auto-Build...", 'WARN');
     
-    // Explicitly run vite build
+    // Clear dist if exists to ensure clean build
+    if (fs.existsSync(possibleDist)) {
+        fs.rmSync(possibleDist, { recursive: true, force: true });
+    }
+
     const buildSuccess = runCommand('npx vite build');
     
     if (buildSuccess && isValidBuild(possibleDist)) {
         staticPath = possibleDist;
         log("Auto-Build Successful!", 'SUCCESS');
     } else {
-        log("Auto-Build Failed. This is critical.", 'CRITICAL');
-        // If build fails, we might try to serve source as fallback if configured, 
-        // but for a React app, we really need the build.
+        log("Auto-Build Failed. Check logs below.", 'CRITICAL');
     }
 }
 
-// 3. Asset Config
+// 4. Asset Config
 if (staticPath) {
     app.use((req, res, next) => {
         if (req.url.endsWith('.js')) res.setHeader('Content-Type', 'application/javascript');
@@ -108,7 +111,7 @@ if (staticPath) {
     app.use(express.static(staticPath));
 }
 
-// 4. Database Config
+// 5. Database Config
 let pool = null;
 const DB_CONFIG = {
     host: process.env.DB_HOST || 'localhost',

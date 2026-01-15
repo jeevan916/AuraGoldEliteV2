@@ -7,6 +7,8 @@ import {
   BrainCircuit, Calculator, FileText, ScrollText, Globe, Activity
 } from 'lucide-react';
 
+import './index.css'; // Import Styles
+
 import Dashboard from './components/Dashboard';
 import OrderForm from './components/OrderForm';
 import OrderDetails from './components/OrderDetails';
