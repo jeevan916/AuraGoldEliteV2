@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    base: '/', 
+    base: './', // Use relative base path to avoid absolute path issues on some hosts
     define: {
       // API_KEY is used by @google/genai on the client side
       'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),

@@ -26,8 +26,6 @@ let pool = null;
 const DB_USER = 'u477692720_jeevan1';
 const DB_NAME = 'u477692720_AuraGoldElite';
 const DB_PASS = 'AuraGold@2025';
-// Reverted to localhost. The error "Access denied for user ... @127.0.0.1" indicates 
-// the user is strictly bound to 'localhost' in MySQL privileges.
 const DB_HOST = 'localhost'; 
 
 const getDbConfig = () => ({
@@ -43,7 +41,6 @@ async function initDb() {
   console.log(`[DB ATTEMPT] User: ${config.user}, Host: ${config.host}, DB: ${config.database}`);
   
   try {
-    // If pool exists but we are calling initDb, it's a reset attempt
     if (pool) {
       console.log("[DB RESET] Ending existing pool...");
       await pool.end().catch((err) => console.error("Error ending pool:", err.message));
@@ -64,7 +61,6 @@ async function initDb() {
       connectTimeout: 20000 
     });
     
-    // Test the connection immediately
     const connection = await pool.getConnection();
     console.log(`✅ [DB SUCCESS] Handshake successful for ${config.database}`);
     
@@ -80,15 +76,13 @@ async function initDb() {
     return { success: true };
   } catch (err) {
     console.error('❌ [DB FAILURE]:', err.message);
-    pool = null; // Ensure pool is null if init failed
+    pool = null;
     return { success: false, error: err.message };
   }
 }
 
-// Initial boot attempt
 initDb().catch(e => console.error("[BOOT ERROR]", e));
 
-// Robust middleware to ensure pool is never null when an API is called
 const ensureDb = async (req, res, next) => {
     if (!pool) {
         console.log("[DB RECOVERY] Pool was null, attempting re-init...");
@@ -96,14 +90,24 @@ const ensureDb = async (req, res, next) => {
         if (!result.success) {
             return res.status(503).json({ 
                 error: "Database Connection Failed", 
-                details: "Pool could not be initialized. Check Hostinger DB user privileges and credentials.",
-                system_error: result.error,
-                config_attempted: DB_USER
+                details: "Pool could not be initialized.",
+                system_error: result.error
             });
         }
     }
     next();
 };
+
+// --- STATIC FILES FIX ---
+// 1. Force Content-Type header to application/javascript for .js files
+// 2. Serve from root (__dirname) because server.js is inside dist/ in production
+app.use(express.static(__dirname, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
+      res.setHeader('Content-Type', 'application/javascript');
+    }
+  }
+}));
 
 // --- API ROUTES ---
 
@@ -122,18 +126,16 @@ app.get('/api/test-db', async (req, res) => {
         let connection;
         let usedExisting = false;
 
-        // 1. Try existing pool first
         if (pool) {
             try {
                 connection = await pool.getConnection();
                 usedExisting = true;
             } catch (err) {
                 console.log("Existing pool failed ping, will re-init. Error:", err.message);
-                pool = null; // Mark as bad
+                pool = null;
             }
         }
 
-        // 2. If no pool or failed, init new one
         if (!pool) {
             const initResult = await initDb();
             if (!initResult.success) {
@@ -142,7 +144,6 @@ app.get('/api/test-db', async (req, res) => {
             connection = await pool.getConnection();
         }
         
-        // 3. Run query
         const [rows] = await connection.query('SELECT 1 as result');
         connection.release();
         
@@ -159,7 +160,7 @@ app.get('/api/test-db', async (req, res) => {
         res.status(500).json({ 
             status: "error", 
             message: e.message,
-            tip: "Ensure 127.0.0.1/localhost is allowed and user has privileges."
+            tip: "Ensure localhost is allowed and user has privileges."
         });
     }
 });
@@ -231,9 +232,18 @@ app.post('/api/whatsapp/send', async (req, res) => {
   }
 });
 
-// Static Assets & SPA Routing
-app.use('/assets', express.static(path.join(__dirname, 'assets')));
+// --- SPA & 404 HANDLING ---
 
+// 1. If a request has an extension (e.g. .js, .css) and wasn't handled by express.static above,
+// it is a 404. Do NOT return index.html, because that causes "MIME type text/html" errors for scripts.
+app.get('*', (req, res, next) => {
+    if (req.path.includes('.') && !req.path.includes('.html')) {
+        return res.status(404).send('Not Found'); 
+    }
+    next();
+});
+
+// 2. For everything else (routes like /dashboard, /orders), return index.html
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api')) return res.status(404).json({ error: "Route Not Found" });
   res.sendFile(path.resolve(__dirname, 'index.html'));
