@@ -8,21 +8,18 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    base: './', // Use relative base path to avoid absolute path issues on some hosts
+    base: './', // CRITICAL: Ensures assets are loaded relatively (e.g., "assets/index.js" instead of "/assets/index.js")
     define: {
-      // API_KEY is used by @google/genai on the client side
       'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),
     },
     build: {
       outDir: 'dist',
-      target: 'esnext',
-      minify: 'esbuild',
-      cssMinify: true
+      emptyOutDir: true,
+      target: 'esnext'
     },
     server: {
       port: 3000,
       proxy: {
-        // Local dev proxy to the backend folder
         '/api': {
           target: 'http://localhost:3000',
           changeOrigin: true,

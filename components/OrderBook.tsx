@@ -2,15 +2,14 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Search, Package, CheckCircle2, Archive, Clock, ChevronRight, 
-  Filter, BookOpen, AlertCircle, Calendar, CheckCheck 
+  BookOpen, CheckCheck 
 } from 'lucide-react';
 import { Order, OrderStatus, ProductionStatus } from '../types';
-import { Card, Badge, Button } from './shared/BaseUI';
 
 interface OrderBookProps {
   orders: Order[];
   onViewOrder: (id: string) => void;
-  onUpdateOrder?: (order: Order) => void; // Optional for safety if not passed
+  onUpdateOrder?: (order: Order) => void;
 }
 
 type BookTab = 'ACTIVE' | 'READY' | 'ARCHIVE';
