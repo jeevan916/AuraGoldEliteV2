@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Search, Package, CheckCircle2, Archive, Clock, ChevronRight, 
-  BookOpen, CheckCheck 
+  BookOpen, CheckCheck, Plus 
 } from 'lucide-react';
 import { Order, OrderStatus, ProductionStatus } from '../types';
 
@@ -74,7 +74,7 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
   };
 
   return (
-    <div className="space-y-6 h-full flex flex-col animate-fadeIn">
+    <div className="space-y-6 animate-fadeIn pb-24">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 shrink-0">
         <div>
@@ -84,7 +84,7 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
            <p className="text-sm text-slate-500 font-medium">Master registry of all bookings, deliveries, and archives.</p>
         </div>
         
-        <div className="flex bg-white p-1 rounded-2xl shadow-sm border w-full md:w-auto">
+        <div className="flex bg-white p-1 rounded-2xl shadow-sm border w-full md:w-auto overflow-x-auto">
           <TabButton 
             active={activeTab === 'ACTIVE'} 
             onClick={() => setActiveTab('ACTIVE')} 
@@ -107,8 +107,8 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
       </div>
 
       {/* Search & List */}
-      <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden flex-1 flex flex-col min-h-0">
-        <div className="p-6 border-b bg-slate-50/50 flex flex-col md:flex-row gap-4 shrink-0">
+      <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden">
+        <div className="p-6 border-b bg-slate-50/50 flex flex-col md:flex-row gap-4">
           <div className="relative flex-1">
              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
              <input 
@@ -121,18 +121,26 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-0">
+        <div className="p-0">
           {filteredOrders.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4">
+            <div className="flex flex-col items-center justify-center text-slate-400 space-y-4 py-20">
                <Package size={48} className="opacity-20" />
-               <p className="font-bold text-sm uppercase tracking-widest">No orders found in this book</p>
+               <p className="font-bold text-sm uppercase tracking-widest">No orders found in {activeTab.toLowerCase()}</p>
+               {activeTab === 'ACTIVE' && (
+                   <button 
+                    onClick={() => (window as any).dispatchView('ORDER_NEW')}
+                    className="bg-amber-50 text-amber-700 px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-amber-100 transition-colors flex items-center gap-2"
+                   >
+                       <Plus size={14} /> Create Booking
+                   </button>
+               )}
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
                {filteredOrders.map(order => {
                   const paid = order.payments.reduce((a,c) => a + c.amount, 0);
                   const balance = order.totalAmount - paid;
-                  const progress = Math.min(100, Math.round((paid / order.totalAmount) * 100));
+                  const progress = order.totalAmount > 0 ? Math.min(100, Math.round((paid / order.totalAmount) * 100)) : 0;
 
                   return (
                     <div 
@@ -159,7 +167,7 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
                                     <p className="text-xs text-slate-500 font-medium flex items-center gap-2">
                                         <span className="font-mono">{order.id}</span>
                                         <span>•</span>
-                                        <span>{order.items.length} Items ({order.items.map(i => i.category).join(', ')})</span>
+                                        <span>{order.items.length} Items</span>
                                     </p>
                                 </div>
                             </div>
