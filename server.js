@@ -538,7 +538,11 @@ app.get('/api/gold-rate', ensureDb, async (req, res) => {
 // --- META WHATSAPP PROXY ---
 
 async function callMeta(endpoint, method, token, body = null) {
-    const url = `https://graph.facebook.net/v21.0/${endpoint}`;
+    // CORRECT URL: graph.facebook.com, not .net
+    const url = `https://graph.facebook.com/v21.0/${endpoint}`;
+    
+    console.log(`[Meta Proxy] ${method} ${url}`);
+    
     const options = {
         method,
         headers: {
@@ -550,6 +554,11 @@ async function callMeta(endpoint, method, token, body = null) {
 
     const response = await fetch(url, options);
     const data = await response.json();
+    
+    if (!response.ok) {
+        console.error(`[Meta Proxy Error] ${response.status}:`, JSON.stringify(data));
+    }
+    
     return { ok: response.ok, status: response.status, data };
 }
 
@@ -652,8 +661,7 @@ app.post('/api/whatsapp/send', async (req, res) => {
     const result = await callMeta(`${phoneId}/messages`, 'POST', token, payload);
     
     if (!result.ok) {
-        console.error("Meta Send Error:", JSON.stringify(result.data));
-        return res.status(result.status).json({ success: false, error: result.data.error?.message || "Send Failed" });
+        return res.status(result.status).json({ success: false, error: result.data.error?.message || "Send Failed", debug: result.data });
     }
 
     res.json({ success: true, data: result.data });
