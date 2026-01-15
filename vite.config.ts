@@ -8,7 +8,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    base: './', // CRITICAL: Ensures assets are loaded relatively (e.g., "assets/index.js" instead of "/assets/index.js")
+    // Base must be './' for relative asset loading in subdirectories
+    base: './', 
     define: {
       'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),
     },

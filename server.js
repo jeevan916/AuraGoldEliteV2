@@ -20,23 +20,30 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// --- STATIC FILE CONFIGURATION ---
-// Critical Fix: Correctly determine if we are in development (root with dist folder) 
-// or production (inside the build folder).
+// --- SMART STATIC PATH DETECTION ---
+// The server needs to find the 'dist' folder.
+// Scenario A: Running in Project Root (Dev/VPS) -> dist/ exists.
+// Scenario B: Running inside Dist (Deployment) -> current dir is dist.
 
-let staticPath = __dirname; // Default to current directory (Production/Hostinger behavior)
-const potentialDist = path.join(__dirname, 'dist');
+let staticPath = null;
+const possibleDist = path.join(__dirname, 'dist');
+const hasViteConfig = fs.existsSync(path.join(__dirname, 'vite.config.ts'));
 
-// If 'dist' folder exists and has index.html, we are likely at project root (Dev/Local)
-// We must serve 'dist', otherwise we mistakenly serve the source index.html which causes MIME errors.
-if (fs.existsSync(potentialDist) && fs.existsSync(path.join(potentialDist, 'index.html'))) {
-    staticPath = potentialDist;
-    console.log(`[SERVER] Detected 'dist' folder. Serving from: ${staticPath}`);
+if (fs.existsSync(possibleDist) && fs.existsSync(path.join(possibleDist, 'index.html'))) {
+    // Scenario A: We are at root, and dist exists.
+    staticPath = possibleDist;
+    console.log(`[SERVER] Linked to build folder: ${staticPath}`);
+} else if (!hasViteConfig && fs.existsSync(path.join(__dirname, 'index.html'))) {
+    // Scenario B: We are likely inside the dist folder already (and not in source root).
+    staticPath = __dirname;
+    console.log(`[SERVER] Running inside build folder: ${staticPath}`);
 } else {
-    console.log(`[SERVER] No 'dist' subdirectory found. Serving from current directory: ${staticPath}`);
+    // Scenario C: We are in source root, but no build exists.
+    console.warn(`[SERVER] WARNING: No production build found.`);
 }
 
-// 1. Force Content-Type for JS/CSS to prevent strict MIME type checking errors in some environments
+// 1. Force Content-Type for JS/CSS
+// This fixes the "MIME type" errors if a 404 is returned as text/html
 app.use((req, res, next) => {
     if (req.url.endsWith('.js') || req.url.endsWith('.mjs')) {
         res.setHeader('Content-Type', 'application/javascript');
@@ -47,8 +54,10 @@ app.use((req, res, next) => {
     next();
 });
 
-// 2. Serve Static Assets
-app.use(express.static(staticPath));
+// 2. Serve Static Assets (Only if we found a valid path)
+if (staticPath) {
+    app.use(express.static(staticPath));
+}
 
 // 3. Database Connection
 let pool = null;
@@ -69,7 +78,6 @@ async function initDb() {
         const connection = await pool.getConnection();
         console.log(`[DB] Connected to ${DB_CONFIG.database}`);
         
-        // Ensure state table exists
         await connection.query(`
             CREATE TABLE IF NOT EXISTS aura_app_state (
                 id INT PRIMARY KEY,
@@ -85,7 +93,6 @@ async function initDb() {
     }
 }
 
-// Initialize DB immediately
 initDb();
 
 const ensureDb = async (req, res, next) => {
@@ -103,7 +110,6 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/api/gold-rate', (req, res) => {
-    // Fallback static rate, usually fetched from external API
     res.json({ k24: 7950, k22: 7300, k18: 5980, timestamp: Date.now() });
 });
 
@@ -135,27 +141,41 @@ app.post('/api/state', ensureDb, async (req, res) => {
 });
 
 app.post('/api/whatsapp/send', async (req, res) => {
-    // Proxy for WhatsApp/SMS calls to avoid CORS on client
-    // For now, mocking success if no credentials provided in env
     res.json({ success: true, messageId: `mock-${Date.now()}` });
 });
 
-// --- CATCH-ALL FOR SPA ---
-// IMPORTANT: This must be the last route.
-// It returns index.html for any route NOT handled above (like /dashboard, /orders).
+// --- CATCH-ALL ---
 app.get('*', (req, res) => {
-    // If the request looks like a file (has extension) but wasn't handled by express.static, send 404.
-    // This prevents "index.html" being sent for "script.js" (MIME error).
-    if (req.path.includes('.') && !req.path.includes('.html')) {
+    // API 404
+    if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: "API Endpoint Not Found" });
+    }
+
+    // Asset 404 (Prevent serving HTML for missing JS)
+    if (req.path.includes('.') && !req.path.endsWith('.html')) {
         return res.status(404).send('Not Found');
     }
-    
-    // Explicitly send the correct index.html
-    const indexPath = path.join(staticPath, 'index.html');
-    if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
+
+    // Serve Index HTML
+    if (staticPath && fs.existsSync(path.join(staticPath, 'index.html'))) {
+        res.sendFile(path.join(staticPath, 'index.html'));
     } else {
-        res.status(404).send('Application Build Not Found. Please run "npm run build".');
+        // Critical Error Page if build is missing
+        res.status(500).send(`
+            <html>
+            <head><title>AuraGold - Build Missing</title></head>
+            <body style="font-family:sans-serif; text-align:center; padding:50px; background:#f8fafc; color:#334155;">
+                <h1 style="color:#ef4444;">Application Not Built</h1>
+                <p>The server is running, but the frontend application build could not be found.</p>
+                <div style="background:#e2e8f0; padding:20px; border-radius:10px; display:inline-block; text-align:left;">
+                    <strong>Solution:</strong><br/>
+                    1. Run <code>npm run build</code> in your console.<br/>
+                    2. Ensure the <code>dist</code> folder is created.<br/>
+                    3. Restart the Node.js server.
+                </div>
+            </body>
+            </html>
+        `);
     }
 });
 
