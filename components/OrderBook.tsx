@@ -84,25 +84,33 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
            <p className="text-sm text-slate-500 font-medium">Master registry of all bookings, deliveries, and archives.</p>
         </div>
         
-        <div className="flex bg-white p-1 rounded-2xl shadow-sm border w-full md:w-auto overflow-x-auto">
-          <TabButton 
-            active={activeTab === 'ACTIVE'} 
-            onClick={() => setActiveTab('ACTIVE')} 
-            icon={Clock} 
-            label="Active Book" 
-          />
-          <TabButton 
-            active={activeTab === 'READY'} 
-            onClick={() => setActiveTab('READY')} 
-            icon={CheckCircle2} 
-            label="Ready to Deliver" 
-          />
-          <TabButton 
-            active={activeTab === 'ARCHIVE'} 
-            onClick={() => setActiveTab('ARCHIVE')} 
-            icon={Archive} 
-            label="Archives" 
-          />
+        <div className="flex gap-2 w-full md:w-auto">
+            <div className="flex bg-white p-1 rounded-2xl shadow-sm border flex-1 md:flex-none overflow-x-auto">
+              <TabButton 
+                active={activeTab === 'ACTIVE'} 
+                onClick={() => setActiveTab('ACTIVE')} 
+                icon={Clock} 
+                label="Active" 
+              />
+              <TabButton 
+                active={activeTab === 'READY'} 
+                onClick={() => setActiveTab('READY')} 
+                icon={CheckCircle2} 
+                label="Ready" 
+              />
+              <TabButton 
+                active={activeTab === 'ARCHIVE'} 
+                onClick={() => setActiveTab('ARCHIVE')} 
+                icon={Archive} 
+                label="Archive" 
+              />
+            </div>
+            <button 
+                onClick={() => (window as any).dispatchView('ORDER_NEW')}
+                className="bg-slate-900 text-white px-4 py-2 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-lg"
+            >
+                <Plus size={16} /> <span className="hidden sm:inline">New</span>
+            </button>
         </div>
       </div>
 

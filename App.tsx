@@ -607,7 +607,7 @@ const App: React.FC = () => {
 
           <div className="glass-nav fixed bottom-0 left-0 right-0 h-[84px] flex justify-around items-center px-2 z-[50] shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
              <TabBarItem icon={<Home />} label="Queue" active={view === 'DASH'} onClick={() => navigateTo('DASH')} />
-             <TabBarItem icon={<PlusCircle />} label="Book" active={view === 'ORDER_NEW'} onClick={() => navigateTo('ORDER_NEW')} />
+             <TabBarItem icon={<ShoppingBag />} label="Orders" active={view === 'ORDER_BOOK'} onClick={() => navigateTo('ORDER_BOOK')} />
              <TabBarItem icon={<ReceiptIndianRupee />} label="Ledger" active={view === 'COLLECTIONS' || view === 'ORDER_DETAILS'} onClick={() => navigateTo('COLLECTIONS')} />
              <TabBarItem icon={<Users />} label="Clients" active={view === 'CUSTOMERS'} onClick={() => navigateTo('CUSTOMERS')} />
              <TabBarItem icon={<MessageSquare />} label="Chats" active={view === 'WHATSAPP'} onClick={() => navigateTo('WHATSAPP')} />
