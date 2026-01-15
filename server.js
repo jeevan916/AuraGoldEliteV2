@@ -522,7 +522,7 @@ app.get('/api/gold-rate', ensureDb, async (req, res) => {
                 k24: Number(rows[0].rate24k), 
                 k22: Number(rows[0].rate22k), 
                 k18: Number(rows[0].rate18k), 
-                timestamp: Date.now(),
+                timestamp: Date.now(), 
                 source: 'database_fallback',
                 debugError: externalError?.message
             });
@@ -535,9 +535,128 @@ app.get('/api/gold-rate', ensureDb, async (req, res) => {
     }
 });
 
-app.post('/api/whatsapp/send', async (req, res) => { 
-    // Mock Send - In real prod, use the credentials from `integrations` table here
-    res.json({success: true, message: "Simulated Send"}); 
+// --- META WHATSAPP PROXY ---
+
+async function callMeta(endpoint, method, token, body = null) {
+    const url = `https://graph.facebook.net/v21.0/${endpoint}`;
+    const options = {
+        method,
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        }
+    };
+    if (body) options.body = JSON.stringify(body);
+
+    const response = await fetch(url, options);
+    const data = await response.json();
+    return { ok: response.ok, status: response.status, data };
+}
+
+// 1. Get Templates (GET)
+app.get('/api/whatsapp/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    if (!wabaId || !token) return res.status(401).json({ success: false, error: "Missing Credentials" });
+
+    // Fetch templates from Meta (limit 100 for now)
+    const result = await callMeta(`${wabaId}/message_templates?limit=100`, 'GET', token);
+    
+    if (!result.ok) {
+        return res.status(result.status).json({ success: false, error: result.data.error?.message || "Meta Error" });
+    }
+    
+    res.json({ success: true, data: result.data.data });
+});
+
+// 2. Create Template (POST)
+app.post('/api/whatsapp/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    if (!wabaId || !token) return res.status(401).json({ success: false, error: "Missing Credentials" });
+
+    const result = await callMeta(`${wabaId}/message_templates`, 'POST', token, req.body);
+    
+    if (!result.ok) {
+        return res.status(result.status).json({ success: false, error: result.data.error?.message || "Creation Failed", data: result.data });
+    }
+
+    res.json({ success: true, data: result.data });
+});
+
+// 3. Edit Template (POST to ID)
+app.post('/api/whatsapp/templates/:id', async (req, res) => {
+    const token = req.headers['x-auth-token'];
+    if (!token) return res.status(401).json({ success: false, error: "Missing Credentials" });
+    
+    const result = await callMeta(`${req.params.id}`, 'POST', token, req.body);
+    
+    if (!result.ok) {
+        return res.status(result.status).json({ success: false, error: result.data.error?.message || "Edit Failed", data: result.data });
+    }
+
+    res.json({ success: true, data: result.data });
+});
+
+// 4. Delete Template (DELETE by Name)
+app.delete('/api/whatsapp/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    const name = req.query.name;
+    if (!wabaId || !token || !name) return res.status(400).json({ success: false, error: "Missing Parameters" });
+
+    const result = await callMeta(`${wabaId}/message_templates?name=${name}`, 'DELETE', token);
+    
+    if (!result.ok) {
+        return res.status(result.status).json({ success: false, error: result.data.error?.message || "Deletion Failed" });
+    }
+
+    res.json({ success: true });
+});
+
+// 5. Send Message (POST)
+app.post('/api/whatsapp/send', async (req, res) => {
+    const phoneId = req.headers['x-phone-id'];
+    const token = req.headers['x-auth-token'];
+    if (!phoneId || !token) return res.status(401).json({ success: false, error: "Missing Credentials" });
+
+    const { to, message, templateName, language, variables } = req.body;
+    
+    let payload = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: to
+    };
+
+    // Determine payload type
+    if (templateName) {
+        payload.type = "template";
+        payload.template = {
+            name: templateName,
+            language: { code: language || "en_US" }
+        };
+        // Convert array of string vars to component params
+        if (variables && variables.length > 0) {
+            payload.template.components = [{
+                type: "body",
+                parameters: variables.map(v => ({ type: "text", text: v }))
+            }];
+        }
+    } else if (message) {
+        payload.type = "text";
+        payload.text = { body: message };
+    } else {
+        return res.status(400).json({ success: false, error: "Invalid payload: provide 'message' or 'templateName'" });
+    }
+
+    const result = await callMeta(`${phoneId}/messages`, 'POST', token, payload);
+    
+    if (!result.ok) {
+        console.error("Meta Send Error:", JSON.stringify(result.data));
+        return res.status(result.status).json({ success: false, error: result.data.error?.message || "Send Failed" });
+    }
+
+    res.json({ success: true, data: result.data });
 });
 
 app.post('/api/debug/configure', async (req, res) => {
