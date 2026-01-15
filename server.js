@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 
 // Load environment variables
 dotenv.config();
@@ -20,30 +21,40 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// --- SMART STATIC PATH DETECTION ---
-// The server needs to find the 'dist' folder.
-// Scenario A: Running in Project Root (Dev/VPS) -> dist/ exists.
-// Scenario B: Running inside Dist (Deployment) -> current dir is dist.
-
+// --- SMART STATIC PATH DETECTION & AUTO-BUILD ---
 let staticPath = null;
 const possibleDist = path.join(__dirname, 'dist');
 const hasViteConfig = fs.existsSync(path.join(__dirname, 'vite.config.ts'));
 
-if (fs.existsSync(possibleDist) && fs.existsSync(path.join(possibleDist, 'index.html'))) {
-    // Scenario A: We are at root, and dist exists.
-    staticPath = possibleDist;
-    console.log(`[SERVER] Linked to build folder: ${staticPath}`);
-} else if (!hasViteConfig && fs.existsSync(path.join(__dirname, 'index.html'))) {
-    // Scenario B: We are likely inside the dist folder already (and not in source root).
+// 1. Check if we are inside a built folder (Production Upload)
+if (!hasViteConfig && fs.existsSync(path.join(__dirname, 'index.html'))) {
     staticPath = __dirname;
     console.log(`[SERVER] Running inside build folder: ${staticPath}`);
-} else {
-    // Scenario C: We are in source root, but no build exists.
-    console.warn(`[SERVER] WARNING: No production build found.`);
+} 
+// 2. Check if dist exists in root (Dev/VPS)
+else if (fs.existsSync(possibleDist) && fs.existsSync(path.join(possibleDist, 'index.html'))) {
+    staticPath = possibleDist;
+    console.log(`[SERVER] Found existing build: ${staticPath}`);
+} 
+// 3. AUTO-BUILD RECOVERY
+else {
+    console.warn(`[SERVER] ⚠️ Build not found. Attempting to auto-build...`);
+    try {
+        console.log(`[SERVER] Running 'npm run build'...`);
+        execSync('npm run build', { stdio: 'inherit' });
+        
+        if (fs.existsSync(possibleDist) && fs.existsSync(path.join(possibleDist, 'index.html'))) {
+            staticPath = possibleDist;
+            console.log(`[SERVER] ✅ Auto-build successful! Serving from: ${staticPath}`);
+        } else {
+            console.error(`[SERVER] ❌ Auto-build ran but 'dist/index.html' is still missing.`);
+        }
+    } catch (e) {
+        console.error(`[SERVER] ❌ Auto-build failed:`, e.message);
+    }
 }
 
-// 1. Force Content-Type for JS/CSS
-// This fixes the "MIME type" errors if a 404 is returned as text/html
+// 4. Force Content-Type for JS/CSS
 app.use((req, res, next) => {
     if (req.url.endsWith('.js') || req.url.endsWith('.mjs')) {
         res.setHeader('Content-Type', 'application/javascript');
@@ -54,12 +65,12 @@ app.use((req, res, next) => {
     next();
 });
 
-// 2. Serve Static Assets (Only if we found a valid path)
+// 5. Serve Static Assets (if path found)
 if (staticPath) {
     app.use(express.static(staticPath));
 }
 
-// 3. Database Connection
+// 6. Database Connection
 let pool = null;
 const DB_CONFIG = {
     host: process.env.DB_HOST || 'localhost',
@@ -146,33 +157,26 @@ app.post('/api/whatsapp/send', async (req, res) => {
 
 // --- CATCH-ALL ---
 app.get('*', (req, res) => {
-    // API 404
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API Endpoint Not Found" });
     }
 
-    // Asset 404 (Prevent serving HTML for missing JS)
     if (req.path.includes('.') && !req.path.endsWith('.html')) {
         return res.status(404).send('Not Found');
     }
 
-    // Serve Index HTML
     if (staticPath && fs.existsSync(path.join(staticPath, 'index.html'))) {
         res.sendFile(path.join(staticPath, 'index.html'));
     } else {
-        // Critical Error Page if build is missing
         res.status(500).send(`
             <html>
-            <head><title>AuraGold - Build Missing</title></head>
-            <body style="font-family:sans-serif; text-align:center; padding:50px; background:#f8fafc; color:#334155;">
-                <h1 style="color:#ef4444;">Application Not Built</h1>
-                <p>The server is running, but the frontend application build could not be found.</p>
-                <div style="background:#e2e8f0; padding:20px; border-radius:10px; display:inline-block; text-align:left;">
-                    <strong>Solution:</strong><br/>
-                    1. Run <code>npm run build</code> in your console.<br/>
-                    2. Ensure the <code>dist</code> folder is created.<br/>
-                    3. Restart the Node.js server.
-                </div>
+            <head><title>AuraGold - Generating Build...</title><meta http-equiv="refresh" content="10"></head>
+            <body style="font-family:sans-serif; text-align:center; padding:50px; color:#333;">
+                <h1 style="color:#eab308;">System Initializing</h1>
+                <p>The server is compiling the application for the first time. This may take 30-60 seconds.</p>
+                <p><strong>Please refresh this page in a minute.</strong></p>
+                <br/>
+                <small style="color:#999;">If this persists, check server logs for 'npm run build' errors.</small>
             </body>
             </html>
         `);
