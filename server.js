@@ -158,7 +158,11 @@ const ensureDb = async (req, res, next) => {
 async function fetchLiveAugmontRates() {
     try {
         log("Fetching live rates from Augmont UAT...", "INFO");
-        const response = await fetch('https://uat.batuk.in/augmont/gold');
+        // Timeout set to 8 seconds to prevent hanging
+        const response = await fetch('https://uat.batuk.in/augmont/gold', {
+            signal: AbortSignal.timeout(8000) 
+        });
+        
         if (!response.ok) throw new Error(`Augmont API responded with ${response.status}`);
         
         const json = await response.json();
@@ -479,37 +483,48 @@ app.post('/api/sync/catalog', ensureDb, async (req, res) => {
 
 // Get Live Gold Rate (From Augmont or Database History)
 app.get('/api/gold-rate', ensureDb, async (req, res) => {
+    let liveRates = null;
+    let externalError = null;
+
+    // 1. Try fetching live from External API (with short timeout)
     try {
-        // 1. Try fetching live from External API
-        const liveData = await fetchLiveAugmontRates();
+        liveRates = await fetchLiveAugmontRates();
+    } catch (e) {
+        externalError = e;
+    }
+
+    try {
+        const connection = await pool.getConnection();
         
-        if (liveData) {
-            // Save to DB for history
-            const connection = await pool.getConnection();
+        if (liveRates) {
+            // Save to DB for history if live fetch succeeded
             await connection.query(
                 `INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)`,
-                [liveData.rate24k, liveData.rate22k, liveData.rate18k]
+                [liveRates.rate24k, liveRates.rate22k, liveRates.rate18k]
             );
             connection.release();
             
             return res.json({ 
-                k24: liveData.rate24k, 
-                k22: liveData.rate22k, 
-                k18: liveData.rate18k, 
+                k24: liveRates.rate24k, 
+                k22: liveRates.rate22k, 
+                k18: liveRates.rate18k, 
                 timestamp: Date.now(), 
                 source: 'augmont_live_api' 
             });
         }
 
         // 2. Fallback to DB if external fetch fails
-        const [rows] = await pool.query('SELECT rate24k, rate22k, rate18k FROM gold_rates ORDER BY id DESC LIMIT 1');
+        const [rows] = await connection.query('SELECT rate24k, rate22k, rate18k FROM gold_rates ORDER BY id DESC LIMIT 1');
+        connection.release();
+
         if (rows.length > 0) {
             res.json({ 
                 k24: Number(rows[0].rate24k), 
                 k22: Number(rows[0].rate22k), 
                 k18: Number(rows[0].rate18k), 
                 timestamp: Date.now(),
-                source: 'database_fallback'
+                source: 'database_fallback',
+                debugError: externalError?.message
             });
         } else {
             // 3. Hard fallback
