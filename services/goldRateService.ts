@@ -9,15 +9,13 @@ export interface GoldRateResponse {
 
 export const goldRateService = {
   /**
-   * Fetches the live gold rate from the backend database.
+   * Fetches the live gold rate.
+   * The backend (/api/gold-rate) now proxies the request to Augmont UAT 
+   * and falls back to the database if the external API is down.
    */
   async fetchLiveRate(): Promise<GoldRateResponse> {
     try {
-        const origin = window.location.origin;
-        // Use relative path to work in both dev (proxy) and prod
         const apiUrl = `/api/gold-rate`;
-        
-        console.log("[GoldRateService] Fetching from DB:", apiUrl);
         
         const response = await fetch(apiUrl, {
           headers: { 
@@ -28,10 +26,15 @@ export const goldRateService = {
         
         if (!response.ok) {
             const errText = await response.text();
-            throw new Error(`HTTP ${response.status}: ${errText || 'Not Found'}`);
+            throw new Error(`HTTP ${response.status}: ${errText || 'Service Unavailable'}`);
         }
         
         const data = await response.json();
+        
+        if (data.source) {
+            console.log(`[GoldRateService] Rate Source: ${data.source}`);
+        }
+
         return {
             rate24K: data.k24 || 0,
             rate22K: data.k22 || 0,

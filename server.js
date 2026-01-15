@@ -154,50 +154,99 @@ const ensureDb = async (req, res, next) => {
     next();
 };
 
+// --- EXTERNAL RATE FETCHING ---
+async function fetchLiveAugmontRates() {
+    try {
+        log("Fetching live rates from Augmont UAT...", "INFO");
+        const response = await fetch('https://uat.batuk.in/augmont/gold');
+        if (!response.ok) throw new Error(`Augmont API responded with ${response.status}`);
+        
+        const json = await response.json();
+        // Augmont Structure: { data: [ [ { gSell: "..." } ] ] }
+        const dataNode = json.data?.[0]?.[0];
+        
+        if (dataNode && dataNode.gSell) {
+            const gSell = parseFloat(dataNode.gSell);
+            if (!isNaN(gSell)) {
+                return {
+                    rate24k: gSell,
+                    // Standard industry calculation: 22K is 91.66%, 18K is 75%
+                    rate22k: Math.round(gSell * (22/24)), 
+                    rate18k: Math.round(gSell * (18/24))
+                };
+            }
+        }
+        return null;
+    } catch (e) {
+        log(`Augmont Fetch Failed: ${e.message}`, "ERROR");
+        return null;
+    }
+}
+
 // --- HELPER: Construct Global Settings Object ---
 async function getAggregatedSettings(connection) {
-    // 1. Get Latest Gold Rate
-    const [rateRows] = await connection.query('SELECT * FROM gold_rates ORDER BY id DESC LIMIT 1');
-    const rates = rateRows[0] || { rate24k: 7200, rate22k: 6600, rate18k: 5400 };
+    try {
+        // 1. Get Latest Gold Rate
+        const [rateRows] = await connection.query('SELECT * FROM gold_rates ORDER BY id DESC LIMIT 1');
+        const rates = rateRows[0] || { rate24k: 7200, rate22k: 6600, rate18k: 5400 };
 
-    // 2. Get App Config (Key-Value)
-    const [configRows] = await connection.query('SELECT * FROM app_config');
-    const configMap = {};
-    configRows.forEach(row => configMap[row.setting_key] = row.setting_value);
+        // 2. Get App Config (Key-Value)
+        const [configRows] = await connection.query('SELECT * FROM app_config');
+        const configMap = {};
+        configRows.forEach(row => configMap[row.setting_key] = row.setting_value);
 
-    // 3. Get Integrations
-    const [intRows] = await connection.query('SELECT * FROM integrations');
-    const intMap = {};
-    intRows.forEach(row => intMap[row.provider] = row.config); // JSON is automatically parsed by mysql2
-
-    // 4. Merge into Frontend Structure
-    return {
-        currentGoldRate24K: Number(rates.rate24k),
-        currentGoldRate22K: Number(rates.rate22k),
-        currentGoldRate18K: Number(rates.rate18k),
+        // 3. Get Integrations
+        const [intRows] = await connection.query('SELECT * FROM integrations');
+        const intMap = {};
         
-        defaultTaxRate: Number(configMap['default_tax_rate'] || 3),
-        goldRateProtectionMax: Number(configMap['protection_max'] || 500),
-        gracePeriodHours: Number(configMap['grace_period_hours'] || 24),
-        followUpIntervalDays: Number(configMap['follow_up_days'] || 3),
+        intRows.forEach(row => {
+            let conf = row.config;
+            // Robust Parsing: Handle double-encoded strings or raw objects
+            try {
+                while (typeof conf === 'string') {
+                    conf = JSON.parse(conf);
+                }
+            } catch (e) {
+                console.error(`Failed to parse config for ${row.provider}`, e);
+                conf = {};
+            }
+            intMap[row.provider] = conf || {};
+        });
 
-        // WhatsApp
-        whatsappPhoneNumberId: intMap['whatsapp']?.phoneId || '',
-        whatsappBusinessAccountId: intMap['whatsapp']?.accountId || '',
-        whatsappBusinessToken: intMap['whatsapp']?.token || '',
+        // 4. Merge into Frontend Structure
+        const mergedSettings = {
+            currentGoldRate24K: Number(rates.rate24k),
+            currentGoldRate22K: Number(rates.rate22k),
+            currentGoldRate18K: Number(rates.rate18k),
+            
+            defaultTaxRate: Number(configMap['default_tax_rate'] || 3),
+            goldRateProtectionMax: Number(configMap['protection_max'] || 500),
+            gracePeriodHours: Number(configMap['grace_period_hours'] || 24),
+            followUpIntervalDays: Number(configMap['follow_up_days'] || 3),
 
-        // Razorpay
-        razorpayKeyId: intMap['razorpay']?.keyId || '',
-        razorpayKeySecret: intMap['razorpay']?.keySecret || '',
+            // WhatsApp
+            whatsappPhoneNumberId: intMap['whatsapp']?.phoneId || '',
+            whatsappBusinessAccountId: intMap['whatsapp']?.accountId || '',
+            whatsappBusinessToken: intMap['whatsapp']?.token || '',
 
-        // Msg91
-        msg91AuthKey: intMap['msg91']?.authKey || '',
-        msg91SenderId: intMap['msg91']?.senderId || '',
+            // Razorpay
+            razorpayKeyId: intMap['razorpay']?.keyId || '',
+            razorpayKeySecret: intMap['razorpay']?.keySecret || '',
 
-        // Setu
-        setuSchemeId: intMap['setu']?.schemeId || '',
-        setuSecret: intMap['setu']?.secret || ''
-    };
+            // Msg91
+            msg91AuthKey: intMap['msg91']?.authKey || '',
+            msg91SenderId: intMap['msg91']?.senderId || '',
+
+            // Setu
+            setuSchemeId: intMap['setu']?.schemeId || '',
+            setuSecret: intMap['setu']?.secret || ''
+        };
+        
+        return mergedSettings;
+    } catch (e) {
+        log(`Error aggregating settings: ${e.message}`, 'ERROR');
+        return null;
+    }
 }
 
 // --- DATA SYNC API ---
@@ -218,7 +267,7 @@ app.get('/api/bootstrap', ensureDb, async (req, res) => {
         connection.release();
 
         const state = {
-            settings,
+            settings: settings || {}, // Ensure not null
             customers: customerRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
             orders: orderRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
             logs: logRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
@@ -269,30 +318,30 @@ app.post('/api/sync/settings', ensureDb, async (req, res) => {
             {
                 provider: 'whatsapp',
                 config: {
-                    phoneId: settings.whatsappPhoneNumberId,
-                    accountId: settings.whatsappBusinessAccountId,
-                    token: settings.whatsappBusinessToken
+                    phoneId: settings.whatsappPhoneNumberId || '',
+                    accountId: settings.whatsappBusinessAccountId || '',
+                    token: settings.whatsappBusinessToken || ''
                 }
             },
             {
                 provider: 'razorpay',
                 config: {
-                    keyId: settings.razorpayKeyId,
-                    keySecret: settings.razorpayKeySecret
+                    keyId: settings.razorpayKeyId || '',
+                    keySecret: settings.razorpayKeySecret || ''
                 }
             },
             {
                 provider: 'msg91',
                 config: {
-                    authKey: settings.msg91AuthKey,
-                    senderId: settings.msg91SenderId
+                    authKey: settings.msg91AuthKey || '',
+                    senderId: settings.msg91SenderId || ''
                 }
             },
             {
                 provider: 'setu',
                 config: {
-                    schemeId: settings.setuSchemeId,
-                    secret: settings.setuSecret
+                    schemeId: settings.setuSchemeId || '',
+                    secret: settings.setuSecret || ''
                 }
             }
         ];
@@ -306,13 +355,15 @@ app.post('/api/sync/settings', ensureDb, async (req, res) => {
 
         await connection.commit();
         connection.release();
+        log('Settings Saved Successfully', 'SUCCESS');
         res.json({ success: true });
     } catch (e) {
+        log(`Settings Save Error: ${e.message}`, 'ERROR');
         res.status(500).json({ error: e.message });
     }
 });
 
-// --- Other Entity Sync Endpoints (Kept same but ensure connection release) ---
+// --- Other Entity Sync Endpoints ---
 
 app.post('/api/sync/orders', ensureDb, async (req, res) => {
     const { orders } = req.body;
@@ -426,9 +477,31 @@ app.post('/api/sync/catalog', ensureDb, async (req, res) => {
 
 // --- UTILITY ROUTES ---
 
-// Get Live Gold Rate (From Database History)
+// Get Live Gold Rate (From Augmont or Database History)
 app.get('/api/gold-rate', ensureDb, async (req, res) => {
     try {
+        // 1. Try fetching live from External API
+        const liveData = await fetchLiveAugmontRates();
+        
+        if (liveData) {
+            // Save to DB for history
+            const connection = await pool.getConnection();
+            await connection.query(
+                `INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)`,
+                [liveData.rate24k, liveData.rate22k, liveData.rate18k]
+            );
+            connection.release();
+            
+            return res.json({ 
+                k24: liveData.rate24k, 
+                k22: liveData.rate22k, 
+                k18: liveData.rate18k, 
+                timestamp: Date.now(), 
+                source: 'augmont_live_api' 
+            });
+        }
+
+        // 2. Fallback to DB if external fetch fails
         const [rows] = await pool.query('SELECT rate24k, rate22k, rate18k FROM gold_rates ORDER BY id DESC LIMIT 1');
         if (rows.length > 0) {
             res.json({ 
@@ -436,10 +509,11 @@ app.get('/api/gold-rate', ensureDb, async (req, res) => {
                 k22: Number(rows[0].rate22k), 
                 k18: Number(rows[0].rate18k), 
                 timestamp: Date.now(),
-                source: 'database'
+                source: 'database_fallback'
             });
         } else {
-            res.json({ k24: 7950, k22: 7300, k18: 5980, timestamp: Date.now(), source: 'default' });
+            // 3. Hard fallback
+            res.json({ k24: 7950, k22: 7300, k18: 5980, timestamp: Date.now(), source: 'default_static' });
         }
     } catch (e) {
         res.status(500).json({ error: e.message });
