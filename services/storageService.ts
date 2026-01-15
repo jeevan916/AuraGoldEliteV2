@@ -38,13 +38,11 @@ class StorageService {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Ensure catalog exists in loaded state (migration support)
         if (!parsed.catalog) parsed.catalog = INITIAL_CATALOG;
         this.state = parsed;
-        console.log("[Storage] Local state loaded.");
       }
     } catch (e) {
-      console.warn("[Storage] Failed to load local storage", e);
+      console.warn("Local storage error", e);
     }
   }
 
@@ -53,116 +51,112 @@ class StorageService {
       this.state.lastUpdated = Date.now();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
     } catch (e) {
-      console.error("[Storage] Failed to save to local storage", e);
+      console.error("Save local error", e);
     }
   }
 
-  public getSyncStatus() {
-    return this.syncStatus;
-  }
+  public getSyncStatus() { return this.syncStatus; }
 
+  // --- BOOTSTRAP: FETCH ALL FROM DB ---
   public async syncFromServer(): Promise<{ success: boolean; message: string }> {
     this.syncStatus = 'SYNCING';
     this.notify();
 
     try {
-      console.log("[Storage] Syncing with /api/state...");
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-      const res = await fetch('/api/state', {
-        headers: { 
-          'Accept': 'application/json',
-          'Cache-Control': 'no-cache'
-        },
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-
-      if (!res.ok) {
-        throw new Error(`Server status: ${res.status}`);
-      }
-
-      const serverData = await res.json();
+      const res = await fetch('/api/bootstrap');
+      if (!res.ok) throw new Error("Bootstrap failed");
       
-      if (serverData && serverData.lastUpdated > (this.state.lastUpdated || 0)) {
-          console.log("[Storage] Server state is newer. Syncing.");
-          // Merge defaults in case server data is old/partial
-          this.state = { ...DEFAULT_STATE, ...serverData };
-          if(!this.state.catalog) this.state.catalog = INITIAL_CATALOG;
+      const response = await res.json();
+      if (response.success && response.data) {
+          const dbData = response.data;
+          
+          // Merge DB data with defaults
+          this.state = {
+              orders: dbData.orders || [],
+              customers: dbData.customers || [],
+              settings: dbData.settings || INITIAL_SETTINGS,
+              templates: (dbData.templates && dbData.templates.length > 0) ? dbData.templates : INITIAL_TEMPLATES,
+              logs: dbData.logs || [],
+              planTemplates: (dbData.planTemplates && dbData.planTemplates.length > 0) ? dbData.planTemplates : INITIAL_PLAN_TEMPLATES,
+              catalog: (dbData.catalog && dbData.catalog.length > 0) ? dbData.catalog : INITIAL_CATALOG,
+              lastUpdated: Date.now()
+          } as any; // Type casting for ease
+
           this.saveToLocal();
-      }
-
-      this.syncStatus = 'CONNECTED';
-      this.notify();
-      return { success: true, message: "Synced with Cloud" };
-
-    } catch (e: any) {
-      console.warn("[Storage] Sync failed, using local fallback:", e.message);
-      this.syncStatus = 'LOCAL_FALLBACK';
-      this.notify();
-      return { success: false, message: "Local Cache Active" };
-    }
-  }
-
-  private async syncToBackend() {
-    this.saveToLocal();
-    this.notify();
-
-    try {
-      const res = await fetch('/api/state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(this.state)
-      });
-      
-      if (res.ok) {
-        this.syncStatus = 'CONNECTED';
+          this.syncStatus = 'CONNECTED';
       } else {
-        this.syncStatus = 'LOCAL_FALLBACK';
+          this.syncStatus = 'LOCAL_FALLBACK';
       }
     } catch (e) {
-      console.error("[Storage] Backend push error:", e);
+      console.warn("Sync failed, offline mode");
       this.syncStatus = 'LOCAL_FALLBACK';
     } finally {
       this.notify();
     }
+    return { success: this.syncStatus === 'CONNECTED', message: this.syncStatus };
+  }
+
+  // --- ENTITY SYNC METHODS ---
+
+  private async pushEntity(endpoint: string, payload: any) {
+      this.saveToLocal(); // Always save local first for optimistic UI
+      this.notify();
+      
+      try {
+          const res = await fetch(`/api/sync/${endpoint}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+          });
+          if (res.ok) this.syncStatus = 'CONNECTED';
+          else this.syncStatus = 'ERROR';
+      } catch (e) {
+          this.syncStatus = 'LOCAL_FALLBACK';
+      } finally {
+          this.notify();
+      }
   }
 
   public getOrders() { return this.state.orders; }
   public setOrders(orders: Order[]) { 
     this.state.orders = orders; 
-    this.syncToBackend(); 
+    this.pushEntity('orders', { orders }); 
   }
 
   public getLogs() { return this.state.logs; }
   public setLogs(logs: WhatsAppLogEntry[]) { 
     this.state.logs = logs; 
-    this.syncToBackend(); 
+    this.pushEntity('logs', { logs }); 
   }
 
   public getTemplates() { return this.state.templates; }
   public setTemplates(templates: WhatsAppTemplate[]) { 
     this.state.templates = templates; 
-    this.syncToBackend(); 
+    this.pushEntity('templates', { templates }); 
   }
 
   public getPlanTemplates() { return this.state.planTemplates; }
   public setPlanTemplates(templates: PaymentPlanTemplate[]) { 
     this.state.planTemplates = templates; 
-    this.syncToBackend(); 
+    this.pushEntity('plans', { plans: templates }); 
   }
 
   public getCatalog() { return this.state.catalog; }
   public setCatalog(catalog: CatalogItem[]) {
     this.state.catalog = catalog;
-    this.syncToBackend();
+    this.pushEntity('catalog', { catalog });
   }
 
   public getSettings() { return this.state.settings; }
   public setSettings(settings: GlobalSettings) { 
     this.state.settings = settings; 
-    this.syncToBackend(); 
+    this.pushEntity('settings', { settings }); 
+  }
+
+  // Customers are derived in App usually, but if we save them explicitly:
+  public setCustomers(customers: any[]) {
+      (this.state as any).customers = customers; // Add to state if missing from interface
+      this.pushEntity('customers', { customers });
   }
 
   public subscribe(cb: () => void) {
@@ -174,9 +168,7 @@ class StorageService {
     this.listeners.forEach(cb => cb()); 
   }
 
-  public async forceSync(): Promise<{ success: boolean; message: string }> {
-    return this.syncFromServer();
-  }
+  public async forceSync() { return this.syncFromServer(); }
 }
 
 export const storageService = new StorageService();
