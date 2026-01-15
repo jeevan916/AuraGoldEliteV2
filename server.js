@@ -26,7 +26,8 @@ let pool = null;
 const DB_USER = 'u477692720_jeevan1';
 const DB_NAME = 'u477692720_AuraGoldElite';
 const DB_PASS = 'AuraGold@2025';
-const DB_HOST = 'localhost';
+// Use 127.0.0.1 instead of localhost to prevent IPv6 lookup issues on some hosts
+const DB_HOST = '127.0.0.1'; 
 
 const getDbConfig = () => ({
   host: process.env.DB_HOST || DB_HOST,
@@ -44,7 +45,7 @@ async function initDb() {
     // If pool exists but we are calling initDb, it's a reset attempt
     if (pool) {
       console.log("[DB RESET] Ending existing pool...");
-      await pool.end().catch(() => {});
+      await pool.end().catch((err) => console.error("Error ending pool:", err.message));
       pool = null;
     }
 
@@ -75,11 +76,11 @@ async function initDb() {
     `);
     
     connection.release();
-    return true;
+    return { success: true };
   } catch (err) {
     console.error('❌ [DB FAILURE]:', err.message);
-    pool = null;
-    return false;
+    pool = null; // Ensure pool is null if init failed
+    return { success: false, error: err.message };
   }
 }
 
@@ -90,11 +91,12 @@ initDb().catch(e => console.error("[BOOT ERROR]", e));
 const ensureDb = async (req, res, next) => {
     if (!pool) {
         console.log("[DB RECOVERY] Pool was null, attempting re-init...");
-        const success = await initDb();
-        if (!success) {
+        const result = await initDb();
+        if (!result.success) {
             return res.status(503).json({ 
                 error: "Database Connection Failed", 
                 details: "Pool could not be initialized. Check Hostinger DB user privileges and credentials.",
+                system_error: result.error,
                 config_attempted: DB_USER
             });
         }
@@ -116,28 +118,47 @@ app.get("/api/health", (req, res) => {
 
 app.get('/api/test-db', async (req, res) => {
     try {
-        // Explicitly trigger a fresh init for testing
-        const success = await initDb();
-        if (!success || !pool) {
-            throw new Error("Pool initialization returned false or pool is still null");
+        let connection;
+        let usedExisting = false;
+
+        // 1. Try existing pool first
+        if (pool) {
+            try {
+                connection = await pool.getConnection();
+                usedExisting = true;
+            } catch (err) {
+                console.log("Existing pool failed ping, will re-init. Error:", err.message);
+                pool = null; // Mark as bad
+            }
+        }
+
+        // 2. If no pool or failed, init new one
+        if (!pool) {
+            const initResult = await initDb();
+            if (!initResult.success) {
+                throw new Error(`Init failed: ${initResult.error}`);
+            }
+            connection = await pool.getConnection();
         }
         
-        const connection = await pool.getConnection();
+        // 3. Run query
         const [rows] = await connection.query('SELECT 1 as result');
         connection.release();
         
         res.json({ 
             status: "success", 
             message: "Database handshake verified.", 
+            mode: usedExisting ? "reused_active_pool" : "fresh_connection",
             result: rows[0],
-            db: DB_NAME 
+            db: DB_NAME,
+            host: DB_HOST
         });
     } catch (e) {
         console.error("[TEST-DB ERROR]", e.message);
         res.status(500).json({ 
             status: "error", 
             message: e.message,
-            tip: "Ensure the database user has 'All Privileges' on the database in Hostinger panel."
+            tip: "Ensure 127.0.0.1/localhost is allowed and user has privileges."
         });
     }
 });
