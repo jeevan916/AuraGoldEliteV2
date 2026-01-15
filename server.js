@@ -21,73 +21,84 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// --- ROBUST STATIC PATH DETECTION ---
+// --- SYSTEM DIAGNOSTICS & AUTO-BUILD ---
 let staticPath = null;
-const possibleDist = path.join(__dirname, 'dist');
+let systemLog = []; // Capture logs to show in browser
 
-/**
- * Checks if the index.html at the given path is a Production Build.
- * Returns FALSE if it contains references to .tsx files (Source Code).
- */
-const isValidBuild = (dirPath) => {
-    const indexPath = path.join(dirPath, 'index.html');
-    if (!fs.existsSync(indexPath)) return false;
-    
+const log = (msg, type = 'INFO') => {
+    const entry = `[${new Date().toLocaleTimeString()}] [${type}] ${msg}`;
+    console.log(entry);
+    systemLog.push(entry);
+};
+
+const runCommand = (command) => {
+    log(`Executing: ${command}`);
     try {
-        const content = fs.readFileSync(indexPath, 'utf8');
-        // If HTML references .tsx, it is SOURCE code, not BUILD code.
-        if (content.includes('src="./index.tsx"') || content.includes('src="/index.tsx"')) {
-            return false;
-        }
+        const output = execSync(command, { encoding: 'utf8', stdio: 'pipe' });
+        log(output);
         return true;
     } catch (e) {
+        log(`COMMAND FAILED: ${command}`, 'ERROR');
+        log(e.message, 'ERROR');
+        if (e.stdout) log(`STDOUT: ${e.stdout}`, 'ERROR');
+        if (e.stderr) log(`STDERR: ${e.stderr}`, 'ERROR');
         return false;
     }
 };
 
-// 1. Check if we are running inside a valid 'dist' folder (Production)
+const possibleDist = path.join(__dirname, 'dist');
+
+// Check Function
+const isValidBuild = (dirPath) => {
+    const indexPath = path.join(dirPath, 'index.html');
+    if (!fs.existsSync(indexPath)) return false;
+    try {
+        const content = fs.readFileSync(indexPath, 'utf8');
+        return !content.includes('src="./index.tsx"'); // True if it's NOT source code
+    } catch (e) { return false; }
+};
+
+// --- INITIALIZATION SEQUENCE ---
+log("Starting Server Initialization...");
+
+// 1. Dependency Check
+if (!fs.existsSync(path.join(__dirname, 'node_modules'))) {
+    log("node_modules not found. Attempting 'npm install'...", 'WARN');
+    runCommand('npm install');
+}
+
+// 2. Locate or Build App
 if (isValidBuild(__dirname)) {
     staticPath = __dirname;
-    console.log(`[SERVER] Running inside valid build folder: ${staticPath}`);
-} 
-// 2. Check if a valid 'dist' folder exists in root
-else if (isValidBuild(possibleDist)) {
+    log(`Serving pre-built app from root.`);
+} else if (isValidBuild(possibleDist)) {
     staticPath = possibleDist;
-    console.log(`[SERVER] Found valid build in dist: ${staticPath}`);
-} 
-// 3. Auto-Build Recovery
-else {
-    console.warn(`[SERVER] ⚠️ Valid Build Not Found. Detected Source Code.`);
-    console.log(`[SERVER] Starting Auto-Build... (This may take 60s)`);
-    try {
-        // Attempt build
-        execSync('npm run build', { stdio: 'inherit', timeout: 120000 }); // 2 min timeout
-        
-        // Re-check after build
-        if (isValidBuild(possibleDist)) {
-            staticPath = possibleDist;
-            console.log(`[SERVER] ✅ Auto-build success! Serving: ${staticPath}`);
-        } else {
-            console.error(`[SERVER] ❌ Auto-build finished but 'dist/index.html' is still missing or invalid.`);
-        }
-    } catch (e) {
-        console.error(`[SERVER] ❌ Auto-build failed:`, e.message);
+    log(`Serving pre-built app from /dist.`);
+} else {
+    log("Valid build not found. Starting Auto-Build...", 'WARN');
+    
+    // Attempt Build
+    const success = runCommand('npm run build');
+    
+    if (success && isValidBuild(possibleDist)) {
+        staticPath = possibleDist;
+        log("Auto-Build Successful!", 'SUCCESS');
+    } else {
+        log("Auto-Build Failed. Check logs below.", 'CRITICAL');
     }
 }
 
-// 4. Serve Static Assets
+// 3. Asset Config
 if (staticPath) {
-    // Force JS MIME type
     app.use((req, res, next) => {
-        if (req.url.endsWith('.js')) {
-            res.setHeader('Content-Type', 'application/javascript');
-        }
+        if (req.url.endsWith('.js')) res.setHeader('Content-Type', 'application/javascript');
+        if (req.url.endsWith('.css')) res.setHeader('Content-Type', 'text/css');
         next();
     });
     app.use(express.static(staticPath));
 }
 
-// 5. Database Connection
+// 4. Database Config
 let pool = null;
 const DB_CONFIG = {
     host: process.env.DB_HOST || 'localhost',
@@ -104,7 +115,7 @@ async function initDb() {
     try {
         pool = mysql.createPool(DB_CONFIG);
         const connection = await pool.getConnection();
-        console.log(`[DB] Connected to ${DB_CONFIG.database}`);
+        log(`Database Connected: ${DB_CONFIG.database}`, 'SUCCESS');
         
         await connection.query(`
             CREATE TABLE IF NOT EXISTS aura_app_state (
@@ -116,7 +127,7 @@ async function initDb() {
         connection.release();
         return true;
     } catch (err) {
-        console.error('[DB] Connection Failed:', err.message);
+        log(`Database Connection Failed: ${err.message}`, 'ERROR');
         return false;
     }
 }
@@ -172,35 +183,49 @@ app.post('/api/whatsapp/send', async (req, res) => {
     res.json({ success: true, messageId: `mock-${Date.now()}` });
 });
 
-// --- CATCH-ALL FOR SPA ---
+// --- CATCH-ALL & DIAGNOSTIC PAGE ---
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API Endpoint Not Found" });
     }
 
-    // Determine correct index.html
-    let indexPath = null;
     if (staticPath && fs.existsSync(path.join(staticPath, 'index.html'))) {
-        indexPath = path.join(staticPath, 'index.html');
-    }
-
-    if (indexPath) {
-        res.sendFile(indexPath);
+        res.sendFile(path.join(staticPath, 'index.html'));
     } else {
-        // Fallback Maintenance Page if build failed entirely
-        res.status(503).send(`
+        // SERVE DIAGNOSTIC LOGS
+        res.status(500).send(`
             <html>
             <head>
-                <title>AuraGold - System Building</title>
-                <meta http-equiv="refresh" content="10">
-                <style>body{font-family:sans-serif;text-align:center;padding:50px;background:#f8fafc;color:#334155;}</style>
+                <title>AuraGold - System Diagnostics</title>
+                <style>
+                    body { font-family: monospace; background: #0f172a; color: #f8fafc; padding: 20px; }
+                    .container { max-width: 900px; margin: 0 auto; }
+                    h1 { color: #f59e0b; border-bottom: 1px solid #334155; padding-bottom: 10px; }
+                    .log-window { background: #1e293b; padding: 15px; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; border: 1px solid #334155; }
+                    .entry { margin-bottom: 5px; }
+                    .ERROR { color: #ef4444; font-weight: bold; }
+                    .SUCCESS { color: #10b981; font-weight: bold; }
+                    .WARN { color: #f59e0b; }
+                    .INFO { color: #94a3b8; }
+                    .refresh { margin-top: 20px; padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+                </style>
             </head>
             <body>
-                <h1 style="color:#eab308;">System Optimization in Progress</h1>
-                <p>The application is compiling its assets for first-time use.</p>
-                <p>This page will automatically refresh in 10 seconds.</p>
-                <hr style="max-width:300px;opacity:0.2;margin:30px auto;">
-                <small>Server Status: Active | Build: Pending</small>
+                <div class="container">
+                    <h1>⚠️ Application Build Failed</h1>
+                    <p>The server attempted to build the application but encountered errors. Please review the logs below.</p>
+                    
+                    <div class="log-window">
+                        ${systemLog.map(l => {
+                            const type = l.includes('[ERROR]') || l.includes('CRITICAL') ? 'ERROR' : 
+                                         l.includes('[SUCCESS]') ? 'SUCCESS' : 
+                                         l.includes('[WARN]') ? 'WARN' : 'INFO';
+                            return `<div class="entry ${type}">${l}</div>`;
+                        }).join('')}
+                    </div>
+
+                    <button class="refresh" onclick="window.location.reload()">Retry / Refresh</button>
+                </div>
             </body>
             </html>
         `);
