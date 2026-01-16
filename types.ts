@@ -41,6 +41,7 @@ export interface Milestone {
   cumulativeTarget: number;
   status: 'PENDING' | 'PARTIAL' | 'PAID';
   warningCount: number;
+  description?: string; // Manual instruction/note
 }
 
 export interface PaymentPlan {

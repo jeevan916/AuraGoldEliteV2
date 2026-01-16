@@ -3,7 +3,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Plus, ShoppingBag, Trash2, ShieldCheck, 
   Calculator, User, ChevronRight, X, Loader2, Sparkles, Zap, Image as ImageIcon, Camera, Trash, 
-  IndianRupee, ArrowRight, Lock, Calendar, Scale, Tag, Ruler, Upload, Gem, LayoutGrid, BrainCircuit, CheckCircle2
+  IndianRupee, ArrowRight, Lock, Calendar, Scale, Tag, Ruler, Upload, Gem, LayoutGrid, BrainCircuit, CheckCircle2,
+  CalendarDays, AlignLeft
 } from 'lucide-react';
 import { 
   Order, JewelryDetail, OrderStatus, GlobalSettings, 
@@ -29,6 +30,10 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   // Catalog State
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [showCatalog, setShowCatalog] = useState(false);
+  
+  // Manual Milestones State
+  const [planMode, setPlanMode] = useState<'AUTO' | 'MANUAL'>('AUTO');
+  const [manualMilestones, setManualMilestones] = useState<Partial<Milestone>[]>([]);
   
   const initialItem: Partial<JewelryDetail> = {
     category: 'Ring', 
@@ -104,6 +109,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
           interestPercentage: t.interestPercentage,
           goldRateProtection: true // Templates default to protected
       });
+      setPlanMode('AUTO');
   };
 
   const handleManualPlanChange = (key: keyof PaymentPlan, value: any) => {
@@ -114,6 +120,30 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
           templateId: undefined // Clear template selection on manual edit
       }));
   };
+
+  // Manual Milestone Management
+  const handleAddManualMilestone = () => {
+      setManualMilestones([...manualMilestones, { 
+          id: `M-${Date.now()}`, 
+          dueDate: new Date().toISOString().split('T')[0], 
+          targetAmount: 0, 
+          description: '' 
+      }]);
+  };
+
+  const handleUpdateManualMilestone = (index: number, key: keyof Milestone, value: any) => {
+      const updated = [...manualMilestones];
+      updated[index] = { ...updated[index], [key]: value };
+      setManualMilestones(updated);
+  };
+
+  const handleRemoveManualMilestone = (index: number) => {
+      const updated = [...manualMilestones];
+      updated.splice(index, 1);
+      setManualMilestones(updated);
+  };
+
+  const manualTotalScheduled = useMemo(() => manualMilestones.reduce((acc, m) => acc + (m.targetAmount || 0), 0), [manualMilestones]);
 
   const handleAddItem = () => {
     if (!currentItem.netWeight || currentItem.netWeight <= 0) {
@@ -179,7 +209,8 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
       targetAmount: Math.round(advance), 
       cumulativeTarget: Math.round(advance), 
       status: 'PENDING', 
-      warningCount: 0 
+      warningCount: 0,
+      description: 'Advance / Down Payment'
     });
 
     for (let i = 1; i <= (plan.months || 1); i++) {
@@ -191,7 +222,8 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
         targetAmount: Math.round(perMonth), 
         cumulativeTarget: Math.round(advance + (perMonth * i)), 
         status: 'PENDING', 
-        warningCount: 0 
+        warningCount: 0,
+        description: `Installment ${i}`
       });
     }
     return milestones;
@@ -201,7 +233,29 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
     if (cartItems.length === 0) return alert("Please add at least one jewellery item.");
     if (!customer.name || !customer.contact) return alert("Customer Name and Contact Number are mandatory.");
 
-    const milestones = generateMilestones(cartTotal);
+    let milestones: Milestone[] = [];
+
+    if (planMode === 'MANUAL') {
+        if (Math.abs(manualTotalScheduled - cartTotal) > 10) {
+            return alert(`Manual schedule matches ₹${manualTotalScheduled}, but order total is ₹${Math.round(cartTotal)}. Please balance the payments.`);
+        }
+        if (manualMilestones.length === 0) return alert("Please add at least one payment milestone.");
+        
+        let cumulative = 0;
+        milestones = manualMilestones.map((m, idx) => {
+            cumulative += (m.targetAmount || 0);
+            return {
+                ...m,
+                id: `M-${idx+1}`,
+                cumulativeTarget: cumulative,
+                status: 'PENDING',
+                warningCount: 0
+            } as Milestone;
+        });
+    } else {
+        milestones = generateMilestones(cartTotal);
+    }
+
     const finalOrder: Order = {
       id: `ORD-${Date.now()}`,
       shareToken: Math.random().toString(36).substring(2, 10),
@@ -478,111 +532,200 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
 
       {step === 3 && (
         <div className="space-y-6 animate-fadeIn py-4">
-            <div>
-                <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                    <BrainCircuit size={16} /> Select Plan Template
-                </h3>
-                <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
-                    {planTemplates.map(t => (
-                        <div 
-                            key={t.id} 
-                            onClick={() => handleApplyTemplate(t)}
-                            className={`min-w-[180px] p-4 rounded-2xl border cursor-pointer transition-all ${
-                                plan.templateId === t.id ? 'bg-slate-900 text-white border-slate-900 shadow-xl scale-105' : 'bg-white text-slate-600 border-slate-200 hover:border-amber-400'
-                            }`}
-                        >
-                            <div className="flex justify-between items-start mb-2">
-                                <span className="font-black text-xs uppercase tracking-wide opacity-80">{t.months} Months</span>
-                                {plan.templateId === t.id && <CheckCircle2 size={16} className="text-emerald-400" />}
-                            </div>
-                            <h4 className="font-bold text-sm leading-tight mb-2">{t.name}</h4>
-                            <div className="text-[10px] font-bold opacity-70">
-                                <div>Interest: {t.interestPercentage}%</div>
-                                <div>Advance: {t.advancePercentage}%</div>
-                            </div>
-                        </div>
-                    ))}
-                    {planTemplates.length === 0 && <div className="text-xs text-slate-400 italic p-4">No templates found. Configure manually.</div>}
-                </div>
+            
+            {/* Mode Toggle */}
+            <div className="flex bg-slate-100 p-1 rounded-xl">
+                <button 
+                    onClick={() => setPlanMode('AUTO')}
+                    className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${planMode === 'AUTO' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'}`}
+                >
+                    Auto-Generate
+                </button>
+                <button 
+                    onClick={() => setPlanMode('MANUAL')}
+                    className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${planMode === 'MANUAL' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'}`}
+                >
+                    Manual Schedule
+                </button>
             </div>
 
-            <div className="flex justify-between items-end border-t pt-4">
-                <h3 className="text-lg font-black text-slate-800 ml-1">Manual Configuration</h3>
-                <p className="text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase tracking-tighter">Agreement Total: ₹{cartTotal.toLocaleString()}</p>
-            </div>
-
-            <div className="pos-card p-6 space-y-6">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                    <InputWrapper label="Installment Period (Months)">
-                        <input 
-                          type="number" className="w-full font-black text-xl bg-transparent" 
-                          value={plan.months} 
-                          onChange={e => handleManualPlanChange('months', parseInt(e.target.value) || 1)} 
-                        />
-                    </InputWrapper>
-                    <InputWrapper label="Booking Advance %">
-                        <input 
-                          type="number" className="w-full font-black text-xl bg-transparent" 
-                          value={plan.advancePercentage} 
-                          onChange={e => handleManualPlanChange('advancePercentage', parseFloat(e.target.value) || 0)} 
-                        />
-                    </InputWrapper>
-                    <InputWrapper label="Interest % (Flat)">
-                        <input 
-                          type="number" className="w-full font-black text-xl bg-transparent" 
-                          value={plan.interestPercentage || 0} 
-                          onChange={e => handleManualPlanChange('interestPercentage', parseFloat(e.target.value) || 0)} 
-                        />
-                    </InputWrapper>
-                </div>
-                
-                <div className={`p-5 rounded-[1.5rem] flex flex-col gap-4 shadow-xl border transition-colors ${plan.goldRateProtection ? 'bg-emerald-900 border-emerald-800 text-white' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
-                    <div className="flex items-start gap-4">
-                        <div className={`p-2 rounded-lg ${plan.goldRateProtection ? 'bg-emerald-800' : 'bg-slate-200'}`}>
-                            <Lock className={plan.goldRateProtection ? "text-amber-400" : "text-slate-400"} size={24} />
-                        </div>
-                        <div className="flex-1">
-                            <div className="flex items-center justify-between mb-1">
-                                <span className="font-black text-sm uppercase tracking-widest">Rate Protection</span>
-                                <div className="relative inline-block w-10 h-6 align-middle select-none transition duration-200 ease-in">
-                                    <input 
-                                        type="checkbox" 
-                                        name="toggle" 
-                                        id="toggle" 
-                                        className="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer translate-x-1"
-                                        style={{ right: plan.goldRateProtection ? '2px' : 'auto', left: plan.goldRateProtection ? 'auto' : '2px', top: '4px' }}
-                                        checked={plan.goldRateProtection} 
-                                        onChange={e => handleManualPlanChange('goldRateProtection', e.target.checked)}
-                                    />
-                                    <label htmlFor="toggle" className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${plan.goldRateProtection ? 'bg-emerald-500' : 'bg-slate-300'}`}></label>
+            {planMode === 'AUTO' && (
+                <>
+                    <div>
+                        <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <BrainCircuit size={16} /> Select Plan Template
+                        </h3>
+                        <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
+                            {planTemplates.map(t => (
+                                <div 
+                                    key={t.id} 
+                                    onClick={() => handleApplyTemplate(t)}
+                                    className={`min-w-[180px] p-4 rounded-2xl border cursor-pointer transition-all ${
+                                        plan.templateId === t.id ? 'bg-slate-900 text-white border-slate-900 shadow-xl scale-105' : 'bg-white text-slate-600 border-slate-200 hover:border-amber-400'
+                                    }`}
+                                >
+                                    <div className="flex justify-between items-start mb-2">
+                                        <span className="font-black text-xs uppercase tracking-wide opacity-80">{t.months} Months</span>
+                                        {plan.templateId === t.id && <CheckCircle2 size={16} className="text-emerald-400" />}
+                                    </div>
+                                    <h4 className="font-bold text-sm leading-tight mb-2">{t.name}</h4>
+                                    <div className="text-[10px] font-bold opacity-70">
+                                        <div>Interest: {t.interestPercentage}%</div>
+                                        <div>Advance: {t.advancePercentage}%</div>
+                                    </div>
                                 </div>
-                            </div>
-                            <p className={`text-[10px] leading-relaxed italic ${plan.goldRateProtection ? 'text-emerald-200/70' : 'text-slate-400'}`}>
-                                {plan.goldRateProtection 
-                                    ? `Rate guaranteed if installments cleared on time.` 
-                                    : "Rate is NOT protected. Final billing based on delivery day rate."}
+                            ))}
+                            {planTemplates.length === 0 && <div className="text-xs text-slate-400 italic p-4">No templates found. Configure manually.</div>}
+                        </div>
+                    </div>
+
+                    <div className="flex justify-between items-end border-t pt-4">
+                        <h3 className="text-lg font-black text-slate-800 ml-1">Manual Configuration</h3>
+                        <p className="text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase tracking-tighter">Agreement Total: ₹{cartTotal.toLocaleString()}</p>
+                    </div>
+
+                    <div className="pos-card p-6 space-y-6">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                            <InputWrapper label="Installment Period (Months)">
+                                <input 
+                                type="number" className="w-full font-black text-xl bg-transparent" 
+                                value={plan.months} 
+                                onChange={e => handleManualPlanChange('months', parseInt(e.target.value) || 1)} 
+                                />
+                            </InputWrapper>
+                            <InputWrapper label="Booking Advance %">
+                                <input 
+                                type="number" className="w-full font-black text-xl bg-transparent" 
+                                value={plan.advancePercentage} 
+                                onChange={e => handleManualPlanChange('advancePercentage', parseFloat(e.target.value) || 0)} 
+                                />
+                            </InputWrapper>
+                            <InputWrapper label="Interest % (Flat)">
+                                <input 
+                                type="number" className="w-full font-black text-xl bg-transparent" 
+                                value={plan.interestPercentage || 0} 
+                                onChange={e => handleManualPlanChange('interestPercentage', parseFloat(e.target.value) || 0)} 
+                                />
+                            </InputWrapper>
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {planMode === 'MANUAL' && (
+                <div className="animate-fadeIn space-y-4">
+                    <div className="flex justify-between items-center bg-white p-4 rounded-2xl border shadow-sm">
+                        <div>
+                            <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Order Total</p>
+                            <p className="text-xl font-black text-slate-800">₹{cartTotal.toLocaleString()}</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Scheduled</p>
+                            <p className={`text-xl font-black ${Math.abs(manualTotalScheduled - cartTotal) < 10 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                ₹{manualTotalScheduled.toLocaleString()}
                             </p>
                         </div>
                     </div>
 
-                    {/* Explicit Protection Rate Input */}
-                    {plan.goldRateProtection && (
-                        <div className="bg-emerald-800/50 p-4 rounded-xl border border-emerald-700/50 flex flex-col md:flex-row gap-4 items-center animate-fadeIn">
-                            <div className="flex-1">
-                                <label className="text-[10px] font-black text-amber-400 uppercase tracking-widest block mb-1">Protected Rate Cap (₹/g)</label>
-                                <input 
-                                    type="number" 
-                                    className="w-full bg-transparent text-2xl font-black text-white outline-none border-b border-white/20 pb-1"
-                                    value={protectionRate}
-                                    onChange={e => setProtectionRate(parseFloat(e.target.value) || 0)}
-                                />
+                    <div className="pos-card overflow-hidden">
+                        <div className="bg-slate-50 p-3 flex text-[9px] font-black uppercase text-slate-400 tracking-widest border-b">
+                            <div className="flex-[2]">Instruction</div>
+                            <div className="flex-1">Date</div>
+                            <div className="flex-1">Amount</div>
+                            <div className="w-8"></div>
+                        </div>
+                        {manualMilestones.map((m, idx) => (
+                            <div key={m.id} className="flex items-center border-b p-2 gap-2 group hover:bg-slate-50 transition-colors">
+                                <div className="flex-[2]">
+                                    <input 
+                                        type="text" 
+                                        className="w-full bg-transparent font-bold text-sm outline-none placeholder:text-slate-300"
+                                        placeholder="e.g. Advance / Diwali Payment"
+                                        value={m.description || ''}
+                                        onChange={(e) => handleUpdateManualMilestone(idx, 'description', e.target.value)}
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <input 
+                                        type="date"
+                                        className="w-full bg-transparent font-medium text-xs outline-none"
+                                        value={m.dueDate}
+                                        onChange={(e) => handleUpdateManualMilestone(idx, 'dueDate', e.target.value)}
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <input 
+                                        type="number"
+                                        className="w-full bg-transparent font-black text-sm outline-none text-slate-800"
+                                        placeholder="0"
+                                        value={m.targetAmount || ''}
+                                        onChange={(e) => handleUpdateManualMilestone(idx, 'targetAmount', parseFloat(e.target.value) || 0)}
+                                    />
+                                </div>
+                                <button onClick={() => handleRemoveManualMilestone(idx)} className="w-8 text-slate-300 hover:text-rose-500">
+                                    <Trash2 size={16} />
+                                </button>
                             </div>
-                            <div className="text-xs text-emerald-200/80 max-w-[200px]">
-                                This rate will be used for the final settlement regardless of future market increases.
-                            </div>
+                        ))}
+                        <button onClick={handleAddManualMilestone} className="w-full py-3 flex items-center justify-center gap-2 text-xs font-bold text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors">
+                            <Plus size={14} /> Add Payment Milestone
+                        </button>
+                    </div>
+                    {Math.abs(manualTotalScheduled - cartTotal) > 10 && (
+                        <div className="text-center text-xs text-rose-500 font-bold bg-rose-50 p-2 rounded-lg">
+                            Balance Remaining: ₹{(cartTotal - manualTotalScheduled).toLocaleString()}
                         </div>
                     )}
                 </div>
+            )}
+            
+            {/* Common Protection Settings */}
+            <div className={`p-5 rounded-[1.5rem] flex flex-col gap-4 shadow-xl border transition-colors mt-6 ${plan.goldRateProtection ? 'bg-emerald-900 border-emerald-800 text-white' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
+                <div className="flex items-start gap-4">
+                    <div className={`p-2 rounded-lg ${plan.goldRateProtection ? 'bg-emerald-800' : 'bg-slate-200'}`}>
+                        <Lock className={plan.goldRateProtection ? "text-amber-400" : "text-slate-400"} size={24} />
+                    </div>
+                    <div className="flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                            <span className="font-black text-sm uppercase tracking-widest">Rate Protection</span>
+                            <div className="relative inline-block w-10 h-6 align-middle select-none transition duration-200 ease-in">
+                                <input 
+                                    type="checkbox" 
+                                    name="toggle" 
+                                    id="toggle" 
+                                    className="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer translate-x-1"
+                                    style={{ right: plan.goldRateProtection ? '2px' : 'auto', left: plan.goldRateProtection ? 'auto' : '2px', top: '4px' }}
+                                    checked={plan.goldRateProtection} 
+                                    onChange={e => handleManualPlanChange('goldRateProtection', e.target.checked)}
+                                />
+                                <label htmlFor="toggle" className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${plan.goldRateProtection ? 'bg-emerald-500' : 'bg-slate-300'}`}></label>
+                            </div>
+                        </div>
+                        <p className={`text-[10px] leading-relaxed italic ${plan.goldRateProtection ? 'text-emerald-200/70' : 'text-slate-400'}`}>
+                            {plan.goldRateProtection 
+                                ? `Rate guaranteed if installments cleared on time.` 
+                                : "Rate is NOT protected. Final billing based on delivery day rate."}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Explicit Protection Rate Input */}
+                {plan.goldRateProtection && (
+                    <div className="bg-emerald-800/50 p-4 rounded-xl border border-emerald-700/50 flex flex-col md:flex-row gap-4 items-center animate-fadeIn">
+                        <div className="flex-1">
+                            <label className="text-[10px] font-black text-amber-400 uppercase tracking-widest block mb-1">Protected Rate Cap (₹/g)</label>
+                            <input 
+                                type="number" 
+                                className="w-full bg-transparent text-2xl font-black text-white outline-none border-b border-white/20 pb-1"
+                                value={protectionRate}
+                                onChange={e => setProtectionRate(parseFloat(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="text-xs text-emerald-200/80 max-w-[200px]">
+                            This rate will be used for the final settlement regardless of future market increases.
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
       )}
