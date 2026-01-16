@@ -34,7 +34,9 @@ export const whatsappService = {
 
   async fetchMetaTemplates(): Promise<any[]> {
      const settings = this.getSettings();
-     if (!settings.whatsappBusinessAccountId || !settings.whatsappBusinessToken) {
+     const token = settings.whatsappBusinessToken?.trim();
+     
+     if (!settings.whatsappBusinessAccountId || !token) {
          console.warn("[WhatsApp] Credentials missing for template fetch.");
          return [];
      }
@@ -46,7 +48,7 @@ export const whatsappService = {
              headers: {
                  'Content-Type': 'application/json',
                  'x-waba-id': settings.whatsappBusinessAccountId,
-                 'x-auth-token': settings.whatsappBusinessToken
+                 'x-auth-token': token
              }
          });
 
@@ -62,7 +64,9 @@ export const whatsappService = {
 
   async createMetaTemplate(template: WhatsAppTemplate): Promise<{ success: boolean; finalName?: string; error?: any; debugPayload?: any; rawResponse?: any }> {
      const settings = this.getSettings();
-     if (!settings.whatsappBusinessAccountId || !settings.whatsappBusinessToken) {
+     const token = settings.whatsappBusinessToken?.trim();
+     
+     if (!settings.whatsappBusinessAccountId || !token) {
          return { success: false, error: { message: "Credentials missing in Settings" } };
      }
 
@@ -103,7 +107,7 @@ export const whatsappService = {
              headers: {
                  'Content-Type': 'application/json',
                  'x-waba-id': settings.whatsappBusinessAccountId,
-                 'x-auth-token': settings.whatsappBusinessToken
+                 'x-auth-token': token
              },
              body: JSON.stringify(payload)
          });
@@ -132,7 +136,9 @@ export const whatsappService = {
 
   async editMetaTemplate(templateId: string, template: WhatsAppTemplate): Promise<{ success: boolean; error?: any; debugPayload?: any; rawResponse?: any }> {
       const settings = this.getSettings();
-      if (!settings.whatsappBusinessAccountId || !settings.whatsappBusinessToken) {
+      const token = settings.whatsappBusinessToken?.trim();
+      
+      if (!settings.whatsappBusinessAccountId || !token) {
           return { success: false, error: { message: "Credentials missing" } };
       }
 
@@ -158,7 +164,7 @@ export const whatsappService = {
               headers: {
                   'Content-Type': 'application/json',
                   'x-waba-id': settings.whatsappBusinessAccountId,
-                  'x-auth-token': settings.whatsappBusinessToken
+                  'x-auth-token': token
               },
               body: JSON.stringify(payload)
           });
@@ -177,7 +183,9 @@ export const whatsappService = {
 
   async deleteMetaTemplate(templateName: string): Promise<{ success: boolean; error?: string }> {
       const settings = this.getSettings();
-      if (!settings.whatsappBusinessAccountId || !settings.whatsappBusinessToken) {
+      const token = settings.whatsappBusinessToken?.trim();
+      
+      if (!settings.whatsappBusinessAccountId || !token) {
           return { success: false, error: "Credentials missing in Settings" };
       }
 
@@ -186,7 +194,7 @@ export const whatsappService = {
               method: 'DELETE',
               headers: {
                   'x-waba-id': settings.whatsappBusinessAccountId,
-                  'x-auth-token': settings.whatsappBusinessToken
+                  'x-auth-token': token
               }
           });
 
@@ -202,8 +210,9 @@ export const whatsappService = {
   async sendTemplateMessage(to: string, templateName: string, languageCode: string = 'en_US', variables: string[] = [], customerName: string): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
     const settings = this.getSettings();
+    const token = settings.whatsappBusinessToken?.trim();
     
-    if (!settings.whatsappPhoneNumberId || !settings.whatsappBusinessToken) {
+    if (!settings.whatsappPhoneNumberId || !token) {
         return { success: false, error: "API Credentials Missing" };
     }
 
@@ -214,7 +223,7 @@ export const whatsappService = {
             headers: { 
                 'Content-Type': 'application/json',
                 'x-phone-id': settings.whatsappPhoneNumberId,
-                'x-auth-token': settings.whatsappBusinessToken
+                'x-auth-token': token
             },
             body: JSON.stringify({
                 to: recipient,
@@ -245,8 +254,9 @@ export const whatsappService = {
   async sendMessage(to: string, message: string, customerName: string): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
     const settings = this.getSettings();
+    const token = settings.whatsappBusinessToken?.trim();
     
-    if (!settings.whatsappPhoneNumberId || !settings.whatsappBusinessToken) {
+    if (!settings.whatsappPhoneNumberId || !token) {
         return { success: false, error: "API Credentials Missing" };
     }
 
@@ -257,7 +267,7 @@ export const whatsappService = {
         headers: { 
             'Content-Type': 'application/json',
             'x-phone-id': settings.whatsappPhoneNumberId,
-            'x-auth-token': settings.whatsappBusinessToken
+            'x-auth-token': token
         },
         body: JSON.stringify({
             to: recipient,

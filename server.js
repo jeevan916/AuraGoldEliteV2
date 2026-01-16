@@ -538,28 +538,44 @@ app.get('/api/gold-rate', ensureDb, async (req, res) => {
 // --- META WHATSAPP PROXY ---
 
 async function callMeta(endpoint, method, token, body = null) {
-    // CORRECT URL: graph.facebook.com, not .net
     const url = `https://graph.facebook.com/v21.0/${endpoint}`;
     
+    // Sanitize Token: Remove whitespace and accidental 'Bearer' prefix which causes Malformed token error
+    const cleanToken = (token || '').toString().trim().replace(/^Bearer\s+/i, '');
+
     console.log(`[Meta Proxy] ${method} ${url}`);
     
     const options = {
         method,
         headers: {
-            'Authorization': `Bearer ${token}`,
+            'Authorization': `Bearer ${cleanToken}`,
             'Content-Type': 'application/json'
         }
     };
     if (body) options.body = JSON.stringify(body);
 
-    const response = await fetch(url, options);
-    const data = await response.json();
-    
-    if (!response.ok) {
-        console.error(`[Meta Proxy Error] ${response.status}:`, JSON.stringify(data));
+    try {
+        const response = await fetch(url, options);
+        let data;
+        
+        // Handle non-JSON responses (e.g. empty body or HTML errors)
+        const text = await response.text();
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch (e) {
+            console.error(`[Meta Proxy] JSON Parse Error:`, text.substring(0, 200));
+            data = { error: { message: "Invalid JSON response from Meta", raw: text } };
+        }
+        
+        if (!response.ok) {
+            console.error(`[Meta Proxy Error] ${response.status}:`, JSON.stringify(data));
+        }
+        
+        return { ok: response.ok, status: response.status, data };
+    } catch (networkError) {
+        console.error(`[Meta Proxy] Network Error:`, networkError);
+        return { ok: false, status: 502, data: { error: { message: "Upstream Network Error" } } };
     }
-    
-    return { ok: response.ok, status: response.status, data };
 }
 
 // 1. Get Templates (GET)
@@ -568,8 +584,13 @@ app.get('/api/whatsapp/templates', async (req, res) => {
     const token = req.headers['x-auth-token'];
     if (!wabaId || !token) return res.status(401).json({ success: false, error: "Missing Credentials" });
 
-    // Fetch templates from Meta (limit 100 for now)
-    const result = await callMeta(`${wabaId}/message_templates?limit=100`, 'GET', token);
+    // Fetch templates from Meta (Explicitly request fields to ensure data integrity)
+    // Requesting fields: name, status, components (structure), category, language, rejection reason
+    const result = await callMeta(
+        `${wabaId}/message_templates?limit=100&fields=name,status,components,category,language,rejected_reason`, 
+        'GET', 
+        token
+    );
     
     if (!result.ok) {
         return res.status(result.status).json({ success: false, error: result.data.error?.message || "Meta Error" });

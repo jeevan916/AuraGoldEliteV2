@@ -24,6 +24,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   const [customer, setCustomer] = useState({ name: '', contact: '' });
   const [cartItems, setCartItems] = useState<JewelryDetail[]>([]);
   const [orderRate, setOrderRate] = useState(settings.currentGoldRate22K);
+  const [protectionRate, setProtectionRate] = useState(settings.currentGoldRate22K);
   
   // Catalog State
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
@@ -58,6 +59,14 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   useEffect(() => {
     setCatalog(storageService.getCatalog());
   }, []);
+
+  // Sync protection rate with order rate initially, but allow deviation
+  useEffect(() => {
+      // Only sync if step is 1 (during initial rate setting) to prevent overwriting manual edits in step 3
+      if (step === 1) {
+          setProtectionRate(orderRate);
+      }
+  }, [orderRate, step]);
 
   const pricing = useMemo(() => {
     const rate = currentItem.purity === '24K' ? settings.currentGoldRate24K : 
@@ -208,7 +217,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
         ...plan, 
         milestones, 
         protectionStatus: ProtectionStatus.ACTIVE, 
-        protectionRateBooked: orderRate, 
+        protectionRateBooked: protectionRate, // Explicit protection rate
         protectionDeadline: milestones[milestones.length - 1].dueDate, 
         protectionLimit: settings.goldRateProtectionMax 
       } as PaymentPlan
@@ -527,32 +536,52 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                     </InputWrapper>
                 </div>
                 
-                <div className={`p-5 rounded-[1.5rem] flex items-start gap-4 shadow-xl border transition-colors ${plan.goldRateProtection ? 'bg-emerald-900 border-emerald-800 text-white' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
-                    <div className={`p-2 rounded-lg ${plan.goldRateProtection ? 'bg-emerald-800' : 'bg-slate-200'}`}>
-                        <Lock className={plan.goldRateProtection ? "text-amber-400" : "text-slate-400"} size={24} />
+                <div className={`p-5 rounded-[1.5rem] flex flex-col gap-4 shadow-xl border transition-colors ${plan.goldRateProtection ? 'bg-emerald-900 border-emerald-800 text-white' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
+                    <div className="flex items-start gap-4">
+                        <div className={`p-2 rounded-lg ${plan.goldRateProtection ? 'bg-emerald-800' : 'bg-slate-200'}`}>
+                            <Lock className={plan.goldRateProtection ? "text-amber-400" : "text-slate-400"} size={24} />
+                        </div>
+                        <div className="flex-1">
+                            <div className="flex items-center justify-between mb-1">
+                                <span className="font-black text-sm uppercase tracking-widest">Rate Protection</span>
+                                <div className="relative inline-block w-10 h-6 align-middle select-none transition duration-200 ease-in">
+                                    <input 
+                                        type="checkbox" 
+                                        name="toggle" 
+                                        id="toggle" 
+                                        className="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer translate-x-1"
+                                        style={{ right: plan.goldRateProtection ? '2px' : 'auto', left: plan.goldRateProtection ? 'auto' : '2px', top: '4px' }}
+                                        checked={plan.goldRateProtection} 
+                                        onChange={e => handleManualPlanChange('goldRateProtection', e.target.checked)}
+                                    />
+                                    <label htmlFor="toggle" className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${plan.goldRateProtection ? 'bg-emerald-500' : 'bg-slate-300'}`}></label>
+                                </div>
+                            </div>
+                            <p className={`text-[10px] leading-relaxed italic ${plan.goldRateProtection ? 'text-emerald-200/70' : 'text-slate-400'}`}>
+                                {plan.goldRateProtection 
+                                    ? `Rate guaranteed if installments cleared on time.` 
+                                    : "Rate is NOT protected. Final billing based on delivery day rate."}
+                            </p>
+                        </div>
                     </div>
-                    <div className="flex-1">
-                        <div className="flex items-center justify-between mb-1">
-                            <span className="font-black text-sm uppercase tracking-widest">Rate Protection</span>
-                            <div className="relative inline-block w-10 h-6 align-middle select-none transition duration-200 ease-in">
+
+                    {/* Explicit Protection Rate Input */}
+                    {plan.goldRateProtection && (
+                        <div className="bg-emerald-800/50 p-4 rounded-xl border border-emerald-700/50 flex flex-col md:flex-row gap-4 items-center animate-fadeIn">
+                            <div className="flex-1">
+                                <label className="text-[10px] font-black text-amber-400 uppercase tracking-widest block mb-1">Protected Rate Cap (₹/g)</label>
                                 <input 
-                                    type="checkbox" 
-                                    name="toggle" 
-                                    id="toggle" 
-                                    className="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer translate-x-1"
-                                    style={{ right: plan.goldRateProtection ? '2px' : 'auto', left: plan.goldRateProtection ? 'auto' : '2px', top: '4px' }}
-                                    checked={plan.goldRateProtection} 
-                                    onChange={e => handleManualPlanChange('goldRateProtection', e.target.checked)}
+                                    type="number" 
+                                    className="w-full bg-transparent text-2xl font-black text-white outline-none border-b border-white/20 pb-1"
+                                    value={protectionRate}
+                                    onChange={e => setProtectionRate(parseFloat(e.target.value) || 0)}
                                 />
-                                <label htmlFor="toggle" className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${plan.goldRateProtection ? 'bg-emerald-500' : 'bg-slate-300'}`}></label>
+                            </div>
+                            <div className="text-xs text-emerald-200/80 max-w-[200px]">
+                                This rate will be used for the final settlement regardless of future market increases.
                             </div>
                         </div>
-                        <p className={`text-[10px] leading-relaxed italic ${plan.goldRateProtection ? 'text-emerald-200/70' : 'text-slate-400'}`}>
-                            {plan.goldRateProtection 
-                                ? `Gold price locked at ₹${orderRate}/g. This protection is only maintained if installments are cleared by due dates.` 
-                                : "Rate is NOT protected. Final billing will be based on the gold rate at the time of delivery."}
-                        </p>
-                    </div>
+                    )}
                 </div>
             </div>
         </div>
