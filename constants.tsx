@@ -161,7 +161,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     category: 'UTILITY',
     appGroup: 'ORDER_STATUS',
     variables: ['customer_name', 'order_id', 'total_amount', 'tracking_token'],
-    content: "Hello {{1}}, thank you for shopping with AuraGold! Your order {{2}} ({{3}}) has been placed. Track your order here: https://order.auragoldelite.com/token={{4}} for details.",
+    content: "Hello {{1}}, thank you for shopping with AuraGold! Your order {{2}} ({{3}}) has been placed. Track your order here: https://order.auragoldelite.com/?token={{4}} for details.",
     examples: ["John Doe", "ORD-12345", "₹50,000", "AbCd123"]
   },
   // 2. Standard Payment Request
@@ -171,7 +171,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     category: 'UTILITY',
     appGroup: 'PAYMENT_COLLECTION',
     variables: ['customer_name', 'amount_due', 'due_date', 'payment_token'],
-    content: "Dear {{1}}, a gentle reminder that your payment of {{2}} is due by {{3}}. Please complete the payment securely using this link: https://order.auragoldelite.com/token={{4}} securely.",
+    content: "Dear {{1}}, a gentle reminder that your payment of {{2}} is due by {{3}}. Please complete the payment securely using this link: https://order.auragoldelite.com/?token={{4}} securely.",
     examples: ["Sarah", "₹12,500", "25 Oct 2023", "XyZ987"]
   },
   // 3. Production Update
@@ -181,7 +181,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     category: 'UTILITY',
     appGroup: 'ORDER_STATUS',
     variables: ['customer_name', 'item_category', 'new_status', 'tracking_token'],
-    content: "Great news {{1}}! Your {{2}} has moved to the {{3}} stage. See photos and updates here: https://order.auragoldelite.com/token={{4}} on portal.",
+    content: "Great news {{1}}! Your {{2}} has moved to the {{3}} stage. See photos and updates here: https://order.auragoldelite.com/?token={{4}} on portal.",
     examples: ["Michael", "Ring", "Quality Check", "LmNoP456"]
   },
   // 4. Grace Period Warning (Urgent) - REVISED FOR COMPLIANCE
@@ -201,7 +201,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     category: 'UTILITY',
     appGroup: 'SYSTEM_NOTIFICATIONS',
     variables: ['customer_name', 'order_id', 'action_link'],
-    content: "Notice for {{1}}: Gold Rate Protection for Order {{2}} has LAPSED due to non-payment. Your order now floats at market price. Select action: https://order.auragoldelite.com/resolve/{{3}}",
+    content: "Notice for {{1}}: Gold Rate Protection for Order {{2}} has LAPSED due to non-payment. Your order now floats at market price. Select action: https://order.auragoldelite.com/?token={{3}}",
     examples: ["Raj", "ORD-99", "abc12345"]
   },
   // 6. Dynamic Lapse Quotation
@@ -211,7 +211,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     category: 'UTILITY',
     appGroup: 'PAYMENT_COLLECTION',
     variables: ['customer_name', 'old_price', 'new_price', 'current_rate', 'link'],
-    content: "Action Required {{1}}: Order value increased. Old: ₹{{2}}, New Market Price: ₹{{3}} (@ ₹{{4}}/g). Accept or Cancel here: https://order.auragoldelite.com/quote/{{5}}",
+    content: "Action Required {{1}}: Order value increased. Old: ₹{{2}}, New Market Price: ₹{{3}} (@ ₹{{4}}/g). Accept or Cancel here: https://order.auragoldelite.com/?token={{5}}",
     examples: ["Priya", "50000", "52500", "7200", "token123"]
   },
   // 7. Repopulation Success - REVISED FOR COMPLIANCE

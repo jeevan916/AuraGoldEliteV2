@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCheck, History, Eye, RefreshCw, XCircle } from 'lucide-react';
+import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCheck, History, Eye, RefreshCw, XCircle, ExternalLink, Share2 } from 'lucide-react';
 import { Order, GlobalSettings, WhatsAppLogEntry, ProductionStatus, ProtectionStatus, OrderStatus } from '../types';
 import { generateOrderPDF } from '../services/pdfGenerator';
 import { Button, SectionHeader } from './shared/BaseUI';
@@ -27,6 +27,11 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
 
   const handlePaymentUpdate = (updatedOrder: Order) => {
     onOrderUpdate(updatedOrder);
+  };
+
+  const handleOpenCustomerLink = () => {
+      const link = `${window.location.origin}/?token=${order.shareToken}`;
+      window.open(link, '_blank');
   };
 
   const handleLapseProtection = () => {
@@ -172,6 +177,9 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           <ArrowLeft size={20} /> Back
         </button>
         <div className="flex gap-2">
+           <Button size="sm" variant="secondary" onClick={handleOpenCustomerLink}>
+             <ExternalLink size={14} /> Customer View
+           </Button>
            <Button size="sm" variant="secondary" onClick={() => generateOrderPDF(order)}>
              <FileText size={14} /> Contract PDF
            </Button>

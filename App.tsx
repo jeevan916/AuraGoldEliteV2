@@ -36,9 +36,10 @@ const PlanManager = lazy(() => import('./components/PlanManager'));
 const MarketIntelligence = lazy(() => import('./components/MarketIntelligence'));
 const Settings = lazy(() => import('./components/Settings'));
 const ErrorLogPanel = lazy(() => import('./components/ErrorLogPanel'));
+const CustomerOrderView = lazy(() => import('./components/CustomerOrderView'));
 
 // --- Types & UI Helpers ---
-type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU';
+type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW';
 
 const LoadingScreen = () => (
   <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 space-y-4 min-h-[50vh]">
@@ -78,6 +79,7 @@ const App: React.FC = () => {
   // --- Global State ---
   const [view, setView] = useState<MainView>('DASH');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [customerViewOrder, setCustomerViewOrder] = useState<Order | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [syncStatus, setSyncStatus] = useState(storageService.getSyncStatus());
   
@@ -120,6 +122,19 @@ const App: React.FC = () => {
               currentGoldRate22K: rateRes.rate22K
           });
       }
+
+      // Check for Customer View Token
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      if (token) {
+          const allOrders = storageService.getOrders();
+          const targetOrder = allOrders.find(o => o.shareToken === token || o.id === token);
+          if (targetOrder) {
+              setCustomerViewOrder(targetOrder);
+              setView('CUSTOMER_VIEW');
+          }
+      }
+
     } catch (e: any) {
       console.warn("Sync failed, using local.");
     } finally {
@@ -150,23 +165,27 @@ const App: React.FC = () => {
   const handleOrderCreate = async (newOrder: Order) => {
       addOrder(newOrder);
       
-      const categories = Array.from(new Set(newOrder.items.map(i => i.category))).join(', ');
-      const milestoneText = newOrder.paymentPlan.milestones.map((m, i) => {
-          const dateStr = new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-          return `${i + 1}. ${dateStr}: ₹${m.targetAmount.toLocaleString()}`;
-      }).join('\n');
-
-      const message = AUTOMATION_TEMPLATES.ORDER_CONFIRMATION(
-          newOrder.customerName, 
-          categories, 
-          newOrder.totalAmount, 
-          newOrder.paymentPlan.months,
-          milestoneText,
+      // Use Template Message for Reliable Delivery (initiate conversation window)
+      // Template: auragold_order_confirmation
+      // Variables: {{1}}=Name, {{2}}=OrderID, {{3}}=Total, {{4}}=Token
+      
+      const variables = [
+          newOrder.customerName,
+          newOrder.id,
+          `₹${newOrder.totalAmount.toLocaleString()}`,
           newOrder.shareToken
-      );
+      ];
 
-      whatsappService.sendMessage(newOrder.customerContact, message, newOrder.customerName)
-        .then(res => { if (res.success && res.logEntry) addLog(res.logEntry); });
+      whatsappService.sendTemplateMessage(
+          newOrder.customerContact, 
+          'auragold_order_confirmation', 
+          'en_US', 
+          variables, 
+          newOrder.customerName
+      ).then(res => { 
+          if (res.success && res.logEntry) addLog(res.logEntry); 
+          else console.error("Order Confirmation Failed:", res.error);
+      });
 
       setSelectedOrderId(newOrder.id);
       setView('ORDER_DETAILS');
@@ -290,6 +309,15 @@ const App: React.FC = () => {
         <p className="text-xs text-slate-400 font-bold mt-2">Loading System...</p>
       </div>
     );
+  }
+
+  // --- CUSTOMER VIEW (Standalone) ---
+  if (view === 'CUSTOMER_VIEW' && customerViewOrder) {
+      return (
+          <Suspense fallback={<LoadingScreen />}>
+              <CustomerOrderView order={customerViewOrder} />
+          </Suspense>
+      );
   }
 
   return (
