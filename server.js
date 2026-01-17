@@ -705,9 +705,17 @@ if (fs.existsSync(path.join(possibleDist, 'index.html'))) {
 }
 
 if (staticPath) {
-    app.use(express.static(staticPath));
+    // Explicitly set index to true, though it's default
+    app.use(express.static(staticPath, { index: 'index.html' }));
 }
 
+// Route to handle root / if not caught by static (e.g. if index: false was set or weird priority)
+app.get('/', (req, res) => {
+    if (staticPath) res.sendFile(path.join(staticPath, 'index.html'));
+    else res.send('AuraGold Backend Running - Frontend Not Found');
+});
+
+// Catch-all for SPA
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) return res.status(404).json({ error: "Not Found" });
     if (staticPath) res.sendFile(path.join(staticPath, 'index.html'));
