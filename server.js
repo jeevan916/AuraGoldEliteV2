@@ -10,16 +10,10 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- STRICT ENV LOADING ---
-// Prioritize the .env file in the SAME directory as this script.
-const envFile = path.join(__dirname, '.env');
-if (fs.existsSync(envFile)) {
-    console.log(`[System] Loading .env from: ${envFile}`);
-    dotenv.config({ path: envFile });
-} else {
-    // Fallback to standard lookup
-    console.log('[System] .env not found in script dir, attempting standard load...');
-    dotenv.config();
+// --- CONFIGURATION ---
+const envPaths = [path.resolve(process.cwd(), '.env'), path.resolve(__dirname, '.env')];
+for (const p of envPaths) {
+    if (fs.existsSync(p)) { dotenv.config({ path: p }); break; }
 }
 
 const app = express();
@@ -28,33 +22,24 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 
-// --- DATABASE CONFIGURATION ---
-const dbConfig = {
+// --- DATABASE SETUP ---
+let pool = null;
+const getConfig = () => ({
     host: process.env.DB_HOST || '127.0.0.1',
-    user: process.env.DB_USER, // Do not default to root to force error if env missing
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'auragold_db',
     port: 3306,
     waitForConnections: true,
     connectionLimit: 10,
     connectTimeout: 20000
-};
-
-// Log config for debugging (hiding password)
-console.log(`[Database] Attempting connection to ${dbConfig.host} as user: ${dbConfig.user}, db: ${dbConfig.database}`);
-
-let pool = null;
+});
 
 async function initDb() {
     try {
-        // Create pool
-        pool = mysql.createPool(dbConfig);
-        
-        // Test connection immediately
+        pool = mysql.createPool(getConfig());
         const connection = await pool.getConnection();
-        console.log("[Database] Connection Successful!");
         
-        // Initialize Tables
         const tables = [
             `CREATE TABLE IF NOT EXISTS gold_rates (id INT AUTO_INCREMENT PRIMARY KEY, rate24k DECIMAL(10, 2), rate22k DECIMAL(10, 2), rate18k DECIMAL(10, 2), recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
             `CREATE TABLE IF NOT EXISTS integrations (provider VARCHAR(50) PRIMARY KEY, config JSON, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)`,
@@ -69,47 +54,23 @@ async function initDb() {
 
         for (const sql of tables) await connection.query(sql);
         connection.release();
+        console.log("Database Initialized.");
         return { success: true };
     } catch (err) {
         console.error("DB Init Failed:", err.message);
         return { success: false, error: err.message };
     }
 }
-
-// Initial connection attempt
 initDb();
 
-// Middleware to ensure DB is ready or retry
 const ensureDb = async (req, res, next) => {
-    if (!pool) {
-        console.log("[Database] Pool is null, retrying init...");
-        const result = await initDb();
-        if (!result.success) {
-            return res.status(503).json({ 
-                error: "Database Connection Failed", 
-                details: result.error,
-                config: { host: dbConfig.host, user: dbConfig.user, db: dbConfig.database } // Helpful for debugging
-            });
-        }
-    }
+    if (!pool) await initDb();
+    if (!pool) return res.status(503).json({ error: "Database Unavailable" });
     next();
 };
 
 // --- API ROUTES ---
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
-
-// Debug Route to check connectivity explicitly
-app.get('/api/debug/db', async (req, res) => {
-    try {
-        if (!pool) await initDb();
-        const connection = await pool.getConnection();
-        await connection.ping();
-        connection.release();
-        res.json({ connected: true, user: dbConfig.user, db: dbConfig.database });
-    } catch (e) {
-        res.status(500).json({ connected: false, error: e.message, config: { user: dbConfig.user, host: dbConfig.host } });
-    }
-});
 
 const createSyncHandler = (table) => async (req, res) => {
     const items = req.body[table] || req.body.orders || req.body.customers || req.body.logs || req.body.templates || req.body.catalog || req.body.plans;
@@ -284,28 +245,18 @@ app.post('/api/whatsapp/templates', async (req, res) => {
     res.status(result.status).json({ success: result.ok, data: result.data });
 });
 
-// --- STATIC FILES (SPA SETUP) ---
-let distPath = __dirname;
-if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
-    distPath = path.join(__dirname, 'dist');
-}
+// --- STATIC FILES (STRICT MODE) ---
+// Serve static assets directly from the same directory as this script.
+// This is critical for flat file deployments in 'public_html' or 'dist' folders.
+app.use(express.static(__dirname));
 
-// Serve static assets with index: false to prevent hijacking root
-app.use(express.static(distPath, { index: false }));
-
-// EXPLICIT ROOT HANDLER
-// Ensures the root route '/' serves the BUILT index.html correctly.
-app.get(['/', '/index'], (req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
-});
-
-// SPA CATCH-ALL
-// For any other route (like /dashboard), serve index.html to support React Router.
+// For any other route, serve index.html to support SPA routing.
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API Endpoint Not Found" });
     }
-    res.sendFile(path.join(distPath, 'index.html'));
+    // Explicitly serve index.html from __dirname
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT} serving ${distPath}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT} in ${__dirname}`));
