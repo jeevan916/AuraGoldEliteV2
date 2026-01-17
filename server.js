@@ -695,15 +695,23 @@ app.post('/api/debug/configure', async (req, res) => {
 // --- SERVE STATIC ---
 let staticPath = null;
 const possibleDist = path.join(__dirname, 'dist');
+const rootDist = __dirname; // Fallback to current directory if files are flat in root
+
+// Check both possible locations for index.html to handle various deployment structures
 if (fs.existsSync(path.join(possibleDist, 'index.html'))) {
     staticPath = possibleDist;
+} else if (fs.existsSync(path.join(rootDist, 'index.html'))) {
+    staticPath = rootDist;
+}
+
+if (staticPath) {
     app.use(express.static(staticPath));
 }
 
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) return res.status(404).json({ error: "Not Found" });
     if (staticPath) res.sendFile(path.join(staticPath, 'index.html'));
-    else res.send('Server Running. Build frontend to view app.');
+    else res.send('Server Running. Frontend files not found.');
 });
 
 app.listen(PORT, '0.0.0.0', () => {
