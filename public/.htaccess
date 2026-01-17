@@ -1,4 +1,17 @@
 
-RewriteEngine On
-DirectoryIndex disabled
-RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 1. API Requests: Let them fall through to the Node.js server
+  RewriteCond %{REQUEST_URI} ^/api/ [NC]
+  RewriteRule ^ - [L]
+
+  # 2. Static Files: If the file/dir exists, serve it directly (Assets, Images, CSS)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # 3. SPA Routing: For everything else, serve index.html
+  RewriteRule ^ index.html [L]
+</IfModule>

@@ -10,54 +10,35 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- CONFIGURATION PATH ---
-// Attempt to load .env from standard locations
-const envPaths = [
-    path.join(__dirname, '.env'),
-    path.join(__dirname, '.builds', 'config', '.env')
-];
-
+// --- CONFIGURATION ---
+// Try loading .env from current directory or config folder
+const envPaths = [path.resolve(process.cwd(), '.env'), path.resolve(__dirname, '.env')];
 for (const p of envPaths) {
-    if (fs.existsSync(p)) {
-        dotenv.config({ path: p });
-        console.log(`Loaded config from ${p}`);
-        break;
-    }
+    if (fs.existsSync(p)) { dotenv.config({ path: p }); break; }
 }
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.disable('x-powered-by');
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 
-// --- DATABASE CONNECTION ---
+// --- DATABASE SETUP ---
 let pool = null;
-
-const getConfig = () => {
-    let host = process.env.DB_HOST || '127.0.0.1';
-    if (host === 'localhost') host = '127.0.0.1'; 
-    
-    return {
-        host: host, 
-        user: process.env.DB_USER || 'root',
-        password: process.env.DB_PASSWORD || '',
-        database: process.env.DB_NAME || 'auragold_db',
-        port: 3306,
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0,
-        connectTimeout: 20000
-    };
-};
+const getConfig = () => ({
+    host: process.env.DB_HOST || '127.0.0.1',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'auragold_db',
+    port: 3306,
+    waitForConnections: true,
+    connectionLimit: 10,
+    connectTimeout: 20000
+});
 
 async function initDb() {
-    const config = getConfig();
-    if (pool) { try { await pool.end(); } catch(e) {} pool = null; }
-
     try {
-        pool = mysql.createPool(config);
+        pool = mysql.createPool(getConfig());
         const connection = await pool.getConnection();
         
         const tables = [
@@ -72,127 +53,29 @@ async function initDb() {
             `CREATE TABLE IF NOT EXISTS catalog (id VARCHAR(100) PRIMARY KEY, category VARCHAR(100), data LONGTEXT)`
         ];
 
-        for (const sql of tables) {
-            await connection.query(sql);
-        }
-
+        for (const sql of tables) await connection.query(sql);
         connection.release();
+        console.log("Database Initialized.");
         return { success: true };
     } catch (err) {
-        console.error(`DB Init Failed: ${err.message}`);
+        console.error("DB Init Failed:", err.message);
         return { success: false, error: err.message };
     }
 }
-
 initDb();
 
 const ensureDb = async (req, res, next) => {
-    if (!pool) {
-        const result = await initDb();
-        if (!result.success) {
-            return res.status(503).json({ error: "Database unavailable", details: result.error });
-        }
-    }
+    if (!pool) await initDb();
+    if (!pool) return res.status(503).json({ error: "Database Unavailable" });
     next();
 };
 
-// --- DATA LOGIC ---
-async function fetchLiveAugmontRates() {
-    try {
-        const response = await fetch('https://uat.batuk.in/augmont/gold', { signal: AbortSignal.timeout(8000) });
-        if (!response.ok) throw new Error(`Augmont API ${response.status}`);
-        const json = await response.json();
-        const dataNode = json.data?.[0]?.[0];
-        if (dataNode && dataNode.gSell) {
-            const gSell = parseFloat(dataNode.gSell);
-            if (!isNaN(gSell)) return { rate24k: gSell, rate22k: Math.round(gSell * (22/24)), rate18k: Math.round(gSell * (18/24)) };
-        }
-        return null;
-    } catch (e) { return null; }
-}
-
-async function getAggregatedSettings(connection) {
-    const [rateRows] = await connection.query('SELECT * FROM gold_rates ORDER BY id DESC LIMIT 1');
-    const rates = rateRows[0] || { rate24k: 7200, rate22k: 6600, rate18k: 5400 };
-    const [configRows] = await connection.query('SELECT * FROM app_config');
-    const configMap = {};
-    configRows.forEach(row => configMap[row.setting_key] = row.setting_value);
-    const [intRows] = await connection.query('SELECT * FROM integrations');
-    const intMap = {};
-    intRows.forEach(row => {
-        try { intMap[row.provider] = typeof row.config === 'string' ? JSON.parse(row.config) : row.config; } catch (e) { intMap[row.provider] = {}; }
-    });
-    return {
-        currentGoldRate24K: Number(rates.rate24k),
-        currentGoldRate22K: Number(rates.rate22k),
-        currentGoldRate18K: Number(rates.rate18k),
-        defaultTaxRate: Number(configMap['default_tax_rate'] || 3),
-        goldRateProtectionMax: Number(configMap['protection_max'] || 500),
-        gracePeriodHours: Number(configMap['grace_period_hours'] || 24),
-        followUpIntervalDays: Number(configMap['follow_up_days'] || 3),
-        whatsappPhoneNumberId: intMap['whatsapp']?.phoneId || '',
-        whatsappBusinessAccountId: intMap['whatsapp']?.accountId || '',
-        whatsappBusinessToken: intMap['whatsapp']?.token || '',
-        razorpayKeyId: intMap['razorpay']?.keyId || '',
-        razorpayKeySecret: intMap['razorpay']?.keySecret || '',
-        msg91AuthKey: intMap['msg91']?.authKey || '',
-        msg91SenderId: intMap['msg91']?.senderId || '',
-        setuSchemeId: intMap['setu']?.schemeId || '',
-        setuSecret: intMap['setu']?.secret || ''
-    };
-}
-
 // --- API ROUTES ---
 
-// Bootstrap
-app.get('/api/bootstrap', ensureDb, async (req, res) => {
-    try {
-        const connection = await pool.getConnection();
-        const settings = await getAggregatedSettings(connection);
-        const [customerRows] = await connection.query('SELECT data FROM customers');
-        const [orderRows] = await connection.query('SELECT data FROM orders ORDER BY created_at DESC');
-        const [logRows] = await connection.query('SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 500');
-        const [templateRows] = await connection.query('SELECT data FROM templates');
-        const [planRows] = await connection.query('SELECT data FROM plan_templates');
-        const [catalogRows] = await connection.query('SELECT data FROM catalog');
-        connection.release();
-        
-        res.json({ success: true, data: {
-            settings,
-            customers: customerRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
-            orders: orderRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
-            logs: logRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
-            templates: templateRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
-            planTemplates: planRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
-            catalog: catalogRows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
-            lastUpdated: Date.now()
-        }});
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// 1. Health Check
+app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 
-// Settings Sync
-app.post('/api/sync/settings', ensureDb, async (req, res) => {
-    const { settings } = req.body;
-    if (!settings) return res.status(400).json({ error: "No settings" });
-    try {
-        const connection = await pool.getConnection();
-        await connection.beginTransaction();
-        await connection.query(`INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)`, [settings.currentGoldRate24K, settings.currentGoldRate22K, settings.currentGoldRate18K || 0]);
-        const appConfigs = [['default_tax_rate', settings.defaultTaxRate], ['protection_max', settings.goldRateProtectionMax], ['grace_period_hours', settings.gracePeriodHours], ['follow_up_days', settings.followUpIntervalDays]];
-        for (const [k, v] of appConfigs) await connection.query(`INSERT INTO app_config (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`, [k, v]);
-        const ints = [
-            {p: 'whatsapp', c: {phoneId: settings.whatsappPhoneNumberId, accountId: settings.whatsappBusinessAccountId, token: settings.whatsappBusinessToken}},
-            {p: 'razorpay', c: {keyId: settings.razorpayKeyId, keySecret: settings.razorpayKeySecret}},
-            {p: 'msg91', c: {authKey: settings.msg91AuthKey, senderId: settings.msg91SenderId}},
-            {p: 'setu', c: {schemeId: settings.setuSchemeId, secret: settings.setuSecret}}
-        ];
-        for (const i of ints) await connection.query(`INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config = VALUES(config)`, [i.p, JSON.stringify(i.c)]);
-        await connection.commit();
-        connection.release();
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
+// 2. Data Sync
 const createSyncHandler = (table) => async (req, res) => {
     const items = req.body[table] || req.body.orders || req.body.customers || req.body.logs || req.body.templates || req.body.catalog || req.body.plans;
     if (!items) return res.status(400).json({error: "No data"});
@@ -231,106 +114,154 @@ app.post('/api/sync/templates', ensureDb, createSyncHandler('templates'));
 app.post('/api/sync/plans', ensureDb, createSyncHandler('plans'));
 app.post('/api/sync/catalog', ensureDb, createSyncHandler('catalog'));
 
-// Live Gold Rate
+// 3. Settings & Bootstrap
+app.get('/api/bootstrap', ensureDb, async (req, res) => {
+    try {
+        const connection = await pool.getConnection();
+        const [rateRows] = await connection.query('SELECT * FROM gold_rates ORDER BY id DESC LIMIT 1');
+        const [configRows] = await connection.query('SELECT * FROM app_config');
+        const [intRows] = await connection.query('SELECT * FROM integrations');
+        
+        const rates = rateRows[0] || { rate24k: 7200, rate22k: 6600, rate18k: 5400 };
+        const configMap = {}; configRows.forEach(r => configMap[r.setting_key] = r.setting_value);
+        const intMap = {}; intRows.forEach(r => { try { intMap[r.provider] = JSON.parse(r.config); } catch(e){} });
+
+        const settings = {
+            currentGoldRate24K: Number(rates.rate24k),
+            currentGoldRate22K: Number(rates.rate22k),
+            currentGoldRate18K: Number(rates.rate18k),
+            defaultTaxRate: Number(configMap['default_tax_rate'] || 3),
+            goldRateProtectionMax: Number(configMap['protection_max'] || 500),
+            gracePeriodHours: Number(configMap['grace_period_hours'] || 24),
+            followUpIntervalDays: Number(configMap['follow_up_days'] || 3),
+            whatsappPhoneNumberId: intMap['whatsapp']?.phoneId || '',
+            whatsappBusinessAccountId: intMap['whatsapp']?.accountId || '',
+            whatsappBusinessToken: intMap['whatsapp']?.token || '',
+            razorpayKeyId: intMap['razorpay']?.keyId || '',
+            razorpayKeySecret: intMap['razorpay']?.keySecret || '',
+            msg91AuthKey: intMap['msg91']?.authKey || '',
+            msg91SenderId: intMap['msg91']?.senderId || '',
+            setuSchemeId: intMap['setu']?.schemeId || '',
+            setuSecret: intMap['setu']?.secret || ''
+        };
+
+        const [orders] = await connection.query('SELECT data FROM orders ORDER BY created_at DESC');
+        const [customers] = await connection.query('SELECT data FROM customers');
+        const [logs] = await connection.query('SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 100');
+        const [templates] = await connection.query('SELECT data FROM templates');
+        const [planTemplates] = await connection.query('SELECT data FROM plan_templates');
+        const [catalog] = await connection.query('SELECT data FROM catalog');
+        
+        connection.release();
+        
+        res.json({ success: true, data: {
+            settings,
+            orders: orders.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            customers: customers.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            logs: logs.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            templates: templates.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            planTemplates: planTemplates.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            catalog: catalog.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            lastUpdated: Date.now()
+        }});
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/sync/settings', ensureDb, async (req, res) => {
+    const { settings } = req.body;
+    try {
+        const connection = await pool.getConnection();
+        await connection.beginTransaction();
+        await connection.query(`INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)`, [settings.currentGoldRate24K, settings.currentGoldRate22K, settings.currentGoldRate18K || 0]);
+        
+        const configs = [
+            ['default_tax_rate', settings.defaultTaxRate], ['protection_max', settings.goldRateProtectionMax],
+            ['grace_period_hours', settings.gracePeriodHours], ['follow_up_days', settings.followUpIntervalDays]
+        ];
+        for(const [k, v] of configs) await connection.query(`INSERT INTO app_config (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)`, [k, v]);
+
+        const integrations = [
+            {p: 'whatsapp', c: {phoneId: settings.whatsappPhoneNumberId, accountId: settings.whatsappBusinessAccountId, token: settings.whatsappBusinessToken}},
+            {p: 'razorpay', c: {keyId: settings.razorpayKeyId, keySecret: settings.razorpayKeySecret}},
+            {p: 'msg91', c: {authKey: settings.msg91AuthKey, senderId: settings.msg91SenderId}},
+            {p: 'setu', c: {schemeId: settings.setuSchemeId, secret: settings.setuSecret}}
+        ];
+        for(const i of integrations) await connection.query(`INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)`, [i.p, JSON.stringify(i.c)]);
+        
+        await connection.commit();
+        connection.release();
+        res.json({ success: true });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// 4. Proxies
 app.get('/api/gold-rate', ensureDb, async (req, res) => {
     try {
-        const liveRates = await fetchLiveAugmontRates();
-        const connection = await pool.getConnection();
-        if (liveRates) {
-            await connection.query(`INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)`, [liveRates.rate24k, liveRates.rate22k, liveRates.rate18k]);
-            connection.release();
-            return res.json({ k24: liveRates.rate24k, k22: liveRates.rate22k, k18: liveRates.rate18k, source: 'augmont_live' });
+        const response = await fetch('https://uat.batuk.in/augmont/gold', { signal: AbortSignal.timeout(5000) });
+        if (response.ok) {
+            const json = await response.json();
+            const gSell = parseFloat(json.data?.[0]?.[0]?.gSell);
+            if (!isNaN(gSell)) {
+                return res.json({ k24: gSell, k22: Math.round(gSell * (22/24)), source: 'live' });
+            }
         }
-        const [rows] = await connection.query('SELECT rate24k, rate22k, rate18k FROM gold_rates ORDER BY id DESC LIMIT 1');
+        // Fallback
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query('SELECT rate24k, rate22k FROM gold_rates ORDER BY id DESC LIMIT 1');
         connection.release();
-        if (rows.length > 0) res.json({ k24: Number(rows[0].rate24k), k22: Number(rows[0].rate22k), k18: Number(rows[0].rate18k), source: 'db_fallback' });
-        else res.json({ k24: 7950, k22: 7300, k18: 5980, source: 'static_fallback' });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+        if(rows.length) res.json({ k24: Number(rows[0].rate24k), k22: Number(rows[0].rate22k), source: 'db' });
+        else res.json({ k24: 7900, k22: 7200, source: 'default' });
+    } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Meta Proxy
-app.post('/api/whatsapp/send', async (req, res) => {
-    const phoneId = req.headers['x-phone-id'];
-    const token = req.headers['x-auth-token'];
-    if (!phoneId || !token) return res.status(401).json({ success: false, error: "Missing Credentials" });
+async function callMeta(endpoint, method, token, body) {
     try {
-        const result = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(req.body)
-        });
-        const data = await result.json();
-        res.json({ success: result.ok, data });
-    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
-// WhatsApp Template Proxies
-async function callMeta(endpoint, method, token, body = null) {
-    try {
-        const response = await fetch(`https://graph.facebook.com/v21.0/${endpoint}`, {
-            method,
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        const r = await fetch(`https://graph.facebook.com/v21.0/${endpoint}`, {
+            method, headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: body ? JSON.stringify(body) : undefined
         });
-        const data = await response.json();
-        return { ok: response.ok, status: response.status, data };
-    } catch (e) { return { ok: false, status: 502, data: { error: { message: e.message } } }; }
+        const data = await r.json();
+        return { ok: r.ok, status: r.status, data };
+    } catch(e) { return { ok: false, status: 500, data: { error: { message: e.message } } }; }
 }
 
-app.get('/api/whatsapp/templates', async (req, res) => {
-    const wabaId = req.headers['x-waba-id'];
+app.post('/api/whatsapp/send', async (req, res) => {
+    const { to, message, templateName, language, variables } = req.body;
+    const phoneId = req.headers['x-phone-id'];
     const token = req.headers['x-auth-token'];
-    const result = await callMeta(`${wabaId}/message_templates?limit=100&fields=name,status,components,category,language,rejected_reason`, 'GET', token);
-    res.status(result.status).json({ success: result.ok, data: result.data.data, error: result.data.error?.message });
+    
+    let payload = { messaging_product: "whatsapp", recipient_type: "individual", to };
+    if (templateName) {
+        payload.type = "template";
+        payload.template = { name: templateName, language: { code: language || "en_US" } };
+        if (variables) payload.template.components = [{ type: "body", parameters: variables.map(v => ({ type: "text", text: v })) }];
+    } else {
+        payload.type = "text";
+        payload.text = { body: message };
+    }
+    
+    const result = await callMeta(`${phoneId}/messages`, 'POST', token, payload);
+    res.status(result.status).json({ success: result.ok, data: result.data });
+});
+
+app.get('/api/whatsapp/templates', async (req, res) => {
+    const result = await callMeta(`${req.headers['x-waba-id']}/message_templates?limit=100&fields=name,status,components,category,rejected_reason`, 'GET', req.headers['x-auth-token']);
+    res.status(result.status).json({ success: result.ok, data: result.data.data });
 });
 
 app.post('/api/whatsapp/templates', async (req, res) => {
-    const wabaId = req.headers['x-waba-id'];
-    const token = req.headers['x-auth-token'];
-    const result = await callMeta(`${wabaId}/message_templates`, 'POST', token, req.body);
-    res.status(result.status).json({ success: result.ok, data: result.data, error: result.data.error?.message });
+    const result = await callMeta(`${req.headers['x-waba-id']}/message_templates`, 'POST', req.headers['x-auth-token'], req.body);
+    res.status(result.status).json({ success: result.ok, data: result.data });
 });
 
-app.delete('/api/whatsapp/templates', async (req, res) => {
-    const wabaId = req.headers['x-waba-id'];
-    const token = req.headers['x-auth-token'];
-    const name = req.query.name;
-    const result = await callMeta(`${wabaId}/message_templates?name=${name}`, 'DELETE', token);
-    res.status(result.status).json({ success: result.ok, data: result.data, error: result.data.error?.message });
-});
-
-// --- STATIC SERVING ---
-// Resolve the path to the current directory where index.html resides
-// In the flat deployment structure (server.js, index.html in same root), we use __dirname
-let staticRoot = __dirname;
-
-// If a 'dist' folder exists (development or nested deploy), prefer that
-if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
-    staticRoot = path.join(__dirname, 'dist');
+// --- STATIC FILES (FALLBACK) ---
+// Note: .htaccess usually handles this, but we keep it for local dev or if rewrite fails
+const staticPath = path.join(process.cwd());
+if (fs.existsSync(path.join(staticPath, 'index.html'))) {
+    app.use(express.static(staticPath));
+    app.get('*', (req, res) => {
+        if (!req.path.startsWith('/api')) res.sendFile(path.join(staticPath, 'index.html'));
+    });
 }
 
-console.log(`Serving static files from: ${staticRoot}`);
-
-// 1. Serve Static Assets (JS, CSS, Images)
-// We set 'index: false' to prevent express.static from automatically serving index.html for the root path.
-// This allows us to handle the root path explicitly below.
-app.use(express.static(staticRoot, { index: false }));
-
-// 2. Explicit Root Handler
-// This ensures that hitting '/' specifically sends the app entry point.
-app.get('/', (req, res) => {
-    res.sendFile(path.join(staticRoot, 'index.html'));
-});
-
-// 3. SPA Catch-All
-// For any other route not handled by API or static files, serve index.html (client-side routing)
-app.get('*', (req, res) => {
-    if (req.path.startsWith('/api')) {
-        return res.status(404).json({ error: "API Endpoint Not Found" });
-    }
-    res.sendFile(path.join(staticRoot, 'index.html'));
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
-});
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT}`));
