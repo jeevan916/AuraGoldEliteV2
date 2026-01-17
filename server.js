@@ -262,9 +262,12 @@ if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
 }
 
 // Serve static assets
-app.use(express.static(distPath));
+// CRITICAL FIX: Disable index serving. This prevents the server from hijacking '/' 
+// with a static file, ensuring our custom route handler below takes precedence.
+app.use(express.static(distPath, { index: false }));
 
 // EXPLICIT ROOT HANDLER
+// Ensures the root route '/' serves the BUILT index.html correctly.
 app.get('/', (req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
 });

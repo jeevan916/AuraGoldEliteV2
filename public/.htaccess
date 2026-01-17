@@ -1,4 +1,5 @@
 
+DirectoryIndex disabled
 <IfModule mod_rewrite.c>
   RewriteEngine On
   # Forward all requests to the Node.js application port
