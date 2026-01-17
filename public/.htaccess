@@ -1,6 +1,8 @@
 
-<IfModule mod_rewrite.c>
-  RewriteEngine On
-  # Forward all requests to the Node.js application port
-  RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]
-</IfModule>
+# Minimal .htaccess for Node.js Application
+# The Node.js entry point is handled by the hosting environment.
+# We just ensure DirectoryIndex doesn't interfere.
+
+DirectoryIndex disabled
+RewriteEngine On
+Options -MultiViews
