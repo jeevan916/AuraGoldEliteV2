@@ -93,7 +93,6 @@ const App: React.FC = () => {
   const [notifications, setNotifications] = useState<NotificationTrigger[]>([]);
   const [isStrategyLoading, setStrategyLoading] = useState(false);
   const [sendingNotifId, setSendingNotifId] = useState<string | null>(null);
-  const [autoPilotRan, setAutoPilotRan] = useState(false);
   const [autoPilotReport, setAutoPilotReport] = useState<string[]>([]);
   const [errors, setErrors] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
@@ -112,7 +111,21 @@ const App: React.FC = () => {
   const startApp = async () => {
     setIsInitializing(true);
     try {
+      // 1. Check for Customer View Token (Prioritize this)
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      
+      // 2. URL Cleanup: Redirect stray paths (including /index) to root if not using token or api
+      if ((window.location.pathname !== '/' && window.location.pathname !== '/index.html') && !window.location.pathname.startsWith('/api') && !token) {
+          window.history.replaceState({}, '', '/');
+      }
+      // Specifically fix the /index artifact
+      if (window.location.pathname === '/index') {
+          window.history.replaceState({}, '', '/');
+      }
+
       await storageService.syncFromServer();
+      
       const rateRes = await goldRateService.fetchLiveRate();
       if (rateRes.success) {
           const currentSettings = storageService.getSettings();
@@ -123,9 +136,6 @@ const App: React.FC = () => {
           });
       }
 
-      // Check for Customer View Token
-      const params = new URLSearchParams(window.location.search);
-      const token = params.get('token');
       if (token) {
           const allOrders = storageService.getOrders();
           const targetOrder = allOrders.find(o => o.shareToken === token || o.id === token);
