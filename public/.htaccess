@@ -1,9 +1,4 @@
 
 RewriteEngine On
-
-# Ensure Authorization header is passed to Node.js
 RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
-
-# Proxy everything to the Node.js application running on the port
-# Hostinger Node.js apps need this to hand off control to the app server
 RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]
