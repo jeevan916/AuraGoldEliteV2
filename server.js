@@ -705,11 +705,12 @@ if (fs.existsSync(path.join(possibleDist, 'index.html'))) {
 }
 
 if (staticPath) {
-    // Explicitly set index to true, though it's default
-    app.use(express.static(staticPath, { index: 'index.html' }));
+    // Disable automatic index serving. This allows the root request '/' to pass through 
+    // to the explicit route handler below, ensuring index.html is served consistently.
+    app.use(express.static(staticPath, { index: false }));
 }
 
-// Route to handle root / if not caught by static (e.g. if index: false was set or weird priority)
+// Explicit route to handle root / if not caught by static
 app.get('/', (req, res) => {
     if (staticPath) res.sendFile(path.join(staticPath, 'index.html'));
     else res.send('AuraGold Backend Running - Frontend Not Found');
