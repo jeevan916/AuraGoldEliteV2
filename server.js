@@ -11,7 +11,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- CONFIGURATION ---
-// Try loading .env from current directory or config folder
 const envPaths = [path.resolve(process.cwd(), '.env'), path.resolve(__dirname, '.env')];
 for (const p of envPaths) {
     if (fs.existsSync(p)) { dotenv.config({ path: p }); break; }
@@ -71,11 +70,8 @@ const ensureDb = async (req, res, next) => {
 };
 
 // --- API ROUTES ---
-
-// 1. Health Check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 
-// 2. Data Sync
 const createSyncHandler = (table) => async (req, res) => {
     const items = req.body[table] || req.body.orders || req.body.customers || req.body.logs || req.body.templates || req.body.catalog || req.body.plans;
     if (!items) return res.status(400).json({error: "No data"});
@@ -114,7 +110,6 @@ app.post('/api/sync/templates', ensureDb, createSyncHandler('templates'));
 app.post('/api/sync/plans', ensureDb, createSyncHandler('plans'));
 app.post('/api/sync/catalog', ensureDb, createSyncHandler('catalog'));
 
-// 3. Settings & Bootstrap
 app.get('/api/bootstrap', ensureDb, async (req, res) => {
     try {
         const connection = await pool.getConnection();
@@ -194,7 +189,6 @@ app.post('/api/sync/settings', ensureDb, async (req, res) => {
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// 4. Proxies
 app.get('/api/gold-rate', ensureDb, async (req, res) => {
     try {
         const response = await fetch('https://uat.batuk.in/augmont/gold', { signal: AbortSignal.timeout(5000) });
@@ -205,7 +199,6 @@ app.get('/api/gold-rate', ensureDb, async (req, res) => {
                 return res.json({ k24: gSell, k22: Math.round(gSell * (22/24)), source: 'live' });
             }
         }
-        // Fallback
         const connection = await pool.getConnection();
         const [rows] = await connection.query('SELECT rate24k, rate22k FROM gold_rates ORDER BY id DESC LIMIT 1');
         connection.release();
@@ -229,7 +222,6 @@ app.post('/api/whatsapp/send', async (req, res) => {
     const { to, message, templateName, language, variables } = req.body;
     const phoneId = req.headers['x-phone-id'];
     const token = req.headers['x-auth-token'];
-    
     let payload = { messaging_product: "whatsapp", recipient_type: "individual", to };
     if (templateName) {
         payload.type = "template";
@@ -239,7 +231,6 @@ app.post('/api/whatsapp/send', async (req, res) => {
         payload.type = "text";
         payload.text = { body: message };
     }
-    
     const result = await callMeta(`${phoneId}/messages`, 'POST', token, payload);
     res.status(result.status).json({ success: result.ok, data: result.data });
 });
@@ -254,14 +245,18 @@ app.post('/api/whatsapp/templates', async (req, res) => {
     res.status(result.status).json({ success: result.ok, data: result.data });
 });
 
-// --- STATIC FILES (FALLBACK) ---
-// Note: .htaccess usually handles this, but we keep it for local dev or if rewrite fails
-const staticPath = path.join(process.cwd());
-if (fs.existsSync(path.join(staticPath, 'index.html'))) {
-    app.use(express.static(staticPath));
-    app.get('*', (req, res) => {
-        if (!req.path.startsWith('/api')) res.sendFile(path.join(staticPath, 'index.html'));
-    });
-}
+// --- STATIC FILES (STRICT MODE) ---
+// Serve static assets directly from the same directory as this script.
+// This is critical for flat file deployments in 'public_html' or 'dist' folders.
+app.use(express.static(__dirname));
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT}`));
+// For any other route, serve index.html to support SPA routing.
+app.get('*', (req, res) => {
+    if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: "API Endpoint Not Found" });
+    }
+    // Explicitly serve index.html from __dirname
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT} in ${__dirname}`));
