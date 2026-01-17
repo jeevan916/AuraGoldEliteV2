@@ -247,15 +247,22 @@ app.post('/api/whatsapp/templates', async (req, res) => {
 
 // --- STATIC FILES (STRICT MODE) ---
 // Serve static assets directly from the same directory as this script.
-// This is critical for flat file deployments in 'public_html' or 'dist' folders.
-app.use(express.static(__dirname));
+// Set 'index: false' to prevent automatic serving of index.html by serve-static,
+// allowing our explicit route handlers to take precedence.
+app.use(express.static(__dirname, { index: false }));
 
-// For any other route, serve index.html to support SPA routing.
+// EXPLICIT ROOT HANDLER
+// Ensures the root route always returns index.html correctly.
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// SPA CATCH-ALL
+// For any other route (like /dashboard), serve index.html to support React Router.
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API Endpoint Not Found" });
     }
-    // Explicitly serve index.html from __dirname
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
