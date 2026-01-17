@@ -1,16 +1,3 @@
 
 RewriteEngine On
-
-# Disable Apache's default directory indexing to ensure request hits the proxy
-DirectoryIndex disabled
-
-# Pass Authorization header
-RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
-
-# Specific rule for the root path (empty string) to ensure it hits the backend
-RewriteRule ^$ http://127.0.0.1:%{ENV:PORT}/ [P,L]
-
-# Rule for all other paths
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]
