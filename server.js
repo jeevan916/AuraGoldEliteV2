@@ -11,7 +11,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- CONFIGURATION ---
-// Load .env from root (parent of dist if running from inside dist, or same dir)
 const envPaths = [
     path.resolve(process.cwd(), '.env'), 
     path.resolve(__dirname, '.env'),
@@ -251,24 +250,32 @@ app.post('/api/whatsapp/templates', async (req, res) => {
 });
 
 // --- STATIC FILES (SPA SETUP) ---
-// We must serve the 'dist' folder because that is where the BUILT application lives.
-// Serving __dirname directly serves the SOURCE files (with .tsx), which browsers cannot run.
-const distPath = path.join(__dirname, 'dist');
+// We determine the correct location of the 'dist' folder.
+// If running locally, it's ./dist
+// If running in production (where server.js is inside public_html), it is __dirname itself.
+// However, standardized deploy scripts usually copy contents of dist to root.
+// We check if index.html is in current dir or in ./dist
 
-if (fs.existsSync(distPath)) {
-    // 1. Serve Static Assets
-    app.use(express.static(distPath));
-
-    // 2. SPA Fallback: Send index.html for any unknown route
-    app.get('*', (req, res) => {
-        if (req.path.startsWith('/api')) {
-            return res.status(404).json({ error: "API Endpoint Not Found" });
-        }
-        res.sendFile(path.join(distPath, 'index.html'));
-    });
-} else {
-    // Fallback message if build is missing
-    app.get('/', (req, res) => res.send('Application Build Missing. Please run "npm run build".'));
+let distPath = __dirname;
+if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
+    distPath = path.join(__dirname, 'dist');
 }
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT}`));
+// Serve static assets
+app.use(express.static(distPath));
+
+// EXPLICIT ROOT HANDLER
+app.get('/', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+});
+
+// SPA CATCH-ALL
+// For any other route (like /dashboard), serve index.html to support React Router.
+app.get('*', (req, res) => {
+    if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: "API Endpoint Not Found" });
+    }
+    res.sendFile(path.join(distPath, 'index.html'));
+});
+
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT} serving ${distPath}`));
