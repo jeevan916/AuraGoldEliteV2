@@ -26,7 +26,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 
-// --- DB SETUP ---
+// --- DATABASE CONFIGURATION ---
 const dbConfig = {
     host: process.env.DB_HOST || '127.0.0.1',
     user: process.env.DB_USER,
@@ -39,11 +39,14 @@ const dbConfig = {
 };
 
 let pool = null;
+
 async function initDb() {
     try {
         pool = mysql.createPool(dbConfig);
         const connection = await pool.getConnection();
         console.log("[Database] Connection Successful!");
+        
+        // Initialize Tables
         const tables = [
             `CREATE TABLE IF NOT EXISTS gold_rates (id INT AUTO_INCREMENT PRIMARY KEY, rate24k DECIMAL(10, 2), rate22k DECIMAL(10, 2), rate18k DECIMAL(10, 2), recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
             `CREATE TABLE IF NOT EXISTS integrations (provider VARCHAR(50) PRIMARY KEY, config JSON, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)`,
@@ -55,6 +58,7 @@ async function initDb() {
             `CREATE TABLE IF NOT EXISTS plan_templates (id VARCHAR(100) PRIMARY KEY, name VARCHAR(255), data LONGTEXT)`,
             `CREATE TABLE IF NOT EXISTS catalog (id VARCHAR(100) PRIMARY KEY, category VARCHAR(100), data LONGTEXT)`
         ];
+
         for (const sql of tables) await connection.query(sql);
         connection.release();
         return { success: true };
@@ -63,19 +67,38 @@ async function initDb() {
         return { success: false, error: err.message };
     }
 }
+
 initDb();
 
 const ensureDb = async (req, res, next) => {
-    if (!pool) await initDb();
-    if (!pool) return res.status(503).json({ error: "Database Unavailable" });
+    if (!pool) {
+        console.log("[Database] Pool is null, retrying init...");
+        const result = await initDb();
+        if (!result.success) {
+            return res.status(503).json({ 
+                error: "Database Connection Failed", 
+                details: result.error
+            });
+        }
+    }
     next();
 };
 
 // --- API ROUTES ---
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 
-// ... (Keep existing API handlers for sync, gold-rate, whatsapp etc. exactly as they were) ...
-// For brevity in this fix block, re-inserting the essential handlers to ensure functionality.
+// Debug Route
+app.get('/api/debug/db', async (req, res) => {
+    try {
+        if (!pool) await initDb();
+        const connection = await pool.getConnection();
+        await connection.ping();
+        connection.release();
+        res.json({ connected: true, user: dbConfig.user, db: dbConfig.database });
+    } catch (e) {
+        res.status(500).json({ connected: false, error: e.message });
+    }
+});
 
 const createSyncHandler = (table) => async (req, res) => {
     const items = req.body[table] || req.body.orders || req.body.customers || req.body.logs || req.body.templates || req.body.catalog || req.body.plans;
@@ -83,6 +106,7 @@ const createSyncHandler = (table) => async (req, res) => {
     try {
         const connection = await pool.getConnection();
         await connection.beginTransaction();
+        
         let query = '';
         if (table === 'orders') query = `INSERT INTO orders (id, customer_contact, status, created_at, data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data), updated_at=VALUES(updated_at)`;
         else if (table === 'customers') query = `INSERT INTO customers (id, contact, name, data, updated_at) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data), updated_at=VALUES(updated_at)`;
@@ -251,27 +275,29 @@ app.post('/api/whatsapp/templates', async (req, res) => {
 
 // --- STATIC ASSET SERVING ---
 let distPath = __dirname;
-// Check if we are running inside the dist folder (prod) or root (dev)
-if (fs.existsSync(path.join(__dirname, 'index.html'))) {
-    // We are likely INSIDE dist/ already
+// Logic to determine dist path (root or subfolder)
+if (fs.existsSync(path.join(__dirname, 'index.html')) && fs.existsSync(path.join(__dirname, 'assets'))) {
+    // We are inside dist/
     distPath = __dirname;
 } else if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
-    // We are in root, pointing to dist
+    // We are in root
     distPath = path.join(__dirname, 'dist');
 }
 
-// Serve static files
+console.log(`[System] Serving Static Files from: ${distPath}`);
+
+// Serve static assets with index: false to prevent hijacking
 app.use(express.static(distPath, { index: false }));
 
-// IMPORTANT: Asset Fallback prevention
-// If a request asks for a specific file extension (js, css, png) and gets here, it's a 404.
-// Do NOT serve index.html for these, or you get SyntaxError: Unexpected token <
+// IMPORTANT: STRICT ASSET 404
+// Do NOT serve index.html for missing JS/CSS/Images.
+// This prevents SyntaxError: Unexpected token < when assets are missing.
 app.get('*.(js|css|png|jpg|jpeg|gif|ico|json|svg)', (req, res) => {
     res.status(404).send('Not Found');
 });
 
-// SPA Catch-All
-// For everything else (routes), serve index.html
+// SPA CATCH-ALL
+// For any other route (like /dashboard), serve index.html to support React Router.
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API Endpoint Not Found" });
