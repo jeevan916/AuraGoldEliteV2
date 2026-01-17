@@ -250,30 +250,21 @@ app.post('/api/whatsapp/templates', async (req, res) => {
 });
 
 // --- STATIC FILES (SPA SETUP) ---
-// We determine the correct location of the 'dist' folder.
-// If running locally, it's ./dist
-// If running in production (where server.js is inside public_html), it is __dirname itself.
-// However, standardized deploy scripts usually copy contents of dist to root.
-// We check if index.html is in current dir or in ./dist
-
 let distPath = __dirname;
 if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
     distPath = path.join(__dirname, 'dist');
 }
 
-// Serve static assets
-// CRITICAL FIX: Disable index serving. This prevents the server from hijacking '/' 
-// with a static file, ensuring our custom route handler below takes precedence.
+// Serve static assets (index: false is crucial to allow custom root handling)
 app.use(express.static(distPath, { index: false }));
 
-// EXPLICIT ROOT HANDLER
-// Ensures the root route '/' serves the BUILT index.html correctly.
-app.get('/', (req, res) => {
+// EXPLICIT ROOT & INDEX HANDLER
+// Allows both / and /index to serve the app, fixing redirect issues.
+app.get(['/', '/index'], (req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
 });
 
 // SPA CATCH-ALL
-// For any other route (like /dashboard), serve index.html to support React Router.
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API Endpoint Not Found" });

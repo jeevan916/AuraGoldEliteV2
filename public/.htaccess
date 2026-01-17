@@ -1,7 +1,18 @@
 
 DirectoryIndex disabled
+Options -Indexes
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
-  # Forward all requests to the Node.js application port
+  
+  # Forward API requests specifically
+  RewriteRule ^api/(.*)$ http://127.0.0.1:%{ENV:PORT}/api/$1 [P,L]
+
+  # Forward Root URL (Empty or /) to Node.js
+  RewriteRule ^/?$ http://127.0.0.1:%{ENV:PORT}/ [P,L]
+
+  # Forward everything else to Node.js
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]
 </IfModule>
