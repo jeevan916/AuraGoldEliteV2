@@ -111,19 +111,10 @@ const App: React.FC = () => {
   const startApp = async () => {
     setIsInitializing(true);
     try {
-      // 1. Check for Customer View Token (Prioritize this)
+      // 1. Check for Customer View Token
       const params = new URLSearchParams(window.location.search);
       const token = params.get('token');
       
-      // 2. URL Cleanup: Redirect stray paths (including /index) to root if not using token or api
-      if ((window.location.pathname !== '/' && window.location.pathname !== '/index.html') && !window.location.pathname.startsWith('/api') && !token) {
-          window.history.replaceState({}, '', '/');
-      }
-      // Specifically fix the /index artifact
-      if (window.location.pathname === '/index') {
-          window.history.replaceState({}, '', '/');
-      }
-
       await storageService.syncFromServer();
       
       const rateRes = await goldRateService.fetchLiveRate();
@@ -176,9 +167,6 @@ const App: React.FC = () => {
       addOrder(newOrder);
       
       // Use Template Message for Reliable Delivery (initiate conversation window)
-      // Template: auragold_order_confirmation
-      // Variables: {{1}}=Name, {{2}}=OrderID, {{3}}=Total, {{4}}=Token
-      
       const variables = [
           newOrder.customerName,
           newOrder.id,
