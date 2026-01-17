@@ -11,20 +11,24 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- CONFIGURATION PATH ---
-const ENV_PATH = path.join(__dirname, '.builds', 'config', '.env');
+// Attempt to load .env from standard locations
+const envPaths = [
+    path.join(__dirname, '.env'),
+    path.join(__dirname, '.builds', 'config', '.env')
+];
 
-// --- SYSTEM LOGGING ---
-const log = (msg, type = 'INFO') => {
-    const entry = `[${new Date().toLocaleTimeString()}] [${type}] ${msg}`;
-    console.log(entry);
-};
-
-// Load environment
-dotenv.config({ path: ENV_PATH });
+for (const p of envPaths) {
+    if (fs.existsSync(p)) {
+        dotenv.config({ path: p });
+        console.log(`Loaded config from ${p}`);
+        break;
+    }
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.disable('x-powered-by');
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 
@@ -75,7 +79,7 @@ async function initDb() {
         connection.release();
         return { success: true };
     } catch (err) {
-        log(`DB Init Failed: ${err.message}`, 'ERROR');
+        console.error(`DB Init Failed: ${err.message}`);
         return { success: false, error: err.message };
     }
 }
@@ -287,30 +291,44 @@ app.post('/api/whatsapp/templates', async (req, res) => {
     res.status(result.status).json({ success: result.ok, data: result.data, error: result.data.error?.message });
 });
 
-// --- SERVE STATIC ---
-// Locate 'dist'
-let staticPath = null;
-const possibleDist = path.join(__dirname, 'dist');
-const rootDist = __dirname; // Fallback to current folder
+app.delete('/api/whatsapp/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    const name = req.query.name;
+    const result = await callMeta(`${wabaId}/message_templates?name=${name}`, 'DELETE', token);
+    res.status(result.status).json({ success: result.ok, data: result.data, error: result.data.error?.message });
+});
 
-if (fs.existsSync(path.join(possibleDist, 'index.html'))) {
-    staticPath = possibleDist;
-} else if (fs.existsSync(path.join(rootDist, 'index.html'))) {
-    staticPath = rootDist;
+// --- STATIC SERVING ---
+// Resolve the path to the current directory where index.html resides
+// In the flat deployment structure (server.js, index.html in same root), we use __dirname
+let staticRoot = __dirname;
+
+// If a 'dist' folder exists (development or nested deploy), prefer that
+if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
+    staticRoot = path.join(__dirname, 'dist');
 }
 
-if (staticPath) {
-    console.log(`Serving static files from: ${staticPath}`);
-    app.use(express.static(staticPath));
-} else {
-    console.error("CRITICAL: No static files found. Frontend will not load.");
-}
+console.log(`Serving static files from: ${staticRoot}`);
 
-// Fallback for SPA routing
+// 1. Serve Static Assets (JS, CSS, Images)
+// We set 'index: false' to prevent express.static from automatically serving index.html for the root path.
+// This allows us to handle the root path explicitly below.
+app.use(express.static(staticRoot, { index: false }));
+
+// 2. Explicit Root Handler
+// This ensures that hitting '/' specifically sends the app entry point.
+app.get('/', (req, res) => {
+    res.sendFile(path.join(staticRoot, 'index.html'));
+});
+
+// 3. SPA Catch-All
+// For any other route not handled by API or static files, serve index.html (client-side routing)
 app.get('*', (req, res) => {
-    if (req.path.startsWith('/api')) return res.status(404).json({ error: "API Endpoint Not Found" });
-    if (staticPath) res.sendFile(path.join(staticPath, 'index.html'));
-    else res.status(404).send('Backend Running. Frontend Missing.');
+    if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: "API Endpoint Not Found" });
+    }
+    res.sendFile(path.join(staticRoot, 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {

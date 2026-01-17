@@ -1,3 +1,4 @@
 
 RewriteEngine On
+DirectoryIndex disabled
 RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]
