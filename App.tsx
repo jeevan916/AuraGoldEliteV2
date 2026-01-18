@@ -252,6 +252,7 @@ const App = () => {
                   <MenuItem onClick={() => setView('PLANS')} icon={<Calculator />} label="Plan Manager" desc="Configure schemes" colorClass="bg-violet-50 text-violet-600" />
                   <MenuItem onClick={() => setView('MARKET')} icon={<Globe />} label="Market Intel" desc="Live rates & news" colorClass="bg-sky-50 text-sky-600" />
                   <MenuItem onClick={() => setView('SYS_LOGS')} icon={<HardDrive />} label="System Logs" desc="Debug & Audit" colorClass="bg-slate-100 text-slate-600" />
+                  <MenuItem onClick={() => setView('SETTINGS')} icon={<SettingsIcon />} label="Configuration" desc="Database & Rates" colorClass="bg-slate-800 text-white" />
               </div>
           );
           
