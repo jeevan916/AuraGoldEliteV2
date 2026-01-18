@@ -52,10 +52,6 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (initialContact) setSelectedContact(initialContact);
-  }, [initialContact]);
-
   const conversations = useMemo(() => {
       const grouped: Record<string, WhatsAppLogEntry[]> = {};
       logs.forEach(log => {
@@ -86,6 +82,21 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
       
       return logConvos.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [logs, activeSessions]);
+
+  useEffect(() => {
+    if (initialContact) {
+        // Smart Matching: Normalize input and existing keys to last 10 digits
+        const target = initialContact.replace(/\D/g, '').slice(-10);
+        const match = conversations.find(c => c.phone.replace(/\D/g, '').slice(-10) === target);
+        
+        if (match) {
+            setSelectedContact(match.phone);
+        } else {
+            // Fallback: If no history, assume user wants to start new with this number
+            setSelectedContact(initialContact);
+        }
+    }
+  }, [initialContact, conversations]); // Added conversations dependency to ensure it updates when logs load
 
   const filteredConversations = conversations.filter(c => 
       c.name.toLowerCase().includes(search.toLowerCase()) || 

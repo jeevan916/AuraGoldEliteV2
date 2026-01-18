@@ -14,8 +14,21 @@ const API_VERSION = "v21.0";
 
 export const whatsappService = {
   formatPhoneNumber(phone: string): string {
-    const cleaned = phone.replace(/\D/g, '');
+    if (!phone) return '';
+    let cleaned = phone.replace(/\D/g, '');
+    
+    // Remove leading '0' if it's an 11-digit number (common user entry error)
+    if (cleaned.length === 11 && cleaned.startsWith('0')) {
+        cleaned = cleaned.substring(1);
+    }
+    
+    // If it's a 10 digit number (Standard India Mobile), add 91
     if (cleaned.length === 10) return `91${cleaned}`;
+    
+    // If it's already 12 digits and starts with 91, return as is
+    if (cleaned.length === 12 && cleaned.startsWith('91')) return cleaned;
+    
+    // Fallback: return cleaned (might fail if no country code, but ensures we pass something)
     return cleaned;
   },
 
@@ -210,6 +223,11 @@ export const whatsappService = {
   async sendTemplateMessage(to: string, templateName: string, languageCode: string = 'en_US', variables: string[] = [], customerName: string): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
     
+    if (!recipient) {
+        errorService.logError("WhatsApp API", "Invalid Phone Number - Cannot Send", "MEDIUM");
+        return { success: false, error: "Invalid Phone Number" };
+    }
+
     // LOG REQUEST START
     errorService.logActivity('TEMPLATE_SENT', `Sending '${templateName}' to ${customerName} (${recipient})...`);
 
@@ -265,6 +283,11 @@ export const whatsappService = {
   async sendMessage(to: string, message: string, customerName: string): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
     
+    if (!recipient) {
+        errorService.logError("WhatsApp API", "Invalid Phone Number - Cannot Send", "MEDIUM");
+        return { success: false, error: "Invalid Phone Number" };
+    }
+
     // LOG REQUEST START
     errorService.logActivity('MANUAL_MESSAGE_SENT', `Sending message to ${customerName}...`);
 
