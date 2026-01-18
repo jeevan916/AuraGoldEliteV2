@@ -5,6 +5,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import compression from 'compression';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -40,16 +41,17 @@ loadEnv();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// --- PRODUCTION OPTIMIZATIONS ---
+app.set('trust proxy', 1); // Required for Hostinger/Nginx/Cloudflare
+app.use(compression());    // Gzip/Brotli compression
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 
 // --- SECURITY MIDDLEWARE ---
 app.use((req, res, next) => {
-    // Prevent access to sensitive server files if they exist in the public directory
     if (['/server.js', '/package.json', '/.env', '/vite.config.ts'].includes(req.path)) {
         return res.status(403).send('Forbidden');
     }
-    // Allow metadata and manifest
     if (req.path === '/metadata.json' || req.path === '/manifest.json') return next();
     
     const forbiddenExtensions = ['.ts', '.tsx', '.jsx', '.env', '.config', '.lock', '.json'];
@@ -66,7 +68,6 @@ async function initDb() {
     try {
         if (pool) await pool.end();
 
-        // Debug log for connection attempt (Masked password)
         console.log(`[Database] Connecting to ${process.env.DB_HOST || 'localhost'} as ${process.env.DB_USER}...`);
 
         const dbConfig = {
@@ -78,7 +79,6 @@ async function initDb() {
             waitForConnections: true,
             connectionLimit: 10,
             connectTimeout: 20000,
-            // Add these for better stability on shared hosting
             enableKeepAlive: true,
             keepAliveInitialDelay: 0
         };
@@ -109,7 +109,6 @@ async function initDb() {
         return { success: false, error: err.message, code: err.code };
     }
 }
-// Attempt initial connection
 initDb();
 
 const ensureDb = async (req, res, next) => {
@@ -127,15 +126,14 @@ const ensureDb = async (req, res, next) => {
 async function fetchExternalGoldRate() {
     try {
         console.log("[System] Fetching live gold rates from public API...");
-        // Use a reliable free public API for Gold (XAU) in INR
         const response = await fetch('https://data-asg.goldprice.org/dbXRates/INR', {
-            headers: { 'User-Agent': 'Mozilla/5.0' }
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            timeout: 5000 // 5s timeout
         });
         
         if (!response.ok) throw new Error(`External API Error: ${response.status}`);
         
         const data = await response.json();
-        // data.items[0].x_price is price of 1 oz (31.1035g)
         const pricePerOz = data.items[0].x_price; // 24K Price per Oz
         
         const rate24k = Math.round(pricePerOz / 31.1035);
@@ -151,7 +149,6 @@ async function fetchExternalGoldRate() {
 
 // --- API ROUTES ---
 
-// Health Check with Deep DB Diagnostic
 app.get('/api/health', async (req, res) => {
     let dbStatus = 'disconnected';
     let dbError = null;
@@ -178,7 +175,6 @@ app.get('/api/health', async (req, res) => {
     });
 });
 
-// Sync Handlers
 const createSyncHandler = (table) => async (req, res) => {
     const items = req.body[table] || req.body.orders || req.body.customers || req.body.logs || req.body.templates || req.body.catalog || req.body.plans;
     if (!items) return res.status(400).json({error: "No data payload"});
@@ -188,7 +184,6 @@ const createSyncHandler = (table) => async (req, res) => {
         await connection.beginTransaction();
         
         let query = '';
-        // Efficient UPSERT queries
         if (table === 'orders') query = `INSERT INTO orders (id, customer_contact, status, created_at, data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data), updated_at=VALUES(updated_at)`;
         else if (table === 'customers') query = `INSERT INTO customers (id, contact, name, data, updated_at) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data), updated_at=VALUES(updated_at)`;
         else if (table === 'logs') query = `INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data)`;
@@ -198,7 +193,6 @@ const createSyncHandler = (table) => async (req, res) => {
 
         for (const item of items) {
             let params = [];
-            // Parameter mapping
             if(table === 'orders') params = [item.id, item.customerContact, item.status, new Date(item.createdAt), JSON.stringify(item), Date.now()];
             else if(table === 'customers') params = [item.id, item.contact, item.name, JSON.stringify(item), Date.now()];
             else if(table === 'logs') params = [item.id, item.phoneNumber, item.direction, new Date(item.timestamp), JSON.stringify(item)];
@@ -224,7 +218,6 @@ app.post('/api/sync/templates', ensureDb, createSyncHandler('templates'));
 app.post('/api/sync/plans', ensureDb, createSyncHandler('plans'));
 app.post('/api/sync/catalog', ensureDb, createSyncHandler('catalog'));
 
-// Bootstrap: Initial Load
 app.get('/api/bootstrap', ensureDb, async (req, res) => {
     try {
         const connection = await pool.getConnection();
@@ -234,14 +227,13 @@ app.get('/api/bootstrap', ensureDb, async (req, res) => {
         
         let rates = rateRows[0];
         
-        // If DB has no rates, fetch external
         if (!rates) {
             const extRates = await fetchExternalGoldRate();
             if (extRates.success) {
                 rates = extRates;
                 await connection.query('INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)', [rates.rate24k, rates.rate22k, rates.rate18k]);
             } else {
-                rates = { rate24k: 7200, rate22k: 6600, rate18k: 5400 };
+                rates = { rate24k: 7800, rate22k: 7150, rate18k: 5850 }; // Valid fallback for late 2024/2025
             }
         }
 
@@ -302,38 +294,31 @@ app.post('/api/sync/settings', ensureDb, async (req, res) => {
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Gold Rate with External Fetch Fallback
 app.get('/api/gold-rate', ensureDb, async (req, res) => {
     try {
         const connection = await pool.getConnection();
         const [rows] = await connection.query('SELECT rate24k, rate22k, recorded_at FROM gold_rates ORDER BY id DESC LIMIT 1');
         
         let rateData = rows[0];
-        let source = 'db';
         let isStale = !rateData || (new Date() - new Date(rateData.recorded_at) > 1000 * 60 * 60 * 4); // 4 Hours
 
-        // If stale or missing, try external fetch
         if (isStale) {
             const ext = await fetchExternalGoldRate();
             if (ext.success) {
                 rateData = ext;
-                source = 'external';
-                // Update DB async so we don't block too long
                 connection.query('INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)', [ext.rate24k, ext.rate22k, ext.rate18k]);
             }
         }
-        
         connection.release();
 
         if (rateData) {
-            res.json({ k24: Number(rateData.rate24k), k22: Number(rateData.rate22k), source });
+            res.json({ k24: Number(rateData.rate24k), k22: Number(rateData.rate22k), source: 'active' });
         } else {
-            res.json({ k24: 7900, k22: 7200, source: 'default_fallback' });
+            res.json({ k24: 7800, k22: 7150, source: 'fallback_default' });
         }
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- WHATSAPP PROXY ---
 async function callMeta(endpoint, method, token, body) {
     try {
         const r = await fetch(`https://graph.facebook.com/v21.0/${endpoint}`, { method, headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
@@ -379,47 +364,41 @@ app.delete('/api/whatsapp/templates', async (req, res) => {
 let staticPath = null;
 let indexPath = null;
 
-// Check 1: PRODUCTION MODE
-// If index.html is in the same folder as server.js, we are inside 'public_html' (the deployed dist content)
 if (fs.existsSync(path.join(__dirname, 'index.html'))) {
     staticPath = __dirname;
     indexPath = path.join(__dirname, 'index.html');
     console.log("[System] Mode: PRODUCTION (Serving from current directory)");
-} 
-// Check 2: DEVELOPMENT/LOCAL MODE
-// If dist/index.html exists, we are at the project root
-else if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
+} else if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
     staticPath = path.join(__dirname, 'dist');
     indexPath = path.join(staticPath, 'index.html');
     console.log("[System] Mode: DEVELOPMENT (Serving from /dist)");
 }
 
 if (staticPath) {
-    // Serve static assets, excluding index.html from directory listing
-    app.use(express.static(staticPath, { index: false }));
+    // Aggressive caching for assets, no-cache for app entry
+    app.use(express.static(staticPath, { 
+        index: false,
+        setHeaders: (res, path) => {
+            if (path.includes('/assets/')) {
+                res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            } else {
+                res.setHeader('Cache-Control', 'public, max-age=0');
+            }
+        }
+    }));
 } else {
     console.error("CRITICAL: Build not found. Please run 'npm run build'.");
 }
 
-// --- CATCH-ALL ROUTE ---
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API Endpoint Not Found" });
     }
     
     if (!staticPath || !indexPath) {
-        return res.status(500).send(`
-            <div style="font-family: sans-serif; text-align: center; padding: 50px;">
-                <h1 style="color: #e11d48;">Application Not Built</h1>
-                <p>The server cannot find the <code>index.html</code> file.</p>
-                <div style="background: #f1f5f9; padding: 20px; display: inline-block; border-radius: 8px; margin-top: 20px;">
-                    <code>npm run build</code>
-                </div>
-            </div>
-        `);
+        return res.status(500).send('<h1>App Not Built</h1><p>Please run <code>npm run build</code>.</p>');
     }
     
-    // Explicitly send the built index.html for SPA routing
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.sendFile(indexPath);
 });
