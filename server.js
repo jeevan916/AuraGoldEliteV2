@@ -11,7 +11,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- STRICT ENV LOADING ---
-// Try loading from root first as that is standard for Hostinger deployments
 const rootEnvFile = path.join(__dirname, '.env');
 const customConfigDir = path.join(__dirname, '.builds/config');
 const customEnvFile = path.join(customConfigDir, '.env');
@@ -47,16 +46,12 @@ app.use(express.json({ limit: '100mb' }));
 
 // --- SECURITY MIDDLEWARE ---
 app.use((req, res, next) => {
-    // Explicitly block access to backend-only files since we might serve from root
     if (['/server.js', '/package.json', '/.env', '/vite.config.ts'].includes(req.path)) {
         return res.status(403).send('Forbidden');
     }
-
     const forbiddenExtensions = ['.ts', '.tsx', '.jsx', '.env', '.config', '.lock', '.json'];
-    // Allow metadata and manifest
     if (req.path === '/metadata.json' || req.path === '/manifest.json') return next();
     
-    // Block source files
     if (forbiddenExtensions.some(ext => req.path.toLowerCase().endsWith(ext))) {
         return res.status(403).send('Forbidden: Access to source code is denied.');
     }
@@ -138,9 +133,39 @@ app.get('/api/health', async (req, res) => {
     res.json({ status: 'ok', db: dbStatus, dbError, time: new Date() });
 });
 
-// ... (Rest of API routes remain unchanged) ...
-// Keeping them concise for this update block, assume standard routes exist below
-// Sync Handlers
+app.get('/api/debug/db', async (req, res) => {
+    try {
+        if (!pool) await initDb();
+        if (pool) {
+            const connection = await pool.getConnection(); await connection.ping(); connection.release();
+            res.json({ connected: true, user: process.env.DB_USER, db: process.env.DB_NAME });
+        } else { throw new Error("Pool creation failed"); }
+    } catch (e) {
+        res.status(500).json({ connected: false, error: e.message, config: { host: process.env.DB_HOST, user: process.env.DB_USER, database: process.env.DB_NAME } });
+    }
+});
+
+app.post('/api/debug/configure', async (req, res) => {
+    const { host, user, password, database } = req.body;
+    try {
+        const testPool = mysql.createPool({ host, user, password, database, connectTimeout: 5000 });
+        const conn = await testPool.getConnection(); await conn.ping(); conn.release(); await testPool.end();
+
+        const apiKey = process.env.API_KEY || '';
+        const port = process.env.PORT || 3000;
+        const envContent = `DB_HOST=${host}\nDB_USER=${user}\nDB_PASSWORD=${password}\nDB_NAME=${database}\nPORT=${port}\nAPI_KEY=${apiKey}`;
+        
+        if (!fs.existsSync(customConfigDir)) fs.mkdirSync(customConfigDir, { recursive: true });
+        fs.writeFileSync(customEnvFile, envContent);
+        
+        process.env.DB_HOST = host; process.env.DB_USER = user; process.env.DB_PASSWORD = password; process.env.DB_NAME = database;
+        await initDb();
+        res.json({ success: true, message: "Database Configured & Connected!" });
+    } catch (e) {
+        res.status(500).json({ error: "Connection Failed: " + e.message, code: e.code });
+    }
+});
+
 const createSyncHandler = (table) => async (req, res) => {
     const items = req.body[table] || req.body.orders || req.body.customers || req.body.logs || req.body.templates || req.body.catalog || req.body.plans;
     if (!items) return res.status(400).json({error: "No data"});
@@ -282,46 +307,59 @@ app.post('/api/whatsapp/templates', async (req, res) => {
     res.status(result.status).json({ success: result.ok, data: result.data });
 });
 
+app.post('/api/whatsapp/templates/:id', async (req, res) => {
+    const result = await callMeta(`${req.params.id}`, 'POST', req.headers['x-auth-token'], req.body);
+    res.status(result.status).json({ success: result.ok, data: result.data });
+});
+
+app.delete('/api/whatsapp/templates', async (req, res) => {
+    const name = req.query.name;
+    const result = await callMeta(`${req.headers['x-waba-id']}/message_templates?name=${name}`, 'DELETE', req.headers['x-auth-token']);
+    res.status(result.status).json({ success: result.ok, data: result.data });
+});
+
 // --- STATIC ASSET SERVING ---
 let distPath = '';
 
-// Check known paths for build directory. 
-// On Hostinger/cPanel, files are often in the root.
-const potentialPaths = [
-    path.join(__dirname),          // 1. Root (cPanel/Hostinger)
-    path.join(__dirname, 'dist'),  // 2. dist (Local)
-    path.join(__dirname, '../dist') // 3. Monorepo
-];
-
-for (const p of potentialPaths) {
-    if (fs.existsSync(path.join(p, 'index.html'))) {
-        distPath = p;
-        break;
+// Check known paths for build directory.
+// PRIORITY: 'dist' folder (Standard Vite build output).
+// We prefer 'dist' over root to avoid serving source code (index.html with tsx imports).
+if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
+    distPath = path.join(__dirname, 'dist');
+    console.log(`[System] Serving from DIST folder: ${distPath}`);
+} else if (fs.existsSync(path.join(__dirname, 'index.html'))) {
+    // Basic check: prevent serving source file which crashes browsers
+    const content = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+    if (content.includes('src="./index.tsx"')) {
+        console.warn("[System] WARNING: Found source index.html in root. You are likely running 'node server.js' in the source directory without building.");
+        // We still serve it as a fallback, but the user must run build.
     }
+    distPath = path.join(__dirname);
+    console.log(`[System] Serving from ROOT folder: ${distPath}`);
 }
 
 if (!distPath) {
-    console.error("CRITICAL: 'index.html' not found in any known path. Server cannot serve the app.");
-} else {
-    console.log(`[System] Serving Static Files from: ${distPath}`);
+    console.error("CRITICAL: 'index.html' not found. Please run 'npm run build'.");
 }
 
 // 1. Serve Static Assets
-// IMPORTANT: Using standard static serving with default index handling.
-// This allows https://domain.com/ to automatically serve index.html
 if (distPath) {
     app.use(express.static(distPath));
+    
+    // Explicit root handler to ensure index.html is served
+    app.get('/', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+    });
 }
 
 // 2. SPA Catch-all
-// For any route not handled by API or static files (like /dashboard, /orders), return index.html
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API Endpoint Not Found" });
     }
     
     if (!distPath) {
-        return res.status(500).send('Application Build Missing. Please run build.');
+        return res.status(500).send('Application Build Missing. Please run "npm run build".');
     }
     
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
