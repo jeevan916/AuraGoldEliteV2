@@ -44,26 +44,20 @@ const loadEnv = () => {
 loadEnv();
 
 // --- DEPLOYMENT AUTO-FIX: RESOLVE ROOT INDEX.HTML CONFLICT ---
-// Prevents the server (Apache or Node) from serving the source index.html instead of the built one.
 const resolveRootConflict = () => {
     const distIndex = path.join(__dirname, 'dist', 'index.html');
     const rootIndex = path.join(__dirname, 'index.html');
     const backupIndex = path.join(__dirname, 'index.html.original_source');
 
-    // Only intervene if we are in a "Production-like" state (dist exists) AND the root conflict exists
     if (fs.existsSync(distIndex) && fs.existsSync(rootIndex)) {
         try {
             const content = fs.readFileSync(rootIndex, 'utf-8');
-            // Check if this is the source file (contains references to .tsx)
             if (content.includes('src="./index.tsx"') || content.includes('src="/index.tsx"')) {
                 console.warn("==================================================================");
                 console.warn("[System] CRITICAL CONFLICT DETECTED: Source index.html found in root.");
-                console.warn("[System] This file overrides the 'dist' build on many web servers.");
                 console.warn("[System] ACTION: Auto-renaming root 'index.html' to 'index.html.original_source'.");
-                
                 fs.renameSync(rootIndex, backupIndex);
-                
-                console.log("[System] SUCCESS: Root file renamed. Traffic will now correctly flow to 'dist/'.");
+                console.log("[System] SUCCESS: Root file renamed.");
                 console.warn("==================================================================");
             }
         } catch (e) {
@@ -76,20 +70,17 @@ resolveRootConflict();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- PRODUCTION OPTIMIZATIONS ---
 app.set('trust proxy', 1); 
 app.use(compression());    
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 
-// --- SECURITY MIDDLEWARE ---
 app.use((req, res, next) => {
     if (['/server.js', '/package.json', '/.env', '/vite.config.ts'].includes(req.path)) {
         return res.status(403).send('Forbidden');
     }
     if (req.path === '/metadata.json' || req.path === '/manifest.json') return next();
     
-    // Allow access to built assets but block source files if exposed
     const forbiddenExtensions = ['.ts', '.tsx', '.jsx', '.env', '.config', '.lock', '.json'];
     if (forbiddenExtensions.some(ext => req.path.toLowerCase().endsWith(ext))) {
         if (!req.path.endsWith('manifest.json') && !req.path.endsWith('metadata.json')) {
@@ -99,15 +90,12 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- DB SETUP ---
 let pool = null;
 
 async function initDb() {
     try {
         if (pool) await pool.end();
-
-        console.log(`[Database] Connecting to ${process.env.DB_HOST || 'localhost'} as ${process.env.DB_USER}...`);
-
+        console.log(`[Database] Connecting to ${process.env.DB_HOST || 'localhost'}...`);
         const dbConfig = {
             host: process.env.DB_HOST || '127.0.0.1',
             user: process.env.DB_USER,
@@ -120,12 +108,9 @@ async function initDb() {
             enableKeepAlive: true,
             keepAliveInitialDelay: 0
         };
-
         pool = mysql.createPool(dbConfig);
-        
         const connection = await pool.getConnection();
         console.log("[Database] Connection Successful!");
-        
         const tables = [
             `CREATE TABLE IF NOT EXISTS gold_rates (id INT AUTO_INCREMENT PRIMARY KEY, rate24k DECIMAL(10, 2), rate22k DECIMAL(10, 2), rate18k DECIMAL(10, 2), recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
             `CREATE TABLE IF NOT EXISTS integrations (provider VARCHAR(50) PRIMARY KEY, config JSON, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)`,
@@ -137,7 +122,6 @@ async function initDb() {
             `CREATE TABLE IF NOT EXISTS plan_templates (id VARCHAR(100) PRIMARY KEY, name VARCHAR(255), data LONGTEXT)`,
             `CREATE TABLE IF NOT EXISTS catalog (id VARCHAR(100) PRIMARY KEY, category VARCHAR(100), data LONGTEXT)`
         ];
-        
         for (const sql of tables) await connection.query(sql);
         connection.release();
         return { success: true };
@@ -153,27 +137,21 @@ const ensureDb = async (req, res, next) => {
     if (!pool) {
         const result = await initDb();
         if (!result.success) {
-            console.error("DB Connection Error during request:", result.error);
             return res.status(503).json({ error: "Database Unavailable", details: result.error, code: result.code });
         }
     }
     next();
 };
 
-// --- EXTERNAL GOLD RATE FETCHER ---
 async function fetchExternalGoldRate() {
     try {
-        console.log("[System] Fetching live gold rates from Augmont Proxy (Batuk)...");
         const response = await fetch('https://uat.batuk.in/augmont/gold', {
             headers: { 'User-Agent': 'AuraGold/5.0' },
             timeout: 8000
         });
-        
         if (!response.ok) throw new Error(`Augmont API Error: ${response.status}`);
-        
         const data = await response.json();
         let rate24k = 0;
-        
         if (typeof data.rate === 'number') rate24k = data.rate;
         else if (typeof data.price === 'number') rate24k = data.price;
         else if (typeof data.gold === 'number') rate24k = data.gold;
@@ -186,54 +164,27 @@ async function fetchExternalGoldRate() {
 
         const rate22k = Math.round(rate24k * 0.916);
         const rate18k = Math.round(rate24k * 0.750);
-        
         return { rate24k, rate22k, rate18k, success: true };
     } catch (e) {
-        console.error("[System] Primary Gold Fetch Failed:", e.message);
         return { success: false };
     }
 }
 
-// --- API ROUTES ---
-
 app.get('/api/health', async (req, res) => {
     let dbStatus = 'disconnected';
-    let dbError = null;
-    let configUsed = { 
-        host: process.env.DB_HOST ? '[SET]' : '[MISSING]', 
-        user: process.env.DB_USER ? '[SET]' : '[MISSING]', 
-        db: process.env.DB_NAME ? '[SET]' : '[MISSING]' 
-    };
-    
     if(pool) {
-        try { 
-            const conn = await pool.getConnection(); 
-            await conn.ping(); 
-            conn.release(); 
-            dbStatus = 'connected'; 
-        } catch(e) { 
-            dbStatus = 'error';
-            dbError = e.message;
-        }
+        try { const conn = await pool.getConnection(); await conn.ping(); conn.release(); dbStatus = 'connected'; } 
+        catch(e) { dbStatus = 'error'; }
     }
-    res.json({ 
-        status: 'ok', 
-        db: dbStatus, 
-        dbError, 
-        configStatus: configUsed, 
-        time: new Date(),
-        mode: fs.existsSync(path.join(__dirname, 'dist', 'index.html')) ? 'PRODUCTION' : 'DEVELOPMENT'
-    });
+    res.json({ status: 'ok', db: dbStatus, time: new Date() });
 });
 
 const createSyncHandler = (table) => async (req, res) => {
     const items = req.body[table] || req.body.orders || req.body.customers || req.body.logs || req.body.templates || req.body.catalog || req.body.plans;
     if (!items) return res.status(400).json({error: "No data payload"});
-    
     try {
         const connection = await pool.getConnection();
         await connection.beginTransaction();
-        
         let query = '';
         if (table === 'orders') query = `INSERT INTO orders (id, customer_contact, status, created_at, data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data), updated_at=VALUES(updated_at)`;
         else if (table === 'customers') query = `INSERT INTO customers (id, contact, name, data, updated_at) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data), updated_at=VALUES(updated_at)`;
@@ -250,16 +201,12 @@ const createSyncHandler = (table) => async (req, res) => {
             else if(table === 'templates') params = [item.id, item.name, item.category || 'UTILITY', JSON.stringify(item)];
             else if(table === 'plans') params = [item.id, item.name, JSON.stringify(item)];
             else params = [item.id, item.category, JSON.stringify(item)];
-            
             await connection.query(query, params);
         }
         await connection.commit();
         connection.release();
         res.json({success: true});
-    } catch(e) { 
-        console.error(`Sync Error [${table}]:`, e.message);
-        res.status(500).json({error: e.message}); 
-    }
+    } catch(e) { res.status(500).json({error: e.message}); }
 };
 
 app.post('/api/sync/orders', ensureDb, createSyncHandler('orders'));
@@ -322,10 +269,8 @@ app.post('/api/sync/settings', ensureDb, async (req, res) => {
         const connection = await pool.getConnection();
         await connection.beginTransaction();
         await connection.query(`INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)`, [settings.currentGoldRate24K, settings.currentGoldRate22K, settings.currentGoldRate18K || 0]);
-        
         const configs = [['default_tax_rate', settings.defaultTaxRate], ['protection_max', settings.goldRateProtectionMax], ['grace_period_hours', settings.gracePeriodHours], ['follow_up_days', settings.followUpIntervalDays]];
         for(const [k, v] of configs) await connection.query(`INSERT INTO app_config (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)`, [k, v]);
-
         const integrations = [
             {p: 'whatsapp', c: {phoneId: settings.whatsappPhoneNumberId, accountId: settings.whatsappBusinessAccountId, token: settings.whatsappBusinessToken}},
             {p: 'razorpay', c: {keyId: settings.razorpayKeyId, keySecret: settings.razorpayKeySecret}},
@@ -333,7 +278,6 @@ app.post('/api/sync/settings', ensureDb, async (req, res) => {
             {p: 'setu', c: {schemeId: settings.setuSchemeId, secret: settings.setuSecret}}
         ];
         for(const i of integrations) await connection.query(`INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)`, [i.p, JSON.stringify(i.c)]);
-        
         await connection.commit(); connection.release();
         res.json({ success: true });
     } catch(e) { res.status(500).json({ error: e.message }); }
@@ -343,10 +287,8 @@ app.get('/api/gold-rate', ensureDb, async (req, res) => {
     try {
         const connection = await pool.getConnection();
         const [rows] = await connection.query('SELECT rate24k, rate22k, recorded_at FROM gold_rates ORDER BY id DESC LIMIT 1');
-        
         let rateData = rows[0];
         let isStale = !rateData || (new Date() - new Date(rateData.recorded_at) > 1000 * 60 * 60 * 4); 
-
         if (isStale) {
             const ext = await fetchExternalGoldRate();
             if (ext.success) {
@@ -355,12 +297,8 @@ app.get('/api/gold-rate', ensureDb, async (req, res) => {
             }
         }
         connection.release();
-
-        if (rateData) {
-            res.json({ k24: Number(rateData.rate24k), k22: Number(rateData.rate22k), source: 'active' });
-        } else {
-            res.json({ k24: 7800, k22: 7150, source: 'fallback_default' });
-        }
+        if (rateData) res.json({ k24: Number(rateData.rate24k), k22: Number(rateData.rate22k), source: 'active' });
+        else res.json({ k24: 7800, k22: 7150, source: 'fallback_default' });
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -372,14 +310,28 @@ async function callMeta(endpoint, method, token, body) {
 }
 
 app.post('/api/whatsapp/send', async (req, res) => {
-    const { to, message, templateName, language, variables } = req.body;
+    const { to, message, templateName, language, variables, components } = req.body;
     const phoneId = req.headers['x-phone-id'];
     const token = req.headers['x-auth-token'];
     let payload = { messaging_product: "whatsapp", recipient_type: "individual", to };
+    
     if (templateName) {
-        payload.type = "template"; payload.template = { name: templateName, language: { code: language || "en_US" } };
-        if (variables) payload.template.components = [{ type: "body", parameters: variables.map(v => ({ type: "text", text: v })) }];
-    } else { payload.type = "text"; payload.text = { body: message }; }
+        payload.type = "template"; 
+        payload.template = { name: templateName, language: { code: language || "en_US" } };
+        
+        // --- IMPROVED COMPONENT HANDLING ---
+        if (components) {
+            // Prioritize raw components if passed (Supports Buttons)
+            payload.template.components = components;
+        } else if (variables) {
+            // Fallback for older/simple templates (Body only)
+            payload.template.components = [{ type: "body", parameters: variables.map(v => ({ type: "text", text: v })) }];
+        }
+    } else { 
+        payload.type = "text"; 
+        payload.text = { body: message }; 
+    }
+    
     const result = await callMeta(`${phoneId}/messages`, 'POST', token, payload);
     res.status(result.status).json({ success: result.ok, data: result.data });
 });
@@ -405,15 +357,47 @@ app.delete('/api/whatsapp/templates', async (req, res) => {
     res.status(result.status).json({ success: result.ok, data: result.data });
 });
 
-// --- SMART STATIC SERVING ---
+// --- SETU UPI DEEPLINK API ---
+app.post('/api/setu/create-link', ensureDb, async (req, res) => {
+    try {
+        const { amount, billerBillID, customerID, name } = req.body;
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query('SELECT config FROM integrations WHERE provider = ?', ['setu']);
+        connection.release();
+
+        if (!rows.length || !rows[0].config) throw new Error("Setu configuration not found");
+        const config = JSON.parse(rows[0].config);
+        const { schemeId, secret } = config;
+
+        const endpoint = 'https://prod.setu.co/api/v1/upi/deep-links'; 
+        
+        const payload = {
+            billerBillID,
+            amount: { value: amount, currencyCode: "INR" },
+            amountExactness: "EXACT",
+            name: name || "AuraGold Jewellers",
+            transactionNote: `Payment for ${billerBillID}`,
+            additionalInfo: { source: "AuraGold_App", customerID: customerID }
+        };
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-client-id': schemeId, 'x-client-secret': secret },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error?.message || "Setu API Error");
+        res.json({ success: true, data });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 let staticPath = null;
 let indexPath = null;
-
-// Determine absolute paths for potential build locations
 const distPath = path.join(__dirname, 'dist');
 const rootIndexPath = path.join(__dirname, 'index.html');
-
-// Helper to check if file is source code
 const isSourceCode = (filePath) => {
     try {
         const content = fs.readFileSync(filePath, 'utf-8');
@@ -421,14 +405,11 @@ const isSourceCode = (filePath) => {
     } catch (e) { return false; }
 };
 
-// Priority 1: Check for DIST folder (Standard Build Output)
 if (fs.existsSync(path.join(distPath, 'index.html'))) {
     staticPath = distPath;
     indexPath = path.join(distPath, 'index.html');
     console.log("[System] Mode: SERVING FROM /dist");
-} 
-// Priority 2: Check for Root (BUT STRICTLY REJECT SOURCE CODE)
-else if (fs.existsSync(rootIndexPath)) {
+} else if (fs.existsSync(rootIndexPath)) {
     if (isSourceCode(rootIndexPath)) {
         console.error("CRITICAL: Root index.html detected as SOURCE CODE. Skipping static serve.");
         staticPath = null;
@@ -454,35 +435,16 @@ if (staticPath) {
             else res.setHeader('Cache-Control', 'public, max-age=0');
         }
     }));
-} else {
-    console.error("CRITICAL: No valid build found. Please run 'npm run build'.");
 }
 
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) return res.status(404).json({ error: "API Endpoint Not Found" });
-    
-    // Safety check: If we have an indexPath, verify it's not source code before serving
     if (indexPath && isSourceCode(indexPath)) {
-        return res.status(500).send(`
-            <div style="font-family:sans-serif; text-align:center; padding:50px;">
-                <h1>Application Not Built Correctly</h1>
-                <p>The server detected source code (index.tsx) at <code>${indexPath}</code> instead of production code.</p>
-                <p><strong>Fix Applied:</strong> The server will attempt to auto-rename this file on next restart. Please refresh.</p>
-            </div>
-        `);
+        return res.status(500).send(`<h1>Application Not Built Correctly</h1><p>Source code detected in root.</p>`);
     }
-
-    if (!staticPath || !indexPath) {
-        return res.status(500).send(`
-            <div style="font-family:sans-serif; text-align:center; padding:50px;">
-                <h1>App Not Built</h1>
-                <p>Please run <code>npm run build</code>.</p>
-            </div>
-        `);
-    }
-    
+    if (!staticPath || !indexPath) return res.status(500).send(`<h1>App Not Built</h1><p>Please run npm run build.</p>`);
     res.setHeader('Content-Type', 'text/html');
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.sendFile(indexPath);
 });
 

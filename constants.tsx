@@ -182,7 +182,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     content: "Great news {{1}}! Your {{2}} has moved to the {{3}} stage. See photos and updates here: https://order.auragoldelite.com/?token={{4}} on portal.",
     examples: ["Michael", "Ring", "Quality Check", "LmNoP456"]
   },
-  // 4. Grace Period Warning (Urgent) - REVISED FOR COMPLIANCE
+  // 4. Grace Warning
   {
     name: 'auragold_grace_warning',
     description: 'Critical warning sent hours before lapse.',
@@ -212,7 +212,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     content: "Action Required {{1}}: Order value increased. Old: ₹{{2}}, New Market Price: ₹{{3}} (@ ₹{{4}}/g). Accept or Cancel here: https://order.auragoldelite.com/?token={{5}}",
     examples: ["Priya", "50000", "52500", "7200", "token123"]
   },
-  // 7. Repopulation Success - REVISED FOR COMPLIANCE
+  // 7. Repopulation Success
   {
     name: 'auragold_repopulation_success',
     description: 'Sent when customer accepts new rate.',
@@ -232,7 +232,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     content: "Dear {{1}}, your order {{3}} is cancelled. Refund of ₹{{2}} has been initiated. Allow 3-5 days for credit.",
     examples: ["Amit", "10000", "ORD-123"]
   },
-  // 9. Rate Enforcer Alert - REVISED FOR COMPLIANCE
+  // 9. Rate Enforcer Alert
   {
     name: 'auragold_rate_enforcer',
     description: 'Alert when market rate crosses booked limit.',
@@ -242,7 +242,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     content: "Update for {{1}}: The market gold rate has crossed your booked limit. A payment of ₹{{2}} is required to maintain your protected rate of ₹{{3}}/g.",
     examples: ["Karan", "5000", "6500"]
   },
-  // 10. Auto-Pilot Check (Zero Dependency)
+  // 10. Auto-Pilot Check
   {
     name: 'auragold_auto_pilot_check',
     description: 'Zero API dependency check / General nudge.',
@@ -252,14 +252,20 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     content: "Hello {{1}}, just a quick check on your order status: {{2}}. Let us know if you need assistance.",
     examples: ["Rahul", "Pending Design"]
   },
-  // 11. Setu UPI Payment Link (Standard)
+  // 11. Setu UPI Payment Link (Button)
   {
-    name: 'setu_payment_link_v1',
-    description: 'Direct UPI Deeplink for Setu Gateway.',
+    name: 'setu_payment_button',
+    description: 'Payment request with secure UPI button.',
     category: 'UTILITY',
     appGroup: 'SETU_PAYMENT',
     variables: ['customer_name', 'amount'],
-    content: "Dear {{1}}, your payment of ₹{{2}} is due. Please use the secure UPI link below to pay immediately.",
-    examples: ["Rajiv", "10000"]
+    content: "Dear {{1}}, your payment of ₹{{2}} is due. Please click the button below to pay securely via UPI.",
+    examples: ["Raj", "5000"],
+    structure: [
+        { type: "BODY", text: "Dear {{1}}, your payment of ₹{{2}} is due. Please click the button below to pay securely via UPI." },
+        { type: "BUTTONS", buttons: [
+            { type: "URL", text: "Pay Now", url: "https://deeplink.setu.co/pay{{1}}" } 
+        ]}
+    ]
   }
 ];

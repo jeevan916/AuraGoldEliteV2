@@ -220,7 +220,7 @@ export const whatsappService = {
       }
   },
 
-  async sendTemplateMessage(to: string, templateName: string, languageCode: string = 'en_US', variables: string[] = [], customerName: string): Promise<WhatsAppResponse> {
+  async sendTemplateMessage(to: string, templateName: string, languageCode: string = 'en_US', bodyVariables: string[] = [], customerName: string, buttonVariable?: string): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
     
     if (!recipient) {
@@ -240,6 +240,26 @@ export const whatsappService = {
     }
 
     try {
+        const components: any[] = [];
+
+        // Add Body Variables
+        if (bodyVariables.length > 0) {
+            components.push({
+                type: "body",
+                parameters: bodyVariables.map(v => ({ type: "text", text: v }))
+            });
+        }
+
+        // Add Button Variable (Dynamic URL Suffix)
+        if (buttonVariable) {
+            components.push({
+                type: "button",
+                sub_type: "url",
+                index: 0, // First button in the structure
+                parameters: [{ type: "text", text: buttonVariable }]
+            });
+        }
+
         const response = await fetch('/api/whatsapp/send', {
             method: 'POST',
             headers: { 
@@ -251,13 +271,44 @@ export const whatsappService = {
                 to: recipient,
                 templateName,
                 language: languageCode,
-                variables
+                // We construct the full template object manually instead of just passing variables list
+                // This requires a slightly different payload structure on the server proxy or we handle it here.
+                // The server proxy /api/whatsapp/send handles `variables` for simple body, but for complex components we need to pass `components` directly.
+                // NOTE: We need to update the server proxy to accept `components` override or we assume the proxy handles this structure.
+                // Based on previous server.js, it expects `variables`. Let's assume we update server.js or the proxy is smart enough.
+                // Actually, looking at server.js: it constructs payload.template.components based on `variables`.
+                // We need to bypass that logic or update server.js.
+                // BUT wait, since we can't edit server.js in this step easily without risk, let's rely on the fact that we can pass `components` in the body if we modify the server call slightly?
+                // NO, server.js explicitly constructs payload.
+                
+                // Let's assume the server.js is updated to check for `components` in req.body and use that if present.
+                // IF NOT, we are stuck.
+                // WAIT! I already edited server.js in the previous turn? No, I edited it to add Setu.
+                // The current server.js implementation:
+                // if (variables) payload.template.components = [{ type: "body", parameters: variables... }]
+                
+                // I will strictly pass `variables` as the `components` array itself if I can, but the server map function will break it.
+                // I MUST update server.js logic conceptually, but I can't in this response block easily.
+                // WORKAROUND: I will update the `variables` argument to be the full components array and assume the server uses it? No.
+                
+                // Let's look at the server code provided in previous turn:
+                // if (variables) payload.template.components = [{ type: "body", parameters: variables.map(...) }];
+                
+                // CRITICAL FIX: The server.js logic prevents custom components. 
+                // However, I can't change server.js in this exact step effectively if I assume the user didn't apply manual fixes.
+                // I will try to pass the components array as `variables` but the map function `variables.map(v => ({ type: "text", text: v }))` will create garbage if I pass objects.
+                
+                // RE-READING: The user provided `server.js` content in the prompt.
+                // I CAN update server.js here because I am updating the app.
+                // I will include a server.js update to support raw `components` payload.
+                
+                components: components // Passing this new field which I will add support for in server.js
             })
         });
 
         const data = await response.json();
         
-        // Strict Success Check: Must have data.messages array
+        // Strict Success Check
         if (!data.success || !data.data || !data.data.messages || data.data.messages.length === 0) {
             throw new Error(data.data?.error?.message || JSON.stringify(data.error) || "Message not queued by Meta (Check Sandbox/Window)");
         }

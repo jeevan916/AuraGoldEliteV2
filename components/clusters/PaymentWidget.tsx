@@ -157,33 +157,48 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       }
 
       setLoading(true);
-      errorService.logActivity('USER_ACTION', `Starting Setu Link Generation for ₹${val}`);
+      errorService.logActivity('USER_ACTION', `Generating Setu Link for ₹${val}`);
 
       try {
           const settings = storageService.getSettings();
-          const schemeId = settings.setuSchemeId || 'mock-scheme';
+          const schemeId = settings.setuSchemeId;
           
-          if (!settings.setuSchemeId) {
-              errorService.logWarning('PaymentWidget', 'Setu Scheme ID missing. Using mock link.');
+          if (!schemeId) {
+              alert("Setu Scheme ID missing in settings.");
+              setLoading(false);
+              return;
           }
 
-          const link = `https://deeplink.setu.co/pay?schemeId=${schemeId}&amount=${val}&customerID=${order.customerContact}`;
-          const message = `Dear ${order.customerName}, please use this secure UPI link to pay ₹${val.toLocaleString()}: ${link}`;
+          // Use secure template sending with button
+          // Template Base: https://deeplink.setu.co/pay
+          // We need to provide the Suffix (Variable {{1}})
+          const linkSuffix = `?schemeId=${schemeId}&amount=${val}&billerBillID=${order.id}&customerID=${order.customerContact}&transactionNote=Order${order.id}`;
           
-          // CRITICAL: Await the result and log it
-          const result = await whatsappService.sendMessage(
+          // Send via Template with Button
+          const result = await whatsappService.sendTemplateMessage(
               order.customerContact, 
-              message, 
-              order.customerName
+              'setu_payment_button', 
+              'en_US', 
+              [order.customerName, val.toLocaleString()], // Body Variables
+              order.customerName,
+              linkSuffix // Button Variable (Dynamic URL part)
           );
 
           if (result.success) {
-              alert("Setu Link successfully sent via WhatsApp!");
-              errorService.logActivity('TEMPLATE_SENT', `Setu Link delivered to ${order.customerName}`);
+              alert("Payment Button sent via WhatsApp!");
+              errorService.logActivity('TEMPLATE_SENT', `Setu Button delivered to ${order.customerName}`);
               if (result.logEntry && onAddLog) onAddLog(result.logEntry);
           } else {
-              alert(`Failed to send link: ${result.error}`);
-              errorService.logError('PaymentWidget', `Setu Link Send Failed: ${result.error}`);
+              // Fallback to text message if template fails/doesn't exist yet
+              console.warn("Template send failed, falling back to text link.", result.error);
+              const fallbackLink = `https://deeplink.setu.co/pay${linkSuffix}`;
+              const fallbackRes = await whatsappService.sendMessage(
+                  order.customerContact,
+                  `Dear ${order.customerName}, please use this link to pay ₹${val}: ${fallbackLink}`,
+                  order.customerName
+              );
+              if (fallbackRes.success) alert("Sent as text link (Template issue).");
+              else alert(`Failed to send: ${fallbackRes.error}`);
           }
 
       } catch (e: any) {
