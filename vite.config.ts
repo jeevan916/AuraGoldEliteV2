@@ -5,8 +5,8 @@ import process from 'node:process';
 import path from 'path';
 
 export default defineConfig(({ mode }) => {
-  // CORRECTED LOCATION: Point to .builds/config directory for .env file
-  const envDir = path.resolve(process.cwd(), '.builds/config'); 
+  // CORRECTED LOCATION: Look for .env in the root directory where package.json typically lives
+  const envDir = process.cwd();
   const env = loadEnv(mode, envDir, '');
 
   return {
