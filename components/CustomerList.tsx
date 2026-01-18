@@ -1,25 +1,19 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState } from 'react';
 import { 
-  User, Phone, Mail, Search, ChevronRight, 
-  BrainCircuit, ShieldAlert, Sparkles, MessageCircle, Clock, Zap, 
-  CreditCard, TrendingUp, AlertTriangle, CheckCircle2, History, MessageSquare,
-  ArrowRight, Activity, Plus, X, ArrowLeft, Calendar, MapPin, LayoutGrid, List, ReceiptIndianRupee
+  User, Search, ChevronRight, Plus, X
 } from 'lucide-react';
-import { Customer, Order, WhatsAppLogEntry, CreditworthinessReport } from '../types';
-import { geminiService } from '../services/geminiService';
+import { Customer, Order } from '../types';
 
 interface CustomerListProps {
   customers: Customer[];
   orders: Order[];
-  onViewOrder: (id: string) => void;
-  onMessageSent: (log: WhatsAppLogEntry) => void;
+  onSelectCustomer: (id: string) => void;
   onAddCustomer?: (customer: Customer) => void;
 }
 
-const CustomerList: React.FC<CustomerListProps> = ({ customers, orders, onViewOrder, onMessageSent, onAddCustomer }) => {
+const CustomerList: React.FC<CustomerListProps> = ({ customers, orders, onSelectCustomer, onAddCustomer }) => {
   const [search, setSearch] = useState('');
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: '', contact: '', email: '', secondary: '' });
@@ -33,7 +27,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, orders, onViewOr
       if (!newCustomer.name || !newCustomer.contact) return alert("Name and Contact are required.");
       if (onAddCustomer) {
           const cust: Customer = {
-              id: `CUST-${newCustomer.contact}`,
+              id: `CUST-${newCustomer.contact.replace(/\D/g,'').slice(-10)}`,
               name: newCustomer.name,
               contact: newCustomer.contact,
               email: newCustomer.email,
@@ -131,10 +125,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, orders, onViewOr
                 {filtered.map(c => (
                     <div 
                         key={c.id} 
-                        onClick={() => {
-                            if (c.orderIds.length > 0) onViewOrder(c.orderIds[0]); // Simple Nav for now
-                            else alert("No orders for this client yet.");
-                        }}
+                        onClick={() => onSelectCustomer(c.id)}
                         className="flex items-center gap-4 p-4 active:bg-slate-50 transition-colors cursor-pointer"
                     >
                         <div className="w-12 h-12 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center font-black text-slate-500 text-lg">

@@ -53,6 +53,7 @@ const OrderForm = lazyRetry(() => import('./components/OrderForm'), 'OrderForm')
 const OrderDetails = lazyRetry(() => import('./components/OrderDetails'), 'OrderDetails');
 const OrderBook = lazyRetry(() => import('./components/OrderBook'), 'OrderBook');
 const CustomerList = lazyRetry(() => import('./components/CustomerList'), 'CustomerList');
+const CustomerProfile = lazyRetry(() => import('./components/CustomerProfile'), 'CustomerProfile'); // New Module
 const PaymentCollections = lazyRetry(() => import('./components/PaymentCollections'), 'Collections');
 const WhatsAppPanel = lazyRetry(() => import('./components/WhatsAppPanel'), 'WhatsApp');
 const WhatsAppTemplates = lazyRetry(() => import('./components/WhatsAppTemplates'), 'Templates');
@@ -64,7 +65,7 @@ const ErrorLogPanel = lazyRetry(() => import('./components/ErrorLogPanel'), 'Sys
 const CustomerOrderView = lazyRetry(() => import('./components/CustomerOrderView'), 'CustomerView');
 
 // --- Types & UI Helpers ---
-type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW';
+type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW';
 
 const LoadingScreen = () => (
   <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 space-y-4 min-h-[50vh]">
@@ -101,6 +102,7 @@ const MenuItem = ({ icon, label, desc, onClick, colorClass }: any) => (
 const App = () => {
   const [view, setView] = useState<MainView>('DASH');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [settings, setSettings] = useState<GlobalSettings>(storageService.getSettings());
   const [planTemplates, setPlanTemplates] = useState<PaymentPlanTemplate[]>(storageService.getPlanTemplates());
   
@@ -158,36 +160,43 @@ const App = () => {
   // --- DERIVED CUSTOMER LIST LOGIC (One Customer -> Multiple Orders) ---
   const derivedCustomers = useMemo(() => {
       const customerMap = new Map<string, Customer>();
+      
+      // Helper: Normalize to last 10 digits for loose matching
+      const normalize = (p: string) => p ? p.replace(/\D/g, '').slice(-10) : '';
 
       // 1. Initialize with manually added customers (Metadata source)
       manualCustomers.forEach(c => {
-          customerMap.set(c.contact, {
-              ...c,
-              totalSpent: 0,
-              orderIds: []
-          });
+          const key = normalize(c.contact);
+          if (key) {
+              customerMap.set(key, {
+                  ...c,
+                  totalSpent: 0,
+                  orderIds: []
+              });
+          }
       });
 
       // 2. Aggregate data from Orders (Source of Truth for Transactions)
       orders.forEach(order => {
-          const contact = order.customerContact;
-          if (!contact) return;
+          const key = normalize(order.customerContact);
+          if (!key) return;
 
-          const existing = customerMap.get(contact);
+          const existing = customerMap.get(key);
           
           if (existing) {
-              // Update existing profile with order data
-              existing.orderIds = Array.from(new Set([...existing.orderIds, order.id]));
-              existing.totalSpent += order.totalAmount;
-              // Keep latest name if available? Or strictly use profile name?
-              // Let's fallback to order name if profile name is empty (rare)
+              // Update existing profile with order data if not already linked
+              if (!existing.orderIds.includes(order.id)) {
+                  existing.orderIds.push(order.id);
+                  existing.totalSpent += order.totalAmount;
+              }
+              // Update name if manual record is empty
               if (!existing.name) existing.name = order.customerName;
           } else {
               // Create new ephemeral profile from order
-              customerMap.set(contact, {
-                  id: `CUST-${contact}`,
+              customerMap.set(key, {
+                  id: `CUST-${key}`, // Use phone as predictable ID
                   name: order.customerName,
-                  contact: contact,
+                  contact: order.customerContact, // Keep original format
                   email: order.customerEmail,
                   secondaryContact: order.secondaryContact,
                   orderIds: [order.id],
@@ -203,13 +212,12 @@ const App = () => {
   const handleAddCustomer = (newCustomer: Customer) => {
       const updated = [...manualCustomers, newCustomer];
       setManualCustomers(updated);
-      storageService.setCustomers(updated); // Persist
+      storageService.setCustomers(updated); 
   };
 
   const handleUpdateSettings = (newSettings: GlobalSettings) => {
       setSettings(newSettings);
       storageService.setSettings(newSettings);
-      // Trigger sync in background
       fetch('/api/sync/settings', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -218,6 +226,7 @@ const App = () => {
   };
 
   const selectedOrder = useMemo(() => orders.find(o => o.id === selectedOrderId), [orders, selectedOrderId]);
+  const selectedCustomer = useMemo(() => derivedCustomers.find(c => c.id === selectedCustomerId), [derivedCustomers, selectedCustomerId]);
 
   // Derived Data for Notification Center
   const notificationTriggers = useMemo<NotificationTrigger[]>(() => {
@@ -275,8 +284,12 @@ const App = () => {
             <OrderDetails order={selectedOrder} settings={settings} onBack={() => setView('ORDER_BOOK')} onUpdateStatus={updateItemStatus} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} logs={logs} onAddLog={addLog} /> : 
             <div className="text-center p-10">Order Not Found</div>;
             
-          case 'CUSTOMERS': return <CustomerList customers={derivedCustomers} orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onMessageSent={addLog} onAddCustomer={handleAddCustomer} />;
+          case 'CUSTOMERS': return <CustomerList customers={derivedCustomers} orders={orders} onSelectCustomer={(id) => { setSelectedCustomerId(id); setView('CUSTOMER_PROFILE'); }} onAddCustomer={handleAddCustomer} />;
           
+          case 'CUSTOMER_PROFILE': return selectedCustomer ? 
+            <CustomerProfile customer={selectedCustomer} orders={orders} onBack={() => setView('CUSTOMERS')} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onNewOrder={(cust) => { /* Pre-fill logic could go here */ setView('ORDER_NEW'); }} /> :
+            <div className="text-center p-10">Customer Not Found</div>;
+
           case 'COLLECTIONS': return <PaymentCollections orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onSendWhatsApp={() => {}} settings={settings} />;
           
           case 'WHATSAPP': return <WhatsAppPanel logs={logs} customers={derivedCustomers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} />;
@@ -348,7 +361,7 @@ const App = () => {
                  <div className="my-6 border-t border-slate-100"></div>
                  <p className="px-4 text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Operations</p>
                  
-                 <SidebarItem active={view === 'CUSTOMERS'} onClick={() => setView('CUSTOMERS')} icon={Users} label="Clients" />
+                 <SidebarItem active={view === 'CUSTOMERS' || view === 'CUSTOMER_PROFILE'} onClick={() => setView('CUSTOMERS')} icon={Users} label="Clients" />
                  <SidebarItem active={view === 'COLLECTIONS'} onClick={() => setView('COLLECTIONS')} icon={ReceiptIndianRupee} label="Payments" />
                  <SidebarItem active={view === 'STRATEGY'} onClick={() => setView('STRATEGY')} icon={BrainCircuit} label="Recovery AI" />
                  <SidebarItem active={view === 'PLANS'} onClick={() => setView('PLANS')} icon={Calculator} label="Plan Manager" />
