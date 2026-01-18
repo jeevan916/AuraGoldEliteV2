@@ -135,7 +135,7 @@ const App = () => {
 
     // Make view dispatcher global for components
     (window as any).dispatchView = (v: MainView) => setView(v);
-  }, [orders]);
+  }, []); // <--- CRITICAL FIX: Empty dependency array to run ONLY ONCE on mount
 
   const handleUpdateSettings = (newSettings: GlobalSettings) => {
       setSettings(newSettings);
