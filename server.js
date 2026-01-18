@@ -14,15 +14,13 @@ const __dirname = path.dirname(__filename);
 // --- ROBUST ENV LOADING ---
 const loadEnv = () => {
     const searchPaths = [
-        path.resolve(process.cwd(), '.env'),           // Current working directory
-        path.resolve(__dirname, '.env'),               // Where script resides
-        path.resolve(__dirname, '..', '.env'),         // Parent directory
-        // Hostinger / Custom Build Paths
+        path.resolve(process.cwd(), '.env'),           
+        path.resolve(__dirname, '.env'),               
+        path.resolve(__dirname, '..', '.env'),         
         path.resolve(process.cwd(), '.builds/config/.env'),
         path.resolve(__dirname, '.builds/config/.env'),
-        '/public_html/.builds/config/.env',            // Exact path requested
+        '/public_html/.builds/config/.env',            
         path.resolve('/home/public_html/.env'),
-        // Try to construct path relative to potential home dir if we are in public_html
         path.resolve(process.cwd(), '../.builds/config/.env')
     ];
 
@@ -49,8 +47,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // --- PRODUCTION OPTIMIZATIONS ---
-app.set('trust proxy', 1); // Required for Hostinger/Nginx/Cloudflare
-app.use(compression());    // Gzip/Brotli compression
+app.set('trust proxy', 1); 
+app.use(compression());    
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 
@@ -61,9 +59,13 @@ app.use((req, res, next) => {
     }
     if (req.path === '/metadata.json' || req.path === '/manifest.json') return next();
     
+    // Allow access to built assets but block source files if exposed
     const forbiddenExtensions = ['.ts', '.tsx', '.jsx', '.env', '.config', '.lock', '.json'];
     if (forbiddenExtensions.some(ext => req.path.toLowerCase().endsWith(ext))) {
-        return res.status(403).send('Forbidden: Access to source code is denied.');
+        // Exception for manifest/metadata which might be json
+        if (!req.path.endsWith('manifest.json') && !req.path.endsWith('metadata.json')) {
+             return res.status(403).send('Forbidden: Access to source code is denied.');
+        }
     }
     next();
 });
@@ -130,28 +132,9 @@ const ensureDb = async (req, res, next) => {
 };
 
 // --- EXTERNAL GOLD RATE FETCHER ---
-async function fetchPublicFallback() {
-    try {
-        console.log("[System] Falling back to generic goldprice.org API...");
-        const response = await fetch('https://data-asg.goldprice.org/dbXRates/INR', {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 5000 
-        });
-        if (!response.ok) throw new Error(`Fallback API Error: ${response.status}`);
-        const data = await response.json();
-        const pricePerOz = data.items[0].x_price;
-        const rate24k = Math.round(pricePerOz / 31.1035);
-        return rate24k;
-    } catch (e) {
-        console.error("Fallback Failed:", e.message);
-        return null;
-    }
-}
-
 async function fetchExternalGoldRate() {
     try {
         console.log("[System] Fetching live gold rates from Augmont Proxy (Batuk)...");
-        // User requested endpoint
         const response = await fetch('https://uat.batuk.in/augmont/gold', {
             headers: { 'User-Agent': 'AuraGold/5.0' },
             timeout: 8000
@@ -162,30 +145,19 @@ async function fetchExternalGoldRate() {
         const data = await response.json();
         console.log("[System] Augmont Rate Data:", JSON.stringify(data));
 
-        // Attempt to parse various potential Augmont/Batuk response formats
         let rate24k = 0;
         
-        // 1. Direct key (e.g. { "rate": 7200 })
         if (typeof data.rate === 'number') rate24k = data.rate;
         else if (typeof data.price === 'number') rate24k = data.price;
         else if (typeof data.gold === 'number') rate24k = data.gold;
-        
-        // 2. Nested (e.g. { "gold": { "buy": 7200 } })
         else if (data.gold?.buy) rate24k = Number(data.gold.buy);
         else if (data.rates?.goldBuy) rate24k = Number(data.rates.goldBuy);
-        
-        // 3. Batuk Specific (e.g. { "data": { "totalTaxIncluded": "7500" } }) or similar
         else if (data.data?.rate) rate24k = Number(data.data.rate);
 
-        // Sanity Check: If parsing failed, try fallback
         if (!rate24k || isNaN(rate24k)) {
-            console.warn("[System] Could not parse rate from Batuk response. Trying fallback.");
-            const fallbackRate = await fetchPublicFallback();
-            if (fallbackRate) rate24k = fallbackRate;
-            else throw new Error("All rate fetchers failed.");
+            throw new Error("Could not parse rate from Batuk response.");
         }
 
-        // Augmont sometimes returns 10g price (e.g. 72000). Convert to 1g if > 20000
         if (rate24k > 20000) rate24k = Math.round(rate24k / 10);
 
         const rate22k = Math.round(rate24k * 0.916);
@@ -194,14 +166,6 @@ async function fetchExternalGoldRate() {
         return { rate24k, rate22k, rate18k, success: true };
     } catch (e) {
         console.error("[System] Primary Gold Fetch Failed:", e.message);
-        // One last try with fallback if primary request threw error
-        const fallbackRate = await fetchPublicFallback();
-        if (fallbackRate) {
-             const rate24k = fallbackRate;
-             const rate22k = Math.round(rate24k * 0.916);
-             const rate18k = Math.round(rate24k * 0.750);
-             return { rate24k, rate22k, rate18k, success: true, source: 'fallback' };
-        }
         return { success: false };
     }
 }
@@ -427,36 +391,63 @@ app.delete('/api/whatsapp/templates', async (req, res) => {
 let staticPath = null;
 let indexPath = null;
 
-// Priority 1: Check for DIST folder.
-// If 'dist/index.html' exists, we are likely running from project root.
-// This is the correct build to serve.
-if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
-    staticPath = path.join(__dirname, 'dist');
-    indexPath = path.join(staticPath, 'index.html');
-    console.log("[System] Mode: ROOT/DEV (Serving from /dist)");
+// Determine absolute paths for potential build locations
+const distPath = path.join(__dirname, 'dist');
+const rootIndexPath = path.join(__dirname, 'index.html');
+
+// Helper to check if file is source code
+const isSourceCode = (filePath) => {
+    try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        // Check for TSX import which indicates source code
+        return content.includes('src="./index.tsx"') || content.includes('src="/index.tsx"');
+    } catch (e) {
+        return false;
+    }
+};
+
+// Priority 1: Check for DIST folder (Standard Build Output)
+if (fs.existsSync(path.join(distPath, 'index.html'))) {
+    staticPath = distPath;
+    indexPath = path.join(distPath, 'index.html');
+    console.log("[System] Mode: SERVING FROM /dist");
 } 
-// Priority 2: Check for Flattened Deployment (Production)
-// If dist folder is NOT found, but index.html exists in current directory,
-// we assume the contents of dist were copied to root (common in cPanel/Hostinger).
-else if (fs.existsSync(path.join(__dirname, 'index.html'))) {
-    staticPath = __dirname;
-    indexPath = path.join(__dirname, 'index.html');
-    console.log("[System] Mode: PRODUCTION (Serving from current directory)");
+// Priority 2: Check for Flattened Deployment (Production) in Root
+else if (fs.existsSync(rootIndexPath)) {
+    if (isSourceCode(rootIndexPath)) {
+        console.error("CRITICAL: Root index.html detected as SOURCE CODE. Skipping static serve to prevent crash.");
+        // Do NOT set staticPath to root if it contains source code.
+        // This forces the catch-all to handle it, where we can show a friendly error.
+    } else {
+        staticPath = __dirname;
+        indexPath = rootIndexPath;
+        console.log("[System] Mode: PRODUCTION (Serving from root)");
+    }
 }
+
+// MIME Types map to ensure JS modules load correctly
+const MIME_TYPES = {
+    '.js': 'application/javascript',
+    '.mjs': 'application/javascript',
+    '.css': 'text/css',
+    '.html': 'text/html',
+    '.json': 'application/json',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.svg': 'image/svg+xml'
+};
 
 if (staticPath) {
     // Aggressive caching for assets, no-cache for app entry
     app.use(express.static(staticPath, { 
-        index: false,
-        setHeaders: (res, path) => {
-            // Explicitly set Content-Type for JS/CSS to prevent 'text/plain' errors in strict environments
-            if (path.endsWith('.js')) {
-                res.setHeader('Content-Type', 'application/javascript');
-            } else if (path.endsWith('.css')) {
-                res.setHeader('Content-Type', 'text/css');
+        index: false, // Let the catch-all handle index.html to control headers
+        setHeaders: (res, filePath) => {
+            const ext = path.extname(filePath).toLowerCase();
+            if (MIME_TYPES[ext]) {
+                res.setHeader('Content-Type', MIME_TYPES[ext]);
             }
-
-            if (path.includes('/assets/')) {
+            if (filePath.includes('/assets/')) {
                 res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
             } else {
                 res.setHeader('Cache-Control', 'public, max-age=0');
@@ -464,7 +455,7 @@ if (staticPath) {
         }
     }));
 } else {
-    console.error("CRITICAL: Build not found. Please run 'npm run build'.");
+    console.error("CRITICAL: No valid build found. Please run 'npm run build'.");
 }
 
 app.get('*', (req, res) => {
@@ -472,10 +463,22 @@ app.get('*', (req, res) => {
         return res.status(404).json({ error: "API Endpoint Not Found" });
     }
     
+    // Safety check: If we have an indexPath, verify it's not source code before serving
+    if (indexPath && isSourceCode(indexPath)) {
+        return res.status(500).send(`
+            <div style="font-family:sans-serif; text-align:center; padding:50px;">
+                <h1>Application Not Built</h1>
+                <p>The server detected source code (index.tsx) instead of production code.</p>
+                <p>Please run <code>npm run build</code> and ensure the <code>dist/</code> folder is present.</p>
+            </div>
+        `);
+    }
+
     if (!staticPath || !indexPath) {
         return res.status(500).send('<h1>App Not Built</h1><p>Please run <code>npm run build</code>.</p>');
     }
     
+    res.setHeader('Content-Type', 'text/html');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.sendFile(indexPath);
 });
