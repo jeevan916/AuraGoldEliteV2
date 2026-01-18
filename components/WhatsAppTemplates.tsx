@@ -503,33 +503,38 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   ];
 
   return (
-    <div className="space-y-8 animate-fadeIn h-full flex flex-col">
+    // ADDED: pb-32 to clear mobile nav bar
+    <div className="space-y-6 animate-fadeIn pb-32 flex flex-col">
       {/* Header & Tabs */}
-      <div className="flex flex-col md:flex-row justify-between items-end gap-4 border-b pb-4">
+      <div className="flex flex-col md:flex-row justify-between items-end gap-4 border-b pb-4 shrink-0">
         <div>
           <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
             <Server className="text-amber-500" /> Template Architect
           </h2>
           <p className="text-slate-500 text-sm">Meta Compliance Engine & AI Strategy Generator</p>
         </div>
-        <div className="flex bg-slate-100 p-1 rounded-xl overflow-x-auto">
-            {(['SYSTEM', 'TRIGGERS', 'STRATEGY', 'LIBRARY'] as const).map(tab => (
-                <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                    {tab === 'SYSTEM' ? 'System Health' : tab === 'TRIGGERS' ? 'Automation Map' : tab === 'STRATEGY' ? 'AI Architect' : 'Library'}
-                </button>
-            ))}
-            {rejectedTemplates.length > 0 && (
-                <button
-                    onClick={() => setActiveTab('ISSUES')}
-                    className={`px-4 py-2 rounded-lg text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'ISSUES' ? 'bg-rose-600 text-white shadow-md' : 'text-rose-600 bg-rose-50 hover:bg-rose-100'}`}
-                >
-                    <AlertTriangle size={12} /> Issues ({rejectedTemplates.length})
-                </button>
-            )}
+        
+        {/* CHANGED: Better scroll container for tabs */}
+        <div className="w-full md:w-auto overflow-x-auto pb-1 custom-scrollbar">
+            <div className="flex bg-slate-100 p-1 rounded-xl w-max">
+                {(['SYSTEM', 'TRIGGERS', 'STRATEGY', 'LIBRARY'] as const).map(tab => (
+                    <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        {tab === 'SYSTEM' ? 'System Health' : tab === 'TRIGGERS' ? 'Automation Map' : tab === 'STRATEGY' ? 'AI Architect' : 'Library'}
+                    </button>
+                ))}
+                {rejectedTemplates.length > 0 && (
+                    <button
+                        onClick={() => setActiveTab('ISSUES')}
+                        className={`px-4 py-2 rounded-lg text-xs font-black transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'ISSUES' ? 'bg-rose-600 text-white shadow-md' : 'text-rose-600 bg-rose-50 hover:bg-rose-100'}`}
+                    >
+                        <AlertTriangle size={12} /> Issues ({rejectedTemplates.length})
+                    </button>
+                )}
+            </div>
         </div>
       </div>
 
@@ -749,7 +754,8 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       )}
       
       {activeTab === 'STRATEGY' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          // CHANGED: Use flex-col for mobile, grid for LG
+          <div className="flex flex-col lg:grid lg:grid-cols-12 gap-8">
               <div className="lg:col-span-4 space-y-6">
                   {/* GENERATIVE PROMPT BOX */}
                   <div className="bg-gradient-to-br from-indigo-50 to-white p-6 rounded-3xl border border-indigo-100 shadow-sm relative overflow-hidden">
@@ -829,7 +835,8 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                           </div>
                       )}
                       
-                      <div className="grid grid-cols-2 gap-4 mb-4">
+                      {/* CHANGED: Make grid adaptable for mobile */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                           <div>
                             <label className="text-[10px] font-bold uppercase text-slate-400">Template Name</label>
                             <input 
@@ -853,7 +860,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                                 <option value="AUTHENTICATION">AUTHENTICATION (OTP)</option>
                             </select>
                           </div>
-                          <div className="col-span-2">
+                          <div className="md:col-span-2">
                             <label className="text-[10px] font-bold uppercase text-slate-400">App Group (Context)</label>
                             <select 
                                 value={selectedGroup} 
@@ -878,7 +885,8 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                           placeholder="Hello {{1}}, your order is ready..."
                       />
                       
-                      <div className="flex gap-3">
+                      {/* CHANGED: Better mobile button layout */}
+                      <div className="flex flex-col sm:flex-row gap-3">
                           <button 
                             onClick={() => handleSaveLocalOrDeploy('META')} 
                             disabled={pushingMeta}
