@@ -174,12 +174,50 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           });
 
           const linkData = await linkResponse.json();
-          if (!linkData.success) throw new Error(linkData.error || "Setu API Failed");
+
+          // Error Handling with Context Parsing
+          if (!linkData.success) {
+              const rawError = linkData.error;
+              console.error("[Setu Integration] Full Error Context:", rawError);
+
+              let userMsg = "Unable to generate payment link. Please try again.";
+              let errorCode = "UNKNOWN";
+
+              // Attempt to detect code from object or string
+              if (typeof rawError === 'object' && rawError !== null) {
+                  errorCode = rawError.code || rawError.error?.code || "UNKNOWN";
+              } else if (typeof rawError === 'string') {
+                  // Fallback string matching if backend flattened the error
+                  if (rawError.includes('amount')) errorCode = 'invalid_amount';
+                  else if (rawError.includes('auth') || rawError.includes('401')) errorCode = 'authentication_failed';
+                  else if (rawError.includes('verified')) errorCode = 'merchant_not_verified';
+              }
+
+              // Map codes to friendly messages
+              switch (errorCode) {
+                  case 'invalid_amount':
+                      userMsg = "The amount entered is invalid. Please enter a positive value.";
+                      break;
+                  case 'authentication_failed':
+                      userMsg = "Gateway Authentication Failed. Please verify Setu Scheme ID and Secret in Settings.";
+                      break;
+                  case 'merchant_not_verified':
+                      userMsg = "Merchant account is not active. Please complete Setu verification.";
+                      break;
+                  case 'platform_error':
+                      userMsg = "Setu Platform is currently experiencing downtime.";
+                      break;
+                  default:
+                      userMsg = typeof rawError === 'string' ? rawError : "Payment Gateway Error";
+              }
+
+              throw new Error(userMsg);
+          }
 
           // Structure from Setu V1: data.data.paymentLink.shortLink
           // Example: https://setu.co/upi/s/AbCd123
           const shortLink = linkData.data?.data?.paymentLink?.shortLink;
-          if (!shortLink) throw new Error("No shortLink received from Setu");
+          if (!shortLink) throw new Error("No shortLink received from Setu response.");
 
           // 2. Parse Suffix for Template
           // Template Base: https://setu.co/upi/s/
@@ -219,8 +257,8 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
       } catch (e: any) {
           console.error(e);
-          alert(`Error: ${e.message}`);
-          errorService.logError('PaymentWidget', `Setu Error: ${e.message}`);
+          alert(`Setu Error: ${e.message}`);
+          errorService.logError('PaymentWidget', `Setu Failure: ${e.message}`);
       } finally {
           setLoading(false);
       }
