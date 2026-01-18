@@ -95,6 +95,12 @@ export const RECOVERY_TEMPLATES = [
         tone: 'ENCOURAGING',
         text: "Namaste {{1}}, thank you for being a valued customer. Your jewelry is progressing well! A scheduled payment of {{2}} is coming up on {{3}}. View details: {{4}}",
         variables: ['Customer Name', 'Amount', 'Date', 'Link']
+    },
+    {
+        id: 'setu_payment_link_v1',
+        tone: 'FIRM',
+        text: "Dear {{1}}, your payment of ₹{{2}} is due. Please use the secure UPI link below to pay immediately.",
+        variables: ['Customer Name', 'Amount']
     }
 ];
 
@@ -106,7 +112,8 @@ export const SYSTEM_TRIGGER_MAP: SystemTrigger[] = [
     { id: 'TRIG_5', label: 'Grace Warning', description: 'Urgent nudge before lapse.', requiredVariables: ['Customer Name', 'Amount Due', 'Hours Left'], defaultTemplateName: 'auragold_grace_warning', appGroup: 'PAYMENT_COLLECTION' },
     { id: 'TRIG_6', label: 'Protection Lapsed', description: 'Contract violation notice.', requiredVariables: ['Customer Name', 'Order ID', 'Link'], defaultTemplateName: 'auragold_protection_lapsed', appGroup: 'SYSTEM_NOTIFICATIONS' },
     { id: 'TRIG_7', label: 'Lapse Quote', description: 'New market rate offer post-lapse.', requiredVariables: ['Customer Name', 'Old Price', 'New Price', 'Rate', 'Link'], defaultTemplateName: 'auragold_lapse_quote', appGroup: 'PAYMENT_COLLECTION' },
-    { id: 'TRIG_8', label: 'Refund/Cancel', description: 'Order cancellation notice.', requiredVariables: ['Customer Name', 'Refund Amount', 'Order ID'], defaultTemplateName: 'auragold_refund_processed', appGroup: 'GENERAL_SUPPORT' }
+    { id: 'TRIG_8', label: 'Refund/Cancel', description: 'Order cancellation notice.', requiredVariables: ['Customer Name', 'Refund Amount', 'Order ID'], defaultTemplateName: 'auragold_refund_processed', appGroup: 'GENERAL_SUPPORT' },
+    { id: 'TRIG_9', label: 'Setu UPI Request', description: 'DeepLink for direct UPI payment.', requiredVariables: ['Customer Name', 'Amount Due', 'Link ID'], defaultTemplateName: 'setu_payment_link_v1', appGroup: 'SETU_PAYMENT' }
 ];
 
 export const INITIAL_TEMPLATES: WhatsAppTemplate[] = [
@@ -244,5 +251,15 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     variables: ['customer_name', 'status'],
     content: "Hello {{1}}, just a quick check on your order status: {{2}}. Let us know if you need assistance.",
     examples: ["Rahul", "Pending Design"]
+  },
+  // 11. Setu UPI Payment Link (Standard)
+  {
+    name: 'setu_payment_link_v1',
+    description: 'Direct UPI Deeplink for Setu Gateway.',
+    category: 'UTILITY',
+    appGroup: 'SETU_PAYMENT',
+    variables: ['customer_name', 'amount'],
+    content: "Dear {{1}}, your payment of ₹{{2}} is due. Please use the secure UPI link below to pay immediately.",
+    examples: ["Rajiv", "10000"]
   }
 ];

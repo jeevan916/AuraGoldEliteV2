@@ -84,6 +84,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       const content = t.content || '';
       const txt = (name + content).toLowerCase();
       
+      if (txt.includes('setu') || txt.includes('upi')) return 'SETU_PAYMENT';
       if (txt.includes('payment') || txt.includes('due') || txt.includes('pay')) return 'PAYMENT_COLLECTION';
       if (txt.includes('order') || txt.includes('ship') || txt.includes('delivery')) return 'ORDER_STATUS';
       if (txt.includes('offer') || txt.includes('sale') || txt.includes('exclusive')) return 'MARKETING_PROMO';
@@ -94,6 +95,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   // Grouping Logic for Library
   const groupedTemplates = useMemo(() => {
       const groups: Record<string, WhatsAppTemplate[]> = {
+          'SETU_PAYMENT': [],
           'PAYMENT_COLLECTION': [],
           'ORDER_STATUS': [],
           'MARKETING_PROMO': [],
@@ -498,7 +500,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   const QUICK_PROMPTS = [
     { label: "Payment Reminder", prompt: "Create a polite but firm payment reminder for a jewelry installment that is 3 days overdue." },
     { label: "Production Update", prompt: "Notify customer that their ring casting is done and moved to stone setting stage." },
-    { label: "Gold Rate Warning", prompt: "Urgent alert: Gold rate crossed their booked limit, ask for immediate payment to save the rate." },
+    { label: "Setu Payment Link", prompt: "Create a template for Setu UPI payment link with a 'Pay Now' action button." },
     { label: "Delivery Ready", prompt: "Exciting news: The jewelry is ready for pickup at the store. Remind to bring ID." }
   ];
 
@@ -872,6 +874,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                                 <option value="MARKETING_PROMO">Marketing / Promo</option>
                                 <option value="GENERAL_SUPPORT">General Support</option>
                                 <option value="SYSTEM_NOTIFICATIONS">System Notifications</option>
+                                <option value="SETU_PAYMENT">Setu UPI Payment</option>
                                 <option value="UNCATEGORIZED">Uncategorized</option>
                             </select>
                           </div>
