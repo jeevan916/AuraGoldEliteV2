@@ -3,70 +3,91 @@ import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { 
   Plus, Home, ReceiptIndianRupee, Users, MessageSquare, 
   Menu, ArrowLeft, Cloud, Loader2, HardDrive, Settings as SettingsIcon,
-  BrainCircuit, Calculator, FileText, ScrollText, Globe, Activity, ShoppingBag, BookOpen, X
+  BrainCircuit, Calculator, FileText, ScrollText, Globe, Activity, ShoppingBag, BookOpen, X, RefreshCw
 } from 'lucide-react';
 
 import './index.css'; 
 
-// --- Services & Hooks (Keep eager loaded for immediate logic) ---
+// --- Services & Hooks ---
 import { useOrders } from './hooks/useOrders';
 import { useWhatsApp } from './hooks/useWhatsApp';
 import { errorService } from './services/errorService';
 import { goldRateService } from './services/goldRateService';
 import { storageService } from './services/storageService';
-import { geminiService } from './services/geminiService';
-import { whatsappService } from './services/whatsappService';
-import { smsService } from './services/smsService';
-import { Order, GlobalSettings, Customer, NotificationTrigger, PaymentPlanTemplate, ProductionStatus } from './types';
-import { AUTOMATION_TEMPLATES } from './constants';
+import { Order, GlobalSettings, NotificationTrigger, PaymentPlanTemplate } from './types';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 // --- ROBUST LAZY LOADING HELPER ---
-// Automatically reloads the page once if a chunk fails to load (404 error)
-// This fixes "Failed to fetch dynamically imported module" after deployments
-const lazyRetry = (importFn: () => Promise<any>) => {
+// Catches "Failed to fetch dynamically imported module" errors gracefully.
+// 1. Attempts 1 auto-reload.
+// 2. If failure persists, renders a "Update Required" UI instead of crashing.
+const lazyRetry = (importFn: () => Promise<any>, moduleName: string) => {
   return lazy(async () => {
     try {
       return await importFn();
-    } catch (error) {
-      console.error("Chunk load failed. Attempting auto-refresh.", error);
-      const storageKey = 'chunk_load_error_reload';
-      const lastReload = sessionStorage.getItem(storageKey);
-      const now = Date.now();
+    } catch (error: any) {
+      console.error(`[App] Chunk load failed for ${moduleName}:`, error);
       
-      // Prevent infinite reload loops: only reload if we haven't done so in the last 10 seconds
-      if (!lastReload || now - parseInt(lastReload) > 10000) {
-        sessionStorage.setItem(storageKey, now.toString());
-        
-        // Force browser to fetch fresh index.html by appending timestamp
-        const url = new URL(window.location.href);
-        url.searchParams.set('v', now.toString());
-        window.location.href = url.toString();
-        
-        // Return a never-resolving promise to keep the UI pending while reload happens
-        return new Promise(() => {});
+      // Unique key for this module's retry attempt
+      const storageKey = `retry_chunk_${moduleName}`;
+      const lastRetry = sessionStorage.getItem(storageKey);
+      const now = Date.now();
+
+      // If we haven't retried in the last 20 seconds, try a hard reload once
+      if (!lastRetry || (now - parseInt(lastRetry) > 20000)) {
+         console.log(`[App] Attempting auto-recovery for ${moduleName}`);
+         sessionStorage.setItem(storageKey, now.toString());
+         
+         // Force cache busting reload
+         const url = new URL(window.location.href);
+         url.searchParams.set('v', now.toString());
+         window.location.href = url.toString();
+         
+         return new Promise(() => {}); // Stall while reloading
       }
-      throw error;
+
+      // If reload failed or looped, return a Safe Fallback Component
+      return { 
+          default: () => (
+            <div className="flex flex-col items-center justify-center min-h-[50vh] p-8 text-center animate-fadeIn">
+                <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-4 shadow-sm border border-amber-100">
+                    <RefreshCw size={32} className="text-amber-600" />
+                </div>
+                <h2 className="text-xl font-black text-slate-800 mb-2">New Version Available</h2>
+                <p className="text-slate-500 text-sm mb-6 max-w-xs mx-auto leading-relaxed">
+                    The <strong>{moduleName}</strong> module has been updated. Please refresh to load the latest features.
+                </p>
+                <button 
+                    onClick={() => {
+                        sessionStorage.removeItem(storageKey);
+                        window.location.reload();
+                    }}
+                    className="bg-slate-900 text-white px-8 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg active:scale-95 flex items-center gap-2"
+                >
+                    <RefreshCw size={14} /> Update Now
+                </button>
+            </div>
+          )
+      };
     }
   });
 };
 
-// --- Lazy Loaded Components (Code Splitting) ---
-const Dashboard = lazyRetry(() => import('./components/Dashboard'));
-const OrderForm = lazyRetry(() => import('./components/OrderForm'));
-const OrderDetails = lazyRetry(() => import('./components/OrderDetails'));
-const OrderBook = lazyRetry(() => import('./components/OrderBook'));
-const CustomerList = lazyRetry(() => import('./components/CustomerList'));
-const PaymentCollections = lazyRetry(() => import('./components/PaymentCollections'));
-const WhatsAppPanel = lazyRetry(() => import('./components/WhatsAppPanel'));
-const WhatsAppTemplates = lazyRetry(() => import('./components/WhatsAppTemplates'));
-const WhatsAppLogs = lazyRetry(() => import('./components/WhatsAppLogs'));
-const NotificationCenter = lazyRetry(() => import('./components/NotificationCenter'));
-const PlanManager = lazyRetry(() => import('./components/PlanManager'));
-const MarketIntelligence = lazyRetry(() => import('./components/MarketIntelligence'));
-const Settings = lazyRetry(() => import('./components/Settings'));
-const ErrorLogPanel = lazyRetry(() => import('./components/ErrorLogPanel'));
-const CustomerOrderView = lazyRetry(() => import('./components/CustomerOrderView'));
+// --- Lazy Loaded Components ---
+const Dashboard = lazyRetry(() => import('./components/Dashboard'), 'Dashboard');
+const OrderForm = lazyRetry(() => import('./components/OrderForm'), 'OrderForm');
+const OrderDetails = lazyRetry(() => import('./components/OrderDetails'), 'OrderDetails');
+const OrderBook = lazyRetry(() => import('./components/OrderBook'), 'OrderBook');
+const CustomerList = lazyRetry(() => import('./components/CustomerList'), 'CustomerList');
+const PaymentCollections = lazyRetry(() => import('./components/PaymentCollections'), 'Collections');
+const WhatsAppPanel = lazyRetry(() => import('./components/WhatsAppPanel'), 'WhatsApp');
+const WhatsAppTemplates = lazyRetry(() => import('./components/WhatsAppTemplates'), 'Templates');
+const NotificationCenter = lazyRetry(() => import('./components/NotificationCenter'), 'NotificationCenter');
+const PlanManager = lazyRetry(() => import('./components/PlanManager'), 'PlanManager');
+const MarketIntelligence = lazyRetry(() => import('./components/MarketIntelligence'), 'MarketIntelligence');
+const Settings = lazyRetry(() => import('./components/Settings'), 'Settings');
+const ErrorLogPanel = lazyRetry(() => import('./components/ErrorLogPanel'), 'SystemLogs');
+const CustomerOrderView = lazyRetry(() => import('./components/CustomerOrderView'), 'CustomerView');
 
 // --- Types & UI Helpers ---
 type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW';
@@ -106,7 +127,6 @@ const MenuItem = ({ icon, label, desc, onClick, colorClass }: any) => (
 const App = () => {
   const [view, setView] = useState<MainView>('DASH');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [settings, setSettings] = useState<GlobalSettings>(storageService.getSettings());
   const [planTemplates, setPlanTemplates] = useState<PaymentPlanTemplate[]>(storageService.getPlanTemplates());
   
@@ -117,13 +137,6 @@ const App = () => {
   // Initialization
   useEffect(() => {
     errorService.initGlobalListeners();
-    
-    // Clear chunk load error flag on successful mount if enough time passed
-    const storageKey = 'chunk_load_error_reload';
-    const lastReload = sessionStorage.getItem(storageKey);
-    if (lastReload && Date.now() - parseInt(lastReload) > 20000) {
-        sessionStorage.removeItem(storageKey);
-    }
     
     // Check for share token in URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -171,7 +184,6 @@ const App = () => {
     orders.forEach(order => {
         if (order.status === 'COMPLETED' || order.status === 'CANCELLED') return;
 
-        // 1. Payment Due Logic
         order.paymentPlan.milestones.forEach(m => {
             if (m.status !== 'PAID') {
                 const dueDate = new Date(m.dueDate);
