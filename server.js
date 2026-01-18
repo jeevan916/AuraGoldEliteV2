@@ -130,26 +130,78 @@ const ensureDb = async (req, res, next) => {
 };
 
 // --- EXTERNAL GOLD RATE FETCHER ---
-async function fetchExternalGoldRate() {
+async function fetchPublicFallback() {
     try {
-        console.log("[System] Fetching live gold rates from public API...");
+        console.log("[System] Falling back to generic goldprice.org API...");
         const response = await fetch('https://data-asg.goldprice.org/dbXRates/INR', {
             headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 5000 // 5s timeout
+            timeout: 5000 
+        });
+        if (!response.ok) throw new Error(`Fallback API Error: ${response.status}`);
+        const data = await response.json();
+        const pricePerOz = data.items[0].x_price;
+        const rate24k = Math.round(pricePerOz / 31.1035);
+        return rate24k;
+    } catch (e) {
+        console.error("Fallback Failed:", e.message);
+        return null;
+    }
+}
+
+async function fetchExternalGoldRate() {
+    try {
+        console.log("[System] Fetching live gold rates from Augmont Proxy (Batuk)...");
+        // User requested endpoint
+        const response = await fetch('https://uat.batuk.in/augmont/gold', {
+            headers: { 'User-Agent': 'AuraGold/5.0' },
+            timeout: 8000
         });
         
-        if (!response.ok) throw new Error(`External API Error: ${response.status}`);
+        if (!response.ok) throw new Error(`Augmont API Error: ${response.status}`);
         
         const data = await response.json();
-        const pricePerOz = data.items[0].x_price; // 24K Price per Oz
+        console.log("[System] Augmont Rate Data:", JSON.stringify(data));
+
+        // Attempt to parse various potential Augmont/Batuk response formats
+        let rate24k = 0;
         
-        const rate24k = Math.round(pricePerOz / 31.1035);
+        // 1. Direct key (e.g. { "rate": 7200 })
+        if (typeof data.rate === 'number') rate24k = data.rate;
+        else if (typeof data.price === 'number') rate24k = data.price;
+        else if (typeof data.gold === 'number') rate24k = data.gold;
+        
+        // 2. Nested (e.g. { "gold": { "buy": 7200 } })
+        else if (data.gold?.buy) rate24k = Number(data.gold.buy);
+        else if (data.rates?.goldBuy) rate24k = Number(data.rates.goldBuy);
+        
+        // 3. Batuk Specific (e.g. { "data": { "totalTaxIncluded": "7500" } }) or similar
+        else if (data.data?.rate) rate24k = Number(data.data.rate);
+
+        // Sanity Check: If parsing failed, try fallback
+        if (!rate24k || isNaN(rate24k)) {
+            console.warn("[System] Could not parse rate from Batuk response. Trying fallback.");
+            const fallbackRate = await fetchPublicFallback();
+            if (fallbackRate) rate24k = fallbackRate;
+            else throw new Error("All rate fetchers failed.");
+        }
+
+        // Augmont sometimes returns 10g price (e.g. 72000). Convert to 1g if > 20000
+        if (rate24k > 20000) rate24k = Math.round(rate24k / 10);
+
         const rate22k = Math.round(rate24k * 0.916);
         const rate18k = Math.round(rate24k * 0.750);
         
         return { rate24k, rate22k, rate18k, success: true };
     } catch (e) {
-        console.error("[System] External gold fetch failed:", e.message);
+        console.error("[System] Primary Gold Fetch Failed:", e.message);
+        // One last try with fallback if primary request threw error
+        const fallbackRate = await fetchPublicFallback();
+        if (fallbackRate) {
+             const rate24k = fallbackRate;
+             const rate22k = Math.round(rate24k * 0.916);
+             const rate18k = Math.round(rate24k * 0.750);
+             return { rate24k, rate22k, rate18k, success: true, source: 'fallback' };
+        }
         return { success: false };
     }
 }
