@@ -129,7 +129,8 @@ export interface GlobalSettings {
   whatsappBusinessToken?: string;
   razorpayKeyId?: string;
   razorpayKeySecret?: string;
-  setuSchemeId?: string;
+  setuClientId?: string; // New for V2
+  setuSchemeId?: string; // Mapped to Product Instance ID in V2
   setuSecret?: string;
   msg91AuthKey?: string;
   msg91SenderId?: string;

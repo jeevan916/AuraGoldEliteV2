@@ -239,7 +239,7 @@ app.get('/api/bootstrap', ensureDb, async (req, res) => {
             whatsappPhoneNumberId: intMap['whatsapp']?.phoneId || '', whatsappBusinessAccountId: intMap['whatsapp']?.accountId || '', whatsappBusinessToken: intMap['whatsapp']?.token || '',
             razorpayKeyId: intMap['razorpay']?.keyId || '', razorpayKeySecret: intMap['razorpay']?.keySecret || '',
             msg91AuthKey: intMap['msg91']?.authKey || '', msg91SenderId: intMap['msg91']?.senderId || '',
-            setuSchemeId: intMap['setu']?.schemeId || '', setuSecret: intMap['setu']?.secret || ''
+            setuSchemeId: intMap['setu']?.schemeId || '', setuSecret: intMap['setu']?.secret || '', setuClientId: intMap['setu']?.clientId || ''
         };
 
         const [orders] = await connection.query('SELECT data FROM orders ORDER BY created_at DESC');
@@ -275,7 +275,7 @@ app.post('/api/sync/settings', ensureDb, async (req, res) => {
             {p: 'whatsapp', c: {phoneId: settings.whatsappPhoneNumberId, accountId: settings.whatsappBusinessAccountId, token: settings.whatsappBusinessToken}},
             {p: 'razorpay', c: {keyId: settings.razorpayKeyId, keySecret: settings.razorpayKeySecret}},
             {p: 'msg91', c: {authKey: settings.msg91AuthKey, senderId: settings.msg91SenderId}},
-            {p: 'setu', c: {schemeId: settings.setuSchemeId, secret: settings.setuSecret}}
+            {p: 'setu', c: {schemeId: settings.setuSchemeId, secret: settings.setuSecret, clientId: settings.setuClientId}}
         ];
         for(const i of integrations) await connection.query(`INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)`, [i.p, JSON.stringify(i.c)]);
         await connection.commit(); connection.release();
@@ -357,7 +357,7 @@ app.delete('/api/whatsapp/templates', async (req, res) => {
     res.status(result.status).json({ success: result.ok, data: result.data });
 });
 
-// --- SETU UPI DEEPLINK API ---
+// --- SETU UPI DEEPLINK API (V2) ---
 app.post('/api/setu/create-link', ensureDb, async (req, res) => {
     try {
         const { amount, billerBillID, customerID, name, orderId } = req.body;
@@ -367,13 +367,34 @@ app.post('/api/setu/create-link', ensureDb, async (req, res) => {
 
         if (!rows.length || !rows[0].config) throw new Error("Setu configuration not found");
         const config = JSON.parse(rows[0].config);
-        const { schemeId, secret } = config;
+        const { schemeId, secret, clientId } = config; // schemeId maps to ProductInstanceID
 
-        const endpoint = 'https://prod.setu.co/api/v1/upi/deep-links'; 
+        // 1. Get Auth Token
+        const authResponse = await fetch('https://prod.setu.co/api/v2/auth/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                clientID: clientId,
+                secret: secret
+            })
+        });
+
+        const authData = await authResponse.json();
+        if (!authResponse.ok || !authData.data?.token) {
+            throw new Error(authData.error?.message || "Setu Auth Failed");
+        }
+        
+        const token = authData.data.token;
+
+        // 2. Create Payment Link
+        const endpoint = 'https://prod.setu.co/api/v2/payment-links'; 
         
         const payload = {
             billerBillID,
-            amount: { value: amount, currencyCode: "INR" },
+            amount: { 
+                value: amount, // Assuming amount is in Rupees (float) based on standard Setu V2 docs.
+                currencyCode: "INR" 
+            },
             amountExactness: "EXACT",
             name: name || "AuraGold Jewellers",
             transactionNote: `Payment for ${billerBillID}`,
@@ -384,16 +405,23 @@ app.post('/api/setu/create-link', ensureDb, async (req, res) => {
             }
         };
 
-        const response = await fetch(endpoint, {
+        const linkResponse = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-client-id': schemeId, 'x-client-secret': secret },
+            headers: { 
+                'Content-Type': 'application/json', 
+                'X-Setu-Product-Instance-ID': schemeId, // This field stores the Product Instance ID in settings
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify(payload)
         });
 
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error?.message || "Setu API Error");
-        res.json({ success: true, data });
+        const linkData = await linkResponse.json();
+        if (!linkResponse.ok) throw new Error(linkData.error?.message || "Setu Link Creation Failed");
+        
+        res.json({ success: true, data: linkData });
+
     } catch (e) {
+        console.error("Setu V2 Error:", e);
         res.status(500).json({ error: e.message });
     }
 });
@@ -436,7 +464,6 @@ app.post('/api/setu/webhook', ensureDb, async (req, res) => {
         const order = typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data;
 
         // 3. Idempotency Check (Prevent duplicate recording)
-        // Use billerBillID as a unique reference in payments if needed, or check existing payments
         const duplicate = order.payments.some(p => p.note && p.note.includes(billerBillID));
         if (duplicate) {
             console.log(`[Setu Webhook] Payment ${billerBillID} already recorded.`);

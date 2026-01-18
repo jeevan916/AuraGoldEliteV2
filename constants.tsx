@@ -24,7 +24,10 @@ export const INITIAL_SETTINGS: GlobalSettings = {
   followUpIntervalDays: 3, // Default follow up every 3 days
   whatsappPhoneNumberId: getEnv('VITE_WHATSAPP_PHONE_ID'),
   whatsappBusinessAccountId: getEnv('VITE_WHATSAPP_WABA_ID'),
-  whatsappBusinessToken: getEnv('VITE_WHATSAPP_TOKEN')
+  whatsappBusinessToken: getEnv('VITE_WHATSAPP_TOKEN'),
+  setuClientId: '', // Initialized for V2
+  setuSchemeId: '', // Maps to Product Instance ID
+  setuSecret: ''
 };
 
 export const INITIAL_CATALOG: CatalogItem[] = [

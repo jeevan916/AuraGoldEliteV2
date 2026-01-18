@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Save, RefreshCw, Zap, ShieldCheck, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, LayoutGrid, Plus, Trash2, Info, Key, Server, Clock, Calendar, MessageSquare, CreditCard, Smartphone, Wrench } from 'lucide-react';
 import { GlobalSettings, CatalogItem } from '../types';
@@ -508,28 +509,37 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                          </div>
                      </div>
 
-                     {/* Setu UPI Config */}
+                     {/* Setu UPI Config (UPDATED FOR V2) */}
                      <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 space-y-4">
                          <h4 className="font-bold text-slate-700 flex items-center gap-2 text-sm">
-                            <Zap size={16} className="text-amber-500" /> Setu UPI
+                            <Zap size={16} className="text-amber-500" /> Setu UPI (V2)
                          </h4>
                          <div className="space-y-2">
-                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Scheme ID</label>
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Client ID</label>
                             <input 
                                 className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-medium outline-none focus:border-amber-500"
-                                value={localSettings.setuSchemeId || ''}
-                                onChange={e => setLocalSettings({...localSettings, setuSchemeId: e.target.value})}
-                                placeholder="SCHEME_..."
+                                value={localSettings.setuClientId || ''}
+                                onChange={e => setLocalSettings({...localSettings, setuClientId: e.target.value})}
+                                placeholder="Client ID from Setu Bridge"
                             />
                          </div>
                          <div className="space-y-2">
-                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Secret (Optional)</label>
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Secret</label>
                             <input 
                                 type="password"
                                 className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-medium outline-none focus:border-amber-500"
                                 value={localSettings.setuSecret || ''}
                                 onChange={e => setLocalSettings({...localSettings, setuSecret: e.target.value})}
-                                placeholder="Keep secret..."
+                                placeholder="Client Secret"
+                            />
+                         </div>
+                         <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Product Instance ID</label>
+                            <input 
+                                className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-mono font-medium outline-none focus:border-amber-500"
+                                value={localSettings.setuSchemeId || ''}
+                                onChange={e => setLocalSettings({...localSettings, setuSchemeId: e.target.value})}
+                                placeholder="Product Instance ID (e.g. 6608...)"
                             />
                          </div>
                      </div>

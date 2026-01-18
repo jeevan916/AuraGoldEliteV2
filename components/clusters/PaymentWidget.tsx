@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2 } from 'lucide-react';
+import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2, AlertCircle } from 'lucide-react';
 import { Card, Button } from '../shared/BaseUI';
 import { Order, OrderStatus, WhatsAppLogEntry } from '../../types';
 import { whatsappService } from '../../services/whatsappService';
@@ -20,6 +20,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
   const [mode, setMode] = useState('UPI');
   const [loading, setLoading] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
   const remaining = order.totalAmount - totalPaid;
@@ -32,6 +33,11 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           setAmount(remaining.toString());
       }
   }, [nextMilestone, remaining, amount]);
+
+  // Reset error when tab changes
+  useEffect(() => {
+      setErrorMsg(null);
+  }, [activeTab]);
 
   const updateOrderWithPayment = (val: number, method: string, notes: string) => {
       const newPayment = {
@@ -69,6 +75,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
     const val = parseFloat(amount);
     if (!val || val <= 0) return;
     setLoading(true);
+    setErrorMsg(null);
 
     try {
       updateOrderWithPayment(val, mode, 'Manual Entry');
@@ -86,7 +93,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       setAmount('');
       setQrCodeUrl(null);
     } catch (e: any) {
-      alert("Error recording payment");
+      setErrorMsg("Failed to record payment locally.");
       errorService.logError('PaymentWidget', e.message);
     } finally {
       setLoading(false);
@@ -107,6 +114,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       const val = parseFloat(amount);
       if (!val || val <= 0) return;
       setLoading(true);
+      setErrorMsg(null);
       errorService.logActivity('API_CALL', `Creating Razorpay Order for ₹${val}`);
 
       try {
@@ -142,7 +150,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           const rzp1 = new (window as any).Razorpay(options);
           rzp1.open();
       } catch (e: any) {
-          alert(`Gateway Error: ${e.message}`);
+          setErrorMsg(`Gateway Error: ${e.message}`);
           errorService.logError('Razorpay', e.message);
       } finally {
           setLoading(false);
@@ -150,21 +158,19 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
   };
 
   const handleGenerateSetuLink = async () => {
-      // 1. Strict Validation Layer
-      const val = parseFloat(amount);
-      if (!val || val <= 0) {
-          alert("Please enter a valid payment amount greater than 0.");
-          return;
-      }
-      if (!order.customerName || !order.customerContact) {
-          alert("Customer Name and Mobile Number are required to generate a payment link.");
-          return;
-      }
-
       setLoading(true);
-      errorService.logActivity('USER_ACTION', `Generating Setu Link for ₹${val}`);
+      setErrorMsg(null);
 
       try {
+          // 1. Validation Layer
+          const val = parseFloat(amount);
+          if (!val || val <= 0) throw new Error("Invalid Amount: Must be greater than 0");
+          
+          if (!order.customerName) throw new Error("Validation Error: Customer Name is missing");
+          if (!order.customerContact) throw new Error("Validation Error: Customer Mobile Number is missing");
+
+          errorService.logActivity('USER_ACTION', `Generating Setu Link for ₹${val}`);
+
           // 2. Call Backend Proxy (Proxy adds credentials)
           const linkResponse = await fetch('/api/setu/create-link', {
               method: 'POST',
@@ -184,37 +190,23 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           // 3. Granular Error Handling
           if (!linkData.success) {
               const rawError = linkData.error;
-              console.error("[Setu API Error Context]:", rawError);
+              
+              // Log specific codes for debugging
+              console.error("[Setu API Exception]", {
+                  errorCode: rawError?.code || rawError?.error?.code || 'UNKNOWN',
+                  errorMsg: rawError?.message || rawError?.error?.message || JSON.stringify(rawError)
+              });
 
               let userMsg = "Unable to generate payment link. Please try again.";
-              let errorCode = "UNKNOWN";
               
               // Normalize error string for inspection
               const errorString = typeof rawError === 'string' ? rawError.toLowerCase() : JSON.stringify(rawError).toLowerCase();
 
               // Detect Code
-              if (errorString.includes('amount')) errorCode = 'invalid_amount';
-              else if (errorString.includes('auth') || errorString.includes('401') || errorString.includes('forbidden')) errorCode = 'authentication_failed';
-              else if (errorString.includes('verified') || errorString.includes('merchant')) errorCode = 'merchant_not_verified';
-              else if (errorString.includes('platform')) errorCode = 'platform_error';
-
-              // Map to User Friendly Message
-              switch (errorCode) {
-                  case 'invalid_amount':
-                      userMsg = "The entered amount is invalid. Please check Gateway limits.";
-                      break;
-                  case 'authentication_failed':
-                      userMsg = "Gateway Authentication Failed. Please verify Setu Scheme ID and Secret in Settings.";
-                      break;
-                  case 'merchant_not_verified':
-                      userMsg = "Merchant account is not active. Please complete Setu verification/KYC.";
-                      break;
-                  case 'platform_error':
-                      userMsg = "Setu Platform is currently experiencing downtime.";
-                      break;
-                  default:
-                      userMsg = typeof rawError === 'string' ? rawError : "Payment Gateway Error";
-              }
+              if (errorString.includes('amount')) userMsg = "The entered amount is invalid. Please check Gateway limits.";
+              else if (errorString.includes('auth') || errorString.includes('401')) userMsg = "Gateway Authentication Failed. Check API Keys.";
+              else if (errorString.includes('verified') || errorString.includes('merchant')) userMsg = "Merchant account is not active.";
+              else if (errorString.includes('platform')) userMsg = "Setu Platform is currently experiencing downtime.";
 
               throw new Error(userMsg);
           }
@@ -237,7 +229,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                   order.customerName
               );
               if (fallbackRes.success) alert("Sent as text link (URL format mismatch).");
-              else alert("Failed to send fallback text.");
+              else throw new Error("Failed to send fallback text.");
               return;
           }
 
@@ -257,13 +249,13 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
               alert("Payment Button sent via WhatsApp!");
               if (result.logEntry && onAddLog) onAddLog(result.logEntry);
           } else {
-              throw new Error(result.error);
+              throw new Error(result.error || "WhatsApp Delivery Failed");
           }
 
       } catch (e: any) {
           console.error(e);
-          // UI Fallback for Error
-          alert(`Setu Error: ${e.message}`);
+          // Fallback UI State
+          setErrorMsg(e.message || "An unexpected error occurred");
           errorService.logError('PaymentWidget', `Setu Failure: ${e.message}`);
       } finally {
           setLoading(false);
@@ -320,6 +312,18 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                 Remote Links
              </button>
         </div>
+
+        {/* Fallback UI for Errors */}
+        {errorMsg && (
+            <div className="mb-4 bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start gap-3 animate-fadeIn">
+                <AlertCircle className="text-rose-600 shrink-0" size={20} />
+                <div>
+                    <p className="text-xs font-bold text-rose-700">Action Failed</p>
+                    <p className="text-[10px] text-rose-600 mt-1">{errorMsg}</p>
+                </div>
+                <button onClick={() => setErrorMsg(null)} className="ml-auto text-rose-400 hover:text-rose-600"><X size={16} /></button>
+            </div>
+        )}
 
         {activeTab === 'RECORD' && (
             <div className="animate-fadeIn">
