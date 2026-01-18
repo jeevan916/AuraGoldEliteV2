@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, Zap, ShieldCheck, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, LayoutGrid, Plus, Trash2, Info, Key, Server, Clock, Calendar, MessageSquare, CreditCard, Smartphone } from 'lucide-react';
+import { Save, RefreshCw, Zap, ShieldCheck, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, LayoutGrid, Plus, Trash2, Info, Key, Server, Clock, Calendar, MessageSquare, CreditCard, Smartphone, Wrench } from 'lucide-react';
 import { GlobalSettings, CatalogItem } from '../types';
 import { goldRateService } from '../services/goldRateService';
 import { storageService } from '../services/storageService';
@@ -116,6 +115,9 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
   };
 
   const handleSaveDbConfig = async () => {
+      if(!dbConfig.host || !dbConfig.user || !dbConfig.database) {
+          return alert("Please fill Host, User and Database fields.");
+      }
       setSavingDb(true);
       try {
           const res = await fetch('/api/debug/configure', {
@@ -129,10 +131,12 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
               setDbMessage('Credentials Saved & Connected!');
               setDebugInfo(null);
           } else {
-              alert("Failed: " + data.error);
+              setDbMessage("Failed: " + data.error);
+              setDbStatus('ERROR');
           }
       } catch(e: any) {
-          alert("Error: " + e.message);
+          setDbMessage("Error: " + e.message);
+          setDbStatus('ERROR');
       } finally {
           setSavingDb(false);
       }
@@ -271,15 +275,17 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                 </div>
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Backend Connection</h3>
              </div>
-             {debugInfo && (
-                 <div className="bg-slate-900 text-slate-300 p-4 rounded-xl text-xs font-mono overflow-auto">
+             
+             {debugInfo && dbStatus === 'ERROR' && (
+                 <div className="bg-slate-900 text-slate-300 p-4 rounded-xl text-xs font-mono overflow-auto border border-slate-800">
                      <p className="text-amber-400 font-bold mb-2">Diagnostic Report:</p>
-                     <p>Host: {debugInfo.config?.host}</p>
-                     <p>Database: {debugInfo.config?.database}</p>
-                     <p>Connected: {debugInfo.connected ? 'YES' : 'NO'}</p>
+                     <p>Detected Host: {debugInfo.config?.host}</p>
+                     <p>Detected DB: {debugInfo.config?.database}</p>
+                     <p>Connected: NO</p>
                      {debugInfo.error && <p className="text-rose-400 mt-2">Error: {debugInfo.error}</p>}
                  </div>
              )}
+
              <div className="flex flex-col gap-4">
                  <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
                     <button 
@@ -300,6 +306,44 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                         <p>{dbMessage || "Click 'Test Connection' to verify server status."}</p>
                     </div>
                  </div>
+                 
+                 {/* Self-Healing Form: Only show if error or explicitly testing */}
+                 {dbStatus === 'ERROR' && (
+                     <div className="mt-4 p-5 bg-slate-50 rounded-2xl border border-slate-200 animate-fadeIn">
+                         <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest mb-4 flex items-center gap-2">
+                             <Wrench size={14} className="text-amber-500" /> Manual Configuration
+                         </h4>
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                             <div>
+                                 <label className="text-[9px] font-bold text-slate-400 uppercase">DB Host</label>
+                                 <input className="w-full p-2 rounded-lg border text-xs font-mono mt-1" value={dbConfig.host} onChange={e => setDbConfig({...dbConfig, host: e.target.value})} />
+                             </div>
+                             <div>
+                                 <label className="text-[9px] font-bold text-slate-400 uppercase">DB User</label>
+                                 <input className="w-full p-2 rounded-lg border text-xs font-mono mt-1" value={dbConfig.user} onChange={e => setDbConfig({...dbConfig, user: e.target.value})} />
+                             </div>
+                             <div>
+                                 <label className="text-[9px] font-bold text-slate-400 uppercase">DB Password</label>
+                                 <input type="password" className="w-full p-2 rounded-lg border text-xs font-mono mt-1" value={dbConfig.password} onChange={e => setDbConfig({...dbConfig, password: e.target.value})} />
+                             </div>
+                             <div>
+                                 <label className="text-[9px] font-bold text-slate-400 uppercase">DB Name</label>
+                                 <input className="w-full p-2 rounded-lg border text-xs font-mono mt-1" value={dbConfig.database} onChange={e => setDbConfig({...dbConfig, database: e.target.value})} />
+                             </div>
+                         </div>
+                         <button 
+                            onClick={handleSaveDbConfig}
+                            disabled={savingDb}
+                            className="mt-4 w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2"
+                         >
+                             {savingDb ? <Loader2 className="animate-spin" size={14}/> : <Save size={14}/>}
+                             Save Credentials & Reconnect
+                         </button>
+                         <p className="text-[9px] text-slate-400 mt-2 text-center">
+                             This will update the .env file on your server securely.
+                         </p>
+                     </div>
+                 )}
              </div>
           </div>
 

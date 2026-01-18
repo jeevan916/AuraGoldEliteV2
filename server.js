@@ -11,14 +11,33 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- STRICT ENV LOADING ---
-const envFile = path.join(__dirname, '.env');
-if (fs.existsSync(envFile)) {
-    console.log(`[System] Loading .env from: ${envFile}`);
-    dotenv.config({ path: envFile });
-} else {
-    console.log('[System] .env not found in script dir, attempting standard load...');
-    dotenv.config();
-}
+// Priority: .builds/config/.env -> Root .env -> Process Env
+const customConfigDir = path.join(__dirname, '.builds/config');
+const customEnvFile = path.join(customConfigDir, '.env');
+const rootEnvFile = path.join(__dirname, '.env');
+
+let activeEnvPath = rootEnvFile; // Default fallback
+
+const loadEnv = () => {
+    if (fs.existsSync(customEnvFile)) {
+        console.log(`[System] Loading .env from PRIORITY path: ${customEnvFile}`);
+        activeEnvPath = customEnvFile;
+        const envConfig = dotenv.parse(fs.readFileSync(customEnvFile));
+        for (const k in envConfig) {
+            process.env[k] = envConfig[k];
+        }
+    } else if (fs.existsSync(rootEnvFile)) {
+        console.log(`[System] Loading .env from ROOT path: ${rootEnvFile}`);
+        activeEnvPath = rootEnvFile;
+        const envConfig = dotenv.parse(fs.readFileSync(rootEnvFile));
+        for (const k in envConfig) {
+            process.env[k] = envConfig[k];
+        }
+    } else {
+        console.log('[System] No .env file found. Using process environment variables.');
+    }
+};
+loadEnv();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -41,23 +60,29 @@ app.use((req, res, next) => {
 });
 
 // --- DB SETUP ---
-const dbConfig = {
-    host: process.env.DB_HOST || '127.0.0.1',
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    port: 3306,
-    waitForConnections: true,
-    connectionLimit: 10,
-    connectTimeout: 20000
-};
-
 let pool = null;
+
 async function initDb() {
     try {
+        if (pool) await pool.end(); // Close existing pool if any
+
+        const dbConfig = {
+            host: process.env.DB_HOST || '127.0.0.1',
+            user: process.env.DB_USER,
+            password: process.env.DB_PASSWORD,
+            database: process.env.DB_NAME,
+            port: 3306,
+            waitForConnections: true,
+            connectionLimit: 10,
+            connectTimeout: 20000
+        };
+
+        console.log(`[Database] Attempting connection to ${dbConfig.host} as ${dbConfig.user}...`);
         pool = mysql.createPool(dbConfig);
+        
         const connection = await pool.getConnection();
         console.log("[Database] Connection Successful!");
+        
         const tables = [
             `CREATE TABLE IF NOT EXISTS gold_rates (id INT AUTO_INCREMENT PRIMARY KEY, rate24k DECIMAL(10, 2), rate22k DECIMAL(10, 2), rate18k DECIMAL(10, 2), recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
             `CREATE TABLE IF NOT EXISTS integrations (provider VARCHAR(50) PRIMARY KEY, config JSON, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)`,
@@ -74,30 +99,106 @@ async function initDb() {
         return { success: true };
     } catch (err) {
         console.error("DB Init Failed:", err.message);
+        pool = null; // Ensure pool is null on failure so ensureDb checks fail correctly
         return { success: false, error: err.message };
     }
 }
 initDb();
 
 const ensureDb = async (req, res, next) => {
-    if (!pool) await initDb();
-    if (!pool) return res.status(503).json({ error: "Database Unavailable" });
+    if (!pool) {
+        const result = await initDb();
+        if (!result.success) return res.status(503).json({ error: "Database Unavailable", details: result.error });
+    }
     next();
 };
 
 // --- API ROUTES ---
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 
-// Debug Route
+// Debug Route - Returns connection status and config (safely)
 app.get('/api/debug/db', async (req, res) => {
     try {
         if (!pool) await initDb();
-        const connection = await pool.getConnection();
-        await connection.ping();
-        connection.release();
-        res.json({ connected: true, user: dbConfig.user, db: dbConfig.database });
+        if (pool) {
+            const connection = await pool.getConnection();
+            await connection.ping();
+            connection.release();
+            res.json({ connected: true, user: process.env.DB_USER, db: process.env.DB_NAME });
+        } else {
+            throw new Error("Pool creation failed previously");
+        }
     } catch (e) {
-        res.status(500).json({ connected: false, error: e.message });
+        res.status(500).json({ 
+            connected: false, 
+            error: e.message,
+            config: {
+                host: process.env.DB_HOST,
+                user: process.env.DB_USER,
+                database: process.env.DB_NAME
+                // Password intentionally hidden
+            }
+        });
+    }
+});
+
+// Configure Route - Write to .env and reconnect
+app.post('/api/debug/configure', async (req, res) => {
+    const { host, user, password, database } = req.body;
+    
+    if (!host || !user || !database) {
+        return res.status(400).json({ error: "Missing required fields (Host, User, Database)" });
+    }
+
+    try {
+        // 1. Test Credentials with a temporary pool
+        const testPool = mysql.createPool({
+            host, user, password, database,
+            connectTimeout: 5000
+        });
+        const conn = await testPool.getConnection();
+        await conn.ping();
+        conn.release();
+        await testPool.end();
+
+        // 2. If successful, write to .env
+        // We preserve existing API_KEY and PORT if they exist in process.env but aren't in the request
+        const apiKey = process.env.API_KEY || '';
+        const port = process.env.PORT || 3000;
+        
+        const envContent = `DB_HOST=${host}\nDB_USER=${user}\nDB_PASSWORD=${password}\nDB_NAME=${database}\nPORT=${port}\nAPI_KEY=${apiKey}`;
+        
+        // Ensure directory exists if using custom path
+        if (activeEnvPath === customEnvFile && !fs.existsSync(path.dirname(customEnvFile))) {
+            try {
+                fs.mkdirSync(path.dirname(customEnvFile), { recursive: true });
+            } catch (mkdirErr) {
+                console.warn("Could not create custom config dir, falling back to root for write.");
+                activeEnvPath = rootEnvFile;
+            }
+        }
+
+        fs.writeFileSync(activeEnvPath, envContent);
+        console.log(`[System] Credentials updated in ${activeEnvPath}`);
+
+        // 3. Update Runtime Process Env
+        process.env.DB_HOST = host;
+        process.env.DB_USER = user;
+        process.env.DB_PASSWORD = password;
+        process.env.DB_NAME = database;
+
+        // 4. Re-initialize Main Pool
+        const initResult = await initDb();
+        
+        if (initResult.success) {
+            res.json({ success: true, message: "Database Configured & Connected!" });
+        } else {
+            res.status(500).json({ error: "Credentials valid, but initialization failed: " + initResult.error });
+        }
+
+    } catch (e) {
+        console.error("Configuration Failed:", e.message);
+        res.status(500).json({ error: "Connection Failed: " + e.message });
     }
 });
 
