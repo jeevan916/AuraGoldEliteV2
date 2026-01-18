@@ -157,6 +157,11 @@ const App = () => {
     };
   }, []);
 
+  // --- MOVEMENT CAPTURE: Log View Changes ---
+  useEffect(() => {
+      errorService.logActivity('NAVIGATION', `User navigated to: ${view}`);
+  }, [view]);
+
   // --- DERIVED CUSTOMER LIST LOGIC (One Customer -> Multiple Orders) ---
   const derivedCustomers = useMemo(() => {
       const customerMap = new Map<string, Customer>();
@@ -381,7 +386,7 @@ const App = () => {
                  <SidebarItem active={view === 'SETTINGS'} onClick={() => setView('SETTINGS')} icon={SettingsIcon} label="Settings" />
                  <div className="px-4 mt-4 flex items-center gap-2 text-[10px] text-slate-400">
                     <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                    <span>System Online • v5.0.1</span>
+                    <span>System Online • v5.0.2</span>
                  </div>
              </div>
         </div>

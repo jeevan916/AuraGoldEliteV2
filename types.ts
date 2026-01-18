@@ -171,7 +171,7 @@ export interface CreditworthinessReport {
   negotiationLeverage: string;
 }
 
-export type ErrorSeverity = 'LOW' | 'MEDIUM' | 'CRITICAL';
+export type ErrorSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export type ErrorStatus = 'NEW' | 'ANALYZING' | 'AUTO_FIXED' | 'REQUIRES_CODE_CHANGE' | 'RESOLVED' | 'UNRESOLVABLE';
 
 export interface AppError {
@@ -196,7 +196,7 @@ export interface AppError {
 export interface ActivityLogEntry {
   id: string;
   timestamp: string;
-  actionType: 'ORDER_CREATED' | 'STATUS_UPDATE' | 'TEMPLATE_SENT' | 'MANUAL_MESSAGE_SENT' | 'PAYMENT_RECORDED' | 'PROTECTION_LAPSED' | 'AUTO_HEAL';
+  actionType: 'ORDER_CREATED' | 'STATUS_UPDATE' | 'TEMPLATE_SENT' | 'MANUAL_MESSAGE_SENT' | 'PAYMENT_RECORDED' | 'PROTECTION_LAPSED' | 'AUTO_HEAL' | 'NAVIGATION' | 'API_CALL' | 'API_SUCCESS' | 'USER_ACTION';
   details: string;
   metadata?: any;
 }

@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap } from 'lucide-react';
+import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2 } from 'lucide-react';
 import { Card, Button } from '../shared/BaseUI';
 import { Order, OrderStatus } from '../../types';
 import { whatsappService } from '../../services/whatsappService';
 import { storageService } from '../../services/storageService';
+import { errorService } from '../../services/errorService';
 
 interface PaymentWidgetProps {
   order: Order;
@@ -60,6 +61,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       };
       
       onPaymentRecorded(updatedOrder);
+      errorService.logActivity('PAYMENT_RECORDED', `₹${val} via ${method} for ${order.customerName}`);
   };
 
   const handleRecordPayment = async () => {
@@ -80,6 +82,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       setQrCodeUrl(null);
     } catch (e: any) {
       alert("Error recording payment");
+      errorService.logError('PaymentWidget', e.message);
     } finally {
       setLoading(false);
     }
@@ -92,15 +95,16 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       const upiString = `upi://pay?pa=auragold@upi&pn=AuraGold%20Jewellers&tr=${order.id}&am=${val}&cu=INR&tn=Jewellery%20Payment`;
       setQrCodeUrl(`https://quickchart.io/qr?text=${encodeURIComponent(upiString)}&margin=2&size=300`);
       setActiveTab('REQUEST');
+      errorService.logActivity('USER_ACTION', `Generated Static QR for ₹${val}`);
   };
 
   const handleCreateRazorpayOrder = async () => {
       const val = parseFloat(amount);
       if (!val || val <= 0) return;
       setLoading(true);
+      errorService.logActivity('API_CALL', `Creating Razorpay Order for ₹${val}`);
 
       try {
-          // Call backend to create order
           const response = await fetch('/api/razorpay/create-order', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -112,9 +116,8 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           
           const settings = storageService.getSettings();
 
-          // Initialize Razorpay Options
           const options = {
-              key: settings.razorpayKeyId, // Enter the Key ID generated from the Dashboard
+              key: settings.razorpayKeyId,
               amount: orderData.amount,
               currency: orderData.currency,
               name: "AuraGold Jewellers",
@@ -128,35 +131,62 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                   name: order.customerName,
                   contact: order.customerContact,
               },
-              theme: {
-                  color: "#B8860B"
-              }
+              theme: { color: "#B8860B" }
           };
 
           const rzp1 = new (window as any).Razorpay(options);
           rzp1.open();
       } catch (e: any) {
           alert(`Gateway Error: ${e.message}`);
+          errorService.logError('Razorpay', e.message);
       } finally {
           setLoading(false);
       }
   };
 
-  const handleGenerateSetuLink = () => {
+  const handleGenerateSetuLink = async () => {
       const val = parseFloat(amount);
-      if (!val) return;
-      // Mock Setu Deeplink logic (needs scheme ID)
-      const settings = storageService.getSettings();
-      const schemeId = settings.setuSchemeId || 'mock-scheme';
-      
-      const link = `https://deeplink.setu.co/pay?schemeId=${schemeId}&amount=${val}&customerID=${order.customerContact}`;
-      
-      whatsappService.sendMessage(
-          order.customerContact, 
-          `Pay via Setu UPI DeepLink: ${link}`, 
-          order.customerName
-      );
-      alert("Setu Link sent via WhatsApp!");
+      if (!val || val <= 0) {
+          alert("Please enter a valid amount.");
+          return;
+      }
+
+      setLoading(true);
+      errorService.logActivity('USER_ACTION', `Starting Setu Link Generation for ₹${val}`);
+
+      try {
+          const settings = storageService.getSettings();
+          const schemeId = settings.setuSchemeId || 'mock-scheme';
+          
+          if (!settings.setuSchemeId) {
+              errorService.logWarning('PaymentWidget', 'Setu Scheme ID missing. Using mock link.');
+          }
+
+          const link = `https://deeplink.setu.co/pay?schemeId=${schemeId}&amount=${val}&customerID=${order.customerContact}`;
+          const message = `Dear ${order.customerName}, please use this secure UPI link to pay ₹${val.toLocaleString()}: ${link}`;
+          
+          // CRITICAL: Await the result and log it
+          const result = await whatsappService.sendMessage(
+              order.customerContact, 
+              message, 
+              order.customerName
+          );
+
+          if (result.success) {
+              alert("Setu Link successfully sent via WhatsApp!");
+              errorService.logActivity('TEMPLATE_SENT', `Setu Link delivered to ${order.customerName}`);
+          } else {
+              alert(`Failed to send link: ${result.error}`);
+              errorService.logError('PaymentWidget', `Setu Link Send Failed: ${result.error}`);
+          }
+
+      } catch (e: any) {
+          console.error(e);
+          errorService.logError('PaymentWidget', `Setu Logic Crash: ${e.message}`);
+          alert("Internal System Error. Check Logs.");
+      } finally {
+          setLoading(false);
+      }
   };
 
   if (variant === 'COMPACT') {
@@ -287,8 +317,13 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                              <button onClick={handleGenerateQR} className="flex-1 bg-white border border-slate-200 py-3 rounded-xl text-xs font-bold hover:bg-slate-50 flex flex-col items-center gap-1">
                                 <QrCode size={16} /> Show QR
                              </button>
-                             <button onClick={handleGenerateSetuLink} className="flex-1 bg-white border border-slate-200 py-3 rounded-xl text-xs font-bold hover:bg-slate-50 flex flex-col items-center gap-1">
-                                <Zap size={16} className="text-amber-500" /> Setu Link
+                             <button 
+                                onClick={handleGenerateSetuLink} 
+                                disabled={loading}
+                                className="flex-1 bg-white border border-slate-200 py-3 rounded-xl text-xs font-bold hover:bg-slate-50 flex flex-col items-center gap-1 disabled:opacity-50"
+                             >
+                                {loading ? <Loader2 size={16} className="animate-spin text-amber-500" /> : <Zap size={16} className="text-amber-500" />} 
+                                Setu Link
                              </button>
                         </div>
                         <div className="relative">
