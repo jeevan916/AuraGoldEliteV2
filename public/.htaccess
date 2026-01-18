@@ -1,18 +1,7 @@
 
-DirectoryIndex disabled
+# Security: Disable Directory Listing
 Options -Indexes
 
-<IfModule mod_rewrite.c>
-  RewriteEngine On
-  
-  # Forward API requests specifically
-  RewriteRule ^api/(.*)$ http://127.0.0.1:%{ENV:PORT}/api/$1 [P,L]
-
-  # Forward Root URL (Empty or /) to Node.js
-  RewriteRule ^/?$ http://127.0.0.1:%{ENV:PORT}/ [P,L]
-
-  # Forward everything else to Node.js
-  RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]
-</IfModule>
+# Note: Main routing is handled by the .htaccess in the root directory.
+# This file is placed in public/ so it persists in dist/ after build
+# as a fallback security measure.
