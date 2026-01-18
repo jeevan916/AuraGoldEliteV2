@@ -46,14 +46,11 @@ app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 
 // --- SECURITY MIDDLEWARE ---
-// Explicitly block access to source code and config files
 app.use((req, res, next) => {
     const forbiddenExtensions = ['.ts', '.tsx', '.jsx', '.env', '.config', '.lock', '.json'];
-    // Allow necessary JSON files if needed (like manifest.json), but generally block root JSONs
     if (req.path === '/metadata.json' || req.path === '/manifest.json') return next();
     
     if (forbiddenExtensions.some(ext => req.path.toLowerCase().endsWith(ext))) {
-        console.warn(`[Security] Blocked access to source file: ${req.path}`);
         return res.status(403).send('Forbidden: Access to source code is denied.');
     }
     next();
@@ -64,7 +61,7 @@ let pool = null;
 
 async function initDb() {
     try {
-        if (pool) await pool.end(); // Close existing pool if any
+        if (pool) await pool.end();
 
         const dbConfig = {
             host: process.env.DB_HOST || '127.0.0.1',
@@ -99,8 +96,8 @@ async function initDb() {
         return { success: true };
     } catch (err) {
         console.error("DB Init Failed:", err.message);
-        pool = null; // Ensure pool is null on failure so ensureDb checks fail correctly
-        return { success: false, error: err.message };
+        pool = null; 
+        return { success: false, error: err.message, code: err.code };
     }
 }
 initDb();
@@ -108,18 +105,35 @@ initDb();
 const ensureDb = async (req, res, next) => {
     if (!pool) {
         const result = await initDb();
-        if (!result.success) return res.status(503).json({ error: "Database Unavailable", details: result.error });
+        if (!result.success) return res.status(503).json({ error: "Database Unavailable", details: result.error, code: result.code });
     }
     next();
 };
 
 // --- API ROUTES ---
-app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
+app.get('/api/health', async (req, res) => {
+    // Perform a light check
+    let dbStatus = 'disconnected';
+    if(pool) {
+        try {
+            const conn = await pool.getConnection();
+            await conn.ping();
+            conn.release();
+            dbStatus = 'connected';
+        } catch(e) {
+            dbStatus = 'error';
+        }
+    }
+    res.json({ status: 'ok', db: dbStatus, time: new Date() });
+});
 
 // Debug Route - Returns connection status and config (safely)
 app.get('/api/debug/db', async (req, res) => {
     try {
-        if (!pool) await initDb();
+        if (!pool) {
+            const result = await initDb();
+            if (!result.success) throw new Error(result.error || "Init failed");
+        }
         if (pool) {
             const connection = await pool.getConnection();
             await connection.ping();
@@ -132,11 +146,11 @@ app.get('/api/debug/db', async (req, res) => {
         res.status(500).json({ 
             connected: false, 
             error: e.message,
+            code: e.code,
             config: {
                 host: process.env.DB_HOST,
                 user: process.env.DB_USER,
                 database: process.env.DB_NAME
-                // Password intentionally hidden
             }
         });
     }
@@ -161,25 +175,19 @@ app.post('/api/debug/configure', async (req, res) => {
         conn.release();
         await testPool.end();
 
-        // 2. If successful, write to .env
-        // We preserve existing API_KEY and PORT if they exist in process.env but aren't in the request
+        // 2. If successful, write to .builds/config/.env specifically (Architecture requirement)
         const apiKey = process.env.API_KEY || '';
         const port = process.env.PORT || 3000;
         
         const envContent = `DB_HOST=${host}\nDB_USER=${user}\nDB_PASSWORD=${password}\nDB_NAME=${database}\nPORT=${port}\nAPI_KEY=${apiKey}`;
         
-        // Ensure directory exists if using custom path
-        if (activeEnvPath === customEnvFile && !fs.existsSync(path.dirname(customEnvFile))) {
-            try {
-                fs.mkdirSync(path.dirname(customEnvFile), { recursive: true });
-            } catch (mkdirErr) {
-                console.warn("Could not create custom config dir, falling back to root for write.");
-                activeEnvPath = rootEnvFile;
-            }
+        // Force creation of custom config dir
+        if (!fs.existsSync(customConfigDir)) {
+            fs.mkdirSync(customConfigDir, { recursive: true });
         }
 
-        fs.writeFileSync(activeEnvPath, envContent);
-        console.log(`[System] Credentials updated in ${activeEnvPath}`);
+        fs.writeFileSync(customEnvFile, envContent);
+        console.log(`[System] Credentials updated in ${customEnvFile}`);
 
         // 3. Update Runtime Process Env
         process.env.DB_HOST = host;
@@ -198,7 +206,7 @@ app.post('/api/debug/configure', async (req, res) => {
 
     } catch (e) {
         console.error("Configuration Failed:", e.message);
-        res.status(500).json({ error: "Connection Failed: " + e.message });
+        res.status(500).json({ error: "Connection Failed: " + e.message, code: e.code });
     }
 });
 
@@ -377,11 +385,10 @@ app.post('/api/whatsapp/templates', async (req, res) => {
 // --- STATIC ASSET SERVING ---
 let distPath = '';
 
-// Prioritize 'dist' folder. This is critical for production.
 const potentialPaths = [
     path.join(__dirname, 'dist'),
-    path.join(__dirname, '../dist'), // If server.js is in backend/
-    path.join(__dirname) // Fallback (dangerous if no index.html)
+    path.join(__dirname, '../dist'),
+    path.join(__dirname) 
 ];
 
 for (const p of potentialPaths) {
@@ -397,24 +404,18 @@ if (!distPath) {
     console.log(`[System] Serving Static Files from: ${distPath}`);
 }
 
-// ASSETS: Long Cache (Immutable)
 app.use('/assets', express.static(path.join(distPath, 'assets'), { 
     immutable: true, 
     maxAge: '1y',
-    fallthrough: false // If asset missing, 404 immediately (don't serve index.html)
+    fallthrough: false 
 }));
 
-// PUBLIC & ROOT: Standard Static
 app.use(express.static(distPath, { index: false }));
 
-// ASSET FALLBACK: 404
-// Explicitly handle missing JS/CSS/Images to prevent "SyntaxError: Unexpected token <"
 app.get('*.(js|css|png|jpg|jpeg|gif|ico|json|svg)', (req, res) => {
     res.status(404).send('Not Found');
 });
 
-// SPA CATCH-ALL: No Cache
-// Serve index.html for all other routes to support React Router.
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API Endpoint Not Found" });
@@ -422,7 +423,6 @@ app.get('*', (req, res) => {
     if (!distPath) {
         return res.status(500).send('Application Build Missing. Please run build.');
     }
-    // Force index.html to validate or reload.
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
