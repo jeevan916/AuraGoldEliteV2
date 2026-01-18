@@ -36,7 +36,7 @@ class ErrorService {
       this.logError(
         'Browser Runtime',
         event.message || 'Uncaught JavaScript Error',
-        'MEDIUM',
+        'CRITICAL',
         event.error?.stack
       );
     });
@@ -55,7 +55,7 @@ class ErrorService {
       this.logError(source, msg, 'CRITICAL', reason?.stack);
     });
 
-    this.logActivity('STATUS_UPDATE', 'System Intelligence Monitoring Active');
+    this.logActivity('STATUS_UPDATE', 'Self-Healing Intelligence Active');
   }
 
   private notify() {
@@ -106,6 +106,7 @@ class ErrorService {
     stack?: string,
     retryAction?: () => Promise<void>
   ) {
+    // Debounce duplicate errors
     if (message === this.lastErrorMsg && Date.now() - this.lastErrorTime < 2000) return;
     this.lastErrorMsg = message;
     this.lastErrorTime = Date.now();
@@ -124,80 +125,94 @@ class ErrorService {
     this.errors = [newError, ...this.errors].slice(0, this.MAX_ERRORS);
     this.notify();
 
+    // Trigger Intelligent Analysis for significant errors
     if (severity !== 'LOW') {
-        this.runAiDiagnosis(newError.id);
+        this.runIntelligentAnalysis(newError.id);
     }
   }
 
-  private async runAiDiagnosis(errorId: string) {
+  private async runIntelligentAnalysis(errorId: string) {
     const errorIndex = this.errors.findIndex(e => e.id === errorId);
     if (errorIndex === -1) return;
 
     const errorObj = this.errors[errorIndex];
     
+    // 1. Immediate Rule-Based Triage
     if (errorObj.message.includes('403')) {
-        this.errors[errorIndex].aiDiagnosis = "API Access Forbidden. Your API Key is likely invalid, expired, or doesn't have permissions.";
-        this.errors[errorIndex].status = 'UNRESOLVABLE';
-        this.errors[errorIndex].resolutionPath = 'settings';
-        this.errors[errorIndex].resolutionCTA = 'Update API Key';
-        this.notify();
+        this.updateError(errorIndex, {
+            aiDiagnosis: "Permission Denied. Check API Keys.",
+            status: 'UNRESOLVABLE',
+            resolutionPath: 'settings'
+        });
         return;
     }
 
-    this.errors[errorIndex].status = 'ANALYZING';
-    this.notify();
+    this.updateError(errorIndex, { status: 'ANALYZING' });
 
     try {
-      const result = await geminiService.diagnoseError(errorObj.message, errorObj.source);
+      // 2. Consult Gemini "Doctor"
+      const diagnosis = await geminiService.diagnoseError(errorObj.message, errorObj.source, errorObj.stack);
       
-      this.errors[errorIndex].aiDiagnosis = result.explanation;
-      this.errors[errorIndex].resolutionPath = result.path;
-      this.errors[errorIndex].resolutionCTA = result.cta;
-      this.errors[errorIndex].suggestedFixData = result.suggestedFixData;
-      this.errors[errorIndex].status = 'FIXING';
-      this.notify();
+      this.updateError(errorIndex, {
+          aiDiagnosis: diagnosis.explanation,
+          implementationPrompt: diagnosis.implementationPrompt,
+          resolutionPath: diagnosis.resolutionPath,
+          resolutionCTA: diagnosis.fixType === 'AUTO' ? 'Auto-Repairing...' : 'View Fix Prompt'
+      });
 
-      let fixResult = "Manual review required.";
-      let resolved = false;
-
-      if (result.action === 'REPAIR_TEMPLATE') {
-        fixResult = "Attempting to re-upload System Templates...";
-        const failedTemplateName = errorObj.message.match(/template\s+['"]?([a-z0-9_]+)['"]?/i)?.[1];
-        const templatesToFix = failedTemplateName 
-            ? REQUIRED_SYSTEM_TEMPLATES.filter(t => t.name.includes(failedTemplateName))
-            : REQUIRED_SYSTEM_TEMPLATES;
-
-        for (const tpl of templatesToFix) {
-           const fullTpl: any = {
-               id: 'repair', name: tpl.name, content: tpl.content, 
-               tactic: 'AUTHORITY', targetProfile: 'REGULAR', 
-               isAiGenerated: false, source: 'LOCAL', category: tpl.category,
-               variableExamples: tpl.examples
-           };
-           const res = await whatsappService.createMetaTemplate(fullTpl);
-           if (res.success) {
-               fixResult = `Patched template: ${res.finalName}`;
-               resolved = true;
-           }
-        }
-      } 
-      else if (result.action === 'RETRY_API' && this.errors[errorIndex].retryAction) {
-          try {
-              await this.errors[errorIndex].retryAction!();
-              fixResult = "Automatic retry succeeded.";
-              resolved = true;
-          } catch (retryErr: any) {}
+      // 3. Attempt Auto-Repair
+      if (diagnosis.fixType === 'AUTO') {
+          if (diagnosis.action === 'REPAIR_TEMPLATE' || errorObj.message.toLowerCase().includes('template')) {
+             await this.attemptTemplateAutoHeal(errorIndex, errorObj.message);
+          } else if (diagnosis.action === 'RETRY_API' && errorObj.retryAction) {
+             await errorObj.retryAction();
+             this.updateError(errorIndex, { status: 'AUTO_FIXED', aiFixApplied: 'Auto-Retry Successful' });
+          }
+      } else if (diagnosis.fixType === 'MANUAL_CODE') {
+          this.updateError(errorIndex, { status: 'REQUIRES_CODE_CHANGE' });
       }
 
-      this.errors[errorIndex].aiFixApplied = fixResult;
-      this.errors[errorIndex].status = resolved ? 'RESOLVED' : 'UNRESOLVABLE';
-      this.notify();
-
     } catch (err) {
-      this.errors[errorIndex].status = 'UNRESOLVABLE';
-      this.errors[errorIndex].aiDiagnosis = "AI Resolution Engine Timeout.";
-      this.notify();
+      this.updateError(errorIndex, { status: 'UNRESOLVABLE', aiDiagnosis: "Analysis Timeout." });
     }
+  }
+
+  private async attemptTemplateAutoHeal(index: number, msg: string) {
+      this.logActivity('AUTO_HEAL', 'Scanning for missing templates based on error...');
+      
+      const failedNameMatch = msg.match(/template\s+['"]?([a-z0-9_]+)['"]?/i);
+      const failedName = failedNameMatch ? failedNameMatch[1] : null;
+      
+      let fixed = false;
+      const candidates = failedName 
+        ? REQUIRED_SYSTEM_TEMPLATES.filter(t => t.name.includes(failedName))
+        : REQUIRED_SYSTEM_TEMPLATES; // If name unknown, check all core
+
+      for (const tpl of candidates) {
+          const payload = {
+               id: 'heal', name: tpl.name, content: tpl.content, 
+               tactic: 'AUTHORITY', targetProfile: 'REGULAR', 
+               isAiGenerated: false, source: 'LOCAL', category: tpl.category,
+               variableExamples: tpl.examples, appGroup: tpl.appGroup
+          };
+          // Try to create/restore it
+          const res = await whatsappService.createMetaTemplate(payload as any);
+          if (res.success) {
+              fixed = true;
+              this.logActivity('AUTO_HEAL', `Restored template: ${tpl.name}`);
+          }
+      }
+
+      if (fixed) {
+          this.updateError(index, { status: 'AUTO_FIXED', aiFixApplied: `Restored missing template(s): ${failedName || 'Core Set'}` });
+      } else {
+          this.updateError(index, { status: 'UNRESOLVABLE', aiFixApplied: 'Auto-Heal Failed. Template might be rejected by Meta.' });
+      }
+  }
+
+  private updateError(index: number, updates: Partial<AppError>) {
+      this.errors[index] = { ...this.errors[index], ...updates };
+      this.notify();
   }
 
   public clearErrors() {

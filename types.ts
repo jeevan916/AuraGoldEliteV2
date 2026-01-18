@@ -172,7 +172,7 @@ export interface CreditworthinessReport {
 }
 
 export type ErrorSeverity = 'LOW' | 'MEDIUM' | 'CRITICAL';
-export type ErrorStatus = 'NEW' | 'ANALYZING' | 'FIXING' | 'RESOLVED' | 'UNRESOLVABLE';
+export type ErrorStatus = 'NEW' | 'ANALYZING' | 'AUTO_FIXED' | 'REQUIRES_CODE_CHANGE' | 'RESOLVED' | 'UNRESOLVABLE';
 
 export interface AppError {
   id: string;
@@ -182,8 +182,11 @@ export interface AppError {
   stack?: string;
   severity: ErrorSeverity;
   status: ErrorStatus;
+  
+  // Intelligent Diagnosis Fields
   aiDiagnosis?: string;
-  aiFixApplied?: string;
+  aiFixApplied?: string; // If auto-fixed, what did we do?
+  implementationPrompt?: string; // If code change needed, here is the prompt for AI Studio
   resolutionPath?: AppResolutionPath;
   resolutionCTA?: string;
   suggestedFixData?: any;
@@ -193,7 +196,7 @@ export interface AppError {
 export interface ActivityLogEntry {
   id: string;
   timestamp: string;
-  actionType: 'ORDER_CREATED' | 'STATUS_UPDATE' | 'TEMPLATE_SENT' | 'MANUAL_MESSAGE_SENT' | 'PAYMENT_RECORDED' | 'PROTECTION_LAPSED';
+  actionType: 'ORDER_CREATED' | 'STATUS_UPDATE' | 'TEMPLATE_SENT' | 'MANUAL_MESSAGE_SENT' | 'PAYMENT_RECORDED' | 'PROTECTION_LAPSED' | 'AUTO_HEAL';
   details: string;
   metadata?: any;
 }

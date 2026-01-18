@@ -212,19 +212,53 @@ export const geminiService = {
     return JSON.parse(response.text || "{}");
   },
 
-  async diagnoseError(message: string, source: string): Promise<{ explanation: string, path: AppResolutionPath, cta: string, action?: 'REPAIR_TEMPLATE' | 'RETRY_API', suggestedFixData?: any }> {
+  // --- INTELLIGENT DIAGNOSTICS & IMPLEMENTATION GENERATOR ---
+  async diagnoseError(message: string, source: string, stack?: string): Promise<{ 
+      explanation: string, 
+      fixType: 'AUTO' | 'MANUAL_CODE' | 'CONFIG', 
+      implementationPrompt?: string, // The golden code prompt
+      action?: 'REPAIR_TEMPLATE' | 'RETRY_API', 
+      suggestedFixData?: any,
+      resolutionPath?: AppResolutionPath
+  }> {
     const ai = getAI();
-    if (!ai) return { explanation: "AI Unavailable", path: 'none', cta: 'Check Logs' };
+    if (!ai) return { explanation: "AI Unavailable", fixType: 'MANUAL_CODE', resolutionPath: 'none' };
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Error: ${message}. Source: ${source}. Diagnose and provide resolution steps.`,
-      config: {
-        responseMimeType: "application/json",
-        systemInstruction: "Analyze technical errors in the AuraGold jewelry app. Provide a fix path. Return JSON with keys: explanation, path (settings, templates, whatsapp, none), cta (call to action text), action, suggestedFixData."
-      }
-    });
-    return JSON.parse(response.text || "{}");
+    try {
+        const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `
+        SYSTEM ERROR DETECTED:
+        Source: ${source}
+        Message: ${message}
+        Stack Trace: ${stack || 'N/A'}
+
+        Your Role: Senior React Native/Web Engineer & System Architect.
+
+        Task:
+        1. Analyze the root cause.
+        2. Determine if this can be auto-fixed (e.g., missing data that can be re-fetched, missing template that can be re-created) or if it requires a CODE CHANGE.
+        3. If it requires a code change, generate a specific, copy-pasteable prompt that the user can give to an AI coding assistant to fix the file.
+
+        Output JSON Format:
+        {
+            "explanation": "Human readable summary of what broke",
+            "fixType": "AUTO" | "MANUAL_CODE" | "CONFIG",
+            "implementationPrompt": "Strictly technical prompt for AI Studio. E.g., 'Update OrderForm.tsx to handle null coalescing on items array...'",
+            "action": "REPAIR_TEMPLATE" (only if missing template) | "RETRY_API" | null,
+            "suggestedFixData": { ...any context data for auto fix... },
+            "resolutionPath": "settings" | "templates" | "whatsapp" | "none"
+        }
+        `,
+        config: {
+            responseMimeType: "application/json"
+        }
+        });
+        
+        return JSON.parse(response.text || "{}");
+    } catch (e) {
+        return { explanation: "Diagnosis failed.", fixType: 'MANUAL_CODE' };
+    }
   },
 
   async analyzeSystemLogsForImprovements(activities: ActivityLogEntry[]): Promise<any> {
