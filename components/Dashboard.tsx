@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Zap, ArrowRight, CheckCircle2, BrainCircuit, MessageSquare, FileText, ScrollText, TrendingUp, BookOpen, RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
+import { Zap, ArrowRight, CheckCircle2, BrainCircuit, MessageSquare, FileText, ScrollText, TrendingUp, BookOpen, RefreshCw, Loader2 } from 'lucide-react';
 import { Order, OrderStatus } from '../types';
 import { Card, SectionHeader, Badge, Button } from './shared/BaseUI';
 import { PaymentWidget } from './clusters/PaymentWidget';
@@ -15,7 +15,10 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
   const today = new Date().toISOString().split('T')[0];
   const [refreshing, setRefreshing] = useState(false);
   
+  // Filter: Exclude Archived/Delivered orders from "Live" Dashboard
   const liveOrders = orders.filter(o => o.status !== OrderStatus.DELIVERED && o.status !== OrderStatus.CANCELLED);
+
+  // Logic to find overdue/due today orders
   const criticalOrders = liveOrders.filter(o => 
     o.paymentPlan.milestones.some(m => m.status !== 'PAID' && m.dueDate <= today)
   );
@@ -28,12 +31,10 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
       }
   };
 
-  const isRateValid = currentRates && currentRates.k22 > 1000;
-
   return (
     <div className="space-y-8 pb-24 animate-fadeIn">
       
-      {/* 1. AI CASH FLOW ENGINE */}
+      {/* 1. AI CASH FLOW ENGINE (Renamed from Recovery) */}
       <div className="bg-slate-900 bg-gradient-to-r from-emerald-900 to-slate-900 rounded-[2rem] p-6 text-white relative overflow-hidden shadow-xl border border-emerald-500/30">
         <div className="relative z-10">
             <div className="flex justify-between items-start">
@@ -63,6 +64,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
                  </div>
             </div>
         </div>
+        {/* Decor */}
         <div className="absolute right-0 bottom-0 opacity-10 transform translate-x-1/4 translate-y-1/4">
             <TrendingUp size={180} />
         </div>
@@ -82,24 +84,9 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
                 </button>
             </div>
             <div className="flex items-end gap-1">
-                {isRateValid ? (
-                    <p className="text-xl font-black text-slate-800">₹{currentRates?.k22?.toLocaleString()}</p>
-                ) : (
-                    <div className="flex items-center gap-1 text-rose-500">
-                        <AlertTriangle size={16} />
-                        <p className="text-sm font-bold">Offline</p>
-                    </div>
-                )}
-                {isRateValid && <span className="text-[9px] font-bold text-slate-400 mb-1">/g</span>}
+                <p className="text-xl font-black text-slate-800">₹{currentRates?.k22?.toLocaleString()}</p>
+                <span className="text-[9px] font-bold text-slate-400 mb-1">/g</span>
             </div>
-            {!isRateValid && (
-                <button 
-                    onClick={() => (window as any).dispatchView('SETTINGS')}
-                    className="text-[8px] font-bold text-blue-500 underline mt-1"
-                >
-                    Set Manually in Config
-                </button>
-            )}
          </Card>
          <div className="grid grid-cols-2 gap-2">
             <button onClick={() => (window as any).dispatchView('ORDER_BOOK')} className="bg-emerald-50 hover:bg-emerald-100 rounded-2xl flex flex-col items-center justify-center text-emerald-700 transition-colors">
@@ -113,7 +100,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
          </div>
       </div>
 
-      {/* 3. Collection Queue */}
+      {/* 3. Collection Queue (Strictly active commitments) */}
       <div>
         <SectionHeader 
           title="Collection Queue" 
@@ -134,6 +121,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
                   <span className="text-xs font-bold text-slate-800">{order.customerName}</span>
                   <span className="text-[9px] font-black text-rose-500 uppercase">Payment Due</span>
                 </div>
+                {/* PLUG AND PLAY: Using the PaymentWidget in Compact Mode */}
                 <PaymentWidget 
                   order={order} 
                   variant="COMPACT" 

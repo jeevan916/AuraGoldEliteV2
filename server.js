@@ -15,37 +15,25 @@ const loadEnv = () => {
     const searchPaths = [
         path.resolve(process.cwd(), '.env'),           // Current working directory
         path.resolve(__dirname, '.env'),               // Where script resides
-        path.resolve(__dirname, '..', '.env'),         // Parent directory
-        path.resolve('/home/public_html/.env')         // Hostinger default
+        path.resolve(__dirname, '..', '.env'),         // Parent directory (common in dist builds)
+        path.resolve('/home/public_html/.env')         // Common Hostinger path
     ];
 
     let loaded = false;
     for (const p of searchPaths) {
         if (fs.existsSync(p)) {
-            console.log(`[System] Found .env at: ${p}`);
-            // Parse and force override to ensure we get the file values over system defaults if they are empty
-            try {
-                const envConfig = dotenv.parse(fs.readFileSync(p));
-                for (const k in envConfig) {
-                    process.env[k] = envConfig[k];
-                }
-                loaded = true;
-                console.log('[System] Environment variables loaded successfully.');
-                break;
-            } catch (e) {
-                console.error(`[System] Failed to parse .env at ${p}:`, e.message);
-            }
+            console.log(`[System] Loading .env from: ${p}`);
+            dotenv.config({ path: p });
+            loaded = true;
+            break;
         }
     }
     
     if (!loaded) {
-        console.warn('[System] WARNING: No .env file found. Relying on system environment variables.');
+        console.warn('[System] WARNING: No .env file found in search paths. Using system environment variables.');
+    } else {
+        console.log('[System] Environment variables loaded.');
     }
-    
-    // Debug Log (Masked)
-    console.log(`[Config] DB_HOST: ${process.env.DB_HOST}`);
-    console.log(`[Config] DB_USER: ${process.env.DB_USER}`);
-    console.log(`[Config] DB_NAME: ${process.env.DB_NAME}`);
 };
 loadEnv();
 
@@ -57,9 +45,11 @@ app.use(express.json({ limit: '100mb' }));
 
 // --- SECURITY MIDDLEWARE ---
 app.use((req, res, next) => {
+    // Prevent access to sensitive server files if they exist in the public directory
     if (['/server.js', '/package.json', '/.env', '/vite.config.ts'].includes(req.path)) {
         return res.status(403).send('Forbidden');
     }
+    // Allow metadata and manifest
     if (req.path === '/metadata.json' || req.path === '/manifest.json') return next();
     
     const forbiddenExtensions = ['.ts', '.tsx', '.jsx', '.env', '.config', '.lock', '.json'];
@@ -76,20 +66,19 @@ async function initDb() {
     try {
         if (pool) await pool.end();
 
-        // Fallback for Hostinger: Try localhost if 127.0.0.1 fails or vice versa
-        const host = process.env.DB_HOST || '127.0.0.1';
-        
-        console.log(`[Database] Connecting to ${host} as ${process.env.DB_USER}...`);
+        // Debug log for connection attempt (Masked password)
+        console.log(`[Database] Connecting to ${process.env.DB_HOST || 'localhost'} as ${process.env.DB_USER}...`);
 
         const dbConfig = {
-            host: host,
+            host: process.env.DB_HOST || '127.0.0.1',
             user: process.env.DB_USER,
             password: process.env.DB_PASSWORD,
             database: process.env.DB_NAME,
             port: 3306,
             waitForConnections: true,
             connectionLimit: 10,
-            connectTimeout: 10000,
+            connectTimeout: 20000,
+            // Add these for better stability on shared hosting
             enableKeepAlive: true,
             keepAliveInitialDelay: 0
         };
@@ -99,7 +88,6 @@ async function initDb() {
         const connection = await pool.getConnection();
         console.log("[Database] Connection Successful!");
         
-        // Initialize Tables
         const tables = [
             `CREATE TABLE IF NOT EXISTS gold_rates (id INT AUTO_INCREMENT PRIMARY KEY, rate24k DECIMAL(10, 2), rate22k DECIMAL(10, 2), rate18k DECIMAL(10, 2), recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
             `CREATE TABLE IF NOT EXISTS integrations (provider VARCHAR(50) PRIMARY KEY, config JSON, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)`,
@@ -121,6 +109,7 @@ async function initDb() {
         return { success: false, error: err.message, code: err.code };
     }
 }
+// Attempt initial connection
 initDb();
 
 const ensureDb = async (req, res, next) => {
@@ -128,8 +117,7 @@ const ensureDb = async (req, res, next) => {
         const result = await initDb();
         if (!result.success) {
             console.error("DB Connection Error during request:", result.error);
-            // Don't fail hard, proceed so frontend can show UI, but DB calls will fail
-            // We'll return 503 only for specific write operations if needed
+            return res.status(503).json({ error: "Database Unavailable", details: result.error, code: result.code });
         }
     }
     next();
@@ -138,41 +126,32 @@ const ensureDb = async (req, res, next) => {
 // --- EXTERNAL GOLD RATE FETCHER ---
 async function fetchExternalGoldRate() {
     try {
-        console.log("[System] Fetching live gold rates...");
-        
-        // Attempt 1: goldprice.org (Public)
+        console.log("[System] Fetching live gold rates from public API...");
+        // Use a reliable free public API for Gold (XAU) in INR
         const response = await fetch('https://data-asg.goldprice.org/dbXRates/INR', {
             headers: { 'User-Agent': 'Mozilla/5.0' }
         });
         
-        if (response.ok) {
-            const data = await response.json();
-            const pricePerOz = data.items[0].x_price; // 24K Price per Oz
-            const rate24k = Math.round(pricePerOz / 31.1035);
-            const rate22k = Math.round(rate24k * 0.916);
-            const rate18k = Math.round(rate24k * 0.750);
-            return { rate24k, rate22k, rate18k, success: true, source: 'goldprice.org' };
-        }
+        if (!response.ok) throw new Error(`External API Error: ${response.status}`);
+        
+        const data = await response.json();
+        // data.items[0].x_price is price of 1 oz (31.1035g)
+        const pricePerOz = data.items[0].x_price; // 24K Price per Oz
+        
+        const rate24k = Math.round(pricePerOz / 31.1035);
+        const rate22k = Math.round(rate24k * 0.916);
+        const rate18k = Math.round(rate24k * 0.750);
+        
+        return { rate24k, rate22k, rate18k, success: true };
     } catch (e) {
-        console.warn("[System] Primary rate fetch failed, trying simulation.");
+        console.error("[System] External gold fetch failed:", e.message);
+        return { success: false };
     }
-
-    // Fallback: Simulated "Live" Rate to ensure app functionality
-    const base = 7500;
-    const volatility = Math.floor(Math.random() * 50) - 25;
-    const rate24k = base + volatility;
-    
-    return { 
-        rate24k, 
-        rate22k: Math.round(rate24k * 0.916), 
-        rate18k: Math.round(rate24k * 0.750), 
-        success: true, 
-        source: 'simulated_fallback' 
-    };
 }
 
 // --- API ROUTES ---
 
+// Health Check with Deep DB Diagnostic
 app.get('/api/health', async (req, res) => {
     let dbStatus = 'disconnected';
     let dbError = null;
@@ -189,13 +168,18 @@ app.get('/api/health', async (req, res) => {
             dbError = e.message;
         }
     }
-    res.json({ status: 'ok', db: dbStatus, dbError, config: configUsed, time: new Date() });
+    res.json({ 
+        status: 'ok', 
+        db: dbStatus, 
+        dbError, 
+        config: configUsed, 
+        time: new Date(),
+        mode: fs.existsSync(path.join(__dirname, 'index.html')) ? 'PRODUCTION' : 'DEVELOPMENT'
+    });
 });
 
-// Sync Handlers (Generic)
+// Sync Handlers
 const createSyncHandler = (table) => async (req, res) => {
-    if (!pool) return res.status(503).json({error: "Database not connected"});
-    
     const items = req.body[table] || req.body.orders || req.body.customers || req.body.logs || req.body.templates || req.body.catalog || req.body.plans;
     if (!items) return res.status(400).json({error: "No data payload"});
     
@@ -204,6 +188,7 @@ const createSyncHandler = (table) => async (req, res) => {
         await connection.beginTransaction();
         
         let query = '';
+        // Efficient UPSERT queries
         if (table === 'orders') query = `INSERT INTO orders (id, customer_contact, status, created_at, data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data), updated_at=VALUES(updated_at)`;
         else if (table === 'customers') query = `INSERT INTO customers (id, contact, name, data, updated_at) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data), updated_at=VALUES(updated_at)`;
         else if (table === 'logs') query = `INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data)`;
@@ -213,6 +198,7 @@ const createSyncHandler = (table) => async (req, res) => {
 
         for (const item of items) {
             let params = [];
+            // Parameter mapping
             if(table === 'orders') params = [item.id, item.customerContact, item.status, new Date(item.createdAt), JSON.stringify(item), Date.now()];
             else if(table === 'customers') params = [item.id, item.contact, item.name, JSON.stringify(item), Date.now()];
             else if(table === 'logs') params = [item.id, item.phoneNumber, item.direction, new Date(item.timestamp), JSON.stringify(item)];
@@ -226,6 +212,7 @@ const createSyncHandler = (table) => async (req, res) => {
         connection.release();
         res.json({success: true});
     } catch(e) { 
+        console.error(`Sync Error [${table}]:`, e.message);
         res.status(500).json({error: e.message}); 
     }
 };
@@ -237,52 +224,29 @@ app.post('/api/sync/templates', ensureDb, createSyncHandler('templates'));
 app.post('/api/sync/plans', ensureDb, createSyncHandler('plans'));
 app.post('/api/sync/catalog', ensureDb, createSyncHandler('catalog'));
 
-// Bootstrap
+// Bootstrap: Initial Load
 app.get('/api/bootstrap', ensureDb, async (req, res) => {
     try {
-        let rates = { rate24k: 7200, rate22k: 6600, rate18k: 5400 };
-        let orders = [], customers = [], logs = [], templates = [], planTemplates = [], catalog = [];
-        let configMap = {}, intMap = {};
-
-        if (pool) {
-            const connection = await pool.getConnection();
-            const [rateRows] = await connection.query('SELECT * FROM gold_rates ORDER BY id DESC LIMIT 1');
-            const [configRows] = await connection.query('SELECT * FROM app_config');
-            const [intRows] = await connection.query('SELECT * FROM integrations');
-            
-            if (rateRows.length) rates = rateRows[0];
-            else {
-                // If DB is empty, fetch external
-                const ext = await fetchExternalGoldRate();
-                if (ext.success) {
-                    rates = ext;
-                    await connection.query('INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)', [ext.rate24k, ext.rate22k, ext.rate18k]);
-                }
+        const connection = await pool.getConnection();
+        const [rateRows] = await connection.query('SELECT * FROM gold_rates ORDER BY id DESC LIMIT 1');
+        const [configRows] = await connection.query('SELECT * FROM app_config');
+        const [intRows] = await connection.query('SELECT * FROM integrations');
+        
+        let rates = rateRows[0];
+        
+        // If DB has no rates, fetch external
+        if (!rates) {
+            const extRates = await fetchExternalGoldRate();
+            if (extRates.success) {
+                rates = extRates;
+                await connection.query('INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)', [rates.rate24k, rates.rate22k, rates.rate18k]);
+            } else {
+                rates = { rate24k: 7200, rate22k: 6600, rate18k: 5400 };
             }
-
-            configRows.forEach(r => configMap[r.setting_key] = r.setting_value);
-            intRows.forEach(r => { try { intMap[r.provider] = JSON.parse(r.config); } catch(e){} });
-
-            const [o] = await connection.query('SELECT data FROM orders ORDER BY created_at DESC');
-            const [c] = await connection.query('SELECT data FROM customers');
-            const [l] = await connection.query('SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 100');
-            const [t] = await connection.query('SELECT data FROM templates');
-            const [p] = await connection.query('SELECT data FROM plan_templates');
-            const [cat] = await connection.query('SELECT data FROM catalog');
-            
-            orders = o.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
-            customers = c.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
-            logs = l.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
-            templates = t.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
-            planTemplates = p.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
-            catalog = cat.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
-            
-            connection.release();
-        } else {
-            // Offline/Fallback mode
-            const ext = await fetchExternalGoldRate();
-            if (ext.success) rates = ext;
         }
+
+        const configMap = {}; configRows.forEach(r => configMap[r.setting_key] = r.setting_value);
+        const intMap = {}; intRows.forEach(r => { try { intMap[r.provider] = JSON.parse(r.config); } catch(e){} });
 
         const settings = {
             currentGoldRate24K: Number(rates.rate24k), currentGoldRate22K: Number(rates.rate22k), currentGoldRate18K: Number(rates.rate18k),
@@ -293,15 +257,29 @@ app.get('/api/bootstrap', ensureDb, async (req, res) => {
             msg91AuthKey: intMap['msg91']?.authKey || '', msg91SenderId: intMap['msg91']?.senderId || '',
             setuSchemeId: intMap['setu']?.schemeId || '', setuSecret: intMap['setu']?.secret || ''
         };
+
+        const [orders] = await connection.query('SELECT data FROM orders ORDER BY created_at DESC');
+        const [customers] = await connection.query('SELECT data FROM customers');
+        const [logs] = await connection.query('SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 100');
+        const [templates] = await connection.query('SELECT data FROM templates');
+        const [planTemplates] = await connection.query('SELECT data FROM plan_templates');
+        const [catalog] = await connection.query('SELECT data FROM catalog');
+        connection.release();
         
-        res.json({ success: true, data: { settings, orders, customers, logs, templates, planTemplates, catalog, lastUpdated: Date.now() }});
-    } catch(e) { 
-        res.status(500).json({ error: e.message }); 
-    }
+        res.json({ success: true, data: {
+            settings,
+            orders: orders.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            customers: customers.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            logs: logs.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            templates: templates.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            planTemplates: planTemplates.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            catalog: catalog.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            lastUpdated: Date.now()
+        }});
+    } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/sync/settings', ensureDb, async (req, res) => {
-    if (!pool) return res.status(503).json({error: "DB Offline"});
     const { settings } = req.body;
     try {
         const connection = await pool.getConnection();
@@ -324,61 +302,126 @@ app.post('/api/sync/settings', ensureDb, async (req, res) => {
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Gold Rate with Fallback
-app.get('/api/gold-rate', async (req, res) => {
+// Gold Rate with External Fetch Fallback
+app.get('/api/gold-rate', ensureDb, async (req, res) => {
     try {
-        let rateData = null;
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query('SELECT rate24k, rate22k, recorded_at FROM gold_rates ORDER BY id DESC LIMIT 1');
+        
+        let rateData = rows[0];
         let source = 'db';
+        let isStale = !rateData || (new Date() - new Date(rateData.recorded_at) > 1000 * 60 * 60 * 4); // 4 Hours
 
-        if (pool) {
-            const connection = await pool.getConnection();
-            const [rows] = await connection.query('SELECT rate24k, rate22k, recorded_at FROM gold_rates ORDER BY id DESC LIMIT 1');
-            connection.release();
-            
-            rateData = rows[0];
-            let isStale = !rateData || (new Date() - new Date(rateData.recorded_at) > 1000 * 60 * 60 * 4); // 4 Hours
-
-            if (isStale) {
-                const ext = await fetchExternalGoldRate();
-                if (ext.success) {
-                    rateData = ext;
-                    source = 'external';
-                    const conn = await pool.getConnection();
-                    await conn.query('INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)', [ext.rate24k, ext.rate22k, ext.rate18k]);
-                    conn.release();
-                }
-            }
-        } else {
-            // DB Offline -> Use External directly
+        // If stale or missing, try external fetch
+        if (isStale) {
             const ext = await fetchExternalGoldRate();
-            rateData = ext;
-            source = 'external_db_offline';
+            if (ext.success) {
+                rateData = ext;
+                source = 'external';
+                // Update DB async so we don't block too long
+                connection.query('INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)', [ext.rate24k, ext.rate22k, ext.rate18k]);
+            }
         }
+        
+        connection.release();
 
         if (rateData) {
             res.json({ k24: Number(rateData.rate24k), k22: Number(rateData.rate22k), source });
         } else {
-            res.json({ k24: 7500, k22: 6870, source: 'hard_fallback' });
+            res.json({ k24: 7900, k22: 7200, source: 'default_fallback' });
         }
-    } catch(e) { 
-        res.status(500).json({ error: e.message }); 
-    }
+    } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- STATIC SERVING ---
-let distPath = '';
-if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) distPath = path.join(__dirname, 'dist');
-else if (fs.existsSync(path.join(__dirname, 'index.html')) && !fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8').includes('src="./index.tsx"')) distPath = path.join(__dirname);
-
-if (distPath) {
-    app.use(express.static(distPath));
-    app.get('/', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
+// --- WHATSAPP PROXY ---
+async function callMeta(endpoint, method, token, body) {
+    try {
+        const r = await fetch(`https://graph.facebook.com/v21.0/${endpoint}`, { method, headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+        const data = await r.json(); return { ok: r.ok, status: r.status, data };
+    } catch(e) { return { ok: false, status: 500, data: { error: { message: e.message } } }; }
 }
 
+app.post('/api/whatsapp/send', async (req, res) => {
+    const { to, message, templateName, language, variables } = req.body;
+    const phoneId = req.headers['x-phone-id'];
+    const token = req.headers['x-auth-token'];
+    let payload = { messaging_product: "whatsapp", recipient_type: "individual", to };
+    if (templateName) {
+        payload.type = "template"; payload.template = { name: templateName, language: { code: language || "en_US" } };
+        if (variables) payload.template.components = [{ type: "body", parameters: variables.map(v => ({ type: "text", text: v })) }];
+    } else { payload.type = "text"; payload.text = { body: message }; }
+    const result = await callMeta(`${phoneId}/messages`, 'POST', token, payload);
+    res.status(result.status).json({ success: result.ok, data: result.data });
+});
+
+app.get('/api/whatsapp/templates', async (req, res) => {
+    const result = await callMeta(`${req.headers['x-waba-id']}/message_templates?limit=100&fields=name,status,components,category,rejected_reason`, 'GET', req.headers['x-auth-token']);
+    res.status(result.status).json({ success: result.ok, data: result.data.data });
+});
+
+app.post('/api/whatsapp/templates', async (req, res) => {
+    const result = await callMeta(`${req.headers['x-waba-id']}/message_templates`, 'POST', req.headers['x-auth-token'], req.body);
+    res.status(result.status).json({ success: result.ok, data: result.data });
+});
+
+app.post('/api/whatsapp/templates/:id', async (req, res) => {
+    const result = await callMeta(`${req.params.id}`, 'POST', req.headers['x-auth-token'], req.body);
+    res.status(result.status).json({ success: result.ok, data: result.data });
+});
+
+app.delete('/api/whatsapp/templates', async (req, res) => {
+    const name = req.query.name;
+    const result = await callMeta(`${req.headers['x-waba-id']}/message_templates?name=${name}`, 'DELETE', req.headers['x-auth-token']);
+    res.status(result.status).json({ success: result.ok, data: result.data });
+});
+
+// --- SMART STATIC SERVING ---
+let staticPath = null;
+let indexPath = null;
+
+// Check 1: PRODUCTION MODE
+// If index.html is in the same folder as server.js, we are inside 'public_html' (the deployed dist content)
+if (fs.existsSync(path.join(__dirname, 'index.html'))) {
+    staticPath = __dirname;
+    indexPath = path.join(__dirname, 'index.html');
+    console.log("[System] Mode: PRODUCTION (Serving from current directory)");
+} 
+// Check 2: DEVELOPMENT/LOCAL MODE
+// If dist/index.html exists, we are at the project root
+else if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
+    staticPath = path.join(__dirname, 'dist');
+    indexPath = path.join(staticPath, 'index.html');
+    console.log("[System] Mode: DEVELOPMENT (Serving from /dist)");
+}
+
+if (staticPath) {
+    // Serve static assets, excluding index.html from directory listing
+    app.use(express.static(staticPath, { index: false }));
+} else {
+    console.error("CRITICAL: Build not found. Please run 'npm run build'.");
+}
+
+// --- CATCH-ALL ROUTE ---
 app.get('*', (req, res) => {
-    if (req.path.startsWith('/api')) return res.status(404).json({ error: "API Endpoint Not Found" });
-    if (!distPath) return res.status(500).send('App Build Missing. Please run "npm run build".');
-    res.sendFile(path.join(distPath, 'index.html'));
+    if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: "API Endpoint Not Found" });
+    }
+    
+    if (!staticPath || !indexPath) {
+        return res.status(500).send(`
+            <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+                <h1 style="color: #e11d48;">Application Not Built</h1>
+                <p>The server cannot find the <code>index.html</code> file.</p>
+                <div style="background: #f1f5f9; padding: 20px; display: inline-block; border-radius: 8px; margin-top: 20px;">
+                    <code>npm run build</code>
+                </div>
+            </div>
+        `);
+    }
+    
+    // Explicitly send the built index.html for SPA routing
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.sendFile(indexPath);
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT}`));
