@@ -175,7 +175,7 @@ app.post('/api/debug/configure', async (req, res) => {
         conn.release();
         await testPool.end();
 
-        // 2. If successful, write to .builds/config/.env specifically (Architecture requirement)
+        // 2. If successful, write to .builds/config/.env specifically
         const apiKey = process.env.API_KEY || '';
         const port = process.env.PORT || 3000;
         
@@ -328,14 +328,7 @@ app.post('/api/sync/settings', ensureDb, async (req, res) => {
 
 app.get('/api/gold-rate', ensureDb, async (req, res) => {
     try {
-        const response = await fetch('https://uat.batuk.in/augmont/gold', { signal: AbortSignal.timeout(5000) });
-        if (response.ok) {
-            const json = await response.json();
-            const gSell = parseFloat(json.data?.[0]?.[0]?.gSell);
-            if (!isNaN(gSell)) {
-                return res.json({ k24: gSell, k22: Math.round(gSell * (22/24)), source: 'live' });
-            }
-        }
+        // PROXY REMOVED: Reliance strictly on DB to prevent external service failures
         const connection = await pool.getConnection();
         const [rows] = await connection.query('SELECT rate24k, rate22k FROM gold_rates ORDER BY id DESC LIMIT 1');
         connection.release();
