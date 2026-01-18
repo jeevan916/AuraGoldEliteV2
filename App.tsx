@@ -158,11 +158,6 @@ const App = () => {
     };
   }, []);
 
-  // --- MOVEMENT CAPTURE: Log View Changes ---
-  useEffect(() => {
-      errorService.logActivity('NAVIGATION', `User navigated to: ${view}`);
-  }, [view]);
-
   // --- DERIVED CUSTOMER LIST LOGIC (One Customer -> Multiple Orders) ---
   const derivedCustomers = useMemo(() => {
       const customerMap = new Map<string, Customer>();

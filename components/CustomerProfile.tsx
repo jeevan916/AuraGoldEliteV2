@@ -18,11 +18,22 @@ interface CustomerProfileProps {
 const CustomerProfile: React.FC<CustomerProfileProps> = ({ 
   customer, orders, onBack, onViewOrder, onNewOrder 
 }) => {
-  // Filter orders for this customer based on ID or loose contact matching
-  const customerOrders = orders.filter(o => 
-    customer.orderIds.includes(o.id) || 
-    o.customerContact.includes(customer.contact.slice(-10))
-  ).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  // STRICT MATCHING LOGIC
+  // 1. Normalize contact to last 10 digits to handle +91 vs 0 vs raw
+  const normalize = (p: string) => p ? p.replace(/\D/g, '').slice(-10) : '';
+  const targetContact = normalize(customer.contact);
+
+  const customerOrders = orders.filter(o => {
+    // Match by ID (Linked by App.tsx logic)
+    if (customer.orderIds.includes(o.id)) return true;
+    
+    // Match by Phone (Strict 10-digit equality only)
+    // We strictly avoid .includes() to prevent "99" matching "9988776655"
+    const orderContact = normalize(o.customerContact);
+    if (targetContact.length === 10 && orderContact === targetContact) return true;
+
+    return false;
+  }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const totalDue = customerOrders.reduce((acc, o) => {
     const paid = o.payments.reduce((p, c) => p + c.amount, 0);
