@@ -264,7 +264,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     structure: [
         { type: "BODY", text: "Dear {{1}}, your payment of ₹{{2}} is due. Please click the button below to pay securely via UPI." },
         { type: "BUTTONS", buttons: [
-            { type: "URL", text: "Pay Now", url: "https://deeplink.setu.co/pay{{1}}" } 
+            { type: "URL", text: "Pay Now", url: "https://setu.co/upi/s/{{1}}" } 
         ]}
     ]
   }

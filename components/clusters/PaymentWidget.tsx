@@ -160,51 +160,67 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       errorService.logActivity('USER_ACTION', `Generating Setu Link for ₹${val}`);
 
       try {
-          const settings = storageService.getSettings();
-          const schemeId = settings.setuSchemeId;
+          // 1. Generate Link via Backend API to ensure unique billerBillID
+          const linkResponse = await fetch('/api/setu/create-link', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  amount: val,
+                  // Use timestamp to ensure unique billerBillID for every request
+                  billerBillID: `${order.id}-${Date.now()}`,
+                  customerID: order.customerContact, 
+                  name: order.customerName
+              })
+          });
+
+          const linkData = await linkResponse.json();
+          if (!linkData.success) throw new Error(linkData.error || "Setu API Failed");
+
+          // Structure from Setu V1: data.data.paymentLink.shortLink
+          // Example: https://setu.co/upi/s/AbCd123
+          const shortLink = linkData.data?.data?.paymentLink?.shortLink;
+          if (!shortLink) throw new Error("No shortLink received from Setu");
+
+          // 2. Parse Suffix for Template
+          // Template Base: https://setu.co/upi/s/
+          const baseUrl = "https://setu.co/upi/s/";
           
-          if (!schemeId) {
-              alert("Setu Scheme ID missing in settings.");
-              setLoading(false);
+          if (!shortLink.startsWith(baseUrl)) {
+              // Fallback to text message if base URL mismatch (e.g. Setu changes domain)
+              console.warn("Setu base URL mismatch", shortLink);
+              const fallbackRes = await whatsappService.sendMessage(
+                  order.customerContact, 
+                  `Payment Due: ₹${val}. Pay here: ${shortLink}`, 
+                  order.customerName
+              );
+              if (fallbackRes.success) alert("Sent as text link (URL format mismatch).");
+              else alert("Failed to send fallback text.");
               return;
           }
 
-          // Use secure template sending with button
-          // Template Base: https://deeplink.setu.co/pay
-          // We need to provide the Suffix (Variable {{1}})
-          const linkSuffix = `?schemeId=${schemeId}&amount=${val}&billerBillID=${order.id}&customerID=${order.customerContact}&transactionNote=Order${order.id}`;
-          
-          // Send via Template with Button
+          const linkSuffix = shortLink.replace(baseUrl, '');
+
+          // 3. Send Template with Button
           const result = await whatsappService.sendTemplateMessage(
               order.customerContact, 
               'setu_payment_button', 
               'en_US', 
               [order.customerName, val.toLocaleString()], // Body Variables
               order.customerName,
-              linkSuffix // Button Variable (Dynamic URL part)
+              linkSuffix // Button Variable (The hash)
           );
 
           if (result.success) {
               alert("Payment Button sent via WhatsApp!");
-              errorService.logActivity('TEMPLATE_SENT', `Setu Button delivered to ${order.customerName}`);
               if (result.logEntry && onAddLog) onAddLog(result.logEntry);
           } else {
-              // Fallback to text message if template fails/doesn't exist yet
-              console.warn("Template send failed, falling back to text link.", result.error);
-              const fallbackLink = `https://deeplink.setu.co/pay${linkSuffix}`;
-              const fallbackRes = await whatsappService.sendMessage(
-                  order.customerContact,
-                  `Dear ${order.customerName}, please use this link to pay ₹${val}: ${fallbackLink}`,
-                  order.customerName
-              );
-              if (fallbackRes.success) alert("Sent as text link (Template issue).");
-              else alert(`Failed to send: ${fallbackRes.error}`);
+              throw new Error(result.error);
           }
 
       } catch (e: any) {
           console.error(e);
-          errorService.logError('PaymentWidget', `Setu Logic Crash: ${e.message}`);
-          alert("Internal System Error. Check Logs.");
+          alert(`Error: ${e.message}`);
+          errorService.logError('PaymentWidget', `Setu Error: ${e.message}`);
       } finally {
           setLoading(false);
       }
