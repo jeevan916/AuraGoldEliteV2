@@ -5,7 +5,14 @@ import App from './App'; // Import the main App component
 import './index.css'; // Import Styles
 
 const container = document.getElementById('root');
+
 if (container) {
   const root = createRoot(container);
-  root.render(<App />);
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+} else {
+  console.error("CRITICAL: Root element not found. App cannot mount.");
 }
