@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { 
   Plus, Home, ReceiptIndianRupee, Users, MessageSquare, 
@@ -57,6 +56,7 @@ const CustomerProfile = lazyRetry(() => import('./components/CustomerProfile'), 
 const PaymentCollections = lazyRetry(() => import('./components/PaymentCollections'), 'Collections');
 const WhatsAppPanel = lazyRetry(() => import('./components/WhatsAppPanel'), 'WhatsApp');
 const WhatsAppTemplates = lazyRetry(() => import('./components/WhatsAppTemplates'), 'Templates');
+const WhatsAppLogs = lazyRetry(() => import('./components/WhatsAppLogs'), 'WhatsAppLogs'); // Restored
 const NotificationCenter = lazyRetry(() => import('./components/NotificationCenter'), 'NotificationCenter');
 const PlanManager = lazyRetry(() => import('./components/PlanManager'), 'PlanManager');
 const MarketIntelligence = lazyRetry(() => import('./components/MarketIntelligence'), 'MarketIntelligence');
@@ -103,6 +103,7 @@ const App = () => {
   const [view, setView] = useState<MainView>('DASH');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [selectedChatPhone, setSelectedChatPhone] = useState<string | null>(null); // For linking Logs to Chat
   const [settings, setSettings] = useState<GlobalSettings>(storageService.getSettings());
   const [planTemplates, setPlanTemplates] = useState<PaymentPlanTemplate[]>(storageService.getPlanTemplates());
   
@@ -299,10 +300,12 @@ const App = () => {
 
           case 'COLLECTIONS': return <PaymentCollections orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onSendWhatsApp={() => {}} settings={settings} />;
           
-          case 'WHATSAPP': return <WhatsAppPanel logs={logs} customers={derivedCustomers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} />;
+          case 'WHATSAPP': return <WhatsAppPanel logs={logs} customers={derivedCustomers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} initialContact={selectedChatPhone} />;
           
           case 'TEMPLATES': return <WhatsAppTemplates templates={templates} onUpdate={setTemplates} />;
           
+          case 'LOGS': return <WhatsAppLogs logs={logs} onViewChat={(phone) => { setSelectedChatPhone(phone); setView('WHATSAPP'); }} />;
+
           case 'PLANS': return <PlanManager templates={planTemplates} onUpdate={(tpls) => { setPlanTemplates(tpls); storageService.setPlanTemplates(tpls); }} />;
           
           case 'STRATEGY': return <NotificationCenter notifications={notificationTriggers} customers={derivedCustomers} onSend={async (id, ch) => { alert(`Sent via ${ch}`); }} onRefresh={() => {}} loading={false} />;
@@ -321,6 +324,7 @@ const App = () => {
                   <MenuItem onClick={() => setView('CUSTOMERS')} icon={<Users />} label="Client Directory" desc="View customer profiles" colorClass="bg-emerald-50 text-emerald-600" />
                   <MenuItem onClick={() => setView('COLLECTIONS')} icon={<ReceiptIndianRupee />} label="Payments" desc="Track cash flow" colorClass="bg-amber-50 text-amber-600" />
                   <MenuItem onClick={() => setView('WHATSAPP')} icon={<MessageSquare />} label="WhatsApp" desc="Connect with clients" colorClass="bg-teal-50 text-teal-600" />
+                  <MenuItem onClick={() => setView('LOGS')} icon={<ScrollText />} label="Comm. Logs" desc="History of messages" colorClass="bg-cyan-50 text-cyan-600" />
                   <MenuItem onClick={() => setView('TEMPLATES')} icon={<FileText />} label="Templates" desc="Edit message formats" colorClass="bg-indigo-50 text-indigo-600" />
                   <MenuItem onClick={() => setView('PLANS')} icon={<Calculator />} label="Plan Manager" desc="Configure schemes" colorClass="bg-violet-50 text-violet-600" />
                   <MenuItem onClick={() => setView('MARKET')} icon={<Globe />} label="Market Intel" desc="Live rates & news" colorClass="bg-sky-50 text-sky-600" />
@@ -377,6 +381,7 @@ const App = () => {
                  <p className="px-4 text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Connect</p>
 
                  <SidebarItem active={view === 'WHATSAPP'} onClick={() => setView('WHATSAPP')} icon={MessageSquare} label="WhatsApp" />
+                 <SidebarItem active={view === 'LOGS'} onClick={() => setView('LOGS')} icon={ScrollText} label="Comm. Logs" />
                  <SidebarItem active={view === 'TEMPLATES'} onClick={() => setView('TEMPLATES')} icon={FileText} label="Templates" />
                  <SidebarItem active={view === 'MARKET'} onClick={() => setView('MARKET')} icon={Globe} label="Market Intel" />
              </div>
