@@ -17,7 +17,7 @@ interface WhatsAppTemplatesProps {
 }
 
 const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'SYSTEM' | 'STRATEGY' | 'LIBRARY' | 'TRIGGERS' | 'ISSUES'>('SYSTEM');
+  const [activeTab, setActiveTab] = useState<'SYSTEM' | 'STRATEGY' | 'LIBRARY' | 'ISSUES'>('SYSTEM');
   
   // Prompt-Based Generator State
   const [promptText, setPromptText] = useState('');
@@ -516,16 +516,16 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           <p className="text-slate-500 text-sm">Meta Compliance Engine & AI Strategy Generator</p>
         </div>
         
-        {/* CHANGED: Better scroll container for tabs */}
+        {/* CHANGED: Combined System and Triggers */}
         <div className="w-full md:w-auto overflow-x-auto pb-1 custom-scrollbar">
             <div className="flex bg-slate-100 p-1 rounded-xl w-max">
-                {(['SYSTEM', 'TRIGGERS', 'STRATEGY', 'LIBRARY'] as const).map(tab => (
+                {(['SYSTEM', 'STRATEGY', 'LIBRARY'] as const).map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
                         className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
-                        {tab === 'SYSTEM' ? 'System Health' : tab === 'TRIGGERS' ? 'Automation Map' : tab === 'STRATEGY' ? 'AI Architect' : 'Library'}
+                        {tab === 'SYSTEM' ? 'System & Automation' : tab === 'STRATEGY' ? 'AI Architect' : 'Library'}
                     </button>
                 ))}
                 {rejectedTemplates.length > 0 && (
@@ -677,79 +677,170 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           </div>
       )}
       
+      {/* --- TAB: SYSTEM & AUTOMATION (MERGED) --- */}
       {activeTab === 'SYSTEM' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="space-y-6">
-                <div className="bg-white p-6 rounded-3xl border shadow-sm">
-                    {/* ... System Health Content ... */}
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                            <ShieldAlert className="text-emerald-500" /> Core Template Status
-                        </h3>
-                        <button 
-                            onClick={handleAutoHeal}
-                            disabled={repairing}
-                            className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all flex items-center gap-2 disabled:opacity-50 shadow-sm"
-                        >
-                            {repairing ? <Loader2 size={12} className="animate-spin" /> : <Wrench size={12} />}
-                            Regenerate Core
-                        </button>
-                    </div>
-                    <div className="space-y-3">
-                        {REQUIRED_SYSTEM_TEMPLATES.map(req => {
-                            const match = (templates || []).find(t => t && (t.name === req.name || t.name.startsWith(req.name)));
-                            return (
-                                <div key={req.name} className="flex justify-between items-center p-4 bg-slate-50 rounded-xl border">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-2 h-2 rounded-full ${match && match.status === 'APPROVED' ? 'bg-emerald-500' : match ? 'bg-amber-500' : 'bg-rose-500'}`}></div>
-                                        <div>
-                                            <p className="text-sm font-bold text-slate-700">{req.name}</p>
-                                            <p className="text-[10px] text-slate-400 uppercase tracking-wide">{req.category}</p>
+        <div className="space-y-8">
+            {/* Top Section: Health & Logs */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                    <div className="bg-white p-6 rounded-3xl border shadow-sm">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                <ShieldAlert className="text-emerald-500" /> Core Template Status
+                            </h3>
+                            <button 
+                                onClick={handleAutoHeal}
+                                disabled={repairing}
+                                className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all flex items-center gap-2 disabled:opacity-50 shadow-sm"
+                            >
+                                {repairing ? <Loader2 size={12} className="animate-spin" /> : <Wrench size={12} />}
+                                Regenerate Core
+                            </button>
+                        </div>
+                        <div className="space-y-3">
+                            {REQUIRED_SYSTEM_TEMPLATES.map(req => {
+                                const match = (templates || []).find(t => t && (t.name === req.name || t.name.startsWith(req.name)));
+                                return (
+                                    <div key={req.name} className="flex justify-between items-center p-4 bg-slate-50 rounded-xl border">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-2 h-2 rounded-full ${match && match.status === 'APPROVED' ? 'bg-emerald-500' : match ? 'bg-amber-500' : 'bg-rose-500'}`}></div>
+                                            <div>
+                                                <p className="text-sm font-bold text-slate-700">{req.name}</p>
+                                                <p className="text-[10px] text-slate-400 uppercase tracking-wide">{req.category}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {match ? (
+                                                <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${getStatusColor(match.status)}`}>
+                                                    {match.status || 'LOCAL'}
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] font-black uppercase px-2 py-1 rounded-full bg-rose-100 text-rose-700">MISSING</span>
+                                            )}
+                                            {match && (match.status === 'REJECTED' || match.source === 'LOCAL') && (
+                                                <button 
+                                                    onClick={() => handleFixSystemTemplate(match, req)}
+                                                    className="text-amber-600 hover:text-amber-800 bg-amber-50 px-2 py-1 rounded text-[10px] font-bold border border-amber-200"
+                                                    title="Fix by creating new version with safe content"
+                                                >
+                                                    Fix & Redeploy
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        {match ? (
-                                            <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${getStatusColor(match.status)}`}>
-                                                {match.status || 'LOCAL'}
-                                            </span>
-                                        ) : (
-                                            <span className="text-[10px] font-black uppercase px-2 py-1 rounded-full bg-rose-100 text-rose-700">MISSING</span>
-                                        )}
-                                        {match && (match.status === 'REJECTED' || match.source === 'LOCAL') && (
-                                            <button 
-                                                onClick={() => handleFixSystemTemplate(match, req)}
-                                                className="text-amber-600 hover:text-amber-800 bg-amber-50 px-2 py-1 rounded text-[10px] font-bold border border-amber-200"
-                                                title="Fix by creating new version with safe content"
-                                            >
-                                                Fix & Redeploy
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            );
-                        })}
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="space-y-6">
+                    <div className="bg-black/90 rounded-3xl p-6 font-mono text-xs text-emerald-400 overflow-y-auto h-[300px] border border-slate-800 shadow-inner">
+                         <div className="flex items-center gap-2 mb-4 border-b border-white/10 pb-2 text-slate-400">
+                            <Terminal size={14} /> Intelligence Logs
+                         </div>
+                         {repairLogs.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-slate-600 opacity-50">
+                                <Activity size={32} className="mb-2" />
+                                <p>Waiting for diagnostic run...</p>
+                            </div>
+                         ) : (
+                            <div className="space-y-1.5">
+                                {repairLogs.map((log, i) => (
+                                    <div key={i} className="break-all border-b border-white/5 pb-1 mb-1 last:border-0">{log}</div>
+                                ))}
+                                <div ref={logsEndRef} />
+                            </div>
+                         )}
                     </div>
                 </div>
             </div>
 
-            <div className="space-y-6">
-                <div className="bg-black/90 rounded-3xl p-6 font-mono text-xs text-emerald-400 overflow-y-auto h-[300px] border border-slate-800 shadow-inner">
-                     <div className="flex items-center gap-2 mb-4 border-b border-white/10 pb-2 text-slate-400">
-                        <Terminal size={14} /> Intelligence Logs
-                     </div>
-                     {repairLogs.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-slate-600 opacity-50">
-                            <Activity size={32} className="mb-2" />
-                            <p>Waiting for diagnostic run...</p>
-                        </div>
-                     ) : (
-                        <div className="space-y-1.5">
-                            {repairLogs.map((log, i) => (
-                                <div key={i} className="break-all border-b border-white/5 pb-1 mb-1 last:border-0">{log}</div>
-                            ))}
-                            <div ref={logsEndRef} />
-                        </div>
-                     )}
+            {/* Bottom Section: Automation Trigger Map */}
+            <div className="border-t pt-8">
+                <div className="flex items-center gap-2 mb-6">
+                    <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                        <GitMerge size={20} />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-black text-slate-800">Automation Trigger Map</h3>
+                        <p className="text-sm text-slate-500">Connects system events to specific templates.</p>
+                    </div>
+                </div>
+                
+                <div className="grid grid-cols-1 gap-4">
+                  {SYSTEM_TRIGGER_MAP.map((trigger, idx) => {
+                      const match = (templates || []).find(t => t && (t.name === trigger.defaultTemplateName || t.name.startsWith(trigger.defaultTemplateName)));
+                      const requiredDef = REQUIRED_SYSTEM_TEMPLATES.find(r => r.name === trigger.defaultTemplateName);
+                      const isMissing = !match;
+                      
+                      return (
+                          <div key={trigger.id} className={`bg-white p-5 rounded-2xl border shadow-sm flex flex-col gap-4 ${isMissing ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-emerald-500'}`}>
+                              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                  <div className="flex items-start gap-4">
+                                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm ${isMissing ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                          {idx + 1}
+                                      </div>
+                                      <div>
+                                          <div className="flex items-center gap-2">
+                                              <h4 className="font-bold text-slate-800 text-sm">{trigger.label}</h4>
+                                              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${isMissing ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                  {isMissing ? 'MISSING TEMPLATE' : 'ACTIVE'}
+                                              </span>
+                                          </div>
+                                          <p className="text-xs text-slate-500 mt-1">{trigger.description}</p>
+                                      </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                      {isMissing && requiredDef && (
+                                          <button 
+                                            onClick={() => handleDeployStandard(trigger, requiredDef)}
+                                            disabled={deployingTriggerId === trigger.id}
+                                            className="text-[10px] font-bold bg-slate-900 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition-all whitespace-nowrap shadow-md flex items-center gap-2"
+                                          >
+                                              {deployingTriggerId === trigger.id ? <Loader2 size={12} className="animate-spin"/> : <UploadCloud size={12} />}
+                                              Deploy Standard
+                                          </button>
+                                      )}
+                                      <button 
+                                        onClick={() => handleCreateVariant(trigger)}
+                                        className="text-[10px] font-bold bg-white border border-slate-200 text-slate-600 px-3 py-2 rounded-lg hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 transition-all whitespace-nowrap shadow-sm"
+                                      >
+                                          + Create Variant
+                                      </button>
+                                  </div>
+                              </div>
+
+                              {/* Details Panel */}
+                              <div className="bg-slate-50 p-4 rounded-xl flex flex-col md:flex-row gap-6 text-xs border border-slate-100">
+                                  <div className="flex-1">
+                                      <p className="font-black text-slate-400 uppercase tracking-widest mb-2">Required Variables</p>
+                                      <div className="flex flex-wrap gap-2">
+                                          {trigger.requiredVariables.map(v => (
+                                              <span key={v} className="bg-white border px-2 py-1 rounded text-slate-600 font-mono font-medium">{v}</span>
+                                          ))}
+                                      </div>
+                                  </div>
+                                  
+                                  <div className="flex-1 border-l pl-6 border-slate-200">
+                                       <p className="font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                           {isMissing ? 'Recommended Template Content' : 'Active Template Content'}
+                                           <FileJson size={12} />
+                                       </p>
+                                       <div className="font-mono text-slate-600 italic bg-white p-3 rounded-lg border border-dashed border-slate-200">
+                                           "{match ? match.content : requiredDef?.content || 'No default definition found.'}"
+                                       </div>
+                                       {isMissing && (
+                                           <p className="text-[10px] text-rose-500 mt-2 font-medium flex items-center gap-1">
+                                               <AlertCircle size={10} /> Automation will fail until this template is deployed.
+                                           </p>
+                                       )}
+                                  </div>
+                              </div>
+                          </div>
+                      );
+                  })}
                 </div>
             </div>
         </div>
@@ -906,86 +997,6 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                           </button>
                       </div>
                   </div>
-              </div>
-          </div>
-      )}
-      
-      {activeTab === 'TRIGGERS' && (
-          <div className="space-y-6">
-              {/* ... Triggers Map ... */}
-              <div className="grid grid-cols-1 gap-4">
-                  {SYSTEM_TRIGGER_MAP.map((trigger, idx) => {
-                      const match = (templates || []).find(t => t && (t.name === trigger.defaultTemplateName || t.name.startsWith(trigger.defaultTemplateName)));
-                      const requiredDef = REQUIRED_SYSTEM_TEMPLATES.find(r => r.name === trigger.defaultTemplateName);
-                      const isMissing = !match;
-                      
-                      return (
-                          <div key={trigger.id} className={`bg-white p-5 rounded-2xl border shadow-sm flex flex-col gap-4 ${isMissing ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-emerald-500'}`}>
-                              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                                  <div className="flex items-start gap-4">
-                                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm ${isMissing ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                                          {idx + 1}
-                                      </div>
-                                      <div>
-                                          <div className="flex items-center gap-2">
-                                              <h4 className="font-bold text-slate-800 text-sm">{trigger.label}</h4>
-                                              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${isMissing ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                                  {isMissing ? 'MISSING TEMPLATE' : 'ACTIVE'}
-                                              </span>
-                                          </div>
-                                          <p className="text-xs text-slate-500 mt-1">{trigger.description}</p>
-                                      </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-2">
-                                      {isMissing && requiredDef && (
-                                          <button 
-                                            onClick={() => handleDeployStandard(trigger, requiredDef)}
-                                            disabled={deployingTriggerId === trigger.id}
-                                            className="text-[10px] font-bold bg-slate-900 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition-all whitespace-nowrap shadow-md flex items-center gap-2"
-                                          >
-                                              {deployingTriggerId === trigger.id ? <Loader2 size={12} className="animate-spin"/> : <UploadCloud size={12} />}
-                                              Deploy Standard
-                                          </button>
-                                      )}
-                                      <button 
-                                        onClick={() => handleCreateVariant(trigger)}
-                                        className="text-[10px] font-bold bg-white border border-slate-200 text-slate-600 px-3 py-2 rounded-lg hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 transition-all whitespace-nowrap shadow-sm"
-                                      >
-                                          + Create Variant
-                                      </button>
-                                  </div>
-                              </div>
-
-                              {/* Details Panel */}
-                              <div className="bg-slate-50 p-4 rounded-xl flex flex-col md:flex-row gap-6 text-xs border border-slate-100">
-                                  <div className="flex-1">
-                                      <p className="font-black text-slate-400 uppercase tracking-widest mb-2">Required Variables</p>
-                                      <div className="flex flex-wrap gap-2">
-                                          {trigger.requiredVariables.map(v => (
-                                              <span key={v} className="bg-white border px-2 py-1 rounded text-slate-600 font-mono font-medium">{v}</span>
-                                          ))}
-                                      </div>
-                                  </div>
-                                  
-                                  <div className="flex-1 border-l pl-6 border-slate-200">
-                                       <p className="font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                           {isMissing ? 'Recommended Template Content' : 'Active Template Content'}
-                                           <FileJson size={12} />
-                                       </p>
-                                       <div className="font-mono text-slate-600 italic bg-white p-3 rounded-lg border border-dashed border-slate-200">
-                                           "{match ? match.content : requiredDef?.content || 'No default definition found.'}"
-                                       </div>
-                                       {isMissing && (
-                                           <p className="text-[10px] text-rose-500 mt-2 font-medium flex items-center gap-1">
-                                               <AlertCircle size={10} /> Automation will fail until this template is deployed.
-                                           </p>
-                                       )}
-                                  </div>
-                              </div>
-                          </div>
-                      );
-                  })}
               </div>
           </div>
       )}
