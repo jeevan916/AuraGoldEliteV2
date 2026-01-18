@@ -4,7 +4,7 @@ import {
   MessageSquare, BrainCircuit, Sparkles, Save, Edit, 
   Copy, RefreshCw, Zap, ShieldAlert, Users, Star, Cloud, CheckCircle, UploadCloud, Globe, Laptop,
   Activity, AlertTriangle, AlertCircle, RefreshCcw, Loader2, Terminal, Check, Server, PlusCircle, Code, Trash2, FolderOpen,
-  Wrench, ArrowRight, GitMerge, FileJson, XCircle, Stethoscope, Search, FileWarning
+  Wrench, ArrowRight, GitMerge, FileJson, XCircle, Stethoscope, Search, FileWarning, ShieldCheck
 } from 'lucide-react';
 import { WhatsAppTemplate, PsychologicalTactic, RiskProfile, MetaCategory, AppTemplateGroup, SystemTrigger } from '../types';
 import { PSYCHOLOGICAL_TACTICS, RISK_PROFILES, REQUIRED_SYSTEM_TEMPLATES, SYSTEM_TRIGGER_MAP } from '../constants';
@@ -525,7 +525,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                         onClick={() => setActiveTab(tab)}
                         className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
-                        {tab === 'SYSTEM' ? 'System & Automation' : tab === 'STRATEGY' ? 'AI Architect' : 'Library'}
+                        {tab === 'SYSTEM' ? 'Automation Command Center' : tab === 'STRATEGY' ? 'AI Architect' : 'Library'}
                     </button>
                 ))}
                 {rejectedTemplates.length > 0 && (
@@ -679,169 +679,129 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       
       {/* --- TAB: SYSTEM & AUTOMATION (MERGED) --- */}
       {activeTab === 'SYSTEM' && (
-        <div className="space-y-8">
-            {/* Top Section: Health & Logs */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="space-y-6">
-                    <div className="bg-white p-6 rounded-3xl border shadow-sm">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                <ShieldAlert className="text-emerald-500" /> Core Template Status
-                            </h3>
-                            <button 
-                                onClick={handleAutoHeal}
-                                disabled={repairing}
-                                className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all flex items-center gap-2 disabled:opacity-50 shadow-sm"
-                            >
-                                {repairing ? <Loader2 size={12} className="animate-spin" /> : <Wrench size={12} />}
-                                Regenerate Core
-                            </button>
+        <div className="flex flex-col gap-6 h-[calc(100vh-200px)] overflow-hidden">
+            {/* Header Summary */}
+            <div className="flex flex-col md:flex-row gap-4 shrink-0">
+                 <div className="flex-1 bg-gradient-to-r from-emerald-50 to-white p-4 rounded-2xl border border-emerald-100 flex items-center gap-4">
+                     <div className="p-3 bg-white rounded-xl shadow-sm text-emerald-600"><Activity /></div>
+                     <div>
+                         <p className="text-[10px] font-black uppercase text-emerald-800 tracking-widest">System Health</p>
+                         <p className="text-sm font-bold text-slate-700">
+                            {REQUIRED_SYSTEM_TEMPLATES.filter(t => templates.some(lt => lt.name === t.name)).length}/{REQUIRED_SYSTEM_TEMPLATES.length} Core Templates Active
+                         </p>
+                     </div>
+                 </div>
+                 <div className="flex-1 bg-gradient-to-r from-indigo-50 to-white p-4 rounded-2xl border border-indigo-100 flex items-center gap-4">
+                     <div className="p-3 bg-white rounded-xl shadow-sm text-indigo-600"><GitMerge /></div>
+                     <div>
+                         <p className="text-[10px] font-black uppercase text-indigo-800 tracking-widest">Automation Logic</p>
+                         <p className="text-sm font-bold text-slate-700">
+                            {SYSTEM_TRIGGER_MAP.length} Event Triggers Configured
+                         </p>
+                     </div>
+                 </div>
+            </div>
+
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
+                
+                {/* LEFT: Core Health (Auto-Heal) */}
+                <div className="lg:col-span-4 flex flex-col gap-4 bg-white rounded-[2.5rem] border shadow-sm overflow-hidden">
+                    <div className="p-6 pb-2 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                        <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                            <ShieldCheck className="text-emerald-500" size={18} /> Core Infrastructure
+                        </h3>
+                        <button 
+                            onClick={handleAutoHeal}
+                            disabled={repairing}
+                            className="text-[10px] font-black uppercase tracking-widest text-emerald-600 hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                        >
+                            {repairing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                            Auto-Heal
+                        </button>
+                    </div>
+                    <div className="overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                        {REQUIRED_SYSTEM_TEMPLATES.map(req => {
+                            const match = templates.find(t => t.name === req.name || t.name.startsWith(req.name));
+                            return (
+                                <div key={req.name} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-slate-200 transition-colors group">
+                                    <div className={`w-2 h-2 rounded-full shrink-0 ${match ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'}`}></div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-bold text-slate-700 truncate" title={req.name}>{req.name}</p>
+                                        <p className="text-[9px] text-slate-400 uppercase">{req.category}</p>
+                                    </div>
+                                    {!match && (
+                                        <span className="text-[9px] font-black bg-rose-100 text-rose-600 px-2 py-0.5 rounded">MISSING</span>
+                                    )}
+                                </div>
+                            )
+                        })}
+                    </div>
+                    {/* Console Log Area */}
+                    <div className="p-4 bg-slate-900 text-emerald-400 font-mono text-[10px] h-48 overflow-y-auto border-t border-slate-800">
+                        <div className="flex items-center gap-2 mb-2 text-slate-500 uppercase font-bold tracking-widest text-[9px]">
+                            <Terminal size={10} /> System Console
                         </div>
-                        <div className="space-y-3">
-                            {REQUIRED_SYSTEM_TEMPLATES.map(req => {
-                                const match = (templates || []).find(t => t && (t.name === req.name || t.name.startsWith(req.name)));
-                                return (
-                                    <div key={req.name} className="flex justify-between items-center p-4 bg-slate-50 rounded-xl border">
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-2 h-2 rounded-full ${match && match.status === 'APPROVED' ? 'bg-emerald-500' : match ? 'bg-amber-500' : 'bg-rose-500'}`}></div>
-                                            <div>
-                                                <p className="text-sm font-bold text-slate-700">{req.name}</p>
-                                                <p className="text-[10px] text-slate-400 uppercase tracking-wide">{req.category}</p>
-                                            </div>
+                        {repairLogs.length === 0 ? <span className="opacity-30">System idle. Ready for diagnostics.</span> : repairLogs.map((l, i) => <div key={i}>{l}</div>)}
+                        <div ref={logsEndRef} />
+                    </div>
+                </div>
+
+                {/* RIGHT: Automation Map */}
+                <div className="lg:col-span-8 bg-white rounded-[2.5rem] border shadow-sm overflow-hidden flex flex-col">
+                    <div className="p-6 border-b border-slate-50 bg-slate-50/50">
+                        <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                            <BrainCircuit className="text-indigo-500" size={18} /> Event-Reaction Map
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-1">Defines which template is triggered by specific system events.</p>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+                        {SYSTEM_TRIGGER_MAP.map((trigger, idx) => {
+                            const match = templates.find(t => t.name === trigger.defaultTemplateName || t.name.startsWith(trigger.defaultTemplateName));
+                            const requiredDef = REQUIRED_SYSTEM_TEMPLATES.find(r => r.name === trigger.defaultTemplateName);
+                            
+                            return (
+                                <div key={trigger.id} className="flex gap-4 p-4 rounded-2xl border border-slate-100 hover:border-indigo-100 transition-all hover:shadow-sm">
+                                    <div className="flex flex-col items-center gap-2 pt-1">
+                                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-black text-xs text-slate-500">
+                                            {idx + 1}
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            {match ? (
-                                                <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${getStatusColor(match.status)}`}>
-                                                    {match.status || 'LOCAL'}
-                                                </span>
-                                            ) : (
-                                                <span className="text-[10px] font-black uppercase px-2 py-1 rounded-full bg-rose-100 text-rose-700">MISSING</span>
-                                            )}
-                                            {match && (match.status === 'REJECTED' || match.source === 'LOCAL') && (
+                                        <div className="w-px flex-1 bg-slate-100"></div>
+                                    </div>
+                                    <div className="flex-1 space-y-3">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <h4 className="font-bold text-slate-800 text-sm">{trigger.label}</h4>
+                                                <p className="text-[10px] text-slate-400 font-medium">{trigger.description}</p>
+                                            </div>
+                                            <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${match ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                                                {match ? 'Active' : 'Broken Link'}
+                                            </span>
+                                        </div>
+                                        
+                                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center gap-3">
+                                            <ArrowRight size={14} className="text-slate-300" />
+                                            <div className="flex-1">
+                                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Triggers Template</p>
+                                                <p className="font-mono text-xs text-indigo-600 font-bold truncate">
+                                                    {match ? match.name : trigger.defaultTemplateName}
+                                                </p>
+                                            </div>
+                                            {!match && requiredDef && (
                                                 <button 
-                                                    onClick={() => handleFixSystemTemplate(match, req)}
-                                                    className="text-amber-600 hover:text-amber-800 bg-amber-50 px-2 py-1 rounded text-[10px] font-bold border border-amber-200"
-                                                    title="Fix by creating new version with safe content"
+                                                    onClick={() => handleDeployStandard(trigger, requiredDef)}
+                                                    className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-md hover:bg-indigo-700"
                                                 >
-                                                    Fix & Redeploy
+                                                    Fix Link
                                                 </button>
                                             )}
                                         </div>
                                     </div>
-                                );
-                            })}
-                        </div>
+                                </div>
+                            )
+                        })}
                     </div>
                 </div>
 
-                <div className="space-y-6">
-                    <div className="bg-black/90 rounded-3xl p-6 font-mono text-xs text-emerald-400 overflow-y-auto h-[300px] border border-slate-800 shadow-inner">
-                         <div className="flex items-center gap-2 mb-4 border-b border-white/10 pb-2 text-slate-400">
-                            <Terminal size={14} /> Intelligence Logs
-                         </div>
-                         {repairLogs.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-slate-600 opacity-50">
-                                <Activity size={32} className="mb-2" />
-                                <p>Waiting for diagnostic run...</p>
-                            </div>
-                         ) : (
-                            <div className="space-y-1.5">
-                                {repairLogs.map((log, i) => (
-                                    <div key={i} className="break-all border-b border-white/5 pb-1 mb-1 last:border-0">{log}</div>
-                                ))}
-                                <div ref={logsEndRef} />
-                            </div>
-                         )}
-                    </div>
-                </div>
-            </div>
-
-            {/* Bottom Section: Automation Trigger Map */}
-            <div className="border-t pt-8">
-                <div className="flex items-center gap-2 mb-6">
-                    <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
-                        <GitMerge size={20} />
-                    </div>
-                    <div>
-                        <h3 className="text-lg font-black text-slate-800">Automation Trigger Map</h3>
-                        <p className="text-sm text-slate-500">Connects system events to specific templates.</p>
-                    </div>
-                </div>
-                
-                <div className="grid grid-cols-1 gap-4">
-                  {SYSTEM_TRIGGER_MAP.map((trigger, idx) => {
-                      const match = (templates || []).find(t => t && (t.name === trigger.defaultTemplateName || t.name.startsWith(trigger.defaultTemplateName)));
-                      const requiredDef = REQUIRED_SYSTEM_TEMPLATES.find(r => r.name === trigger.defaultTemplateName);
-                      const isMissing = !match;
-                      
-                      return (
-                          <div key={trigger.id} className={`bg-white p-5 rounded-2xl border shadow-sm flex flex-col gap-4 ${isMissing ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-emerald-500'}`}>
-                              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                                  <div className="flex items-start gap-4">
-                                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm ${isMissing ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                                          {idx + 1}
-                                      </div>
-                                      <div>
-                                          <div className="flex items-center gap-2">
-                                              <h4 className="font-bold text-slate-800 text-sm">{trigger.label}</h4>
-                                              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${isMissing ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                                  {isMissing ? 'MISSING TEMPLATE' : 'ACTIVE'}
-                                              </span>
-                                          </div>
-                                          <p className="text-xs text-slate-500 mt-1">{trigger.description}</p>
-                                      </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-2">
-                                      {isMissing && requiredDef && (
-                                          <button 
-                                            onClick={() => handleDeployStandard(trigger, requiredDef)}
-                                            disabled={deployingTriggerId === trigger.id}
-                                            className="text-[10px] font-bold bg-slate-900 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition-all whitespace-nowrap shadow-md flex items-center gap-2"
-                                          >
-                                              {deployingTriggerId === trigger.id ? <Loader2 size={12} className="animate-spin"/> : <UploadCloud size={12} />}
-                                              Deploy Standard
-                                          </button>
-                                      )}
-                                      <button 
-                                        onClick={() => handleCreateVariant(trigger)}
-                                        className="text-[10px] font-bold bg-white border border-slate-200 text-slate-600 px-3 py-2 rounded-lg hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 transition-all whitespace-nowrap shadow-sm"
-                                      >
-                                          + Create Variant
-                                      </button>
-                                  </div>
-                              </div>
-
-                              {/* Details Panel */}
-                              <div className="bg-slate-50 p-4 rounded-xl flex flex-col md:flex-row gap-6 text-xs border border-slate-100">
-                                  <div className="flex-1">
-                                      <p className="font-black text-slate-400 uppercase tracking-widest mb-2">Required Variables</p>
-                                      <div className="flex flex-wrap gap-2">
-                                          {trigger.requiredVariables.map(v => (
-                                              <span key={v} className="bg-white border px-2 py-1 rounded text-slate-600 font-mono font-medium">{v}</span>
-                                          ))}
-                                      </div>
-                                  </div>
-                                  
-                                  <div className="flex-1 border-l pl-6 border-slate-200">
-                                       <p className="font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                           {isMissing ? 'Recommended Template Content' : 'Active Template Content'}
-                                           <FileJson size={12} />
-                                       </p>
-                                       <div className="font-mono text-slate-600 italic bg-white p-3 rounded-lg border border-dashed border-slate-200">
-                                           "{match ? match.content : requiredDef?.content || 'No default definition found.'}"
-                                       </div>
-                                       {isMissing && (
-                                           <p className="text-[10px] text-rose-500 mt-2 font-medium flex items-center gap-1">
-                                               <AlertCircle size={10} /> Automation will fail until this template is deployed.
-                                           </p>
-                                       )}
-                                  </div>
-                              </div>
-                          </div>
-                      );
-                  })}
-                </div>
             </div>
         </div>
       )}
