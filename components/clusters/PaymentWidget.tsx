@@ -171,14 +171,17 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
           errorService.logActivity('USER_ACTION', `Generating Setu Link for ₹${val}`);
 
-          // 2. Call Backend Proxy (Proxy adds credentials)
+          // 2. Call Backend Proxy
+          // billerBillID acts as the unique transaction ID for Setu.
+          // merchantId is handled internally by the backend using the schemeId credential.
+          const transactionId = `${order.id}-${Date.now()}`;
+
           const linkResponse = await fetch('/api/setu/create-link', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                   amount: val,
-                  // Use timestamp to ensure unique billerBillID for every request
-                  billerBillID: `${order.id}-${Date.now()}`,
+                  billerBillID: transactionId,
                   customerID: order.customerContact, 
                   name: order.customerName,
                   orderId: order.id // CRITICAL for Webhook tracking
@@ -211,12 +214,23 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
               throw new Error(userMsg);
           }
 
-          // Structure from Setu V1: data.data.paymentLink.shortLink
-          // Example: https://setu.co/upi/s/AbCd123
-          const shortLink = linkData.data?.data?.paymentLink?.shortLink;
-          if (!shortLink) throw new Error("No shortLink received from Setu response.");
+          // 4. Validate Response Structure (Supports V1 & V2)
+          // We check for 'shortURL' (V2 standard) or 'shortLink' (V1 legacy).
+          const paymentLinkData = linkData.data?.data?.paymentLink;
+          const shortLink = paymentLinkData?.shortLink || paymentLinkData?.shortURL;
 
-          // 4. Parse Suffix for Template
+          if (!shortLink) {
+              // Log detailed telemetry for debugging
+              errorService.logError(
+                  'SetuPayment', 
+                  'Link Generation Failed: Missing shortLink in API response', 
+                  'HIGH', 
+                  JSON.stringify(linkData)
+              );
+              throw new Error("Payment Gateway responded without a valid link. Please retry.");
+          }
+
+          // 5. Parse Suffix for Template
           // Template Base: https://setu.co/upi/s/
           const baseUrl = "https://setu.co/upi/s/";
           
@@ -235,7 +249,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
           const linkSuffix = shortLink.replace(baseUrl, '');
 
-          // 5. Send Template with Button
+          // 6. Send Template with Button
           const result = await whatsappService.sendTemplateMessage(
               order.customerContact, 
               'setu_payment_button', 
@@ -320,6 +334,9 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                 <div>
                     <p className="text-xs font-bold text-rose-700">Action Failed</p>
                     <p className="text-[10px] text-rose-600 mt-1">{errorMsg}</p>
+                    <button onClick={() => handleGenerateSetuLink()} className="mt-2 text-[10px] font-black uppercase bg-white/50 px-2 py-1 rounded hover:bg-white text-rose-800">
+                        Retry Now
+                    </button>
                 </div>
                 <button onClick={() => setErrorMsg(null)} className="ml-auto text-rose-400 hover:text-rose-600"><X size={16} /></button>
             </div>
