@@ -22,10 +22,10 @@ npm run build
 **Output:** Creates a `dist/` folder containing `index.html` and an `assets/` folder.
 
 ### 2. Server Startup (`server.js`)
-The `server.js` file is the entry point. It now features **Smart Path Detection** to handle different deployment structures:
+The `server.js` file is the entry point. It features **Automatic Conflict Resolution**:
 
-*   **Production Mode:** If `server.js` detects `index.html` in its *current directory*, it assumes it has been moved inside the build folder (common in CI/CD pipelines) and serves files from `.`.
-*   **Development Mode:** If `server.js` detects `dist/index.html`, it assumes it is running from the project root and serves files from `./dist`.
+*   **Auto-Fix Feature:** On startup, `server.js` checks for a `dist/` folder. If found, and if it also sees a source `index.html` in the root, it **automatically renames the root `index.html`** to `index.html.original_source`.
+*   **Why?** Many web servers (Apache/LiteSpeed) prioritize serving files in the root folder over the Node.js application logic. By renaming the root file, we force the server to use the Node.js app which correctly serves `dist/`.
 
 ### 3. Environment Variables (`.env`)
 The server looks for `.env` in:
@@ -36,13 +36,13 @@ The server looks for `.env` in:
 
 ### ⚠️ Common Issues & Fixes
 
-**Issue:** "I see a white page" or "I see source code index.html"
-*   **Cause:** The server is serving the *source* `index.html` because `dist` is missing or misconfigured.
-*   **Fix:** Run `npm run build`.
+**Issue:** "White Screen" or "MIME type error"
+*   **Cause:** The server is serving the *source code* `index.html` (which links to `.tsx` files) instead of the built `dist/index.html`.
+*   **Fix:** **Restart the Node.js Application.** The new `server.js` will automatically detect this and rename the root `index.html` to fix it.
 
-**Issue:** "API Endpoint Not Found"
-*   **Cause:** You are hitting a route like `/api/login` that isn't defined in `server.js`.
-*   **Fix:** Check `server.js` routes.
+**Issue:** "App Not Built" Screen
+*   **Cause:** The server cannot find `dist/index.html` and has correctly rejected the root `index.html` to prevent a crash.
+*   **Fix:** Run `npm run build` locally and upload the `dist` folder.
 
 **Issue:** "Database Unavailable"
 *   **Cause:** `.env` credentials are wrong or DB user doesn't have permissions.

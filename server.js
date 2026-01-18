@@ -43,6 +43,36 @@ const loadEnv = () => {
 };
 loadEnv();
 
+// --- DEPLOYMENT AUTO-FIX: RESOLVE ROOT INDEX.HTML CONFLICT ---
+// Prevents the server (Apache or Node) from serving the source index.html instead of the built one.
+const resolveRootConflict = () => {
+    const distIndex = path.join(__dirname, 'dist', 'index.html');
+    const rootIndex = path.join(__dirname, 'index.html');
+    const backupIndex = path.join(__dirname, 'index.html.original_source');
+
+    // Only intervene if we are in a "Production-like" state (dist exists) AND the root conflict exists
+    if (fs.existsSync(distIndex) && fs.existsSync(rootIndex)) {
+        try {
+            const content = fs.readFileSync(rootIndex, 'utf-8');
+            // Check if this is the source file (contains references to .tsx)
+            if (content.includes('src="./index.tsx"') || content.includes('src="/index.tsx"')) {
+                console.warn("==================================================================");
+                console.warn("[System] CRITICAL CONFLICT DETECTED: Source index.html found in root.");
+                console.warn("[System] This file overrides the 'dist' build on many web servers.");
+                console.warn("[System] ACTION: Auto-renaming root 'index.html' to 'index.html.original_source'.");
+                
+                fs.renameSync(rootIndex, backupIndex);
+                
+                console.log("[System] SUCCESS: Root file renamed. Traffic will now correctly flow to 'dist/'.");
+                console.warn("==================================================================");
+            }
+        } catch (e) {
+            console.error("[System] Failed to auto-resolve root index.html conflict:", e.message);
+        }
+    }
+};
+resolveRootConflict();
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -62,7 +92,6 @@ app.use((req, res, next) => {
     // Allow access to built assets but block source files if exposed
     const forbiddenExtensions = ['.ts', '.tsx', '.jsx', '.env', '.config', '.lock', '.json'];
     if (forbiddenExtensions.some(ext => req.path.toLowerCase().endsWith(ext))) {
-        // Exception for manifest/metadata which might be json
         if (!req.path.endsWith('manifest.json') && !req.path.endsWith('metadata.json')) {
              return res.status(403).send('Forbidden: Access to source code is denied.');
         }
@@ -143,8 +172,6 @@ async function fetchExternalGoldRate() {
         if (!response.ok) throw new Error(`Augmont API Error: ${response.status}`);
         
         const data = await response.json();
-        console.log("[System] Augmont Rate Data:", JSON.stringify(data));
-
         let rate24k = 0;
         
         if (typeof data.rate === 'number') rate24k = data.rate;
@@ -154,10 +181,7 @@ async function fetchExternalGoldRate() {
         else if (data.rates?.goldBuy) rate24k = Number(data.rates.goldBuy);
         else if (data.data?.rate) rate24k = Number(data.data.rate);
 
-        if (!rate24k || isNaN(rate24k)) {
-            throw new Error("Could not parse rate from Batuk response.");
-        }
-
+        if (!rate24k || isNaN(rate24k)) throw new Error("Could not parse rate from Batuk response.");
         if (rate24k > 20000) rate24k = Math.round(rate24k / 10);
 
         const rate22k = Math.round(rate24k * 0.916);
@@ -198,7 +222,7 @@ app.get('/api/health', async (req, res) => {
         dbError, 
         configStatus: configUsed, 
         time: new Date(),
-        mode: fs.existsSync(path.join(__dirname, 'index.html')) ? 'PRODUCTION' : 'DEVELOPMENT'
+        mode: fs.existsSync(path.join(__dirname, 'dist', 'index.html')) ? 'PRODUCTION' : 'DEVELOPMENT'
     });
 });
 
@@ -252,16 +276,10 @@ app.get('/api/bootstrap', ensureDb, async (req, res) => {
         const [configRows] = await connection.query('SELECT * FROM app_config');
         const [intRows] = await connection.query('SELECT * FROM integrations');
         
-        let rates = rateRows[0];
-        
-        if (!rates) {
+        let rates = rateRows[0] || { rate24k: 7800, rate22k: 7150, rate18k: 5850 };
+        if (!rateRows[0]) {
             const extRates = await fetchExternalGoldRate();
-            if (extRates.success) {
-                rates = extRates;
-                await connection.query('INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)', [rates.rate24k, rates.rate22k, rates.rate18k]);
-            } else {
-                rates = { rate24k: 7800, rate22k: 7150, rate18k: 5850 }; // Valid fallback for late 2024/2025
-            }
+            if (extRates.success) rates = extRates;
         }
 
         const configMap = {}; configRows.forEach(r => configMap[r.setting_key] = r.setting_value);
@@ -327,7 +345,7 @@ app.get('/api/gold-rate', ensureDb, async (req, res) => {
         const [rows] = await connection.query('SELECT rate24k, rate22k, recorded_at FROM gold_rates ORDER BY id DESC LIMIT 1');
         
         let rateData = rows[0];
-        let isStale = !rateData || (new Date() - new Date(rateData.recorded_at) > 1000 * 60 * 60 * 4); // 4 Hours
+        let isStale = !rateData || (new Date() - new Date(rateData.recorded_at) > 1000 * 60 * 60 * 4); 
 
         if (isStale) {
             const ext = await fetchExternalGoldRate();
@@ -399,11 +417,8 @@ const rootIndexPath = path.join(__dirname, 'index.html');
 const isSourceCode = (filePath) => {
     try {
         const content = fs.readFileSync(filePath, 'utf-8');
-        // Check for TSX import which indicates source code
         return content.includes('src="./index.tsx"') || content.includes('src="/index.tsx"');
-    } catch (e) {
-        return false;
-    }
+    } catch (e) { return false; }
 };
 
 // Priority 1: Check for DIST folder (Standard Build Output)
@@ -412,12 +427,11 @@ if (fs.existsSync(path.join(distPath, 'index.html'))) {
     indexPath = path.join(distPath, 'index.html');
     console.log("[System] Mode: SERVING FROM /dist");
 } 
-// Priority 2: Check for Flattened Deployment (Production) in Root
+// Priority 2: Check for Root (BUT STRICTLY REJECT SOURCE CODE)
 else if (fs.existsSync(rootIndexPath)) {
     if (isSourceCode(rootIndexPath)) {
-        console.error("CRITICAL: Root index.html detected as SOURCE CODE. Skipping static serve to prevent crash.");
-        // Do NOT set staticPath to root if it contains source code.
-        // This forces the catch-all to handle it, where we can show a friendly error.
+        console.error("CRITICAL: Root index.html detected as SOURCE CODE. Skipping static serve.");
+        staticPath = null;
     } else {
         staticPath = __dirname;
         indexPath = rootIndexPath;
@@ -425,33 +439,19 @@ else if (fs.existsSync(rootIndexPath)) {
     }
 }
 
-// MIME Types map to ensure JS modules load correctly
 const MIME_TYPES = {
-    '.js': 'application/javascript',
-    '.mjs': 'application/javascript',
-    '.css': 'text/css',
-    '.html': 'text/html',
-    '.json': 'application/json',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.svg': 'image/svg+xml'
+    '.js': 'application/javascript', '.mjs': 'application/javascript', '.css': 'text/css',
+    '.html': 'text/html', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg'
 };
 
 if (staticPath) {
-    // Aggressive caching for assets, no-cache for app entry
     app.use(express.static(staticPath, { 
-        index: false, // Let the catch-all handle index.html to control headers
+        index: false,
         setHeaders: (res, filePath) => {
             const ext = path.extname(filePath).toLowerCase();
-            if (MIME_TYPES[ext]) {
-                res.setHeader('Content-Type', MIME_TYPES[ext]);
-            }
-            if (filePath.includes('/assets/')) {
-                res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-            } else {
-                res.setHeader('Cache-Control', 'public, max-age=0');
-            }
+            if (MIME_TYPES[ext]) res.setHeader('Content-Type', MIME_TYPES[ext]);
+            if (filePath.includes('/assets/')) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            else res.setHeader('Cache-Control', 'public, max-age=0');
         }
     }));
 } else {
@@ -459,23 +459,26 @@ if (staticPath) {
 }
 
 app.get('*', (req, res) => {
-    if (req.path.startsWith('/api')) {
-        return res.status(404).json({ error: "API Endpoint Not Found" });
-    }
+    if (req.path.startsWith('/api')) return res.status(404).json({ error: "API Endpoint Not Found" });
     
     // Safety check: If we have an indexPath, verify it's not source code before serving
     if (indexPath && isSourceCode(indexPath)) {
         return res.status(500).send(`
             <div style="font-family:sans-serif; text-align:center; padding:50px;">
-                <h1>Application Not Built</h1>
-                <p>The server detected source code (index.tsx) instead of production code.</p>
-                <p>Please run <code>npm run build</code> and ensure the <code>dist/</code> folder is present.</p>
+                <h1>Application Not Built Correctly</h1>
+                <p>The server detected source code (index.tsx) at <code>${indexPath}</code> instead of production code.</p>
+                <p><strong>Fix Applied:</strong> The server will attempt to auto-rename this file on next restart. Please refresh.</p>
             </div>
         `);
     }
 
     if (!staticPath || !indexPath) {
-        return res.status(500).send('<h1>App Not Built</h1><p>Please run <code>npm run build</code>.</p>');
+        return res.status(500).send(`
+            <div style="font-family:sans-serif; text-align:center; padding:50px;">
+                <h1>App Not Built</h1>
+                <p>Please run <code>npm run build</code>.</p>
+            </div>
+        `);
     }
     
     res.setHeader('Content-Type', 'text/html');
