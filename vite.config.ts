@@ -10,8 +10,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    // IMPORTANT: Use relative base path to ensure assets load correctly on any domain or subdirectory
-    base: './', 
+    // IMPORTANT: Use absolute base '/' for subdomain roots to prevent relative path issues
+    base: '/', 
     envDir: '.builds/config',
     define: {
       'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),

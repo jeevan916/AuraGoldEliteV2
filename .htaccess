@@ -2,11 +2,15 @@
 RewriteEngine On
 
 # ----------------------------------------------------------------------
+# SECURITY: Block Source Code Access
+# ----------------------------------------------------------------------
+# Prevents users from downloading source code, configs, and secrets.
+# Returns a 403 Forbidden error for these file types.
+# ----------------------------------------------------------------------
+RewriteRule \.(ts|tsx|jsx|env|config|json|lock|git|yml)$ - [F,L]
+
+# ----------------------------------------------------------------------
 # Hostinger Node.js Proxy Configuration
 # ----------------------------------------------------------------------
-# This rule forwards ALL requests (API, Static, and Root) to the 
-# Node.js application running on the environment port.
-# This ensures server.js is the single source of truth for routing.
-# ----------------------------------------------------------------------
-
+# This rule forwards ALL other requests to the Node.js application.
 RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]

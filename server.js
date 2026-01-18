@@ -26,6 +26,20 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 
+// --- SECURITY MIDDLEWARE ---
+// Explicitly block access to source code and config files
+app.use((req, res, next) => {
+    const forbiddenExtensions = ['.ts', '.tsx', '.jsx', '.env', '.config', '.lock', '.json'];
+    // Allow necessary JSON files if needed (like manifest.json), but generally block root JSONs
+    if (req.path === '/metadata.json' || req.path === '/manifest.json') return next();
+    
+    if (forbiddenExtensions.some(ext => req.path.toLowerCase().endsWith(ext))) {
+        console.warn(`[Security] Blocked access to source file: ${req.path}`);
+        return res.status(403).send('Forbidden: Access to source code is denied.');
+    }
+    next();
+});
+
 // --- DB SETUP ---
 const dbConfig = {
     host: process.env.DB_HOST || '127.0.0.1',
@@ -282,18 +296,24 @@ if (!distPath) {
     console.log(`[System] Serving Static Files from: ${distPath}`);
 }
 
-// Serve static assets with index: false to prevent hijacking root
+// ASSETS: Long Cache (Immutable)
+app.use('/assets', express.static(path.join(distPath, 'assets'), { 
+    immutable: true, 
+    maxAge: '1y',
+    fallthrough: false // If asset missing, 404 immediately (don't serve index.html)
+}));
+
+// PUBLIC & ROOT: Standard Static
 app.use(express.static(distPath, { index: false }));
 
-// IMPORTANT: STRICT ASSET 404
-// Do NOT serve index.html for missing JS/CSS/Images.
-// This prevents "SyntaxError: Unexpected token <" white screens.
+// ASSET FALLBACK: 404
+// Explicitly handle missing JS/CSS/Images to prevent "SyntaxError: Unexpected token <"
 app.get('*.(js|css|png|jpg|jpeg|gif|ico|json|svg)', (req, res) => {
     res.status(404).send('Not Found');
 });
 
-// SPA CATCH-ALL
-// For any other route (like /dashboard), serve index.html to support React Router.
+// SPA CATCH-ALL: No Cache
+// Serve index.html for all other routes to support React Router.
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API Endpoint Not Found" });
@@ -301,6 +321,10 @@ app.get('*', (req, res) => {
     if (!distPath) {
         return res.status(500).send('Application Build Missing. Please run build.');
     }
+    // Force index.html to validate or reload.
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.sendFile(path.join(distPath, 'index.html'));
 });
 
