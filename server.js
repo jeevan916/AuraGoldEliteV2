@@ -50,6 +50,7 @@ app.use((req, res, next) => {
     const forbiddenExtensions = ['.ts', '.tsx', '.jsx', '.env', '.config', '.lock', '.json'];
     if (req.path === '/metadata.json' || req.path === '/manifest.json') return next();
     
+    // Explicitly block source files
     if (forbiddenExtensions.some(ext => req.path.toLowerCase().endsWith(ext))) {
         return res.status(403).send('Forbidden: Access to source code is denied.');
     }
@@ -328,7 +329,6 @@ app.post('/api/sync/settings', ensureDb, async (req, res) => {
 
 app.get('/api/gold-rate', ensureDb, async (req, res) => {
     try {
-        // PROXY REMOVED: Reliance strictly on DB to prevent external service failures
         const connection = await pool.getConnection();
         const [rows] = await connection.query('SELECT rate24k, rate22k FROM gold_rates ORDER BY id DESC LIMIT 1');
         connection.release();
@@ -378,6 +378,7 @@ app.post('/api/whatsapp/templates', async (req, res) => {
 // --- STATIC ASSET SERVING ---
 let distPath = '';
 
+// Check known paths for build directory
 const potentialPaths = [
     path.join(__dirname, 'dist'),
     path.join(__dirname, '../dist'),
@@ -397,18 +398,31 @@ if (!distPath) {
     console.log(`[System] Serving Static Files from: ${distPath}`);
 }
 
+// Serve static assets with cache headers
 app.use('/assets', express.static(path.join(distPath, 'assets'), { 
     immutable: true, 
     maxAge: '1y',
     fallthrough: false 
 }));
 
-app.use(express.static(distPath, { index: false }));
+// Serve root explicitly to handle redirects properly
+app.get('/', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.sendFile(path.join(distPath, 'index.html'));
+});
+
+// Serve other static files (favicons, etc.) from root, but DO NOT automatically serve index.html for unknown routes
+app.use(express.static(distPath, { 
+    index: false,
+    etag: false,
+    lastModified: false
+}));
 
 app.get('*.(js|css|png|jpg|jpeg|gif|ico|json|svg)', (req, res) => {
     res.status(404).send('Not Found');
 });
 
+// SPA Catch-all: Send index.html for client-side routing
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API Endpoint Not Found" });

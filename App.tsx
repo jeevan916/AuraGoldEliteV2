@@ -18,9 +18,6 @@ import { Order, GlobalSettings, NotificationTrigger, PaymentPlanTemplate } from 
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 // --- ROBUST LAZY LOADING HELPER ---
-// Catches "Failed to fetch dynamically imported module" errors gracefully.
-// 1. Attempts 1 auto-reload.
-// 2. If failure persists, renders a "Update Required" UI instead of crashing.
 const lazyRetry = (importFn: () => Promise<any>, moduleName: string) => {
   return lazy(async () => {
     try {
@@ -28,40 +25,38 @@ const lazyRetry = (importFn: () => Promise<any>, moduleName: string) => {
     } catch (error: any) {
       console.error(`[App] Chunk load failed for ${moduleName}:`, error);
       
-      // Unique key for this module's retry attempt
-      const storageKey = `retry_chunk_${moduleName}`;
-      const lastRetry = sessionStorage.getItem(storageKey);
-      const now = Date.now();
+      // Check if it's a network/chunk error
+      const isChunkError = error.toString().includes('dynamically imported module') || 
+                           error.toString().includes('Importing a module script failed') ||
+                           error.name === 'ChunkLoadError';
 
-      // If we haven't retried in the last 20 seconds, try a hard reload once
-      if (!lastRetry || (now - parseInt(lastRetry) > 20000)) {
-         console.log(`[App] Attempting auto-recovery for ${moduleName}`);
-         sessionStorage.setItem(storageKey, now.toString());
-         
-         // Force cache busting reload
-         const url = new URL(window.location.href);
-         url.searchParams.set('v', now.toString());
-         window.location.href = url.toString();
-         
-         return new Promise(() => {}); // Stall while reloading
+      if (isChunkError) {
+          const storageKey = `retry_${moduleName}`;
+          const lastRetry = sessionStorage.getItem(storageKey);
+          const now = Date.now();
+
+          // Prevent infinite reload loop: max 1 retry per 10 seconds
+          if (!lastRetry || (now - parseInt(lastRetry) > 10000)) {
+             console.log(`[App] Reloading for ${moduleName}...`);
+             sessionStorage.setItem(storageKey, now.toString());
+             window.location.reload();
+             return new Promise(() => {}); // Stall to prevent render
+          }
       }
 
-      // If reload failed or looped, return a Safe Fallback Component
+      // If reload failed or not a chunk error, return Fallback
       return { 
           default: () => (
             <div className="flex flex-col items-center justify-center min-h-[50vh] p-8 text-center animate-fadeIn">
                 <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-4 shadow-sm border border-amber-100">
                     <RefreshCw size={32} className="text-amber-600" />
                 </div>
-                <h2 className="text-xl font-black text-slate-800 mb-2">New Version Available</h2>
+                <h2 className="text-xl font-black text-slate-800 mb-2">Update Available</h2>
                 <p className="text-slate-500 text-sm mb-6 max-w-xs mx-auto leading-relaxed">
-                    The <strong>{moduleName}</strong> module has been updated. Please refresh to load the latest features.
+                    A new version of AuraGold is available. Please update to continue.
                 </p>
                 <button 
-                    onClick={() => {
-                        sessionStorage.removeItem(storageKey);
-                        window.location.reload();
-                    }}
+                    onClick={() => window.location.reload()}
                     className="bg-slate-900 text-white px-8 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg active:scale-95 flex items-center gap-2"
                 >
                     <RefreshCw size={14} /> Update Now
@@ -138,6 +133,13 @@ const App = () => {
   useEffect(() => {
     errorService.initGlobalListeners();
     
+    // URL Hygiene: Clean up /index.html or /index from URL if present
+    const path = window.location.pathname;
+    if (path.endsWith('/index.html') || path.endsWith('/index')) {
+        const newPath = path.replace(/(\/index\.html|\/index)$/, '/') || '/';
+        window.history.replaceState({}, '', newPath + window.location.search);
+    }
+
     // Check for share token in URL
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');
