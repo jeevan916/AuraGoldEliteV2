@@ -257,8 +257,9 @@ export const whatsappService = {
 
         const data = await response.json();
         
-        if (!data.success) {
-            throw new Error(data.data?.error?.message || JSON.stringify(data.error) || "Proxy Error");
+        // Strict Success Check: Must have data.messages array
+        if (!data.success || !data.data || !data.data.messages || data.data.messages.length === 0) {
+            throw new Error(data.data?.error?.message || JSON.stringify(data.error) || "Message not queued by Meta (Check Sandbox/Window)");
         }
 
         // LOG SUCCESS
@@ -315,8 +316,9 @@ export const whatsappService = {
 
       const data = await response.json();
       
-      if (!data.success) {
-          throw new Error(data.data?.error?.message || JSON.stringify(data.error) || "Proxy Error");
+      // Strict Success Check
+      if (!data.success || !data.data || !data.data.messages || data.data.messages.length === 0) {
+          throw new Error(data.data?.error?.message || JSON.stringify(data.error) || "Message not queued by Meta");
       }
 
       // LOG SUCCESS

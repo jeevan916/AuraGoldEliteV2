@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2 } from 'lucide-react';
 import { Card, Button } from '../shared/BaseUI';
-import { Order, OrderStatus } from '../../types';
+import { Order, OrderStatus, WhatsAppLogEntry } from '../../types';
 import { whatsappService } from '../../services/whatsappService';
 import { storageService } from '../../services/storageService';
 import { errorService } from '../../services/errorService';
@@ -10,10 +10,11 @@ import { errorService } from '../../services/errorService';
 interface PaymentWidgetProps {
   order: Order;
   onPaymentRecorded: (order: Order) => void; 
+  onAddLog?: (log: WhatsAppLogEntry) => void;
   variant?: 'FULL' | 'COMPACT';
 }
 
-export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRecorded, variant = 'FULL' }) => {
+export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRecorded, onAddLog, variant = 'FULL' }) => {
   const [activeTab, setActiveTab] = useState<'RECORD' | 'REQUEST' | 'GATEWAY'>('RECORD');
   const [amount, setAmount] = useState('');
   const [mode, setMode] = useState('UPI');
@@ -72,11 +73,15 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
     try {
       updateOrderWithPayment(val, mode, 'Manual Entry');
 
-      await whatsappService.sendMessage(
+      const res = await whatsappService.sendMessage(
           order.customerContact, 
           `Payment Received: ₹${val.toLocaleString()}. Remaining: ₹${(remaining - val).toLocaleString()}. Thank you!`, 
           order.customerName
       );
+
+      if (res.success && res.logEntry && onAddLog) {
+          onAddLog(res.logEntry);
+      }
 
       setAmount('');
       setQrCodeUrl(null);
@@ -175,6 +180,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           if (result.success) {
               alert("Setu Link successfully sent via WhatsApp!");
               errorService.logActivity('TEMPLATE_SENT', `Setu Link delivered to ${order.customerName}`);
+              if (result.logEntry && onAddLog) onAddLog(result.logEntry);
           } else {
               alert(`Failed to send link: ${result.error}`);
               errorService.logError('PaymentWidget', `Setu Link Send Failed: ${result.error}`);

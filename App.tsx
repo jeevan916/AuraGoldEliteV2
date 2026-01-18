@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { 
   Plus, Home, ReceiptIndianRupee, Users, MessageSquare, 
@@ -293,7 +294,7 @@ const App = () => {
             <CustomerProfile customer={selectedCustomer} orders={orders} onBack={() => setView('CUSTOMERS')} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onNewOrder={(cust) => { /* Pre-fill logic could go here */ setView('ORDER_NEW'); }} /> :
             <div className="text-center p-10">Customer Not Found</div>;
 
-          case 'COLLECTIONS': return <PaymentCollections orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onSendWhatsApp={() => {}} settings={settings} />;
+          case 'COLLECTIONS': return <PaymentCollections orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onSendWhatsApp={() => {}} onAddLog={addLog} settings={settings} />;
           
           case 'WHATSAPP': return <WhatsAppPanel logs={logs} customers={derivedCustomers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} initialContact={selectedChatPhone} />;
           

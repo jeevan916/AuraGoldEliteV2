@@ -242,6 +242,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
             <PaymentWidget 
               order={order} 
               onPaymentRecorded={handlePaymentUpdate}
+              onAddLog={onAddLog}
               variant="FULL"
             />
 

@@ -5,7 +5,7 @@ import {
   Clock, AlertCircle, Smartphone, ChevronRight, Download,
   TrendingUp, ArrowDownLeft, ArrowUpRight, BrainCircuit, Zap, Loader2, Link, Share2
 } from 'lucide-react';
-import { Order, OrderStatus, Milestone, CollectionTone, GlobalSettings } from '../types';
+import { Order, OrderStatus, Milestone, CollectionTone, GlobalSettings, WhatsAppLogEntry } from '../types';
 import { geminiService } from '../services/geminiService';
 import { whatsappService } from '../services/whatsappService';
 
@@ -13,12 +13,13 @@ interface PaymentCollectionsProps {
   orders: Order[];
   onViewOrder: (id: string) => void;
   onSendWhatsApp: (notifId: string) => void;
+  onAddLog?: (log: WhatsAppLogEntry) => void;
   settings: GlobalSettings;
 }
 
 type CollectionTab = 'PLANNED' | 'RECEIVED' | 'UPCOMING' | 'OVERDUE';
 
-const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewOrder, onSendWhatsApp, settings }) => {
+const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewOrder, onSendWhatsApp, onAddLog, settings }) => {
   const [activeTab, setActiveTab] = useState<CollectionTab>('OVERDUE');
   const [search, setSearch] = useState('');
   const [generatingStrategy, setGeneratingStrategy] = useState<string | null>(null);
@@ -101,12 +102,18 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
           );
           
           if (confirmed) {
+             let res;
              if (result.templateId && result.variables) {
-                 await whatsappService.sendTemplateMessage(item.customerContact, result.templateId, 'en_US', result.variables, item.customerName);
-                 alert(`Template sent successfully!`);
+                 res = await whatsappService.sendTemplateMessage(item.customerContact, result.templateId, 'en_US', result.variables, item.customerName);
              } else {
-                 await whatsappService.sendMessage(item.customerContact, result.message, item.customerName);
-                 alert(`Message sent via Fallback`);
+                 res = await whatsappService.sendMessage(item.customerContact, result.message, item.customerName);
+             }
+             
+             if (res.success && res.logEntry && onAddLog) {
+                 onAddLog(res.logEntry);
+                 alert(`Message sent successfully!`);
+             } else {
+                 alert(`Message Sent via Gateway (Check Logs).`);
              }
           }
       } catch (e) {
@@ -123,7 +130,9 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
       const razorpayLink = `https://rzp.io/i/aura${item.orderId}`;
       const msg = `Dear ${item.customerName}, payment of ₹${amount.toLocaleString()} is due. Pay here: ${razorpayLink}`;
       
-      await whatsappService.sendMessage(item.customerContact, msg, item.customerName);
+      const res = await whatsappService.sendMessage(item.customerContact, msg, item.customerName);
+      if (res.success && res.logEntry && onAddLog) onAddLog(res.logEntry);
+      
       alert("Link Sent Successfully");
   };
 
