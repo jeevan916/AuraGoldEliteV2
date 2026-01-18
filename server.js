@@ -16,8 +16,14 @@ const loadEnv = () => {
     const searchPaths = [
         path.resolve(process.cwd(), '.env'),           // Current working directory
         path.resolve(__dirname, '.env'),               // Where script resides
-        path.resolve(__dirname, '..', '.env'),         // Parent directory (common in dist builds)
-        path.resolve('/home/public_html/.env')         // Common Hostinger path
+        path.resolve(__dirname, '..', '.env'),         // Parent directory
+        // Hostinger / Custom Build Paths
+        path.resolve(process.cwd(), '.builds/config/.env'),
+        path.resolve(__dirname, '.builds/config/.env'),
+        '/public_html/.builds/config/.env',            // Exact path requested
+        path.resolve('/home/public_html/.env'),
+        // Try to construct path relative to potential home dir if we are in public_html
+        path.resolve(process.cwd(), '../.builds/config/.env')
     ];
 
     let loaded = false;
@@ -32,6 +38,7 @@ const loadEnv = () => {
     
     if (!loaded) {
         console.warn('[System] WARNING: No .env file found in search paths. Using system environment variables.');
+        console.log('[System] Searched in:', searchPaths);
     } else {
         console.log('[System] Environment variables loaded.');
     }
@@ -152,7 +159,11 @@ async function fetchExternalGoldRate() {
 app.get('/api/health', async (req, res) => {
     let dbStatus = 'disconnected';
     let dbError = null;
-    let configUsed = { host: process.env.DB_HOST, user: process.env.DB_USER, db: process.env.DB_NAME };
+    let configUsed = { 
+        host: process.env.DB_HOST ? '[SET]' : '[MISSING]', 
+        user: process.env.DB_USER ? '[SET]' : '[MISSING]', 
+        db: process.env.DB_NAME ? '[SET]' : '[MISSING]' 
+    };
     
     if(pool) {
         try { 
@@ -169,7 +180,7 @@ app.get('/api/health', async (req, res) => {
         status: 'ok', 
         db: dbStatus, 
         dbError, 
-        config: configUsed, 
+        configStatus: configUsed, 
         time: new Date(),
         mode: fs.existsSync(path.join(__dirname, 'index.html')) ? 'PRODUCTION' : 'DEVELOPMENT'
     });
@@ -364,14 +375,21 @@ app.delete('/api/whatsapp/templates', async (req, res) => {
 let staticPath = null;
 let indexPath = null;
 
-if (fs.existsSync(path.join(__dirname, 'index.html'))) {
+// Priority 1: Check for DIST folder.
+// If 'dist/index.html' exists, we are likely running from project root.
+// This is the correct build to serve.
+if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
+    staticPath = path.join(__dirname, 'dist');
+    indexPath = path.join(staticPath, 'index.html');
+    console.log("[System] Mode: ROOT/DEV (Serving from /dist)");
+} 
+// Priority 2: Check for Flattened Deployment (Production)
+// If dist folder is NOT found, but index.html exists in current directory,
+// we assume the contents of dist were copied to root (common in cPanel/Hostinger).
+else if (fs.existsSync(path.join(__dirname, 'index.html'))) {
     staticPath = __dirname;
     indexPath = path.join(__dirname, 'index.html');
     console.log("[System] Mode: PRODUCTION (Serving from current directory)");
-} else if (fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
-    staticPath = path.join(__dirname, 'dist');
-    indexPath = path.join(staticPath, 'index.html');
-    console.log("[System] Mode: DEVELOPMENT (Serving from /dist)");
 }
 
 if (staticPath) {
@@ -379,6 +397,13 @@ if (staticPath) {
     app.use(express.static(staticPath, { 
         index: false,
         setHeaders: (res, path) => {
+            // Explicitly set Content-Type for JS/CSS to prevent 'text/plain' errors in strict environments
+            if (path.endsWith('.js')) {
+                res.setHeader('Content-Type', 'application/javascript');
+            } else if (path.endsWith('.css')) {
+                res.setHeader('Content-Type', 'text/css');
+            }
+
             if (path.includes('/assets/')) {
                 res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
             } else {
