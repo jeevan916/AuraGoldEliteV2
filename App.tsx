@@ -18,8 +18,6 @@ import { Order, GlobalSettings, NotificationTrigger, PaymentPlanTemplate } from 
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 // --- STABLE LAZY LOADER ---
-// If a chunk fails (404), display the Update UI immediately. 
-// Do not auto-reload to prevent infinite loops.
 const lazyRetry = (importFn: () => Promise<any>, moduleName: string) => {
   return lazy(async () => {
     try {

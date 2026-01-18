@@ -11,12 +11,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- STRICT ENV LOADING ---
-// Priority: .builds/config/.env -> Root .env -> Process Env
 const customConfigDir = path.join(__dirname, '.builds/config');
 const customEnvFile = path.join(customConfigDir, '.env');
 const rootEnvFile = path.join(__dirname, '.env');
 
-let activeEnvPath = rootEnvFile; // Default fallback
+let activeEnvPath = rootEnvFile; 
 
 const loadEnv = () => {
     if (fs.existsSync(customEnvFile)) {
@@ -47,10 +46,16 @@ app.use(express.json({ limit: '100mb' }));
 
 // --- SECURITY MIDDLEWARE ---
 app.use((req, res, next) => {
+    // Explicitly block access to backend-only files since we might serve from root
+    if (['/server.js', '/package.json', '/.env'].includes(req.path)) {
+        return res.status(403).send('Forbidden');
+    }
+
     const forbiddenExtensions = ['.ts', '.tsx', '.jsx', '.env', '.config', '.lock', '.json'];
+    // Allow metadata and manifest
     if (req.path === '/metadata.json' || req.path === '/manifest.json') return next();
     
-    // Explicitly block source files
+    // Block source files
     if (forbiddenExtensions.some(ext => req.path.toLowerCase().endsWith(ext))) {
         return res.status(403).send('Forbidden: Access to source code is denied.');
     }
@@ -113,104 +118,47 @@ const ensureDb = async (req, res, next) => {
 
 // --- API ROUTES ---
 app.get('/api/health', async (req, res) => {
-    // Perform a light check
     let dbStatus = 'disconnected';
     if(pool) {
-        try {
-            const conn = await pool.getConnection();
-            await conn.ping();
-            conn.release();
-            dbStatus = 'connected';
-        } catch(e) {
-            dbStatus = 'error';
-        }
+        try { const conn = await pool.getConnection(); await conn.ping(); conn.release(); dbStatus = 'connected'; } catch(e) { dbStatus = 'error'; }
     }
     res.json({ status: 'ok', db: dbStatus, time: new Date() });
 });
 
-// Debug Route - Returns connection status and config (safely)
 app.get('/api/debug/db', async (req, res) => {
     try {
-        if (!pool) {
-            const result = await initDb();
-            if (!result.success) throw new Error(result.error || "Init failed");
-        }
+        if (!pool) await initDb();
         if (pool) {
-            const connection = await pool.getConnection();
-            await connection.ping();
-            connection.release();
+            const connection = await pool.getConnection(); await connection.ping(); connection.release();
             res.json({ connected: true, user: process.env.DB_USER, db: process.env.DB_NAME });
-        } else {
-            throw new Error("Pool creation failed previously");
-        }
+        } else { throw new Error("Pool creation failed"); }
     } catch (e) {
-        res.status(500).json({ 
-            connected: false, 
-            error: e.message,
-            code: e.code,
-            config: {
-                host: process.env.DB_HOST,
-                user: process.env.DB_USER,
-                database: process.env.DB_NAME
-            }
-        });
+        res.status(500).json({ connected: false, error: e.message, config: { host: process.env.DB_HOST, user: process.env.DB_USER, database: process.env.DB_NAME } });
     }
 });
 
-// Configure Route - Write to .env and reconnect
 app.post('/api/debug/configure', async (req, res) => {
     const { host, user, password, database } = req.body;
-    
-    if (!host || !user || !database) {
-        return res.status(400).json({ error: "Missing required fields (Host, User, Database)" });
-    }
-
     try {
-        // 1. Test Credentials with a temporary pool
-        const testPool = mysql.createPool({
-            host, user, password, database,
-            connectTimeout: 5000
-        });
-        const conn = await testPool.getConnection();
-        await conn.ping();
-        conn.release();
-        await testPool.end();
+        const testPool = mysql.createPool({ host, user, password, database, connectTimeout: 5000 });
+        const conn = await testPool.getConnection(); await conn.ping(); conn.release(); await testPool.end();
 
-        // 2. If successful, write to .builds/config/.env specifically
         const apiKey = process.env.API_KEY || '';
         const port = process.env.PORT || 3000;
-        
         const envContent = `DB_HOST=${host}\nDB_USER=${user}\nDB_PASSWORD=${password}\nDB_NAME=${database}\nPORT=${port}\nAPI_KEY=${apiKey}`;
         
-        // Force creation of custom config dir
-        if (!fs.existsSync(customConfigDir)) {
-            fs.mkdirSync(customConfigDir, { recursive: true });
-        }
-
+        if (!fs.existsSync(customConfigDir)) fs.mkdirSync(customConfigDir, { recursive: true });
         fs.writeFileSync(customEnvFile, envContent);
-        console.log(`[System] Credentials updated in ${customEnvFile}`);
-
-        // 3. Update Runtime Process Env
-        process.env.DB_HOST = host;
-        process.env.DB_USER = user;
-        process.env.DB_PASSWORD = password;
-        process.env.DB_NAME = database;
-
-        // 4. Re-initialize Main Pool
-        const initResult = await initDb();
         
-        if (initResult.success) {
-            res.json({ success: true, message: "Database Configured & Connected!" });
-        } else {
-            res.status(500).json({ error: "Credentials valid, but initialization failed: " + initResult.error });
-        }
-
+        process.env.DB_HOST = host; process.env.DB_USER = user; process.env.DB_PASSWORD = password; process.env.DB_NAME = database;
+        await initDb();
+        res.json({ success: true, message: "Database Configured & Connected!" });
     } catch (e) {
-        console.error("Configuration Failed:", e.message);
         res.status(500).json({ error: "Connection Failed: " + e.message, code: e.code });
     }
 });
 
+// Sync Handlers
 const createSyncHandler = (table) => async (req, res) => {
     const items = req.body[table] || req.body.orders || req.body.customers || req.body.logs || req.body.templates || req.body.catalog || req.body.plans;
     if (!items) return res.status(400).json({error: "No data"});
@@ -254,28 +202,18 @@ app.get('/api/bootstrap', ensureDb, async (req, res) => {
         const [rateRows] = await connection.query('SELECT * FROM gold_rates ORDER BY id DESC LIMIT 1');
         const [configRows] = await connection.query('SELECT * FROM app_config');
         const [intRows] = await connection.query('SELECT * FROM integrations');
-        
         const rates = rateRows[0] || { rate24k: 7200, rate22k: 6600, rate18k: 5400 };
         const configMap = {}; configRows.forEach(r => configMap[r.setting_key] = r.setting_value);
         const intMap = {}; intRows.forEach(r => { try { intMap[r.provider] = JSON.parse(r.config); } catch(e){} });
 
         const settings = {
-            currentGoldRate24K: Number(rates.rate24k),
-            currentGoldRate22K: Number(rates.rate22k),
-            currentGoldRate18K: Number(rates.rate18k),
-            defaultTaxRate: Number(configMap['default_tax_rate'] || 3),
-            goldRateProtectionMax: Number(configMap['protection_max'] || 500),
-            gracePeriodHours: Number(configMap['grace_period_hours'] || 24),
-            followUpIntervalDays: Number(configMap['follow_up_days'] || 3),
-            whatsappPhoneNumberId: intMap['whatsapp']?.phoneId || '',
-            whatsappBusinessAccountId: intMap['whatsapp']?.accountId || '',
-            whatsappBusinessToken: intMap['whatsapp']?.token || '',
-            razorpayKeyId: intMap['razorpay']?.keyId || '',
-            razorpayKeySecret: intMap['razorpay']?.keySecret || '',
-            msg91AuthKey: intMap['msg91']?.authKey || '',
-            msg91SenderId: intMap['msg91']?.senderId || '',
-            setuSchemeId: intMap['setu']?.schemeId || '',
-            setuSecret: intMap['setu']?.secret || ''
+            currentGoldRate24K: Number(rates.rate24k), currentGoldRate22K: Number(rates.rate22k), currentGoldRate18K: Number(rates.rate18k),
+            defaultTaxRate: Number(configMap['default_tax_rate'] || 3), goldRateProtectionMax: Number(configMap['protection_max'] || 500),
+            gracePeriodHours: Number(configMap['grace_period_hours'] || 24), followUpIntervalDays: Number(configMap['follow_up_days'] || 3),
+            whatsappPhoneNumberId: intMap['whatsapp']?.phoneId || '', whatsappBusinessAccountId: intMap['whatsapp']?.accountId || '', whatsappBusinessToken: intMap['whatsapp']?.token || '',
+            razorpayKeyId: intMap['razorpay']?.keyId || '', razorpayKeySecret: intMap['razorpay']?.keySecret || '',
+            msg91AuthKey: intMap['msg91']?.authKey || '', msg91SenderId: intMap['msg91']?.senderId || '',
+            setuSchemeId: intMap['setu']?.schemeId || '', setuSecret: intMap['setu']?.secret || ''
         };
 
         const [orders] = await connection.query('SELECT data FROM orders ORDER BY created_at DESC');
@@ -284,7 +222,6 @@ app.get('/api/bootstrap', ensureDb, async (req, res) => {
         const [templates] = await connection.query('SELECT data FROM templates');
         const [planTemplates] = await connection.query('SELECT data FROM plan_templates');
         const [catalog] = await connection.query('SELECT data FROM catalog');
-        
         connection.release();
         
         res.json({ success: true, data: {
@@ -307,10 +244,7 @@ app.post('/api/sync/settings', ensureDb, async (req, res) => {
         await connection.beginTransaction();
         await connection.query(`INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)`, [settings.currentGoldRate24K, settings.currentGoldRate22K, settings.currentGoldRate18K || 0]);
         
-        const configs = [
-            ['default_tax_rate', settings.defaultTaxRate], ['protection_max', settings.goldRateProtectionMax],
-            ['grace_period_hours', settings.gracePeriodHours], ['follow_up_days', settings.followUpIntervalDays]
-        ];
+        const configs = [['default_tax_rate', settings.defaultTaxRate], ['protection_max', settings.goldRateProtectionMax], ['grace_period_hours', settings.gracePeriodHours], ['follow_up_days', settings.followUpIntervalDays]];
         for(const [k, v] of configs) await connection.query(`INSERT INTO app_config (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)`, [k, v]);
 
         const integrations = [
@@ -321,8 +255,7 @@ app.post('/api/sync/settings', ensureDb, async (req, res) => {
         ];
         for(const i of integrations) await connection.query(`INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)`, [i.p, JSON.stringify(i.c)]);
         
-        await connection.commit();
-        connection.release();
+        await connection.commit(); connection.release();
         res.json({ success: true });
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -339,12 +272,8 @@ app.get('/api/gold-rate', ensureDb, async (req, res) => {
 
 async function callMeta(endpoint, method, token, body) {
     try {
-        const r = await fetch(`https://graph.facebook.com/v21.0/${endpoint}`, {
-            method, headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: body ? JSON.stringify(body) : undefined
-        });
-        const data = await r.json();
-        return { ok: r.ok, status: r.status, data };
+        const r = await fetch(`https://graph.facebook.com/v21.0/${endpoint}`, { method, headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+        const data = await r.json(); return { ok: r.ok, status: r.status, data };
     } catch(e) { return { ok: false, status: 500, data: { error: { message: e.message } } }; }
 }
 
@@ -354,13 +283,9 @@ app.post('/api/whatsapp/send', async (req, res) => {
     const token = req.headers['x-auth-token'];
     let payload = { messaging_product: "whatsapp", recipient_type: "individual", to };
     if (templateName) {
-        payload.type = "template";
-        payload.template = { name: templateName, language: { code: language || "en_US" } };
+        payload.type = "template"; payload.template = { name: templateName, language: { code: language || "en_US" } };
         if (variables) payload.template.components = [{ type: "body", parameters: variables.map(v => ({ type: "text", text: v })) }];
-    } else {
-        payload.type = "text";
-        payload.text = { body: message };
-    }
+    } else { payload.type = "text"; payload.text = { body: message }; }
     const result = await callMeta(`${phoneId}/messages`, 'POST', token, payload);
     res.status(result.status).json({ success: result.ok, data: result.data });
 });
@@ -379,10 +304,12 @@ app.post('/api/whatsapp/templates', async (req, res) => {
 let distPath = '';
 
 // Check known paths for build directory. 
-// STRICT: Removed fallback to __dirname to prevent serving source code or broken root index.html
+// CRITICAL: We MUST include __dirname because on Hostinger (via Deploy Action), 
+// the server.js is moved INTO the build folder, so distPath IS __dirname.
 const potentialPaths = [
-    path.join(__dirname, 'dist'),
-    path.join(__dirname, '../dist')
+    path.join(__dirname),          // <--- ADDED: Root (for flattened deployments like Hostinger)
+    path.join(__dirname, 'dist'),  // Standard local build
+    path.join(__dirname, '../dist') // Monorepo style
 ];
 
 for (const p of potentialPaths) {
@@ -393,49 +320,33 @@ for (const p of potentialPaths) {
 }
 
 if (!distPath) {
-    console.error("CRITICAL: 'dist' folder with index.html not found. You must run 'npm run build' before starting the production server.");
-    // We do NOT serve root as fallback anymore to prevent confusion.
+    console.error("CRITICAL: 'index.html' not found in any known path. Server cannot serve the app.");
 } else {
     console.log(`[System] Serving Static Files from: ${distPath}`);
 }
 
-// 1. Static Assets (JS/CSS) - Cached normally
+// 1. Serve Static Assets (JS, CSS, Images, and index.html for root)
+// Using standard express.static which defaults to serving index.html for '/'
 if (distPath) {
-    app.use('/assets', express.static(path.join(distPath, 'assets'), { 
-        immutable: true, 
-        maxAge: '1y',
-        fallthrough: false 
-    }));
-
-    // 2. Public Files (favicon, etc)
-    app.use(express.static(distPath, { 
-        index: false 
-    }));
+    app.use(express.static(distPath));
 }
 
-// 3. SPA Catch-all: Always return index.html with NO CACHE
+// 2. SPA Catch-all: For any route not handled by API or static files, return index.html
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API Endpoint Not Found" });
     }
     
     if (!distPath) {
-        return res.status(500).send(`
-            <div style="font-family:sans-serif; text-align:center; padding:50px;">
-                <h1>Application Not Built</h1>
-                <p>The 'dist' folder is missing. The server cannot serve the application.</p>
-                <p>Please run <code>npm run build</code> in your console, then restart the server.</p>
-            </div>
-        `);
+        return res.status(500).send('Application Build Missing. Please run build.');
     }
     
-    // Prevent index.html from being cached to avoid "missing chunk" errors after deployments
+    // Prevent caching for the entry point so new deployments appear immediately
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
-    res.setHeader('Surrogate-Control', 'no-store');
     
     res.sendFile(path.join(distPath, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT} serving ${distPath || 'NOTHING (Build Required)'}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT}`));
