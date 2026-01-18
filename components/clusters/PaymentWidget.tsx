@@ -150,9 +150,14 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
   };
 
   const handleGenerateSetuLink = async () => {
+      // 1. Strict Validation Layer
       const val = parseFloat(amount);
       if (!val || val <= 0) {
-          alert("Please enter a valid amount.");
+          alert("Please enter a valid payment amount greater than 0.");
+          return;
+      }
+      if (!order.customerName || !order.customerContact) {
+          alert("Customer Name and Mobile Number are required to generate a payment link.");
           return;
       }
 
@@ -160,7 +165,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       errorService.logActivity('USER_ACTION', `Generating Setu Link for ₹${val}`);
 
       try {
-          // 1. Generate Link via Backend API to ensure unique billerBillID
+          // 2. Call Backend Proxy (Proxy adds credentials)
           const linkResponse = await fetch('/api/setu/create-link', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -169,40 +174,40 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                   // Use timestamp to ensure unique billerBillID for every request
                   billerBillID: `${order.id}-${Date.now()}`,
                   customerID: order.customerContact, 
-                  name: order.customerName
+                  name: order.customerName,
+                  orderId: order.id // CRITICAL for Webhook tracking
               })
           });
 
           const linkData = await linkResponse.json();
 
-          // Error Handling with Context Parsing
+          // 3. Granular Error Handling
           if (!linkData.success) {
               const rawError = linkData.error;
-              console.error("[Setu Integration] Full Error Context:", rawError);
+              console.error("[Setu API Error Context]:", rawError);
 
               let userMsg = "Unable to generate payment link. Please try again.";
               let errorCode = "UNKNOWN";
+              
+              // Normalize error string for inspection
+              const errorString = typeof rawError === 'string' ? rawError.toLowerCase() : JSON.stringify(rawError).toLowerCase();
 
-              // Attempt to detect code from object or string
-              if (typeof rawError === 'object' && rawError !== null) {
-                  errorCode = rawError.code || rawError.error?.code || "UNKNOWN";
-              } else if (typeof rawError === 'string') {
-                  // Fallback string matching if backend flattened the error
-                  if (rawError.includes('amount')) errorCode = 'invalid_amount';
-                  else if (rawError.includes('auth') || rawError.includes('401')) errorCode = 'authentication_failed';
-                  else if (rawError.includes('verified')) errorCode = 'merchant_not_verified';
-              }
+              // Detect Code
+              if (errorString.includes('amount')) errorCode = 'invalid_amount';
+              else if (errorString.includes('auth') || errorString.includes('401') || errorString.includes('forbidden')) errorCode = 'authentication_failed';
+              else if (errorString.includes('verified') || errorString.includes('merchant')) errorCode = 'merchant_not_verified';
+              else if (errorString.includes('platform')) errorCode = 'platform_error';
 
-              // Map codes to friendly messages
+              // Map to User Friendly Message
               switch (errorCode) {
                   case 'invalid_amount':
-                      userMsg = "The amount entered is invalid. Please enter a positive value.";
+                      userMsg = "The entered amount is invalid. Please check Gateway limits.";
                       break;
                   case 'authentication_failed':
                       userMsg = "Gateway Authentication Failed. Please verify Setu Scheme ID and Secret in Settings.";
                       break;
                   case 'merchant_not_verified':
-                      userMsg = "Merchant account is not active. Please complete Setu verification.";
+                      userMsg = "Merchant account is not active. Please complete Setu verification/KYC.";
                       break;
                   case 'platform_error':
                       userMsg = "Setu Platform is currently experiencing downtime.";
@@ -219,7 +224,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           const shortLink = linkData.data?.data?.paymentLink?.shortLink;
           if (!shortLink) throw new Error("No shortLink received from Setu response.");
 
-          // 2. Parse Suffix for Template
+          // 4. Parse Suffix for Template
           // Template Base: https://setu.co/upi/s/
           const baseUrl = "https://setu.co/upi/s/";
           
@@ -238,7 +243,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
           const linkSuffix = shortLink.replace(baseUrl, '');
 
-          // 3. Send Template with Button
+          // 5. Send Template with Button
           const result = await whatsappService.sendTemplateMessage(
               order.customerContact, 
               'setu_payment_button', 
@@ -257,6 +262,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
       } catch (e: any) {
           console.error(e);
+          // UI Fallback for Error
           alert(`Setu Error: ${e.message}`);
           errorService.logError('PaymentWidget', `Setu Failure: ${e.message}`);
       } finally {

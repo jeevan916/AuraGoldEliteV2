@@ -360,7 +360,7 @@ app.delete('/api/whatsapp/templates', async (req, res) => {
 // --- SETU UPI DEEPLINK API ---
 app.post('/api/setu/create-link', ensureDb, async (req, res) => {
     try {
-        const { amount, billerBillID, customerID, name } = req.body;
+        const { amount, billerBillID, customerID, name, orderId } = req.body;
         const connection = await pool.getConnection();
         const [rows] = await connection.query('SELECT config FROM integrations WHERE provider = ?', ['setu']);
         connection.release();
@@ -377,7 +377,11 @@ app.post('/api/setu/create-link', ensureDb, async (req, res) => {
             amountExactness: "EXACT",
             name: name || "AuraGold Jewellers",
             transactionNote: `Payment for ${billerBillID}`,
-            additionalInfo: { source: "AuraGold_App", customerID: customerID }
+            additionalInfo: { 
+                source: "AuraGold_App", 
+                customerID: customerID,
+                orderId: orderId // CRITICAL for webhook correlation
+            }
         };
 
         const response = await fetch(endpoint, {
@@ -391,6 +395,95 @@ app.post('/api/setu/create-link', ensureDb, async (req, res) => {
         res.json({ success: true, data });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+});
+
+// --- SETU WEBHOOK (AUTO RECORD TRANSACTION) ---
+app.post('/api/setu/webhook', ensureDb, async (req, res) => {
+    // Acknowledge receipt immediately to Setu
+    res.json({ success: true });
+
+    try {
+        const { success, data } = req.body;
+        
+        // 1. Verify Payment Success
+        if (!success || data?.status !== 'PAYMENT_SUCCESS') {
+            console.log("[Setu Webhook] Ignored non-success event:", req.body);
+            return;
+        }
+
+        const { amountPaid, additionalInfo, billerBillID } = data;
+        const value = amountPaid?.value;
+        const orderId = additionalInfo?.orderId; // Extracted from additionalInfo
+
+        if (!orderId || !value) {
+            console.error("[Setu Webhook] Missing orderId or amount:", data);
+            return;
+        }
+
+        console.log(`[Setu Webhook] Processing Payment: ₹${value} for Order ${orderId}`);
+
+        const connection = await pool.getConnection();
+        
+        // 2. Fetch Order
+        const [rows] = await connection.query('SELECT data FROM orders WHERE id = ?', [orderId]);
+        if (!rows.length) {
+            console.error(`[Setu Webhook] Order ${orderId} not found.`);
+            connection.release();
+            return;
+        }
+
+        const order = typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data;
+
+        // 3. Idempotency Check (Prevent duplicate recording)
+        // Use billerBillID as a unique reference in payments if needed, or check existing payments
+        const duplicate = order.payments.some(p => p.note && p.note.includes(billerBillID));
+        if (duplicate) {
+            console.log(`[Setu Webhook] Payment ${billerBillID} already recorded.`);
+            connection.release();
+            return;
+        }
+
+        // 4. Update Order Logic (Replicating frontend reducer logic)
+        const newPayment = {
+            id: `PAY-SETU-${Date.now()}`,
+            date: new Date().toISOString(),
+            amount: value,
+            method: 'UPI_SETU',
+            note: `Auto-Recorded via Setu (Ref: ${billerBillID})`
+        };
+
+        const updatedPayments = [...order.payments, newPayment];
+        const totalPaid = updatedPayments.reduce((acc, p) => acc + p.amount, 0);
+        
+        // Update Milestones
+        let runningSum = 0;
+        const updatedMilestones = order.paymentPlan.milestones.map(m => {
+            runningSum += m.targetAmount;
+            // Precise status update
+            const status = totalPaid >= runningSum ? 'PAID' : (totalPaid > (runningSum - m.targetAmount) ? 'PARTIAL' : 'PENDING');
+            return { ...m, status };
+        });
+
+        const isComplete = totalPaid >= order.totalAmount - 1; // Tolerance for float diff
+        const updatedOrder = {
+            ...order,
+            payments: updatedPayments,
+            paymentPlan: { ...order.paymentPlan, milestones: updatedMilestones },
+            status: isComplete ? 'COMPLETED' : order.status // Use string 'COMPLETED' directly or enum
+        };
+
+        // 5. Commit to DB
+        await connection.query(
+            `UPDATE orders SET data = ?, status = ?, updated_at = ? WHERE id = ?`, 
+            [JSON.stringify(updatedOrder), updatedOrder.status, Date.now(), orderId]
+        );
+        
+        connection.release();
+        console.log(`[Setu Webhook] Success: Order ${orderId} updated.`);
+
+    } catch (e) {
+        console.error("[Setu Webhook] Error processing:", e.message);
     }
 });
 
