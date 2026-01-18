@@ -68,6 +68,36 @@ export const RISK_PROFILES = [
   { id: 'HIGH_RISK', label: 'High Risk / Defaulter', color: 'bg-rose-100 text-rose-800' }
 ];
 
+// --- COMPLIANCE ENGINE: RECOVERY TEMPLATES ---
+// These are the STRICT templates available to the AI. 
+// The AI cannot invent new ones; it must pick one of these IDs.
+export const RECOVERY_TEMPLATES = [
+    {
+        id: 'auragold_gentle_reminder',
+        tone: 'POLITE',
+        text: "Hello {{1}}, a gentle reminder that your installment of {{2}} for order {{3}} is due. Please pay here: {{4}} to avoid delays.",
+        variables: ['Customer Name', 'Amount', 'Order ID', 'Link']
+    },
+    {
+        id: 'auragold_payment_overdue',
+        tone: 'FIRM',
+        text: "Dear {{1}}, we noticed your payment of {{2}} is overdue. To maintain your gold rate protection, please clear the dues via: {{3}} today.",
+        variables: ['Customer Name', 'Amount', 'Link']
+    },
+    {
+        id: 'auragold_urgent_lapse',
+        tone: 'URGENT',
+        text: "URGENT {{1}}: Your Gold Rate Protection for order {{2}} expires in 24 hours. Pay {{3}} immediately to save your booked rate: {{4}}",
+        variables: ['Customer Name', 'Order ID', 'Amount', 'Link']
+    },
+    {
+        id: 'auragold_vip_nudge',
+        tone: 'ENCOURAGING',
+        text: "Namaste {{1}}, thank you for being a valued customer. Your jewelry is progressing well! A scheduled payment of {{2}} is coming up on {{3}}. View details: {{4}}",
+        variables: ['Customer Name', 'Amount', 'Date', 'Link']
+    }
+];
+
 export const SYSTEM_TRIGGER_MAP: SystemTrigger[] = [
     { id: 'TRIG_1', label: 'Order Created', description: 'Sent immediately after booking.', requiredVariables: ['Customer Name', 'Order ID', 'Total Amount', 'Token'], defaultTemplateName: 'auragold_order_confirmation', appGroup: 'ORDER_STATUS' },
     { id: 'TRIG_2', label: 'Status Update', description: 'Jewelry stage change (e.g. Polishing).', requiredVariables: ['Customer Name', 'Item Category', 'New Status', 'Token'], defaultTemplateName: 'auragold_production_update', appGroup: 'ORDER_STATUS' },
@@ -78,45 +108,6 @@ export const SYSTEM_TRIGGER_MAP: SystemTrigger[] = [
     { id: 'TRIG_7', label: 'Lapse Quote', description: 'New market rate offer post-lapse.', requiredVariables: ['Customer Name', 'Old Price', 'New Price', 'Rate', 'Link'], defaultTemplateName: 'auragold_lapse_quote', appGroup: 'PAYMENT_COLLECTION' },
     { id: 'TRIG_8', label: 'Refund/Cancel', description: 'Order cancellation notice.', requiredVariables: ['Customer Name', 'Refund Amount', 'Order ID'], defaultTemplateName: 'auragold_refund_processed', appGroup: 'GENERAL_SUPPORT' }
 ];
-
-// --- DETERMINISTIC AUTOMATION TEMPLATES (Local Logic) ---
-export const AUTOMATION_TEMPLATES = {
-    ORDER_CONFIRMATION: (name: string, items: string, total: number, months: number, milestones: string, token: string) => 
-        `Dear ${name}, thank you for choosing AuraGold. We are pleased to share the details and payment schedule for your order of ${items}.\n\nTotal Order Value: ₹${total.toLocaleString()}\nPayment Terms: ${months} Months Installment\n\nPayment Milestones:\n${milestones}\n\nYou can view the detailed breakdown and track your order progress here: order.auragoldelite.com/token=${token}\nIt is a privilege to craft this piece for you.`,
-    
-    PAYMENT_DUE_TODAY: (name: string, amount: number, orderId: string) => 
-        `Hello ${name}, a gentle reminder that your scheduled payment of ₹${amount.toLocaleString()} for Order #${orderId} is due today. Timely payment helps maintain your Gold Rate Protection benefit.`,
-    
-    PAYMENT_OVERDUE: (name: string, amount: number, date: string) => 
-        `Dear ${name}, we missed your payment of ₹${amount.toLocaleString()} which was due on ${new Date(date).toLocaleDateString()}. Please clear this at your earliest convenience to keep your order active.`,
-    
-    GOLD_RATE_WARNING: (name: string, amount: number) => 
-        `⚠️ Urgent: Dear ${name}, your Gold Rate Protection is at risk of lapsing due to the overdue payment of ₹${amount.toLocaleString()}. Please clear dues immediately to avoid repricing at current higher market rates.`,
-        
-    STATUS_UPDATE: (name: string, item: string, status: string, token: string) => 
-        `Update for ${name}: Your ${item} has moved to the '${status}' stage! Our craftsmen are ensuring perfection. Track live status here: order.auragoldelite.com/token=${token}`,
-
-    // Multi-Language Warning Cycle
-    GRACE_WARNING_1: (name: string, amount: number) => 
-        `[URGENT] Dear ${name}, your payment of ₹${amount} is critically overdue. Protection lapses in a few hours. Pay Now to save rate.`,
-    
-    GRACE_WARNING_2: (name: string, amount: number) => 
-        `नमस्ते ${name}, आपकी ₹${amount} की पेमेंट बाकी है। गोल्ड रेट सुरक्षा समाप्त होने वाली है। कृपया तुरंत भुगतान करें।`,
-        
-    GRACE_WARNING_3: (name: string, amount: number) => 
-        `Attention ${name}: Final hours to save your Gold Rate Booking. Pay ₹${amount} immediately via UPI to avoid contract cancellation.`,
-        
-    GRACE_WARNING_4: (name: string, amount: number) => 
-        `LAST REMINDER: ${name}, do not ignore. Pay ₹${amount} or order will be re-calculated at today's high gold rate.`,
-
-    // Lapse & Follow-up
-    PROTECTION_LAPSED: (name: string, token: string) => 
-        `NOTICE: Dear ${name}, due to non-payment, your Gold Rate Protection has LAPSED. Your order is now floating at market price. Select action: order.auragoldelite.com/token=${token}`,
-        
-    // Dynamic Quotation on Lapse Event
-    LAPSE_DYNAMIC_QUOTE: (name: string, oldTotal: number, newTotal: number, currentRate: number, token: string) => 
-        `[ACTION REQUIRED] ${name}, your order value has increased due to lapse.\n\n📉 Old Locked Price: ₹${oldTotal.toLocaleString()}\n📈 New Market Price: ₹${newTotal.toLocaleString()} (@ ₹${currentRate}/g)\n\nThis quote is valid for 1 hour. Options:\n1. REPOPULATE: Accept new rate & continue payment plan.\n2. REFUND: Cancel order.\n\nClick to Decide: order.auragoldelite.com/token=${token}`
-};
 
 export const INITIAL_TEMPLATES: WhatsAppTemplate[] = [
   {

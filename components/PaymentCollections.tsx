@@ -93,16 +93,21 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
           );
           
           const confirmed = confirm(
-              `AI Strategy: ${result.tone} TONE\n\n` +
+              `AI Strategy: ${result.tone} TONE\n` +
               `Reasoning: ${result.reasoning}\n\n` +
-              `Message: "${result.message}"\n\n` +
+              `Selected Template: ${result.templateId}\n` +
+              `Preview: "${result.message}"\n\n` +
               `Send this via WhatsApp?`
           );
           
           if (confirmed) {
-             // Fix: Expected 3 arguments, but got 4. Removed 'AI Strategy Manual Trigger'.
-             await whatsappService.sendMessage(item.customerContact, result.message, item.customerName);
-             alert(`Strategic ${result.tone} message dispatched to ${item.customerName}`);
+             if (result.templateId && result.variables) {
+                 await whatsappService.sendTemplateMessage(item.customerContact, result.templateId, 'en_US', result.variables, item.customerName);
+                 alert(`Template sent successfully!`);
+             } else {
+                 await whatsappService.sendMessage(item.customerContact, result.message, item.customerName);
+                 alert(`Message sent via Fallback`);
+             }
           }
       } catch (e) {
           console.error(e);
@@ -115,12 +120,9 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
       if(!confirm(`Send payment link for ₹${item.targetAmount} to ${item.customerName} via WhatsApp?`)) return;
 
       const amount = item.targetAmount || item.amount;
-      const upiLink = `upi://pay?pa=auragold@upi&pn=AuraGold&tr=${item.orderId}&am=${amount}&cu=INR`;
       const razorpayLink = `https://rzp.io/i/aura${item.orderId}`;
-      
       const msg = `Dear ${item.customerName}, payment of ₹${amount.toLocaleString()} is due. Pay here: ${razorpayLink}`;
       
-      // Fix: Expected 3 arguments, but got 4. Removed 'Payment Link'.
       await whatsappService.sendMessage(item.customerContact, msg, item.customerName);
       alert("Link Sent Successfully");
   };

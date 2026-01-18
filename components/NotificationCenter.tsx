@@ -1,12 +1,13 @@
 
 import React, { useState } from 'react';
-import { Send, CheckCircle, Clock, AlertCircle, MessageSquare, Zap, Loader2, BrainCircuit, TrendingUp, Smartphone } from 'lucide-react';
+import { Send, CheckCircle, Clock, AlertCircle, MessageSquare, Zap, Loader2, BrainCircuit, TrendingUp, Smartphone, FileText } from 'lucide-react';
 import { NotificationTrigger, CollectionTone, Customer, RiskProfile } from '../types';
+import { whatsappService } from '../services/whatsappService';
 
 interface NotificationCenterProps {
   notifications: NotificationTrigger[];
   customers?: Customer[]; // Added to calculate risk
-  onSend: (id: string, channel: 'WHATSAPP' | 'SMS') => void;
+  onSend: (id: string, channel: 'WHATSAPP' | 'SMS') => void; // Kept for legacy/parent compatibility
   onRefresh: () => void;
   loading: boolean;
   isSending?: string | null;
@@ -15,6 +16,7 @@ interface NotificationCenterProps {
 const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, customers = [], onSend, onRefresh, loading, isSending }) => {
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'SENT'>('PENDING');
   const [channelOverride, setChannelOverride] = useState<'AUTO' | 'WHATSAPP' | 'SMS'>('AUTO');
+  const [sendingState, setSendingState] = useState<string | null>(null);
 
   const filtered = notifications.filter(n => 
     filter === 'ALL' ? true : (filter === 'SENT' ? n.sent : !n.sent)
@@ -42,9 +44,41 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, 
       return 'WHATSAPP'; 
   };
 
-  const handleSmartSend = (id: string, notif: NotificationTrigger) => {
+  const handleSmartSend = async (notif: NotificationTrigger) => {
       const targetChannel = channelOverride === 'AUTO' ? getRecommendedChannel(notif) : channelOverride;
-      onSend(id, targetChannel);
+      
+      setSendingState(notif.id);
+      try {
+          if (targetChannel === 'WHATSAPP') {
+              if (notif.aiRecommendedTemplateId && notif.aiRecommendedVariables) {
+                  // Strict Template Sending
+                  const res = await whatsappService.sendTemplateMessage(
+                      notif.customerContact, 
+                      notif.aiRecommendedTemplateId, 
+                      'en_US', 
+                      notif.aiRecommendedVariables, 
+                      notif.customerName
+                  );
+                  if (res.success) {
+                      // Trigger parent update (optimistic UI usually handles this)
+                      onSend(notif.id, 'WHATSAPP'); 
+                  } else {
+                      alert(`WhatsApp Failed: ${res.error}`);
+                  }
+              } else {
+                  // Fallback for unstructured triggers
+                  await whatsappService.sendMessage(notif.customerContact, notif.message, notif.customerName);
+                  onSend(notif.id, 'WHATSAPP');
+              }
+          } else {
+              // SMS Logic (Parent handles mock/integration)
+              onSend(notif.id, 'SMS');
+          }
+      } catch (e) {
+          console.error(e);
+      } finally {
+          setSendingState(null);
+      }
   };
 
   const getToneStyle = (tone?: CollectionTone) => {
@@ -118,6 +152,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, 
       <div className="space-y-4">
         {filtered.map(notif => {
           const activeChannel = channelOverride === 'AUTO' ? getRecommendedChannel(notif) : channelOverride;
+          const busy = isSending === notif.id || sendingState === notif.id;
+          
           return (
           <div key={notif.id} className={`bg-white p-6 rounded-[2rem] border-2 transition-all flex flex-col gap-4 ${notif.sent ? 'opacity-60 border-slate-100' : 'hover:border-emerald-400 border-slate-50 shadow-sm'}`}>
             <div className="flex justify-between items-start">
@@ -143,11 +179,11 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, 
 
               {!notif.sent && (
                 <button 
-                  onClick={() => handleSmartSend(notif.id, notif)}
-                  disabled={!!isSending}
-                  className={`bg-slate-900 text-white px-5 py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-all shadow-lg ${isSending === notif.id ? 'opacity-70 cursor-wait' : ''}`}
+                  onClick={() => handleSmartSend(notif)}
+                  disabled={busy}
+                  className={`bg-slate-900 text-white px-5 py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-all shadow-lg ${busy ? 'opacity-70 cursor-wait' : ''}`}
                 >
-                  {isSending === notif.id ? (
+                  {busy ? (
                     <><Loader2 size={14} className="animate-spin" /> Sending...</>
                   ) : (
                     <>
@@ -159,15 +195,26 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ notifications, 
               )}
             </div>
 
-            {notif.strategyReasoning && (
-                <div className="bg-gradient-to-r from-amber-50 to-white p-4 rounded-2xl border border-amber-100 flex gap-3">
-                   <BrainCircuit className="text-amber-600 shrink-0" size={18} />
+            {/* AI Reasoning / Template Compliance Badge */}
+            <div className="bg-gradient-to-r from-amber-50 to-white p-4 rounded-2xl border border-amber-100 flex flex-col sm:flex-row gap-4">
+               <div className="flex items-start gap-2">
+                   <BrainCircuit className="text-amber-600 shrink-0 mt-0.5" size={16} />
                    <div className="text-xs text-amber-900/80 font-medium leading-relaxed">
-                      <span className="font-bold text-amber-900 uppercase text-[10px] tracking-wider block mb-1">AI Reasoning ({activeChannel} Selected)</span>
+                      <span className="font-bold text-amber-900 uppercase text-[10px] tracking-wider block mb-1">AI Reasoning</span>
                       {notif.strategyReasoning}
                    </div>
-                </div>
-            )}
+               </div>
+               
+               {notif.aiRecommendedTemplateId && (
+                   <div className="flex items-start gap-2 pl-0 sm:pl-4 border-l-0 sm:border-l border-amber-200">
+                        <FileText className="text-blue-500 shrink-0 mt-0.5" size={16} />
+                        <div>
+                            <span className="font-bold text-blue-900 uppercase text-[10px] tracking-wider block mb-1">API Template Selected</span>
+                            <code className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-[10px] font-mono">{notif.aiRecommendedTemplateId}</code>
+                        </div>
+                   </div>
+               )}
+            </div>
 
             <div className="relative">
                 <div className="bg-slate-50 p-5 rounded-2xl text-sm text-slate-700 italic border border-slate-100 leading-relaxed pr-12 font-medium">

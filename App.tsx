@@ -246,6 +246,7 @@ const App = () => {
                     triggers.push({
                         id: `due-${m.id}-${Date.now()}`,
                         customerName: order.customerName,
+                        customerContact: order.customerContact,
                         type: 'UPCOMING',
                         message: `Payment of ₹${m.targetAmount} due in ${diffDays} days.`,
                         date: m.dueDate,
@@ -256,6 +257,7 @@ const App = () => {
                     triggers.push({
                         id: `over-${m.id}-${Date.now()}`,
                         customerName: order.customerName,
+                        customerContact: order.customerContact,
                         type: 'OVERDUE',
                         message: `Payment of ₹${m.targetAmount} is OVERDUE by ${Math.abs(diffDays)} days.`,
                         date: m.dueDate,

@@ -201,12 +201,17 @@ export interface ActivityLogEntry {
 export interface NotificationTrigger {
   id: string;
   customerName: string;
+  customerContact: string; // Added for direct sending
   type: 'UPCOMING' | 'OVERDUE' | 'SYSTEM';
-  message: string;
+  message: string; // The preview text
   date: string;
   sent: boolean;
   tone?: CollectionTone;
   strategyReasoning?: string;
+  
+  // COMPLIANCE FIELDS
+  aiRecommendedTemplateId?: string;
+  aiRecommendedVariables?: string[];
 }
 
 export type PsychologicalTactic = 'LOSS_AVERSION' | 'SOCIAL_PROOF' | 'AUTHORITY' | 'RECIPROCITY' | 'URGENCY' | 'EMPATHY';

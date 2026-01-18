@@ -1,6 +1,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { Order, CollectionTone, Customer, WhatsAppLogEntry, CreditworthinessReport, AiChatInsight, WhatsAppTemplate, AppResolutionPath, ActivityLogEntry, MetaCategory, AppTemplateGroup, PsychologicalTactic, PaymentPlanTemplate } from "../types";
+import { RECOVERY_TEMPLATES } from "../constants";
 
 // Safe access to API_KEY from environment
 const getAI = () => {
@@ -41,25 +42,74 @@ export const geminiService = {
     order: Order, 
     type: 'UPCOMING' | 'OVERDUE',
     currentGoldRate: number
-  ): Promise<{ message: string, tone: CollectionTone, reasoning: string }> {
+  ): Promise<{ message: string, tone: CollectionTone, reasoning: string, templateId?: string, variables?: string[] }> {
     const ai = getAI();
-    if (!ai) return { message: "Payment Reminder", tone: "POLITE", reasoning: "AI Offline" };
-    
+    // Fallback if AI unavailable
+    const fallbackTemplate = RECOVERY_TEMPLATES[0];
     const paid = order.payments.reduce((acc, p) => acc + p.amount, 0);
     const balance = order.totalAmount - paid;
+    const fallbackVars = [order.customerName, `₹${balance}`, order.id, `https://order.auragold.com/?token=${order.shareToken}`];
+    
+    if (!ai) return { 
+        message: fallbackTemplate.text.replace('{{1}}', fallbackVars[0]).replace('{{2}}', fallbackVars[1]).replace('{{3}}', fallbackVars[2]).replace('{{4}}', fallbackVars[3]), 
+        tone: "POLITE", 
+        reasoning: "AI Offline",
+        templateId: fallbackTemplate.id,
+        variables: fallbackVars
+    };
+    
+    const dueDate = order.paymentPlan.milestones.find(m => m.status !== 'PAID')?.dueDate || 'Today';
 
     try {
         const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Create a WhatsApp reminder for ${order.customerName}. Balance: ₹${balance}. Status: ${type}. Current Gold Rate: ₹${currentGoldRate}.`,
+        contents: `
+        Context:
+        - Customer: ${order.customerName}
+        - Balance: ₹${balance}
+        - Status: ${type} (Due: ${dueDate})
+        - Current Gold Rate: ₹${currentGoldRate}
+        - Link: https://order.auragoldelite.com/?token=${order.shareToken}
+        - OrderID: ${order.id}
+
+        Task: Select the most appropriate template from the list below for a WhatsApp API message. Do NOT generate new text.
+        
+        Available Templates:
+        ${JSON.stringify(RECOVERY_TEMPLATES)}
+
+        Return JSON:
+        {
+            "selectedTemplateId": "string (must match one id from list)",
+            "mappedVariables": ["string", "string", ...], (Extract values for {{1}}, {{2}} etc from context),
+            "reasoning": "string",
+            "previewMessage": "string (the final text with variables filled)"
+        }
+        `,
         config: { 
             responseMimeType: "application/json",
-            systemInstruction: "You are an elite jewelry store manager. Use high-end, persuasive language. Return JSON with keys: message, tone (POLITE, FIRM, URGENT, ENCOURAGING), reasoning."
+            systemInstruction: "You are a Compliance Officer for a Jewelry Brand. You must strictly select a pre-approved template ID. Do not hallucinage new templates."
         }
         });
-        return JSON.parse(response.text || "{}");
+        
+        const data = JSON.parse(response.text || "{}");
+        
+        return {
+            message: data.previewMessage || "Message Preview Unavailable",
+            tone: data.selectedTemplateId?.includes('urgent') ? 'URGENT' : (data.selectedTemplateId?.includes('firm') ? 'FIRM' : 'POLITE'),
+            reasoning: data.reasoning || "AI Selection",
+            templateId: data.selectedTemplateId,
+            variables: data.mappedVariables
+        };
+
     } catch(e) {
-        return { message: "Reminder: Payment Due", tone: "POLITE", reasoning: "Fallback" };
+        console.error("AI Generation Error", e);
+        return { 
+            message: fallbackTemplate.text, 
+            tone: "POLITE", 
+            reasoning: "Fallback Error", 
+            templateId: fallbackTemplate.id,
+            variables: fallbackVars
+        };
     }
   },
 
