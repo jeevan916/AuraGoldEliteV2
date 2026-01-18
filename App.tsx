@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { 
   Plus, Home, ReceiptIndianRupee, Users, MessageSquare, 
   Menu, ArrowLeft, Cloud, Loader2, HardDrive, Settings as SettingsIcon,
-  BrainCircuit, Calculator, FileText, ScrollText, Globe, Activity, ShoppingBag, BookOpen, X, RefreshCw
+  BrainCircuit, Calculator, FileText, ScrollText, Globe, Activity, ShoppingBag, BookOpen, X, RefreshCw, DownloadCloud
 } from 'lucide-react';
 
 import './index.css'; 
@@ -17,49 +17,30 @@ import { storageService } from './services/storageService';
 import { Order, GlobalSettings, NotificationTrigger, PaymentPlanTemplate } from './types';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-// --- ROBUST LAZY LOADING HELPER ---
+// --- STABLE LAZY LOADER ---
+// If a chunk fails (404), display the Update UI immediately. 
+// Do not auto-reload to prevent infinite loops.
 const lazyRetry = (importFn: () => Promise<any>, moduleName: string) => {
   return lazy(async () => {
     try {
       return await importFn();
     } catch (error: any) {
-      console.error(`[App] Chunk load failed for ${moduleName}:`, error);
-      
-      // Check if it's a network/chunk error
-      const isChunkError = error.toString().includes('dynamically imported module') || 
-                           error.toString().includes('Importing a module script failed') ||
-                           error.name === 'ChunkLoadError';
-
-      if (isChunkError) {
-          const storageKey = `retry_${moduleName}`;
-          const lastRetry = sessionStorage.getItem(storageKey);
-          const now = Date.now();
-
-          // Prevent infinite reload loop: max 1 retry per 10 seconds
-          if (!lastRetry || (now - parseInt(lastRetry) > 10000)) {
-             console.log(`[App] Reloading for ${moduleName}...`);
-             sessionStorage.setItem(storageKey, now.toString());
-             window.location.reload();
-             return new Promise(() => {}); // Stall to prevent render
-          }
-      }
-
-      // If reload failed or not a chunk error, return Fallback
+      console.warn(`[App] Module ${moduleName} missing. Showing update prompt.`);
       return { 
           default: () => (
-            <div className="flex flex-col items-center justify-center min-h-[50vh] p-8 text-center animate-fadeIn">
-                <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-4 shadow-sm border border-amber-100">
-                    <RefreshCw size={32} className="text-amber-600" />
+            <div className="flex flex-col items-center justify-center h-full min-h-[400px] p-8 text-center animate-fadeIn">
+                <div className="w-20 h-20 bg-slate-100 text-slate-400 rounded-3xl flex items-center justify-center mb-6 shadow-inner">
+                    <DownloadCloud size={32} />
                 </div>
-                <h2 className="text-xl font-black text-slate-800 mb-2">Update Available</h2>
-                <p className="text-slate-500 text-sm mb-6 max-w-xs mx-auto leading-relaxed">
-                    A new version of AuraGold is available. Please update to continue.
+                <h2 className="text-xl font-black text-slate-800 mb-2">Update Required</h2>
+                <p className="text-slate-500 text-sm mb-8 max-w-xs mx-auto leading-relaxed">
+                    A new version of <strong>{moduleName}</strong> has been deployed. Please refresh to continue.
                 </p>
                 <button 
                     onClick={() => window.location.reload()}
-                    className="bg-slate-900 text-white px-8 py-3.5 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg active:scale-95 flex items-center gap-2"
+                    className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl active:scale-95 flex items-center gap-3"
                 >
-                    <RefreshCw size={14} /> Update Now
+                    <RefreshCw size={16} /> Load New Version
                 </button>
             </div>
           )
@@ -133,13 +114,6 @@ const App = () => {
   useEffect(() => {
     errorService.initGlobalListeners();
     
-    // URL Hygiene: Clean up /index.html or /index from URL if present
-    const path = window.location.pathname;
-    if (path.endsWith('/index.html') || path.endsWith('/index')) {
-        const newPath = path.replace(/(\/index\.html|\/index)$/, '/') || '/';
-        window.history.replaceState({}, '', newPath + window.location.search);
-    }
-
     // Check for share token in URL
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');

@@ -21,17 +21,8 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       emptyOutDir: true,
       target: 'esnext',
-      modulePreload: {
-        polyfill: false
-      },
       rollupOptions: {
-        output: {
-          manualChunks: {
-            'vendor-react': ['react', 'react-dom'],
-            'vendor-ui': ['lucide-react', 'recharts'],
-            'vendor-utils': ['jspdf', 'jspdf-autotable', '@google/genai'],
-          }
-        }
+        // Letting Vite decide chunk splitting is safer for preventing 404s
       }
     },
     server: {

@@ -378,11 +378,11 @@ app.post('/api/whatsapp/templates', async (req, res) => {
 // --- STATIC ASSET SERVING ---
 let distPath = '';
 
-// Check known paths for build directory
+// Check known paths for build directory. 
+// STRICT: Removed fallback to __dirname to prevent serving source code or broken root index.html
 const potentialPaths = [
     path.join(__dirname, 'dist'),
-    path.join(__dirname, '../dist'),
-    path.join(__dirname) 
+    path.join(__dirname, '../dist')
 ];
 
 for (const p of potentialPaths) {
@@ -393,47 +393,49 @@ for (const p of potentialPaths) {
 }
 
 if (!distPath) {
-    console.error("CRITICAL: 'dist' folder with index.html not found. Run 'npm run build' first.");
+    console.error("CRITICAL: 'dist' folder with index.html not found. You must run 'npm run build' before starting the production server.");
+    // We do NOT serve root as fallback anymore to prevent confusion.
 } else {
     console.log(`[System] Serving Static Files from: ${distPath}`);
 }
 
-// Serve static assets with cache headers
-app.use('/assets', express.static(path.join(distPath, 'assets'), { 
-    immutable: true, 
-    maxAge: '1y',
-    fallthrough: false 
-}));
+// 1. Static Assets (JS/CSS) - Cached normally
+if (distPath) {
+    app.use('/assets', express.static(path.join(distPath, 'assets'), { 
+        immutable: true, 
+        maxAge: '1y',
+        fallthrough: false 
+    }));
 
-// Serve root explicitly to handle redirects properly
-app.get('/', (req, res) => {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.sendFile(path.join(distPath, 'index.html'));
-});
+    // 2. Public Files (favicon, etc)
+    app.use(express.static(distPath, { 
+        index: false 
+    }));
+}
 
-// Serve other static files (favicons, etc.) from root, but DO NOT automatically serve index.html for unknown routes
-app.use(express.static(distPath, { 
-    index: false,
-    etag: false,
-    lastModified: false
-}));
-
-app.get('*.(js|css|png|jpg|jpeg|gif|ico|json|svg)', (req, res) => {
-    res.status(404).send('Not Found');
-});
-
-// SPA Catch-all: Send index.html for client-side routing
+// 3. SPA Catch-all: Always return index.html with NO CACHE
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API Endpoint Not Found" });
     }
+    
     if (!distPath) {
-        return res.status(500).send('Application Build Missing. Please run build.');
+        return res.status(500).send(`
+            <div style="font-family:sans-serif; text-align:center; padding:50px;">
+                <h1>Application Not Built</h1>
+                <p>The 'dist' folder is missing. The server cannot serve the application.</p>
+                <p>Please run <code>npm run build</code> in your console, then restart the server.</p>
+            </div>
+        `);
     }
+    
+    // Prevent index.html from being cached to avoid "missing chunk" errors after deployments
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
+    
     res.sendFile(path.join(distPath, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT} serving ${distPath}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT} serving ${distPath || 'NOTHING (Build Required)'}`));
