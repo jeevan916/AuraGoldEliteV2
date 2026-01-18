@@ -1,5 +1,5 @@
 
-import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate, CatalogItem } from '../types';
+import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate, CatalogItem, Customer } from '../types';
 import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES, INITIAL_TEMPLATES, INITIAL_CATALOG } from '../constants';
 
 export interface AppState {
@@ -9,6 +9,7 @@ export interface AppState {
   planTemplates: PaymentPlanTemplate[];
   catalog: CatalogItem[];
   settings: GlobalSettings;
+  customers: Customer[];
   lastUpdated: number;
 }
 
@@ -21,6 +22,7 @@ const DEFAULT_STATE: AppState = {
   planTemplates: INITIAL_PLAN_TEMPLATES,
   catalog: INITIAL_CATALOG,
   settings: INITIAL_SETTINGS,
+  customers: [],
   lastUpdated: Date.now()
 };
 
@@ -39,6 +41,7 @@ class StorageService {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (!parsed.catalog) parsed.catalog = INITIAL_CATALOG;
+        if (!parsed.customers) parsed.customers = [];
         this.state = parsed;
       }
     } catch (e) {
@@ -153,9 +156,9 @@ class StorageService {
     this.pushEntity('settings', { settings }); 
   }
 
-  // Customers are derived in App usually, but if we save them explicitly:
-  public setCustomers(customers: any[]) {
-      (this.state as any).customers = customers; // Add to state if missing from interface
+  public getCustomers() { return this.state.customers || []; }
+  public setCustomers(customers: Customer[]) {
+      this.state.customers = customers;
       this.pushEntity('customers', { customers });
   }
 

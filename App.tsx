@@ -14,7 +14,7 @@ import { useWhatsApp } from './hooks/useWhatsApp';
 import { errorService } from './services/errorService';
 import { goldRateService } from './services/goldRateService';
 import { storageService } from './services/storageService';
-import { Order, GlobalSettings, NotificationTrigger, PaymentPlanTemplate } from './types';
+import { Order, GlobalSettings, NotificationTrigger, PaymentPlanTemplate, AppError, ActivityLogEntry, Customer } from './types';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 // --- STABLE LAZY LOADER ---
@@ -104,6 +104,13 @@ const App = () => {
   const [settings, setSettings] = useState<GlobalSettings>(storageService.getSettings());
   const [planTemplates, setPlanTemplates] = useState<PaymentPlanTemplate[]>(storageService.getPlanTemplates());
   
+  // System Log State (For Auto-Repair Engine)
+  const [systemErrors, setSystemErrors] = useState<AppError[]>([]);
+  const [systemActivities, setSystemActivities] = useState<ActivityLogEntry[]>([]);
+
+  // Manual Customer Metadata State
+  const [manualCustomers, setManualCustomers] = useState<Customer[]>(storageService.getCustomers());
+
   // Custom Hooks
   const { orders, addOrder, updateOrder, recordPayment, updateItemStatus } = useOrders();
   const { logs, addLog, templates, setTemplates } = useWhatsApp();
@@ -112,6 +119,12 @@ const App = () => {
   useEffect(() => {
     errorService.initGlobalListeners();
     
+    // Subscribe to Error Service for Real-time Logging/Auto-Repair UI
+    const unsubscribeErrors = errorService.subscribe((errs, acts) => {
+        setSystemErrors(errs);
+        setSystemActivities(acts);
+    });
+
     // Check for share token in URL
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');
@@ -129,13 +142,69 @@ const App = () => {
         if (res.success) {
             setSettings(storageService.getSettings());
             setPlanTemplates(storageService.getPlanTemplates());
+            setManualCustomers(storageService.getCustomers());
             console.log("[App] Sync Successful");
         }
     });
 
     // Make view dispatcher global for components
     (window as any).dispatchView = (v: MainView) => setView(v);
-  }, []); // <--- CRITICAL FIX: Empty dependency array to run ONLY ONCE on mount
+
+    return () => {
+        unsubscribeErrors();
+    };
+  }, []);
+
+  // --- DERIVED CUSTOMER LIST LOGIC (One Customer -> Multiple Orders) ---
+  const derivedCustomers = useMemo(() => {
+      const customerMap = new Map<string, Customer>();
+
+      // 1. Initialize with manually added customers (Metadata source)
+      manualCustomers.forEach(c => {
+          customerMap.set(c.contact, {
+              ...c,
+              totalSpent: 0,
+              orderIds: []
+          });
+      });
+
+      // 2. Aggregate data from Orders (Source of Truth for Transactions)
+      orders.forEach(order => {
+          const contact = order.customerContact;
+          if (!contact) return;
+
+          const existing = customerMap.get(contact);
+          
+          if (existing) {
+              // Update existing profile with order data
+              existing.orderIds = Array.from(new Set([...existing.orderIds, order.id]));
+              existing.totalSpent += order.totalAmount;
+              // Keep latest name if available? Or strictly use profile name?
+              // Let's fallback to order name if profile name is empty (rare)
+              if (!existing.name) existing.name = order.customerName;
+          } else {
+              // Create new ephemeral profile from order
+              customerMap.set(contact, {
+                  id: `CUST-${contact}`,
+                  name: order.customerName,
+                  contact: contact,
+                  email: order.customerEmail,
+                  secondaryContact: order.secondaryContact,
+                  orderIds: [order.id],
+                  totalSpent: order.totalAmount,
+                  joinDate: order.createdAt
+              });
+          }
+      });
+
+      return Array.from(customerMap.values()).sort((a, b) => b.totalSpent - a.totalSpent);
+  }, [orders, manualCustomers]);
+
+  const handleAddCustomer = (newCustomer: Customer) => {
+      const updated = [...manualCustomers, newCustomer];
+      setManualCustomers(updated);
+      storageService.setCustomers(updated); // Persist
+  };
 
   const handleUpdateSettings = (newSettings: GlobalSettings) => {
       setSettings(newSettings);
@@ -206,23 +275,21 @@ const App = () => {
             <OrderDetails order={selectedOrder} settings={settings} onBack={() => setView('ORDER_BOOK')} onUpdateStatus={updateItemStatus} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} logs={logs} onAddLog={addLog} /> : 
             <div className="text-center p-10">Order Not Found</div>;
             
-          case 'CUSTOMERS': return <CustomerList customers={[]} orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onMessageSent={addLog} onAddCustomer={(c) => { 
-             storageService.setCustomers([...((storageService as any).state.customers || []), c]);
-          }} />;
+          case 'CUSTOMERS': return <CustomerList customers={derivedCustomers} orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onMessageSent={addLog} onAddCustomer={handleAddCustomer} />;
           
           case 'COLLECTIONS': return <PaymentCollections orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onSendWhatsApp={() => {}} settings={settings} />;
           
-          case 'WHATSAPP': return <WhatsAppPanel logs={logs} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} />;
+          case 'WHATSAPP': return <WhatsAppPanel logs={logs} customers={derivedCustomers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} />;
           
           case 'TEMPLATES': return <WhatsAppTemplates templates={templates} onUpdate={setTemplates} />;
           
           case 'PLANS': return <PlanManager templates={planTemplates} onUpdate={(tpls) => { setPlanTemplates(tpls); storageService.setPlanTemplates(tpls); }} />;
           
-          case 'STRATEGY': return <NotificationCenter notifications={notificationTriggers} onSend={async (id, ch) => { alert(`Sent via ${ch}`); }} onRefresh={() => {}} loading={false} />;
+          case 'STRATEGY': return <NotificationCenter notifications={notificationTriggers} customers={derivedCustomers} onSend={async (id, ch) => { alert(`Sent via ${ch}`); }} onRefresh={() => {}} loading={false} />;
           
           case 'MARKET': return <MarketIntelligence />;
           
-          case 'SYS_LOGS': return <ErrorLogPanel errors={[]} activities={[]} onClear={() => {}} />;
+          case 'SYS_LOGS': return <ErrorLogPanel errors={systemErrors} activities={systemActivities} onClear={() => { errorService.clearErrors(); errorService.clearActivity(); }} />;
           
           case 'SETTINGS': return <Settings settings={settings} onUpdate={handleUpdateSettings} />;
           
@@ -284,19 +351,22 @@ const App = () => {
                  <SidebarItem active={view === 'CUSTOMERS'} onClick={() => setView('CUSTOMERS')} icon={Users} label="Clients" />
                  <SidebarItem active={view === 'COLLECTIONS'} onClick={() => setView('COLLECTIONS')} icon={ReceiptIndianRupee} label="Payments" />
                  <SidebarItem active={view === 'STRATEGY'} onClick={() => setView('STRATEGY')} icon={BrainCircuit} label="Recovery AI" />
+                 <SidebarItem active={view === 'PLANS'} onClick={() => setView('PLANS')} icon={Calculator} label="Plan Manager" />
                  
                  <div className="my-6 border-t border-slate-100"></div>
                  <p className="px-4 text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Connect</p>
 
                  <SidebarItem active={view === 'WHATSAPP'} onClick={() => setView('WHATSAPP')} icon={MessageSquare} label="WhatsApp" />
+                 <SidebarItem active={view === 'TEMPLATES'} onClick={() => setView('TEMPLATES')} icon={FileText} label="Templates" />
                  <SidebarItem active={view === 'MARKET'} onClick={() => setView('MARKET')} icon={Globe} label="Market Intel" />
              </div>
 
              <div className="mt-4 pt-4 border-t border-slate-100">
+                 <SidebarItem active={view === 'SYS_LOGS'} onClick={() => setView('SYS_LOGS')} icon={HardDrive} label="System Logs" />
                  <SidebarItem active={view === 'SETTINGS'} onClick={() => setView('SETTINGS')} icon={SettingsIcon} label="Settings" />
                  <div className="px-4 mt-4 flex items-center gap-2 text-[10px] text-slate-400">
                     <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                    <span>System Online • v2.4.0</span>
+                    <span>System Online • v5.0.1</span>
                  </div>
              </div>
         </div>
