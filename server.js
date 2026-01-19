@@ -59,6 +59,7 @@ resolveRootConflict();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const META_API_VERSION = "v22.0";
 
 app.set('trust proxy', 1); 
 app.use(compression());    
@@ -122,9 +123,10 @@ app.get('/api/whatsapp/webhook', (req, res) => {
 
     if (mode && token) {
         if (mode === 'subscribe' && token === verify_token) {
-            console.log("[Webhook] Verification Successful");
+            console.log(`[Webhook] Meta Verification Successful (v22.0)`);
             return res.status(200).send(challenge);
         } else {
+            console.warn(`[Webhook] Meta Verification Failed: Token mismatch`);
             return res.sendStatus(403);
         }
     }
@@ -195,10 +197,8 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
     }
 });
 
-// --- REMAINING API ROUTES (Simplified for brevity as they haven't changed much) ---
-
 app.get('/api/health', async (req, res) => {
-    res.json({ status: 'ok', time: new Date() });
+    res.json({ status: 'ok', time: new Date(), api_version: META_API_VERSION });
 });
 
 const createSyncHandler = (table) => async (req, res) => {
@@ -273,16 +273,22 @@ app.post('/api/whatsapp/send', async (req, res) => {
     const { to, message, templateName, language, components } = req.body;
     const phoneId = req.headers['x-phone-id'];
     const token = req.headers['x-auth-token'];
+    
     let payload = { messaging_product: "whatsapp", recipient_type: "individual", to };
+    
     if (templateName) {
         payload.type = "template"; 
-        payload.template = { name: templateName, language: { code: language || "en_US" }, components };
+        payload.template = { name: templateName, language: { code: language || "en_US" } };
+        if (components) {
+            payload.template.components = components;
+        }
     } else { 
         payload.type = "text"; 
         payload.text = { body: message }; 
     }
+    
     try {
-        const r = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${phoneId}/messages`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -292,7 +298,61 @@ app.post('/api/whatsapp/send', async (req, res) => {
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// SETU AND RAZORPAY PROXIES (Same as previous version)
+app.get('/api/whatsapp/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    try {
+        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates?limit=100&fields=name,status,components,category,rejected_reason`, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+        });
+        const data = await r.json();
+        res.status(r.status).json({ success: r.ok, data: data.data });
+    } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post('/api/whatsapp/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    try {
+        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        const data = await r.json();
+        res.status(r.status).json({ success: r.ok, data });
+    } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post('/api/whatsapp/templates/:id', async (req, res) => {
+    const token = req.headers['x-auth-token'];
+    try {
+        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${req.params.id}`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        const data = await r.json();
+        res.status(r.status).json({ success: r.ok, data });
+    } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.delete('/api/whatsapp/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    const name = req.query.name;
+    try {
+        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates?name=${name}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+        });
+        const data = await r.json();
+        res.status(r.status).json({ success: r.ok, data });
+    } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// SETU AND RAZORPAY PROXIES
 app.post('/api/setu/create-link', ensureDb, async (req, res) => {
     try {
         const { amount, billerBillID, customerID, name, orderId } = req.body;
@@ -334,4 +394,4 @@ if (fs.existsSync(distPath)) {
     });
 }
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT} | Meta v22.0 Active`));

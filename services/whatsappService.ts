@@ -10,25 +10,21 @@ export interface WhatsAppResponse {
   logEntry?: WhatsAppLogEntry;
 }
 
-const API_VERSION = "v21.0";
+// Meta API v22.0 Alignment
+const API_VERSION = "v22.0";
 
 export const whatsappService = {
   formatPhoneNumber(phone: string): string {
     if (!phone) return '';
     let cleaned = phone.replace(/\D/g, '');
     
-    // Remove leading '0' if it's an 11-digit number (common user entry error)
     if (cleaned.length === 11 && cleaned.startsWith('0')) {
         cleaned = cleaned.substring(1);
     }
     
-    // If it's a 10 digit number (Standard India Mobile), add 91
     if (cleaned.length === 10) return `91${cleaned}`;
-    
-    // If it's already 12 digits and starts with 91, return as is
     if (cleaned.length === 12 && cleaned.startsWith('91')) return cleaned;
     
-    // Fallback: return cleaned (might fail if no country code, but ensures we pass something)
     return cleaned;
   },
 
@@ -45,7 +41,7 @@ export const whatsappService = {
   },
 
   async fetchMetaTemplates(): Promise<any[]> {
-     errorService.logActivity('API_CALL', 'Fetching Meta Templates...');
+     errorService.logActivity('API_CALL', `Fetching Meta Templates (${API_VERSION})...`);
      const settings = this.getSettings();
      const token = settings.whatsappBusinessToken?.trim();
      
@@ -76,7 +72,7 @@ export const whatsappService = {
   },
 
   async createMetaTemplate(template: WhatsAppTemplate): Promise<{ success: boolean; finalName?: string; error?: any; debugPayload?: any; rawResponse?: any }> {
-     errorService.logActivity('API_CALL', `Creating Template: ${template.name}`);
+     errorService.logActivity('API_CALL', `Creating Template (${API_VERSION}): ${template.name}`);
      const settings = this.getSettings();
      const token = settings.whatsappBusinessToken?.trim();
      
@@ -144,7 +140,7 @@ export const whatsappService = {
   },
 
   async editMetaTemplate(templateId: string, template: WhatsAppTemplate): Promise<{ success: boolean; error?: any; debugPayload?: any; rawResponse?: any }> {
-      errorService.logActivity('API_CALL', `Editing Template ID: ${templateId}`);
+      errorService.logActivity('API_CALL', `Editing Template ID: ${templateId} (${API_VERSION})`);
       const settings = this.getSettings();
       const token = settings.whatsappBusinessToken?.trim();
       
@@ -192,7 +188,7 @@ export const whatsappService = {
   },
 
   async deleteMetaTemplate(templateName: string): Promise<{ success: boolean; error?: string }> {
-      errorService.logActivity('API_CALL', `Deleting Template: ${templateName}`);
+      errorService.logActivity('API_CALL', `Deleting Template: ${templateName} (${API_VERSION})`);
       const settings = this.getSettings();
       const token = settings.whatsappBusinessToken?.trim();
       
@@ -228,8 +224,7 @@ export const whatsappService = {
         return { success: false, error: "Invalid Phone Number" };
     }
 
-    // LOG REQUEST START
-    errorService.logActivity('TEMPLATE_SENT', `Sending '${templateName}' to ${customerName} (${recipient})...`);
+    errorService.logActivity('TEMPLATE_SENT', `Sending '${templateName}' to ${customerName} (${recipient}) using v22.0...`);
 
     const settings = this.getSettings();
     const token = settings.whatsappBusinessToken?.trim();
@@ -242,7 +237,6 @@ export const whatsappService = {
     try {
         const components: any[] = [];
 
-        // Add Body Variables
         if (bodyVariables.length > 0) {
             components.push({
                 type: "body",
@@ -250,12 +244,11 @@ export const whatsappService = {
             });
         }
 
-        // Add Button Variable (Dynamic URL Suffix)
         if (buttonVariable) {
             components.push({
                 type: "button",
                 sub_type: "url",
-                index: 0, // First button in the structure
+                index: 0,
                 parameters: [{ type: "text", text: buttonVariable }]
             });
         }
@@ -271,50 +264,17 @@ export const whatsappService = {
                 to: recipient,
                 templateName,
                 language: languageCode,
-                // We construct the full template object manually instead of just passing variables list
-                // This requires a slightly different payload structure on the server proxy or we handle it here.
-                // The server proxy /api/whatsapp/send handles `variables` for simple body, but for complex components we need to pass `components` directly.
-                // NOTE: We need to update the server proxy to accept `components` override or we assume the proxy handles this structure.
-                // Based on previous server.js, it expects `variables`. Let's assume we update server.js or the proxy is smart enough.
-                // Actually, looking at server.js: it constructs payload.template.components based on `variables`.
-                // We need to bypass that logic or update server.js.
-                // BUT wait, since we can't edit server.js in this step easily without risk, let's rely on the fact that we can pass `components` in the body if we modify the server call slightly?
-                // NO, server.js explicitly constructs payload.
-                
-                // Let's assume the server.js is updated to check for `components` in req.body and use that if present.
-                // IF NOT, we are stuck.
-                // WAIT! I already edited server.js in the previous turn? No, I edited it to add Setu.
-                // The current server.js implementation:
-                // if (variables) payload.template.components = [{ type: "body", parameters: variables... }]
-                
-                // I will strictly pass `variables` as the `components` array itself if I can, but the server map function will break it.
-                // I MUST update server.js logic conceptually, but I can't in this response block easily.
-                // WORKAROUND: I will update the `variables` argument to be the full components array and assume the server uses it? No.
-                
-                // Let's look at the server code provided in previous turn:
-                // if (variables) payload.template.components = [{ type: "body", parameters: variables.map(...) }];
-                
-                // CRITICAL FIX: The server.js logic prevents custom components. 
-                // However, I can't change server.js in this exact step effectively if I assume the user didn't apply manual fixes.
-                // I will try to pass the components array as `variables` but the map function `variables.map(v => ({ type: "text", text: v }))` will create garbage if I pass objects.
-                
-                // RE-READING: The user provided `server.js` content in the prompt.
-                // I CAN update server.js here because I am updating the app.
-                // I will include a server.js update to support raw `components` payload.
-                
-                components: components // Passing this new field which I will add support for in server.js
+                components: components
             })
         });
 
         const data = await response.json();
         
-        // Strict Success Check
         if (!data.success || !data.data || !data.data.messages || data.data.messages.length === 0) {
-            throw new Error(data.data?.error?.message || JSON.stringify(data.error) || "Message not queued by Meta (Check Sandbox/Window)");
+            throw new Error(data.data?.error?.message || JSON.stringify(data.error) || "Message not queued by Meta (v22.0)");
         }
 
-        // LOG SUCCESS
-        errorService.logActivity('API_SUCCESS', `Template delivered. ID: ${data.data?.messages?.[0]?.id}`);
+        errorService.logActivity('API_SUCCESS', `Template delivered (v22.0). ID: ${data.data?.messages?.[0]?.id}`);
 
         return {
           success: true,
@@ -326,8 +286,7 @@ export const whatsappService = {
           }
         };
     } catch (error: any) {
-        // LOG FAILURE
-        errorService.logError("WhatsApp API", `Send Failed: ${error.message}`, "MEDIUM");
+        errorService.logError("WhatsApp API", `Send Failed (v22.0): ${error.message}`, "MEDIUM");
         return { success: false, error: error.message };
     }
   },
@@ -340,8 +299,7 @@ export const whatsappService = {
         return { success: false, error: "Invalid Phone Number" };
     }
 
-    // LOG REQUEST START
-    errorService.logActivity('MANUAL_MESSAGE_SENT', `Sending message to ${customerName}...`);
+    errorService.logActivity('MANUAL_MESSAGE_SENT', `Sending message to ${customerName} (v22.0)...`);
 
     const settings = this.getSettings();
     const token = settings.whatsappBusinessToken?.trim();
@@ -367,13 +325,11 @@ export const whatsappService = {
 
       const data = await response.json();
       
-      // Strict Success Check
       if (!data.success || !data.data || !data.data.messages || data.data.messages.length === 0) {
-          throw new Error(data.data?.error?.message || JSON.stringify(data.error) || "Message not queued by Meta");
+          throw new Error(data.data?.error?.message || JSON.stringify(data.error) || "Message not queued by Meta (v22.0)");
       }
 
-      // LOG SUCCESS
-      errorService.logActivity('API_SUCCESS', `Message sent. ID: ${data.data?.messages?.[0]?.id}`);
+      errorService.logActivity('API_SUCCESS', `Message sent (v22.0). ID: ${data.data?.messages?.[0]?.id}`);
 
       return {
         success: true,
@@ -385,8 +341,7 @@ export const whatsappService = {
         }
       };
     } catch (e: any) { 
-        // LOG FAILURE
-        errorService.logError("WhatsApp API", `Send Failed: ${e.message}`, "MEDIUM");
+        errorService.logError("WhatsApp API", `Send Failed (v22.0): ${e.message}`, "MEDIUM");
         return { success: false, error: e.message }; 
     }
   }
