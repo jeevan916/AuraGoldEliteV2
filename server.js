@@ -89,7 +89,29 @@ app.use('/api', coreRouter);
 
 app.use('/api/*', (req, res) => res.status(404).json({ error: `API route ${req.originalUrl} not found.` }));
 
-// --- STATIC SERVING ---
+// --- STATIC SERVING & AUTO-FIX ---
+
+// CRITICAL FIX: If 'dist' exists (production build), we must ensure the server doesn't 
+// accidentally serve the SOURCE 'index.html' located in the root directory.
+// We rename root 'index.html' to 'index.html.bkp' if it contains source code references.
+const distIndex = path.join(__dirname, 'dist', 'index.html');
+const rootIndex = path.join(__dirname, 'index.html');
+
+if (fs.existsSync(distIndex) && fs.existsSync(rootIndex)) {
+    try {
+        const content = fs.readFileSync(rootIndex, 'utf-8');
+        // Check if this is the source file (contains import to .tsx)
+        if (content.includes('src="./index.tsx"') || content.includes('src="/index.tsx"')) {
+            console.log("[System] Detected source index.html in root interfering with build.");
+            const backupPath = path.join(__dirname, 'index.html.bkp');
+            fs.renameSync(rootIndex, backupPath);
+            console.log(`[System] Renamed root index.html -> ${backupPath}`);
+        }
+    } catch (e) {
+        console.warn("[System] Failed to auto-rename root index.html", e.message);
+    }
+}
+
 const getValidDistPath = () => {
     // 1. Check for standard 'dist' folder (Local dev / Standard build structure)
     const distFolder = path.join(__dirname, 'dist');
