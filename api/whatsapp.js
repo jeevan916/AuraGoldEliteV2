@@ -69,6 +69,102 @@ router.get('/logs/poll', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// --- TEMPLATE MANAGEMENT ENDPOINTS ---
+
+// Fetch Templates
+router.get('/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    
+    if (!wabaId || !token) return res.status(401).json({ success: false, error: "Missing Credentials" });
+
+    try {
+        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates`, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await r.json();
+        
+        if (data.error) throw new Error(data.error.message);
+        
+        res.json({ success: true, data: data.data });
+    } catch (e) {
+        console.error("Fetch Templates Error:", e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Create Template
+router.post('/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    const payload = req.body;
+
+    if (!wabaId || !token) return res.status(401).json({ success: false, error: "Missing Credentials" });
+
+    try {
+        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await r.json();
+        
+        if (data.error) throw new Error(data.error.message);
+        
+        res.json({ success: true, data: data });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Edit Template (Usually creates a new version or edits draft)
+router.post('/templates/:id', async (req, res) => {
+    const templateId = req.params.id;
+    const token = req.headers['x-auth-token'];
+    const payload = req.body;
+
+    if (!token) return res.status(401).json({ success: false, error: "Missing Credentials" });
+
+    try {
+        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${templateId}`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await r.json();
+        
+        if (data.error) throw new Error(data.error.message);
+        
+        res.json({ success: true, data });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Delete Template
+router.delete('/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    const name = req.query.name;
+
+    if (!wabaId || !token || !name) return res.status(400).json({ success: false, error: "Missing Params" });
+
+    try {
+        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates?name=${name}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await r.json();
+        
+        if (data.error) throw new Error(data.error.message);
+        
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Send Message
 router.post('/send', ensureDb, async (req, res) => {
     const { to, message, templateName, language, components, customerName } = req.body;
