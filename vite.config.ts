@@ -8,8 +8,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    // Absolute root base is safer for SPA routing consistency
-    base: '/', 
+    // Relative base is most reliable for Hostinger shared/VPS hosting
+    base: './', 
     define: {
       'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),
     },
@@ -20,7 +20,12 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
       minify: 'terser',
       rollupOptions: {
-        // Let Vite manage chunks automatically for stability
+        output: {
+          manualChunks: {
+            'vendor': ['react', 'react-dom', 'recharts', 'lucide-react'],
+            'pdf': ['jspdf', 'jspdf-autotable']
+          }
+        }
       }
     },
     server: {

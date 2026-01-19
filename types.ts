@@ -23,6 +23,26 @@ export enum ProtectionStatus {
   LAPSED = 'LAPSED'
 }
 
+export interface StoneEntry {
+  id: string;
+  type: string; // Diamond, Ruby, CZ, etc.
+  weight: number; // Carats or Grams
+  unit: 'ct' | 'g' | 'pcs';
+  rate: number;
+  quality?: string; // VVS1, G-H, etc.
+  total: number;
+}
+
+export interface OldGoldExchange {
+  description: string;
+  grossWeight: number;
+  purityPercent: number;
+  meltingLossPercent: number;
+  netWeight: number;
+  rate: number;
+  totalValue: number;
+}
+
 export interface CatalogItem {
   id: string;
   category: string;
@@ -41,7 +61,7 @@ export interface Milestone {
   cumulativeTarget: number;
   status: 'PENDING' | 'PARTIAL' | 'PAID';
   warningCount: number;
-  description?: string; // Manual instruction/note
+  description?: string;
 }
 
 export interface PaymentPlan {
@@ -63,14 +83,14 @@ export interface JewelryDetail {
   id: string;
   category: string;
   metalColor: 'Yellow Gold' | 'Rose Gold' | 'White Gold';
-  grossWeight?: number;
+  grossWeight: number;
   netWeight: number;
   wastagePercentage: number;
   wastageValue: number;
   makingChargesPerGram: number;
   totalLaborValue: number;
+  stoneEntries: StoneEntry[];
   stoneCharges: number;
-  stoneDetails?: string; 
   purity: Purity;
   taxAmount: number;
   finalAmount: number;
@@ -108,12 +128,15 @@ export interface Order {
   shareToken: string;
   items: JewelryDetail[];
   payments: Payment[];
+  oldGoldExchange?: OldGoldExchange[];
   totalAmount: number;
+  exchangeValue: number;
+  netPayable: number;
   goldRateAtBooking: number;
   paymentPlan: PaymentPlan;
   status: OrderStatus;
   createdAt: string;
-  originalSnapshot?: OrderSnapshot; // Stores the proof of contract before lapse
+  originalSnapshot?: OrderSnapshot;
 }
 
 export interface GlobalSettings {
@@ -122,15 +145,15 @@ export interface GlobalSettings {
   currentGoldRate18K: number;
   defaultTaxRate: number;
   goldRateProtectionMax: number;
-  gracePeriodHours: number; // New: Hours before lapse triggers
-  followUpIntervalDays: number; // New: Days between post-lapse reminders
+  gracePeriodHours: number;
+  followUpIntervalDays: number;
   whatsappPhoneNumberId?: string;
   whatsappBusinessAccountId?: string;
   whatsappBusinessToken?: string;
   razorpayKeyId?: string;
   razorpayKeySecret?: string;
-  setuClientId?: string; // New for V2
-  setuSchemeId?: string; // Mapped to Product Instance ID in V2
+  setuClientId?: string;
+  setuSchemeId?: string;
   setuSecret?: string;
   msg91AuthKey?: string;
   msg91SenderId?: string;
@@ -164,14 +187,6 @@ export interface Customer {
   joinDate: string;
 }
 
-export interface CreditworthinessReport {
-  riskLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
-  persona: string;
-  nextBestAction: string;
-  communicationStrategy: string;
-  negotiationLeverage: string;
-}
-
 export type ErrorSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export type ErrorStatus = 'NEW' | 'ANALYZING' | 'AUTO_FIXED' | 'REQUIRES_CODE_CHANGE' | 'RESOLVED' | 'UNRESOLVABLE';
 
@@ -183,11 +198,9 @@ export interface AppError {
   stack?: string;
   severity: ErrorSeverity;
   status: ErrorStatus;
-  
-  // Intelligent Diagnosis Fields
   aiDiagnosis?: string;
-  aiFixApplied?: string; // If auto-fixed, what did we do?
-  implementationPrompt?: string; // If code change needed, here is the prompt for AI Studio
+  aiFixApplied?: string;
+  implementationPrompt?: string;
   resolutionPath?: AppResolutionPath;
   resolutionCTA?: string;
   suggestedFixData?: any;
@@ -205,15 +218,13 @@ export interface ActivityLogEntry {
 export interface NotificationTrigger {
   id: string;
   customerName: string;
-  customerContact: string; // Added for direct sending
+  customerContact: string;
   type: 'UPCOMING' | 'OVERDUE' | 'SYSTEM';
-  message: string; // The preview text
+  message: string;
   date: string;
   sent: boolean;
   tone?: CollectionTone;
   strategyReasoning?: string;
-  
-  // COMPLIANCE FIELDS
   aiRecommendedTemplateId?: string;
   aiRecommendedVariables?: string[];
 }
@@ -232,7 +243,7 @@ export interface WhatsAppTemplate {
   isAiGenerated: boolean;
   source: 'LOCAL' | 'META';
   status?: string;
-  rejectionReason?: string; // New field for Meta rejection logs
+  rejectionReason?: string;
   category?: MetaCategory;
   appGroup?: AppTemplateGroup;
   structure?: any[];
@@ -243,7 +254,7 @@ export interface SystemTrigger {
   id: string;
   label: string;
   description: string;
-  requiredVariables: string[]; // e.g., ["name", "amount"]
+  requiredVariables: string[];
   defaultTemplateName: string;
   appGroup: AppTemplateGroup;
 }
@@ -265,3 +276,12 @@ export interface AiChatInsight {
 }
 
 export type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW';
+
+// Added missing CreditworthinessReport interface to satisfy geminiService.ts requirements
+export interface CreditworthinessReport {
+  riskLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
+  persona: string;
+  nextBestAction: string;
+  communicationStrategy: string;
+  negotiationLeverage: string;
+}

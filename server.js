@@ -27,12 +27,10 @@ const loadEnv = () => {
         '/home/public_html/.env'
     ];
 
-    let loaded = false;
     for (const p of searchPaths) {
         if (fs.existsSync(p)) {
             dotenv.config({ path: p });
             console.log(`[System] Configuration loaded from: ${p}`);
-            loaded = true;
             break;
         }
     }
@@ -48,10 +46,12 @@ const resolveIndexConflict = () => {
     if (fs.existsSync(distIndex) && fs.existsSync(rootIndex)) {
         try {
             const content = fs.readFileSync(rootIndex, 'utf8');
-            // If it's a source file (not a built one), move it.
+            // If the root index is the source file, move it out of the way
             if (content.includes('src="/index.tsx"') || content.includes('src="./index.tsx"')) {
                 const backupName = `index.source.html.bak`;
-                if (fs.existsSync(path.join(rootDir, backupName))) fs.unlinkSync(path.join(rootDir, backupName));
+                if (fs.existsSync(path.join(rootDir, backupName))) {
+                    fs.unlinkSync(path.join(rootDir, backupName));
+                }
                 fs.renameSync(rootIndex, path.join(rootDir, backupName));
                 console.log(`[System] De-conflicted: Source index.html moved to ${backupName}`);
             }
@@ -83,24 +83,23 @@ if (fs.existsSync(path.join(distPath, 'index.html'))) {
     // 1. Serve built assets (js, css, images)
     app.use(express.static(distPath, {
         index: false,
-        setHeaders: (res, path) => {
-            if (path.endsWith('.html')) {
+        setHeaders: (res, filePath) => {
+            if (filePath.endsWith('.html')) {
                 res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
             } else {
-                // Hashed assets can be cached for a long time
                 res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
             }
         }
     }));
 
-    // 2. Handle /index and /home specifically
+    // 2. Explicitly handle common aliases
     app.get(['/index', '/home'], (req, res) => {
         res.sendFile(path.join(distPath, 'index.html'));
     });
 
-    // 3. SPA Catch-all
+    // 3. SPA Fallback: Serve index.html for navigation, 404 for missing assets
     app.get('*', (req, res) => {
-        // Prevent infinite loop on missing assets
+        // If the path looks like a file (has a dot) or is an API call, it's a real 404
         if (req.path.includes('.') || req.path.startsWith('/api')) {
             return res.status(404).send('Not Found');
         }
@@ -109,9 +108,9 @@ if (fs.existsSync(path.join(distPath, 'index.html'))) {
 } else {
     app.get('/', (req, res) => res.status(200).send(`
         <div style="font-family: sans-serif; padding: 50px; text-align: center; background: #f8f9fa; min-height: 100vh;">
-            <h1 style="color: #B8860B;">AuraGold Engine - Deployment Pending</h1>
-            <p>The backend is running, but the frontend build (dist/) is missing.</p>
-            <p>Please run <code>npm run build</code> locally and upload the folder.</p>
+            <h1 style="color: #B8860B;">AuraGold Elite - Build Required</h1>
+            <p>The backend is active but the <b>dist/</b> folder is missing.</p>
+            <p>Run <code>npm run build</code> locally and upload the folder to your server.</p>
         </div>
     `));
 }
@@ -119,6 +118,6 @@ if (fs.existsSync(path.join(distPath, 'index.html'))) {
 initDb().then((result) => {
     if (result.success) console.log("[Database] Operational.");
     app.listen(PORT, '0.0.0.0', () => {
-        console.log(`[Server] Cluster operational on port ${PORT}`);
+        console.log(`[Server] Operational on port ${PORT}`);
     });
 });
