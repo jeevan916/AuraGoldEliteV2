@@ -71,8 +71,8 @@ router.get('/logs/poll', ensureDb, async (req, res) => {
 
 // --- TEMPLATE MANAGEMENT ENDPOINTS ---
 
-// Fetch Templates
-router.get('/templates', async (req, res) => {
+// Fetch Templates & Sync to DB
+router.get('/templates', ensureDb, async (req, res) => {
     const wabaId = req.headers['x-waba-id'];
     const token = req.headers['x-auth-token'];
     
@@ -86,6 +86,33 @@ router.get('/templates', async (req, res) => {
         const data = await r.json();
         
         if (data.error) throw new Error(data.error.message);
+        
+        // SYNC TO DB: Save fetched templates to MySQL
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        
+        const templates = data.data || [];
+        for (const tpl of templates) {
+            // Meta structure to App structure
+            const appTpl = {
+                id: tpl.id,
+                name: tpl.name,
+                category: tpl.category,
+                content: tpl.components?.find(c => c.type === 'BODY')?.text || '',
+                status: tpl.status,
+                source: 'META',
+                structure: tpl.components,
+                rejectionReason: tpl.rejected_reason
+            };
+            
+            await connection.query(
+                `INSERT INTO templates (id, name, category, data) VALUES (?, ?, ?, ?) 
+                 ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), data=VALUES(data)`,
+                [tpl.id, tpl.name, tpl.category, JSON.stringify(appTpl)]
+            );
+        }
+        
+        connection.release();
         
         res.json({ success: true, data: data.data });
     } catch (e) {
@@ -143,7 +170,7 @@ router.post('/templates/:id', async (req, res) => {
 });
 
 // Delete Template
-router.delete('/templates', async (req, res) => {
+router.delete('/templates', ensureDb, async (req, res) => {
     const wabaId = req.headers['x-waba-id'];
     const token = req.headers['x-auth-token'];
     const name = req.query.name;
@@ -151,6 +178,7 @@ router.delete('/templates', async (req, res) => {
     if (!wabaId || !token || !name) return res.status(400).json({ success: false, error: "Missing Params" });
 
     try {
+        // 1. Delete from Meta
         const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates?name=${name}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` }
@@ -158,6 +186,12 @@ router.delete('/templates', async (req, res) => {
         const data = await r.json();
         
         if (data.error) throw new Error(data.error.message);
+        
+        // 2. Delete from DB
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        await connection.query('DELETE FROM templates WHERE name = ?', [name]);
+        connection.release();
         
         res.json({ success: true });
     } catch (e) {

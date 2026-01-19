@@ -286,17 +286,29 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
 
     // SCENARIO 1: Order Created (Send Agreement)
     try {
+        // Prepare Variables for updated auragold_order_agreement
+        const itemName = cartItems.length > 0 ? cartItems[0].category + (cartItems.length > 1 ? ` & ${cartItems.length - 1} others` : '') : 'Jewellery';
+        
+        // Generate Schedule List String
+        // Format: "1. 6 Jan: ₹16,155"
+        const scheduleString = finalOrder.paymentPlan.milestones.map((m, i) => {
+            const date = new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            return `${i+1}. ${date}: ₹${m.targetAmount.toLocaleString()}`;
+        }).join('\n');
+
+        const termsText = `${finalOrder.paymentPlan.months || 1} Months Installment`;
+
         await whatsappService.sendTemplateMessage(
             finalOrder.customerContact,
             'auragold_order_agreement',
             'en_US',
             [
-                finalOrder.customerName,
-                finalOrder.id,
-                finalOrder.goldRateAtBooking.toString(),
-                (settings.goldRateProtectionMax || 500).toString(),
-                finalOrder.totalAmount.toLocaleString(),
-                finalOrder.shareToken // Button Variable
+                finalOrder.customerName, // {{1}} Name
+                itemName,                // {{2}} Order of...
+                finalOrder.totalAmount.toLocaleString(), // {{3}} Total Value
+                termsText,               // {{4}} Terms
+                scheduleString,          // {{5}} Schedule List
+                finalOrder.shareToken    // {{6}} Token
             ],
             finalOrder.customerName
         );

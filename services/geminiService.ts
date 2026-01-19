@@ -173,25 +173,34 @@ export const geminiService = {
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `This WhatsApp template was REJECTED by Meta.
+      contents: `
+      URGENT: This WhatsApp template was REJECTED by Meta. You must fix it.
       
-      Name: ${template.name}
-      Content: "${template.content}"
-      Category: ${template.category}
-      META REJECTION REASON: "${template.rejectionReason || 'Generic Policy Violation'}"
+      Current Name: "${template.name}"
+      Current Category: "${template.category}"
+      Current Content: "${template.content}"
+      REJECTION REASON (from Meta): "${template.rejectionReason || 'Generic Policy Violation'}"
       
-      Act as a Meta Policy Expert. Analyze the rejection reason and the content. 
+      Your Role: Meta Policy Compliance Expert.
       
-      CRITICAL COMPLIANCE RULES:
-      1. Naming: DO NOT CHANGE THE NAME. We will use the Edit API to fix it in-place.
-      2. Utility Tone: The 'UTILITY' category requires a strictly transactional tone. DO NOT use generic greetings like 'Hello {{1}}'. DO NOT use promotional phrases or 'ensure your order is processed'.
-      3. Variables: Provide valid 'variableExamples'.
+      RULES FOR FIXING:
+      1. UTILITY vs MARKETING: If the content contains ANY promotional words (offer, sale, discount, limited time, exclusive, happy to help), it MUST be categorized as 'MARKETING'.
+      2. If category is 'UTILITY', rewrite content to be strictly transactional, dry, and specific (e.g., "Your order #{{1}} is updated."). Remove all greetings and polite fluff.
+      3. FORMATTING: Ensure variables {{1}} are sequential. Ensure examples are provided.
+      4. DO NOT change the name if possible, unless the rejection was due to the name format.
       
-      Rewrite the template content to be STRICTLY compliant.
+      Return JSON:
+      {
+        "diagnosis": "Detailed reason why it was rejected and what was fixed.",
+        "fixedContent": "The rewritten compliant message string.",
+        "category": "UTILITY" or "MARKETING" or "AUTHENTICATION",
+        "fixedName": "same_name_as_input",
+        "variableExamples": ["example1", "example2"]
+      }
       `,
       config: {
         responseMimeType: "application/json",
-        systemInstruction: "Return JSON with keys: diagnosis (explain specifically why it was rejected based on the log), fixedContent (the rewritten compliant text), category (the correct category), fixedName (MUST BE IDENTICAL to original name), variableExamples (array of strings matching {{1}}, {{2}} variables - MANDATORY)."
+        systemInstruction: "You are a Meta WhatsApp Policy Expert. Fix the template to ensure 100% approval probability."
       }
     });
     return JSON.parse(response.text || "{}");

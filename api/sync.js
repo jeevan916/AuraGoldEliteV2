@@ -28,6 +28,22 @@ router.post('/customers', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+router.post('/templates', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        for (const tpl of req.body.templates) {
+            await connection.query(
+                `INSERT INTO templates (id, name, category, data) VALUES (?, ?, ?, ?) 
+                 ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), data=VALUES(data)`,
+                [tpl.id, tpl.name, tpl.category || 'UNCATEGORIZED', JSON.stringify(tpl)]
+            );
+        }
+        connection.release();
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.post('/settings', ensureDb, async (req, res) => {
     try {
         const pool = getPool();

@@ -93,7 +93,7 @@ export const RECOVERY_TEMPLATES = [
 ];
 
 export const SYSTEM_TRIGGER_MAP: SystemTrigger[] = [
-    { id: 'TRIG_1', label: '1. Order Created', description: 'Includes rate protection & agreement button.', requiredVariables: ['Customer Name', 'Order ID', 'Booked Rate', 'Limit', 'Total'], defaultTemplateName: 'auragold_order_agreement', appGroup: 'ORDER_STATUS' },
+    { id: 'TRIG_1', label: '1. Order Created', description: 'Includes rate protection & agreement button.', requiredVariables: ['Customer Name', 'Item Name', 'Total Value', 'Terms', 'Schedule List', 'Token'], defaultTemplateName: 'auragold_order_agreement', appGroup: 'ORDER_STATUS' },
     { id: 'TRIG_2', label: '2. Weight Updated', description: 'Sent after production edit.', requiredVariables: ['Customer Name', 'Item Name', 'New Weight', 'Old Weight', 'Value Change'], defaultTemplateName: 'auragold_weight_update', appGroup: 'ORDER_STATUS' },
     { id: 'TRIG_3', label: '3. Order Revised', description: 'After recalculation button press.', requiredVariables: ['Customer Name', 'Order ID', 'New Total', 'Reason', 'Link'], defaultTemplateName: 'auragold_order_revised', appGroup: 'ORDER_STATUS' },
     { id: 'TRIG_4', label: '4. Store Payment', description: 'Cash/Card/Old Gold receipt.', requiredVariables: ['Customer Name', 'Amount', 'Mode', 'Order ID', 'Balance'], defaultTemplateName: 'auragold_payment_receipt_store', appGroup: 'PAYMENT_COLLECTION' },
@@ -108,19 +108,15 @@ export const INITIAL_TEMPLATES: WhatsAppTemplate[] = [];
 
 // --- CORE SYSTEM TEMPLATES (THE 9 MANDATORY ONES) ---
 export const REQUIRED_SYSTEM_TEMPLATES = [
-  // 1) Order Created (Agreement)
+  // 1) Order Created (Agreement) - UPDATED TO USER SAMPLE
   {
     name: 'auragold_order_agreement',
-    description: 'Sent on creation. Includes Rate Protection details and Agreement Link.',
+    description: 'Sent on creation. Includes Rate Protection details and Payment Schedule.',
     category: 'UTILITY',
     appGroup: 'ORDER_STATUS',
-    variables: ['customer_name', 'order_id', 'booked_rate', 'protection_limit', 'total_amount', 'token_link'],
-    content: "Hello {{1}}, Order {{2}} is confirmed. Booked Rate: ₹{{3}}/g. Protection Limit: ₹{{4}}/g. Total: ₹{{5}}. Please click below to view the payment schedule and agree to terms.",
-    examples: ["John", "ORD-123", "6500", "500", "150000", "AbCd123"],
-    structure: [
-        { type: "BODY", text: "Hello {{1}}, Order {{2}} is confirmed. Booked Rate: ₹{{3}}/g. Protection Limit: ₹{{4}}/g. Total: ₹{{5}}. Please click below to view the payment schedule and agree to terms." },
-        { type: "BUTTONS", buttons: [{ type: "URL", text: "View Agreement", url: "https://order.auragoldelite.com/?token={{1}}" }] }
-    ]
+    variables: ['customer_name', 'item_name', 'total_value', 'payment_terms', 'schedule_list', 'token_link'],
+    content: "Dear {{1}}, thank you for choosing AuraGold. We are pleased to share the details and payment schedule for your order of {{2}}.\n\nTotal Order Value: ₹{{3}} (rate protection limited)\nPayment Terms: {{4}}\n\nPayment Schedule:\n{{5}}\n\nYou can view the detailed breakdown and track your order progress here: https://order.auragoldelite.com/?token={{6}}\n\n!!!Pay your payments ON Time to prevent Gold Rate Protection Lapses!!!",
+    examples: ["John", "Ring", "80,772.6", "3 Months Installment", "1. 6 Jan: ₹16,155\n2. 6 Feb: ₹21,539", "1q648vdxmjn"]
   },
   // 2) Weight Changed
   {
