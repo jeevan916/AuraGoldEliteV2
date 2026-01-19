@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera } from 'lucide-react';
+import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send } from 'lucide-react';
 import { Order, GlobalSettings, WhatsAppLogEntry, ProductionStatus, ProtectionStatus, OrderStatus } from '../types';
 import { generateOrderPDF } from '../services/pdfGenerator';
 import { whatsappService } from '../services/whatsappService';
@@ -36,6 +36,44 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
   const handleOpenCustomerLink = () => {
       const link = `${window.location.origin}/?token=${order.shareToken}`;
       window.open(link, '_blank');
+  };
+
+  const handleResendAgreement = async () => {
+      if(!confirm("Resend original Order Agreement via WhatsApp?")) return;
+
+      const itemName = order.items.length > 0 ? order.items[0].category + (order.items.length > 1 ? ` & ${order.items.length - 1} others` : '') : 'Jewellery';
+      const termsText = `${order.paymentPlan.months || 1} Months Installment`;
+      
+      const scheduleString = order.paymentPlan.milestones.map((m, i) => {
+          const date = new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+          return `${i+1}. ${date}: ₹${m.targetAmount.toLocaleString()}`;
+      }).join('\n');
+
+      try {
+          const res = await whatsappService.sendTemplateMessage(
+              order.customerContact,
+              'auragold_order_agreement',
+              'en_US',
+              [
+                  order.customerName,
+                  itemName,
+                  order.totalAmount.toLocaleString(),
+                  termsText,
+                  scheduleString,
+                  order.shareToken
+              ],
+              order.customerName
+          );
+
+          if (res.success) {
+              alert("Agreement Sent!");
+              if (res.logEntry && onAddLog) onAddLog(res.logEntry);
+          } else {
+              alert("Failed: " + res.error);
+          }
+      } catch (e: any) {
+          alert("Error: " + e.message);
+      }
   };
 
   // --- GOLD RATE PROTECTION LOGIC ---
@@ -456,6 +494,9 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           <ArrowLeft size={20} /> Back
         </button>
         <div className="flex gap-2">
+           <Button size="sm" variant="secondary" onClick={handleResendAgreement}>
+             <Send size={14} /> Resend Agreement
+           </Button>
            <Button size="sm" variant="secondary" onClick={handleOpenCustomerLink}>
              <ExternalLink size={14} /> Customer View
            </Button>

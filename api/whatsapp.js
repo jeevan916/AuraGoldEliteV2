@@ -85,7 +85,7 @@ router.get('/templates', ensureDb, async (req, res) => {
         });
         const data = await r.json();
         
-        if (data.error) throw new Error(data.error.message);
+        if (data.error) return res.status(400).json({ success: false, error: data.error.message });
         
         // SYNC TO DB: Save fetched templates to MySQL
         const pool = getPool();
@@ -137,7 +137,7 @@ router.post('/templates', async (req, res) => {
         });
         const data = await r.json();
         
-        if (data.error) throw new Error(data.error.message);
+        if (data.error) return res.status(400).json({ success: false, error: data.error.message });
         
         res.json({ success: true, data: data });
     } catch (e) {
@@ -161,7 +161,7 @@ router.post('/templates/:id', async (req, res) => {
         });
         const data = await r.json();
         
-        if (data.error) throw new Error(data.error.message);
+        if (data.error) return res.status(400).json({ success: false, error: data.error.message });
         
         res.json({ success: true, data });
     } catch (e) {
@@ -185,7 +185,7 @@ router.delete('/templates', ensureDb, async (req, res) => {
         });
         const data = await r.json();
         
-        if (data.error) throw new Error(data.error.message);
+        if (data.error) return res.status(400).json({ success: false, error: data.error.message });
         
         // 2. Delete from DB
         const pool = getPool();
@@ -215,7 +215,13 @@ router.post('/send', ensureDb, async (req, res) => {
             body: JSON.stringify(payload)
         });
         const data = await r.json();
-        if (r.ok && data.messages) {
+        
+        // Log error from Meta if request failed
+        if (!r.ok || data.error) {
+             return res.status(400).json({ success: false, error: data.error?.message || "Meta API Error" });
+        }
+
+        if (data.messages) {
             const pool = getPool();
             const connection = await pool.getConnection();
             const log = { id: data.messages[0].id, customerName: customerName || "Customer", phoneNumber: normalizePhone(to), message: templateName ? `[Template: ${templateName}]` : message, status: 'SENT', timestamp: new Date().toISOString(), direction: 'outbound', type: templateName ? 'TEMPLATE' : 'CUSTOM' };
