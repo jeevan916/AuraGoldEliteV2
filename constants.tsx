@@ -1,5 +1,5 @@
 
-import { GlobalSettings, PaymentPlanTemplate, WhatsAppTemplate, CatalogItem, SystemTrigger } from './types';
+import { GlobalSettings, PaymentPlanTemplate, WhatsAppTemplate, CatalogItem, SystemTrigger, MetaCategory, AppTemplateGroup } from './types';
 
 // Helper to safely access environment variables
 const getEnv = (key: string): string => {
@@ -104,8 +104,6 @@ export const SYSTEM_TRIGGER_MAP: SystemTrigger[] = [
     { id: 'TRIG_9', label: '9. Finished Photo', description: 'Header Image + Order Link.', requiredVariables: ['Customer Name', 'Order ID', 'Link'], defaultTemplateName: 'auragold_finished_item_showcase', appGroup: 'ORDER_STATUS' }
 ];
 
-export const INITIAL_TEMPLATES: WhatsAppTemplate[] = [];
-
 // --- CORE SYSTEM TEMPLATES (THE 9 MANDATORY ONES) ---
 export const REQUIRED_SYSTEM_TEMPLATES = [
   // 1) Order Created (Agreement) - UPDATED TO USER SAMPLE
@@ -208,3 +206,18 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     ]
   }
 ];
+
+export const INITIAL_TEMPLATES: WhatsAppTemplate[] = REQUIRED_SYSTEM_TEMPLATES.map(req => ({
+    id: `sys-${req.name}`,
+    name: req.name,
+    content: req.content,
+    category: req.category as MetaCategory,
+    appGroup: req.appGroup as AppTemplateGroup,
+    source: 'LOCAL',
+    status: 'APPROVED',
+    isAiGenerated: false,
+    tactic: 'AUTHORITY',
+    targetProfile: 'REGULAR',
+    variableExamples: req.examples,
+    structure: (req as any).structure
+}));

@@ -1,6 +1,6 @@
 
 import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate, CatalogItem, Customer } from '../types';
-import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES, INITIAL_TEMPLATES, INITIAL_CATALOG } from '../constants';
+import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES, INITIAL_TEMPLATES, INITIAL_CATALOG, REQUIRED_SYSTEM_TEMPLATES } from '../constants';
 import { io, Socket } from 'socket.io-client';
 
 export interface AppState {
@@ -121,11 +121,36 @@ class StorageService {
       if (response.success && response.data) {
           const dbData = response.data;
           
+          let fetchedTemplates = dbData.templates || [];
+          
+          // CRITICAL FIX: Ensure all REQUIRED templates are present in memory.
+          // If DB misses them, we inject the local definition.
+          // We assume 'name' is the unique key for system templates.
+          REQUIRED_SYSTEM_TEMPLATES.forEach(req => {
+              const exists = fetchedTemplates.find((t: any) => t.name === req.name);
+              if (!exists) {
+                  fetchedTemplates.push({
+                      id: `sys-${req.name}`,
+                      name: req.name,
+                      content: req.content,
+                      category: req.category,
+                      appGroup: req.appGroup,
+                      source: 'LOCAL',
+                      status: 'APPROVED',
+                      isAiGenerated: false,
+                      tactic: 'AUTHORITY',
+                      targetProfile: 'REGULAR',
+                      variableExamples: req.examples,
+                      structure: (req as any).structure
+                  });
+              }
+          });
+
           this.state = {
               orders: dbData.orders || [],
               customers: dbData.customers || [],
               settings: dbData.settings || INITIAL_SETTINGS,
-              templates: (dbData.templates && dbData.templates.length > 0) ? dbData.templates : INITIAL_TEMPLATES,
+              templates: fetchedTemplates,
               logs: dbData.logs || [],
               planTemplates: (dbData.planTemplates && dbData.planTemplates.length > 0) ? dbData.planTemplates : INITIAL_PLAN_TEMPLATES,
               catalog: (dbData.catalog && dbData.catalog.length > 0) ? dbData.catalog : INITIAL_CATALOG,
