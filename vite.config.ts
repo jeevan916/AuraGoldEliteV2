@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: true,
       target: 'esnext',
       sourcemap: false,
-      minify: 'terser',
+      // Removed minify: 'terser' as it causes build failure if the package is missing.
       rollupOptions: {
         output: {
           manualChunks: {
