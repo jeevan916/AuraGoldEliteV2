@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, Zap, ShieldCheck, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, LayoutGrid, Plus, Trash2, Info, Key, Server, Clock, Calendar, MessageSquare, CreditCard, Smartphone, Wrench, Code } from 'lucide-react';
+import { Save, RefreshCw, Zap, ShieldCheck, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, LayoutGrid, Plus, Trash2, Info, Key, Server, Clock, Calendar, MessageSquare, CreditCard, Smartphone, Wrench, Code, Check } from 'lucide-react';
 import { GlobalSettings, CatalogItem } from '../types';
 import { goldRateService } from '../services/goldRateService';
 import { storageService } from '../services/storageService';
@@ -17,6 +17,9 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
   const [catalog, setCatalog] = useState<CatalogItem[]>(storageService.getCatalog());
   
   const [syncing, setSyncing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  
   const [rawRateData, setRawRateData] = useState<any>(null);
   const [dbStatus, setDbStatus] = useState<'IDLE' | 'TESTING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [dbMessage, setDbMessage] = useState('');
@@ -55,6 +58,19 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
     } finally {
         setSyncing(false);
     }
+  };
+
+  const handleUpdateSettings = async () => {
+      setIsSaving(true);
+      try {
+          await onUpdate(localSettings);
+          setSaveSuccess(true);
+          setTimeout(() => setSaveSuccess(false), 2000);
+      } catch (e) {
+          alert("Failed to save settings: " + (e instanceof Error ? e.message : "Unknown error"));
+      } finally {
+          setIsSaving(false);
+      }
   };
 
   const handleAddCatalogItem = () => {
@@ -163,7 +179,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
              </button>
              <button 
                 onClick={() => setActiveTab('CATALOG')}
-                className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'CATALOG' ? 'bg-amber-500 text-white shadow-lg' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
+                className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'CATALOG' ? 'bg-amber-50 text-white shadow-lg' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
              >
                  <LayoutGrid size={14} /> Catalog
              </button>
@@ -383,6 +399,11 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                     value={localSettings.currentGoldRate22K} 
                     onChange={v => setLocalSettings({...localSettings, currentGoldRate22K: v})}
                 />
+                <PricingField 
+                    label="Default Tax Rate (%)" 
+                    value={localSettings.defaultTaxRate} 
+                    onChange={v => setLocalSettings({...localSettings, defaultTaxRate: v})}
+                />
              </div>
 
              {/* Raw Response Diagnostics */}
@@ -580,10 +601,17 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
           
           <div className="flex justify-end pt-4">
                <button 
-                className="flex items-center gap-2 bg-emerald-600 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-emerald-700 shadow-xl transition-all active:scale-95 w-full md:w-auto justify-center"
-                onClick={() => onUpdate(localSettings)}
+                disabled={isSaving}
+                className={`flex items-center gap-2 px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl transition-all active:scale-95 w-full md:w-auto justify-center ${saveSuccess ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+                onClick={handleUpdateSettings}
               >
-                <Save size={16} /> Save Configuration
+                {isSaving ? (
+                    <><Loader2 className="animate-spin" size={16} /> Syncing...</>
+                ) : saveSuccess ? (
+                    <><Check size={16} /> Configuration Saved</>
+                ) : (
+                    <><Save size={16} /> Save Configuration</>
+                )}
               </button>
           </div>
         </section>
@@ -610,13 +638,14 @@ const PricingField = ({ label, value, onChange }: { label: string, value: number
   <div className="space-y-3">
     <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">{label}</label>
     <div className="relative">
-        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium text-[15px]">₹</span>
+        {label.includes('%') ? null : <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium text-[15px]">₹</span>}
         <input 
             type="number" 
-            className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 pl-9 text-lg font-black text-slate-800 focus:bg-white transition-all outline-none" 
+            className={`w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-lg font-black text-slate-800 focus:bg-white transition-all outline-none ${label.includes('%') ? 'pl-4' : 'pl-9'}`} 
             value={value}
             onChange={e => onChange(parseFloat(e.target.value) || 0)}
         />
+        {label.includes('%') && <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>}
     </div>
   </div>
 );

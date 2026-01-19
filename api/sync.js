@@ -33,15 +33,51 @@ router.post('/settings', ensureDb, async (req, res) => {
         const pool = getPool();
         const connection = await pool.getConnection();
         const { settings } = req.body;
+
+        // 1. Persist Core Application Settings
+        const coreConfig = {
+            currentGoldRate24K: settings.currentGoldRate24K,
+            currentGoldRate22K: settings.currentGoldRate22K,
+            currentGoldRate18K: settings.currentGoldRate18K,
+            defaultTaxRate: settings.defaultTaxRate,
+            goldRateProtectionMax: settings.goldRateProtectionMax,
+            gracePeriodHours: settings.gracePeriodHours,
+            followUpIntervalDays: settings.followUpIntervalDays
+        };
+        await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['core_settings', JSON.stringify(coreConfig)]);
+
+        // 2. Persist WhatsApp Credentials
         if (settings.whatsappPhoneNumberId) {
-            await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['whatsapp', JSON.stringify({ phoneId: settings.whatsappPhoneNumberId, accountId: settings.whatsappBusinessAccountId, token: settings.whatsappBusinessToken })]);
+            const waConfig = { 
+                phoneId: settings.whatsappPhoneNumberId, 
+                accountId: settings.whatsappBusinessAccountId, 
+                token: settings.whatsappBusinessToken 
+            };
+            await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['whatsapp', JSON.stringify(waConfig)]);
         }
+
+        // 3. Persist Setu Credentials
         if (settings.setuClientId) {
-            await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['setu', JSON.stringify({ clientId: settings.setuClientId, secret: settings.setuSecret, schemeId: settings.setuSchemeId })]);
+            const setuConfig = { 
+                clientId: settings.setuClientId, 
+                secret: settings.setuSecret, 
+                schemeId: settings.setuSchemeId 
+            };
+            await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['setu', JSON.stringify(setuConfig)]);
         }
+
+        // 4. Persist Other Gateways
+        if (settings.razorpayKeyId) {
+            const rzpConfig = { keyId: settings.razorpayKeyId, secret: settings.razorpayKeySecret };
+            await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['razorpay', JSON.stringify(rzpConfig)]);
+        }
+
         connection.release();
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { 
+        console.error("[API Settings Sync Error]", e);
+        res.status(500).json({ error: e.message }); 
+    }
 });
 
 export default router;

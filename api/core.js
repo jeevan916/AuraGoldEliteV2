@@ -27,19 +27,35 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
         const [logs] = await connection.query('SELECT data FROM whatsapp_logs LIMIT 100');
         const [intRows] = await connection.query('SELECT * FROM integrations');
         connection.release();
+        
         const intMap = {}; 
         intRows.forEach(r => { try { intMap[r.provider] = JSON.parse(r.config); } catch(e){} });
+        
+        const core = intMap.core_settings || {};
+        
         res.json({ success: true, data: {
             orders: orders.map(r => JSON.parse(r.data)),
             customers: customers.map(r => JSON.parse(r.data)),
             logs: logs.map(r => JSON.parse(r.data)),
             settings: { 
+                // Core Values
+                currentGoldRate24K: core.currentGoldRate24K || 7500,
+                currentGoldRate22K: core.currentGoldRate22K || 6870,
+                currentGoldRate18K: core.currentGoldRate18K || 5625,
+                defaultTaxRate: core.defaultTaxRate || 3,
+                goldRateProtectionMax: core.goldRateProtectionMax || 500,
+                gracePeriodHours: core.gracePeriodHours || 24,
+                followUpIntervalDays: core.followUpIntervalDays || 3,
+                
+                // Integration Mappings
                 whatsappPhoneNumberId: intMap.whatsapp?.phoneId, 
                 whatsappBusinessAccountId: intMap.whatsapp?.accountId, 
                 whatsappBusinessToken: intMap.whatsapp?.token,
                 setuClientId: intMap.setu?.clientId,
                 setuSecret: intMap.setu?.secret,
-                setuSchemeId: intMap.setu?.schemeId
+                setuSchemeId: intMap.setu?.schemeId,
+                razorpayKeyId: intMap.razorpay?.keyId,
+                razorpayKeySecret: intMap.razorpay?.secret
             }
         }});
     } catch (e) { res.status(500).json({ error: e.message }); }

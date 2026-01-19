@@ -217,14 +217,10 @@ const App = () => {
       storageService.setCustomers(updated); 
   };
 
-  const handleUpdateSettings = (newSettings: GlobalSettings) => {
+  const handleUpdateSettings = async (newSettings: GlobalSettings) => {
       setSettings(newSettings);
-      storageService.setSettings(newSettings);
-      fetch('/api/sync/settings', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ settings: newSettings })
-      });
+      // storageService.setSettings automatically calls pushEntity/sync/settings
+      await storageService.setSettings(newSettings);
   };
 
   const selectedOrder = useMemo(() => orders.find(o => o.id === selectedOrderId), [orders, selectedOrderId]);
