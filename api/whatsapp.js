@@ -35,7 +35,11 @@ router.post('/webhook', ensureDb, async (req, res) => {
             const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
             const contactName = change.contacts?.[0]?.profile?.name || "Customer";
             const logEntry = { id: msg.id, customerName: contactName, phoneNumber: fromFormatted, message: msgBody, status: 'READ', timestamp, direction: 'inbound', type: 'INBOUND' };
+            
             await connection.query(`INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data)`, [logEntry.id, fromFormatted, 'inbound', new Date(timestamp), JSON.stringify(logEntry)]);
+            
+            // Real-time Trigger
+            if (req.io) req.io.emit('whatsapp_update', logEntry);
         }
 
         if (change.statuses && change.statuses[0]) {
@@ -45,13 +49,16 @@ router.post('/webhook', ensureDb, async (req, res) => {
                 const data = JSON.parse(rows[0].data);
                 data.status = statusUpdate.status.toUpperCase();
                 await connection.query('UPDATE whatsapp_logs SET data = ? WHERE id = ?', [JSON.stringify(data), statusUpdate.id]);
+                
+                // Real-time Trigger
+                if (req.io) req.io.emit('whatsapp_update', data);
             }
         }
         connection.release();
     } catch (e) { console.error(e); }
 });
 
-// Logs Polling
+// Logs Polling (Fallback)
 router.get('/logs/poll', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
@@ -83,6 +90,10 @@ router.post('/send', ensureDb, async (req, res) => {
             const connection = await pool.getConnection();
             const log = { id: data.messages[0].id, customerName: customerName || "Customer", phoneNumber: normalizePhone(to), message: templateName ? `[Template: ${templateName}]` : message, status: 'SENT', timestamp: new Date().toISOString(), direction: 'outbound', type: templateName ? 'TEMPLATE' : 'CUSTOM' };
             await connection.query('INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)', [log.id, log.phoneNumber, 'outbound', new Date(), JSON.stringify(log)]);
+            
+            // Real-time Trigger
+            if (req.io) req.io.emit('whatsapp_update', log);
+            
             connection.release();
         }
         res.status(r.status).json({ success: r.ok, data });

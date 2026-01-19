@@ -6,6 +6,8 @@ import path from 'path';
 import fs from 'fs';
 import compression from 'compression';
 import { fileURLToPath } from 'url';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 
 // Shared Libs
 import { initDb } from './api/db.js';
@@ -22,9 +24,8 @@ const __dirname = path.dirname(__filename);
 
 // --- ROBUST ENV LOADING ---
 const loadEnv = () => {
-    // Priority search for .env files based on Hostinger and standard deployments
     const searchPaths = [
-        path.resolve(process.cwd(), '.builds/config/.env'), // User specified path
+        path.resolve(process.cwd(), '.builds/config/.env'),
         path.resolve(process.cwd(), '.env'),
         path.resolve(__dirname, '.builds/config/.env'),
         path.resolve(__dirname, '.env'),
@@ -44,41 +45,40 @@ const loadEnv = () => {
     }
     
     if (!loaded) {
-        console.warn("[System] Warning: No .env file found in expected locations. Relying on system-level environment variables.");
+        console.warn("[System] Warning: No .env file found. Relying on system environment variables.");
     }
 };
 loadEnv();
 
-// --- CONFLICT RESOLUTION ---
-// Hostinger specific: Ensures root index.html doesn't block the Node process
-const resolveIndexConflict = () => {
-    const rootDir = process.cwd();
-    const rootIndex = path.join(rootDir, 'index.html');
-    const distIndex = path.join(rootDir, 'dist', 'index.html');
-    
-    if (fs.existsSync(rootIndex) && fs.existsSync(distIndex)) {
-        try {
-            const content = fs.readFileSync(rootIndex, 'utf8');
-            if (content.includes('src="./index.tsx"') || content.includes('type="module"')) {
-                const timestamp = Date.now();
-                const backupName = `index.html.source_backup_${timestamp}`;
-                fs.renameSync(rootIndex, path.join(rootDir, backupName));
-                console.log(`[System] Resolved routing conflict: Renamed root source file to ${backupName}`);
-            }
-        } catch (e) {
-            console.error("[System] Conflict resolution failed:", e.message);
-        }
-    }
-};
-resolveIndexConflict();
-
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT || 3000;
+
+// --- SOCKET.IO SETUP ---
+const io = new Server(httpServer, {
+    cors: {
+        origin: "*", 
+        methods: ["GET", "POST"]
+    }
+});
+
+io.on('connection', (socket) => {
+    console.log(`[Socket] Client connected: ${socket.id}`);
+    socket.on('disconnect', () => {
+        // console.log('[Socket] Client disconnected');
+    });
+});
 
 app.set('trust proxy', 1); 
 app.use(compression());    
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
+
+// Middleware to expose 'io' to all routes
+app.use((req, res, next) => {
+    req.io = io;
+    next();
+});
 
 // --- API CLUSTERING ---
 app.use('/api', ratesRouter);
@@ -87,7 +87,6 @@ app.use('/api/whatsapp', whatsappRouter);
 app.use('/api/sync', syncRouter);
 app.use('/api', coreRouter);
 
-// JSON 404 for unmatched API routes
 app.use('/api/*', (req, res) => res.status(404).json({ error: `API route ${req.originalUrl} not found.` }));
 
 // --- STATIC SERVING ---
@@ -103,18 +102,12 @@ if (finalDistPath) {
     console.log(`[System] Serving static assets from: ${finalDistPath}`);
     app.use(express.static(finalDistPath));
     app.get('*', (req, res) => {
-        if (!req.path.startsWith('/api')) {
+        if (!req.path.startsWith('/api') && !req.path.startsWith('/socket.io')) {
             res.sendFile(path.join(finalDistPath, 'index.html'));
         }
     });
 } else {
-    app.get('/', (req, res) => res.status(200).send(`
-        <div style="font-family: sans-serif; padding: 40px; text-align: center;">
-            <h1 style="color: #B8860B;">AuraGold Engine Online</h1>
-            <p>The backend is running, but the frontend build (dist/) was not found.</p>
-            <p>Please run <code>npm run build</code> and ensure the dist folder is uploaded.</p>
-        </div>
-    `));
+    app.get('/', (req, res) => res.status(200).send('Backend Online. Frontend dist not found.'));
 }
 
 // Init DB & Start Server
@@ -125,7 +118,8 @@ initDb().then((result) => {
         console.error("[Database] Initialization failed:", result.error);
     }
     
-    app.listen(PORT, '0.0.0.0', () => {
-        console.log(`[Server] Cluster operational on port ${PORT}`);
+    // Use httpServer.listen instead of app.listen to support WebSockets
+    httpServer.listen(PORT, '0.0.0.0', () => {
+        console.log(`[Server] Cluster operational on port ${PORT} (HTTP + WebSocket)`);
     });
 });

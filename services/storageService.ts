@@ -1,5 +1,7 @@
+
 import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate, CatalogItem, Customer } from '../types';
 import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES, INITIAL_TEMPLATES, INITIAL_CATALOG } from '../constants';
+import { io, Socket } from 'socket.io-client';
 
 export interface AppState {
   orders: Order[];
@@ -30,11 +32,11 @@ class StorageService {
   private state: AppState = DEFAULT_STATE;
   private listeners: (() => void)[] = [];
   private syncStatus: 'CONNECTED' | 'LOCAL_FALLBACK' | 'SYNCING' | 'ERROR' = 'LOCAL_FALLBACK';
-  private pollInterval: any = null;
+  private socket: Socket | null = null;
 
   constructor() {
     this.loadFromLocal();
-    this.startPolling();
+    this.initSocket();
   }
 
   private loadFromLocal() {
@@ -62,44 +64,49 @@ class StorageService {
 
   public getSyncStatus() { return this.syncStatus; }
 
-  private startPolling() {
-      if (this.pollInterval) clearInterval(this.pollInterval);
-      this.pollInterval = setInterval(() => {
-          this.pollLogs();
-      }, 3000);
+  // Initialize Socket.io connection for real-time updates
+  private initSocket() {
+      // Connect to the backend (relative if same origin, or API_BASE)
+      this.socket = io(API_BASE, {
+          path: '/socket.io',
+          transports: ['websocket', 'polling'], // Try websocket first
+          reconnectionAttempts: 10
+      });
+
+      this.socket.on('connect', () => {
+          console.log("[Storage] Socket Connected");
+          this.syncStatus = 'CONNECTED';
+          this.notify();
+      });
+
+      this.socket.on('disconnect', () => {
+          console.log("[Storage] Socket Disconnected");
+          this.syncStatus = 'LOCAL_FALLBACK';
+          this.notify();
+      });
+
+      // Listen for real-time WhatsApp updates
+      this.socket.on('whatsapp_update', (log: WhatsAppLogEntry) => {
+          this.handleIncomingLog(log);
+      });
   }
 
-  private async pollLogs() {
-      try {
-          const res = await fetch(`${API_BASE}/api/whatsapp/logs/poll`);
-          if (res.ok) {
-              const data = await res.json();
-              if (data.success && data.logs) {
-                  const existingIds = new Set(this.state.logs.map(l => l.id));
-                  const newEntries = data.logs.filter((l: any) => !existingIds.has(l.id));
-                  
-                  if (newEntries.length > 0) {
-                      this.state.logs = [...newEntries, ...this.state.logs].slice(0, 1000);
-                      this.saveToLocal();
-                      this.notify();
-                  }
-                  
-                  let updated = false;
-                  data.logs.forEach((incoming: any) => {
-                      const idx = this.state.logs.findIndex(l => l.id === incoming.id);
-                      if (idx !== -1 && this.state.logs[idx].status !== incoming.status) {
-                          this.state.logs[idx].status = incoming.status;
-                          updated = true;
-                      }
-                  });
-
-                  if (updated) {
-                      this.saveToLocal();
-                      this.notify();
-                  }
-              }
-          }
-      } catch (e) {}
+  private handleIncomingLog(log: WhatsAppLogEntry) {
+      // Check if log exists (update status) or new (prepend)
+      const existingIdx = this.state.logs.findIndex(l => l.id === log.id);
+      
+      if (existingIdx >= 0) {
+          // Update existing
+          const updatedLogs = [...this.state.logs];
+          updatedLogs[existingIdx] = log;
+          this.state.logs = updatedLogs;
+      } else {
+          // Prepend new
+          this.state.logs = [log, ...this.state.logs].slice(0, 1000); // Keep last 1000
+      }
+      
+      this.saveToLocal();
+      this.notify();
   }
 
   public async syncFromServer(): Promise<{ success: boolean; message: string }> {
