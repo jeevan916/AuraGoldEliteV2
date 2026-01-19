@@ -44,11 +44,14 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       setSendingAgreement(true);
 
       try {
-          const itemName = order.items.length > 0 ? order.items[0].category + (order.items.length > 1 ? ` & ${order.items.length - 1} others` : '') : 'Jewellery';
+          // 1. Prepare Variables with Fallbacks
+          const itemName = order.items.length > 0 
+            ? order.items[0].category + (order.items.length > 1 ? ` & ${order.items.length - 1} others` : '') 
+            : 'Jewellery';
+            
           const termsText = `${order.paymentPlan.months || 1} Months Installment`;
           
-          // Safer Schedule String Generation
-          // WhatsApp body variables have character limits. We show top 5 milestones + summary if too long.
+          // 2. Generate Schedule String with Safety Truncation
           const allMilestones = order.paymentPlan.milestones;
           let scheduleString = '';
           
@@ -57,13 +60,25 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                   const date = new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
                   return `${i+1}. ${date}: ₹${m.targetAmount.toLocaleString()}`;
               }).join('\n');
-              scheduleString = `${firstFew}\n...and ${allMilestones.length - 4} more installments.`;
+              scheduleString = `${firstFew}\n...and ${allMilestones.length - 4} more.`;
           } else {
               scheduleString = allMilestones.map((m, i) => {
                   const date = new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
                   return `${i+1}. ${date}: ₹${m.targetAmount.toLocaleString()}`;
               }).join('\n');
           }
+          
+          // Safety: Variable cannot be empty string for Meta API
+          if (!scheduleString.trim()) scheduleString = "See details in link.";
+
+          console.log("[Resend Agreement] Variables:", {
+              name: order.customerName,
+              item: itemName,
+              total: order.totalAmount,
+              terms: termsText,
+              schedule: scheduleString,
+              token: order.shareToken
+          });
 
           const res = await whatsappService.sendTemplateMessage(
               order.customerContact,
