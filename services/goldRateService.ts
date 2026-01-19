@@ -2,6 +2,7 @@
 export interface GoldRateResponse {
   rate24K: number;
   rate22K: number;
+  rate18K: number;
   success: boolean;
   error?: string;
   source?: string;
@@ -9,9 +10,7 @@ export interface GoldRateResponse {
 
 export const goldRateService = {
   /**
-   * Fetches the live gold rate.
-   * The backend (/api/gold-rate) now proxies the request to Augmont UAT 
-   * and falls back to the database if the external API is down.
+   * Fetches the live gold rate from the backend proxy.
    */
   async fetchLiveRate(): Promise<GoldRateResponse> {
     try {
@@ -31,14 +30,11 @@ export const goldRateService = {
         
         const data = await response.json();
         
-        if (data.source) {
-            console.log(`[GoldRateService] Rate Source: ${data.source}`);
-        }
-
         return {
             rate24K: data.k24 || 0,
             rate22K: data.k22 || 0,
-            success: true,
+            rate18K: data.k18 || 0,
+            success: data.success,
             source: data.source
         };
     } catch (e: any) {
@@ -46,6 +42,7 @@ export const goldRateService = {
         return { 
             rate24K: 0, 
             rate22K: 0, 
+            rate18K: 0,
             success: false, 
             error: e.message 
         };

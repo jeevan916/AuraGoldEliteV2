@@ -95,6 +95,64 @@ const ensureDb = async (req, res, next) => {
 };
 
 /**
+ * GOLD RATE API (THE BASIC METHOD)
+ */
+app.get('/api/gold-rate', ensureDb, async (req, res) => {
+    try {
+        let rate24k = 0;
+        let source = 'Local DB';
+
+        // 1. Try to fetch from a basic public API first
+        try {
+            const externalRes = await fetch('https://api.gold-api.com/price/XAU');
+            if (externalRes.ok) {
+                const extData = await externalRes.json();
+                // Formula: (Price per Ounce / 31.1035) * USD_TO_INR
+                const usdToInr = 83.5; 
+                const gramUsd = extData.price / 31.1035;
+                rate24k = Math.round(gramUsd * usdToInr);
+                source = 'Live Market (Global)';
+            }
+        } catch (e) {
+            console.warn("External Gold API failed, using DB");
+        }
+
+        const connection = await pool.getConnection();
+
+        // 2. If external failed, get last stored
+        if (rate24k === 0) {
+            const [rows] = await connection.query('SELECT rate24k FROM gold_rates ORDER BY recorded_at DESC LIMIT 1');
+            if (rows.length > 0) {
+                rate24k = parseFloat(rows[0].rate24k);
+            } else {
+                rate24k = 7500; // Hard fallback for first-time run
+            }
+        }
+
+        // 3. Calculate variants (Basic 91.6% and 75% formulas)
+        const rate22k = Math.round(rate24k * 0.916);
+        const rate18k = Math.round(rate24k * 0.75);
+
+        // 4. Save to DB for historical tracking
+        await connection.query(
+            'INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)',
+            [rate24k, rate22k, rate18k]
+        );
+        connection.release();
+
+        res.json({
+            success: true,
+            k24: rate24k,
+            k22: rate22k,
+            k18: rate18k,
+            source
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+/**
  * WHATSAPP WEBHOOK HANDLERS
  */
 
@@ -106,7 +164,6 @@ app.get('/api/whatsapp/webhook', (req, res) => {
 
     if (mode && token) {
         if (mode === 'subscribe' && token === verify_token) {
-            console.log(`[Webhook] Verification Successful`);
             return res.status(200).send(challenge);
         } else {
             return res.sendStatus(403);
@@ -117,7 +174,6 @@ app.get('/api/whatsapp/webhook', (req, res) => {
 
 app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
     res.status(200).send('EVENT_RECEIVED');
-
     try {
         const body = req.body;
         if (!body.entry || !body.entry[0].changes) return;
@@ -125,12 +181,9 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
         const change = body.entry[0].changes[0].value;
         const connection = await pool.getConnection();
 
-        // INCOMING CUSTOMER MESSAGE (RECEIVE LIVE)
         if (change.messages && change.messages[0]) {
             const msg = change.messages[0];
-            const fromRaw = msg.from; 
-            const fromFormatted = normalizePhone(fromRaw); // Standardize for DB lookup
-            
+            const fromFormatted = normalizePhone(msg.from);
             const msgBody = msg.text?.body || `[Media: ${msg.type}]`;
             const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
             const contactName = change.contacts?.[0]?.profile?.name || "Customer";
@@ -138,7 +191,7 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
             const logEntry = {
                 id: msg.id,
                 customerName: contactName,
-                phoneNumber: fromFormatted, // Use normalized number
+                phoneNumber: fromFormatted,
                 message: msgBody,
                 status: 'READ', 
                 timestamp,
@@ -150,10 +203,8 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
                 `INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data)`,
                 [logEntry.id, fromFormatted, 'inbound', new Date(timestamp), JSON.stringify(logEntry)]
             );
-            console.log(`[Webhook] Logged Inbound from ${fromFormatted}`);
         }
 
-        // STATUS UPDATE
         if (change.statuses && change.statuses[0]) {
             const statusUpdate = change.statuses[0];
             const msgId = statusUpdate.id;
@@ -163,48 +214,30 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
             if (rows.length > 0) {
                 const existingData = JSON.parse(rows[0].data);
                 existingData.status = newStatus;
-                await connection.query(
-                    'UPDATE whatsapp_logs SET data = ? WHERE id = ?',
-                    [JSON.stringify(existingData), msgId]
-                );
+                await connection.query('UPDATE whatsapp_logs SET data = ? WHERE id = ?', [JSON.stringify(existingData), msgId]);
             }
         }
-
         connection.release();
-    } catch (e) {
-        console.error("[Webhook Error]:", e.message);
-    }
+    } catch (e) { console.error(e); }
 });
 
-/**
- * AJAX POLLING ENDPOINT
- */
 app.get('/api/whatsapp/logs/poll', ensureDb, async (req, res) => {
     try {
         const connection = await pool.getConnection();
-        const [rows] = await connection.query(
-            'SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 150'
-        );
+        const [rows] = await connection.query('SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 150');
         connection.release();
         const logs = rows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
         res.json({ success: true, logs });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-/**
- * SEND MESSAGE ENDPOINT
- */
 app.post('/api/whatsapp/send', ensureDb, async (req, res) => {
     const { to, message, templateName, language, components, customerName } = req.body;
     const phoneId = req.headers['x-phone-id'];
     const token = req.headers['x-auth-token'];
-    
     const formattedTo = normalizePhone(to);
     
     let payload = { messaging_product: "whatsapp", recipient_type: "individual", to: formattedTo };
-    
     if (templateName) {
         payload.type = "template"; 
         payload.template = { name: templateName, language: { code: language || "en_US" }, components };
@@ -226,7 +259,7 @@ app.post('/api/whatsapp/send', ensureDb, async (req, res) => {
             const logEntry = {
                 id: data.messages[0].id,
                 customerName: customerName || "Customer",
-                phoneNumber: formattedTo, // Normalized
+                phoneNumber: formattedTo,
                 message: templateName ? `[Template: ${templateName}]` : message,
                 status: 'SENT',
                 timestamp: new Date().toISOString(),
@@ -239,12 +272,10 @@ app.post('/api/whatsapp/send', ensureDb, async (req, res) => {
             );
             connection.release();
         }
-
         res.status(r.status).json({ success: r.ok, data });
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// REMAINING PROXY ROUTES (SETU, BOOTSTRAP, etc)
 app.get('/api/bootstrap', ensureDb, async (req, res) => {
     try {
         const connection = await pool.getConnection();
@@ -277,41 +308,6 @@ app.get('/api/bootstrap', ensureDb, async (req, res) => {
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-const createSyncHandler = (table) => async (req, res) => {
-    const items = req.body[table] || req.body.orders || req.body.customers || req.body.logs || req.body.templates || req.body.catalog || req.body.plans;
-    if (!items) return res.status(400).json({error: "No data payload"});
-    try {
-        const connection = await pool.getConnection();
-        await connection.beginTransaction();
-        let query = '';
-        if (table === 'orders') query = `INSERT INTO orders (id, customer_contact, status, created_at, data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data), updated_at=VALUES(updated_at)`;
-        else if (table === 'customers') query = `INSERT INTO customers (id, contact, name, data, updated_at) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data), updated_at=VALUES(updated_at)`;
-        else if (table === 'logs') query = `INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data)`;
-        else if (table === 'templates') query = `INSERT INTO templates (id, name, category, data) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data), name=VALUES(name), category=VALUES(category)`;
-        else if (table === 'plans') query = `INSERT INTO plan_templates (id, name, data) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data), name=VALUES(name)`;
-        else query = `INSERT INTO catalog (id, category, data) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data), category=VALUES(category)`;
-
-        for (const item of items) {
-            let params = [];
-            if(table === 'orders') params = [item.id, item.customerContact, item.status, new Date(item.createdAt), JSON.stringify(item), Date.now()];
-            else if(table === 'customers') params = [item.id, item.contact, item.name, JSON.stringify(item), Date.now()];
-            else if(table === 'logs') params = [item.id, item.phoneNumber, item.direction, new Date(item.timestamp), JSON.stringify(item)];
-            else if(table === 'templates') params = [item.id, item.name, item.category || 'UTILITY', JSON.stringify(item)];
-            else if(table === 'plans') params = [item.id, item.name, JSON.stringify(item)];
-            else params = [item.id, item.category, JSON.stringify(item)];
-            await connection.query(query, params);
-        }
-        await connection.commit();
-        connection.release();
-        res.json({success: true});
-    } catch(e) { res.status(500).json({error: e.message}); }
-};
-
-app.post('/api/sync/orders', ensureDb, createSyncHandler('orders'));
-app.post('/api/sync/customers', ensureDb, createSyncHandler('customers'));
-app.post('/api/sync/logs', ensureDb, createSyncHandler('logs'));
-
-// STATIC SERVING
 const distPath = path.join(__dirname, 'dist');
 if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));
@@ -320,4 +316,4 @@ if (fs.existsSync(distPath)) {
     });
 }
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server v22.0 running on ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT}`));
