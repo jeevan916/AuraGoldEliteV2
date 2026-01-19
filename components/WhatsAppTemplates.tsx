@@ -4,7 +4,7 @@ import {
   MessageSquare, BrainCircuit, Sparkles, Save, Edit, 
   Copy, RefreshCw, Zap, ShieldAlert, Users, Star, Cloud, CheckCircle, UploadCloud, Globe, Laptop,
   Activity, AlertTriangle, AlertCircle, RefreshCcw, Loader2, Terminal, Check, Server, PlusCircle, Code, Trash2, FolderOpen,
-  Wrench, ArrowRight, GitMerge, FileJson, XCircle, Stethoscope, Search, FileWarning, ShieldCheck
+  Wrench, ArrowRight, GitMerge, FileJson, XCircle, Stethoscope, Search, FileWarning, ShieldCheck, Workflow
 } from 'lucide-react';
 import { WhatsAppTemplate, PsychologicalTactic, RiskProfile, MetaCategory, AppTemplateGroup, SystemTrigger } from '../types';
 import { PSYCHOLOGICAL_TACTICS, RISK_PROFILES, REQUIRED_SYSTEM_TEMPLATES, SYSTEM_TRIGGER_MAP } from '../constants';
@@ -516,7 +516,6 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           <p className="text-slate-500 text-sm">Meta Compliance Engine & AI Strategy Generator</p>
         </div>
         
-        {/* CHANGED: Combined System and Triggers */}
         <div className="w-full md:w-auto overflow-x-auto pb-1 custom-scrollbar">
             <div className="flex bg-slate-100 p-1 rounded-xl w-max">
                 {(['SYSTEM', 'STRATEGY', 'LIBRARY'] as const).map(tab => (
@@ -540,184 +539,52 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
         </div>
       </div>
 
-      {/* --- TAB: ISSUES (REJECTED LIST) --- */}
-      {activeTab === 'ISSUES' && (
-          <div className="space-y-6">
-              <div className="bg-rose-50 border-l-4 border-rose-500 p-6 rounded-r-2xl shadow-sm flex items-start gap-4">
-                  <div className="p-2 bg-white rounded-full text-rose-500"><ShieldAlert size={24}/></div>
-                  <div>
-                      <h3 className="text-lg font-black text-rose-800">Compliance Violations Detected</h3>
-                      <p className="text-sm text-rose-700 mt-1">
-                          Meta has rejected {rejectedTemplates.length} templates. This usually happens due to promotional language in Utility categories, abusive formatting, or vague variables.
-                      </p>
-                      <p className="text-xs font-bold text-rose-600 mt-2 uppercase tracking-wide">
-                          Use "Auto-Fix with AI" to generate a policy-compliant version instantly.
-                      </p>
-                  </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4">
-                  {rejectedTemplates.map(tpl => (
-                      <div key={tpl.id} className="bg-white p-5 rounded-2xl border border-rose-100 shadow-sm relative group overflow-hidden">
-                          <div className="absolute top-0 right-0 bg-rose-100 text-rose-700 text-[10px] font-black uppercase px-3 py-1 rounded-bl-xl">Rejected</div>
-                          
-                          <div className="flex flex-col md:flex-row gap-6">
-                              <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-2">
-                                      <h4 className="font-bold text-slate-800 text-sm">{tpl.name}</h4>
-                                      <span className="text-[10px] font-mono text-slate-400 bg-slate-50 px-2 rounded">{tpl.category}</span>
-                                  </div>
-                                  
-                                  {tpl.rejectionReason && (
-                                      <div className="mb-3 bg-rose-50 p-2 rounded-lg border border-rose-200 flex items-start gap-2">
-                                          <FileWarning size={14} className="text-rose-600 shrink-0 mt-0.5" />
-                                          <div>
-                                              <p className="text-[10px] font-black uppercase text-rose-800">Meta Rejection Reason</p>
-                                              <p className="text-xs text-rose-700">{tpl.rejectionReason}</p>
-                                          </div>
-                                      </div>
-                                  )}
-
-                                  <div className="bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 text-xs text-slate-600 italic font-mono mb-3">
-                                      "{tpl.content}"
-                                  </div>
-                                  <div className="flex gap-2 text-[10px] font-bold text-slate-400">
-                                      <span>ID: {tpl.id}</span>
-                                      <span>•</span>
-                                      <span>Group: {tpl.appGroup || 'Uncategorized'}</span>
-                                  </div>
-                              </div>
-
-                              <div className="flex flex-col justify-center gap-2 min-w-[160px]">
-                                  <button 
-                                    onClick={() => handleAiAutoFix(tpl)}
-                                    disabled={isFixing === tpl.id}
-                                    className="bg-emerald-600 text-white px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg"
-                                  >
-                                      {isFixing === tpl.id ? <Loader2 size={14} className="animate-spin"/> : <Stethoscope size={14} />}
-                                      Auto-Fix with AI
-                                  </button>
-                                  <button 
-                                    onClick={() => handleDeleteTemplate(tpl)}
-                                    className="bg-white border border-rose-200 text-rose-600 px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-rose-50 transition-all flex items-center justify-center gap-2"
-                                  >
-                                      <Trash2 size={14} /> Delete
-                                  </button>
-                              </div>
-                          </div>
-                      </div>
-                  ))}
-              </div>
-          </div>
-      )}
-
-      {/* --- TAB 3: GROUPED LIBRARY --- */}
-      {activeTab === 'LIBRARY' && (
-          <div className="bg-white rounded-3xl border shadow-sm p-6">
-              <div className="flex justify-between items-center mb-6">
-                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                      <Server size={18} className="text-slate-400" /> Grouped Library
-                  </h3>
-                  <button onClick={() => handleSyncFromMeta(false)} className="text-xs font-bold text-amber-600 hover:underline flex items-center gap-1">
-                      <RefreshCcw size={12} /> Refresh Status
-                  </button>
-              </div>
-              
-              <div className="space-y-8">
-                  {Object.entries(groupedTemplates).map(([groupKey, unknownTemplates]) => {
-                      const groupTemplates = unknownTemplates as WhatsAppTemplate[];
-                      if (groupTemplates.length === 0) return null;
-                      return (
-                          <div key={groupKey} className="animate-fadeIn">
-                              <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
-                                  <FolderOpen size={16} className="text-slate-400" />
-                                  <h4 className="text-sm font-black text-slate-700 uppercase tracking-widest">
-                                      {getGroupLabel(groupKey)}
-                                  </h4>
-                                  <span className="bg-slate-100 text-slate-500 text-[9px] px-2 py-0.5 rounded-full font-bold">
-                                      {groupTemplates.length}
-                                  </span>
-                              </div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                  {groupTemplates.map(t => (
-                                      <div key={t.id} className="border p-4 rounded-2xl hover:border-blue-400 transition-all group relative bg-slate-50/50">
-                                          <div className="flex justify-between items-start mb-2">
-                                              <div className="font-bold text-sm text-slate-800 truncate pr-2" title={t.name}>{t.name}</div>
-                                              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${getStatusColor(t.status)}`}>{t.status || 'LOCAL'}</span>
-                                          </div>
-                                          <p className="text-xs text-slate-500 line-clamp-3 mb-3 italic">"{t.content}"</p>
-                                          <div className="flex justify-between items-center mt-auto border-t pt-3">
-                                              <span className="text-[10px] font-bold text-slate-400">{t.category || 'UTILITY'}</span>
-                                              <div className="flex gap-2">
-                                                  <button 
-                                                    onClick={() => handleEditTemplate(t)}
-                                                    className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1 text-[10px] font-bold"
-                                                    title="Edit / New Version"
-                                                  >
-                                                    <Edit size={12} /> Edit
-                                                  </button>
-                                                  <button 
-                                                    onClick={() => handleDeleteTemplate(t)}
-                                                    disabled={deletingId === t.id}
-                                                    className="p-1.5 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-colors flex items-center gap-1 text-[10px] font-bold"
-                                                    title="Delete"
-                                                  >
-                                                     {deletingId === t.id ? <Loader2 size={12} className="animate-spin"/> : <Trash2 size={12} />}
-                                                  </button>
-                                              </div>
-                                          </div>
-                                      </div>
-                                  ))}
-                              </div>
-                          </div>
-                      );
-                  })}
-                  {templates.length === 0 && <p className="text-center text-slate-400 italic">No templates loaded. Try syncing from System Health.</p>}
-              </div>
-          </div>
-      )}
-      
       {/* --- TAB: SYSTEM & AUTOMATION (MERGED) --- */}
       {activeTab === 'SYSTEM' && (
         <div className="flex flex-col gap-6 h-[calc(100vh-200px)] overflow-hidden">
-            {/* Header Summary */}
-            <div className="flex flex-col md:flex-row gap-4 shrink-0">
-                 <div className="flex-1 bg-gradient-to-r from-emerald-50 to-white p-4 rounded-2xl border border-emerald-100 flex items-center gap-4">
-                     <div className="p-3 bg-white rounded-xl shadow-sm text-emerald-600"><Activity /></div>
-                     <div>
-                         <p className="text-[10px] font-black uppercase text-emerald-800 tracking-widest">System Health</p>
-                         <p className="text-sm font-bold text-slate-700">
-                            {REQUIRED_SYSTEM_TEMPLATES.filter(t => templates.some(lt => lt.name === t.name)).length}/{REQUIRED_SYSTEM_TEMPLATES.length} Core Templates Active
-                         </p>
-                     </div>
-                 </div>
-                 <div className="flex-1 bg-gradient-to-r from-indigo-50 to-white p-4 rounded-2xl border border-indigo-100 flex items-center gap-4">
-                     <div className="p-3 bg-white rounded-xl shadow-sm text-indigo-600"><GitMerge /></div>
-                     <div>
-                         <p className="text-[10px] font-black uppercase text-indigo-800 tracking-widest">Automation Logic</p>
-                         <p className="text-sm font-bold text-slate-700">
-                            {SYSTEM_TRIGGER_MAP.length} Event Triggers Configured
-                         </p>
-                     </div>
-                 </div>
+            {/* Context Header: Explaining the flow */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm shrink-0">
+                <div className="flex items-center gap-2 mb-3">
+                    <Workflow size={18} className="text-blue-500" />
+                    <h3 className="font-bold text-slate-800 text-sm">Automation Workflow Guide</h3>
+                </div>
+                <div className="flex flex-col md:flex-row gap-4 md:gap-0 items-center justify-between text-xs text-slate-500 relative">
+                    <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border">
+                        <Activity size={14} className="text-emerald-500" />
+                        <span>1. App Event Occurs</span>
+                    </div>
+                    <ArrowRight className="hidden md:block text-slate-300" />
+                    <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border">
+                        <GitMerge size={14} className="text-indigo-500" />
+                        <span>2. Trigger Logic Matches</span>
+                    </div>
+                    <ArrowRight className="hidden md:block text-slate-300" />
+                    <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border">
+                        <MessageSquare size={14} className="text-amber-500" />
+                        <span>3. Template Asset Sent</span>
+                    </div>
+                </div>
             </div>
 
             <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
                 
                 {/* LEFT: Core Health (Auto-Heal) */}
                 <div className="lg:col-span-4 flex flex-col gap-4 bg-white rounded-[2.5rem] border shadow-sm overflow-hidden">
-                    <div className="p-6 pb-2 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
-                        <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                            <ShieldCheck className="text-emerald-500" size={18} /> Core Infrastructure
-                        </h3>
-                        <button 
-                            onClick={handleAutoHeal}
-                            disabled={repairing}
-                            className="text-[10px] font-black uppercase tracking-widest text-emerald-600 hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
-                        >
-                            {repairing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                            Auto-Heal
-                        </button>
+                    <div className="p-6 pb-2 border-b border-slate-50 bg-slate-50/50">
+                        <div className="flex justify-between items-center mb-1">
+                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                <ShieldCheck className="text-emerald-500" size={18} /> Template Assets (Inventory)
+                            </h3>
+                            <button 
+                                onClick={handleAutoHeal}
+                                disabled={repairing}
+                                className="text-[10px] font-black uppercase tracking-widest text-emerald-600 hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                            >
+                                {repairing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                                Auto-Heal
+                            </button>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-medium">Actual message templates stored in Meta.</p>
                     </div>
                     <div className="overflow-y-auto p-4 space-y-2 custom-scrollbar">
                         {REQUIRED_SYSTEM_TEMPLATES.map(req => {
@@ -750,9 +617,9 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                 <div className="lg:col-span-8 bg-white rounded-[2.5rem] border shadow-sm overflow-hidden flex flex-col">
                     <div className="p-6 border-b border-slate-50 bg-slate-50/50">
                         <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                            <BrainCircuit className="text-indigo-500" size={18} /> Event-Reaction Map
+                            <BrainCircuit className="text-indigo-500" size={18} /> Trigger Logic (Rules)
                         </h3>
-                        <p className="text-xs text-slate-500 mt-1">Defines which template is triggered by specific system events.</p>
+                        <p className="text-xs text-slate-500 mt-1">Maps internal app events to specific templates in the inventory.</p>
                     </div>
                     <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
                         {SYSTEM_TRIGGER_MAP.map((trigger, idx) => {
@@ -774,14 +641,14 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                                                 <p className="text-[10px] text-slate-400 font-medium">{trigger.description}</p>
                                             </div>
                                             <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${match ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                                                {match ? 'Active' : 'Broken Link'}
+                                                {match ? 'Active' : 'Missing Asset'}
                                             </span>
                                         </div>
                                         
                                         <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center gap-3">
                                             <ArrowRight size={14} className="text-slate-300" />
                                             <div className="flex-1">
-                                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Triggers Template</p>
+                                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Target Template Name</p>
                                                 <p className="font-mono text-xs text-indigo-600 font-bold truncate">
                                                     {match ? match.name : trigger.defaultTemplateName}
                                                 </p>
@@ -791,7 +658,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                                                     onClick={() => handleDeployStandard(trigger, requiredDef)}
                                                     className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-md hover:bg-indigo-700"
                                                 >
-                                                    Fix Link
+                                                    Create Asset
                                                 </button>
                                             )}
                                         </div>
@@ -957,6 +824,143 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                           </button>
                       </div>
                   </div>
+              </div>
+          </div>
+      )}
+
+      {/* --- TAB: ISSUES (REJECTED LIST) --- */}
+      {activeTab === 'ISSUES' && (
+          <div className="space-y-6">
+              <div className="bg-rose-50 border-l-4 border-rose-500 p-6 rounded-r-2xl shadow-sm flex items-start gap-4">
+                  <div className="p-2 bg-white rounded-full text-rose-500"><ShieldAlert size={24}/></div>
+                  <div>
+                      <h3 className="text-lg font-black text-rose-800">Compliance Violations Detected</h3>
+                      <p className="text-sm text-rose-700 mt-1">
+                          Meta has rejected {rejectedTemplates.length} templates. This usually happens due to promotional language in Utility categories, abusive formatting, or vague variables.
+                      </p>
+                      <p className="text-xs font-bold text-rose-600 mt-2 uppercase tracking-wide">
+                          Use "Auto-Fix with AI" to generate a policy-compliant version instantly.
+                      </p>
+                  </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                  {rejectedTemplates.map(tpl => (
+                      <div key={tpl.id} className="bg-white p-5 rounded-2xl border border-rose-100 shadow-sm relative group overflow-hidden">
+                          <div className="absolute top-0 right-0 bg-rose-100 text-rose-700 text-[10px] font-black uppercase px-3 py-1 rounded-bl-xl">Rejected</div>
+                          
+                          <div className="flex flex-col md:flex-row gap-6">
+                              <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                      <h4 className="font-bold text-slate-800 text-sm">{tpl.name}</h4>
+                                      <span className="text-[10px] font-mono text-slate-400 bg-slate-50 px-2 rounded">{tpl.category}</span>
+                                  </div>
+                                  
+                                  {tpl.rejectionReason && (
+                                      <div className="mb-3 bg-rose-50 p-2 rounded-lg border border-rose-200 flex items-start gap-2">
+                                          <FileWarning size={14} className="text-rose-600 shrink-0 mt-0.5" />
+                                          <div>
+                                              <p className="text-[10px] font-black uppercase text-rose-800">Meta Rejection Reason</p>
+                                              <p className="text-xs text-rose-700">{tpl.rejectionReason}</p>
+                                          </div>
+                                      </div>
+                                  )}
+
+                                  <div className="bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 text-xs text-slate-600 italic font-mono mb-3">
+                                      "{tpl.content}"
+                                  </div>
+                                  <div className="flex gap-2 text-[10px] font-bold text-slate-400">
+                                      <span>ID: {tpl.id}</span>
+                                      <span>•</span>
+                                      <span>Group: {tpl.appGroup || 'Uncategorized'}</span>
+                                  </div>
+                              </div>
+
+                              <div className="flex flex-col justify-center gap-2 min-w-[160px]">
+                                  <button 
+                                    onClick={() => handleAiAutoFix(tpl)}
+                                    disabled={isFixing === tpl.id}
+                                    className="bg-emerald-600 text-white px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg"
+                                  >
+                                      {isFixing === tpl.id ? <Loader2 size={14} className="animate-spin"/> : <Stethoscope size={14} />}
+                                      Auto-Fix with AI
+                                  </button>
+                                  <button 
+                                    onClick={() => handleDeleteTemplate(tpl)}
+                                    className="bg-white border border-rose-200 text-rose-600 px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-rose-50 transition-all flex items-center justify-center gap-2"
+                                  >
+                                      <Trash2 size={14} /> Delete
+                                  </button>
+                              </div>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
+
+      {/* --- TAB 3: GROUPED LIBRARY --- */}
+      {activeTab === 'LIBRARY' && (
+          <div className="bg-white rounded-3xl border shadow-sm p-6">
+              <div className="flex justify-between items-center mb-6">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                      <Server size={18} className="text-slate-400" /> Grouped Library
+                  </h3>
+                  <button onClick={() => handleSyncFromMeta(false)} className="text-xs font-bold text-amber-600 hover:underline flex items-center gap-1">
+                      <RefreshCcw size={12} /> Refresh Status
+                  </button>
+              </div>
+              
+              <div className="space-y-8">
+                  {Object.entries(groupedTemplates).map(([groupKey, unknownTemplates]) => {
+                      const groupTemplates = unknownTemplates as WhatsAppTemplate[];
+                      if (groupTemplates.length === 0) return null;
+                      return (
+                          <div key={groupKey} className="animate-fadeIn">
+                              <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
+                                  <FolderOpen size={16} className="text-slate-400" />
+                                  <h4 className="text-sm font-black text-slate-700 uppercase tracking-widest">
+                                      {getGroupLabel(groupKey)}
+                                  </h4>
+                                  <span className="bg-slate-100 text-slate-500 text-[9px] px-2 py-0.5 rounded-full font-bold">
+                                      {groupTemplates.length}
+                                  </span>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                  {groupTemplates.map(t => (
+                                      <div key={t.id} className="border p-4 rounded-2xl hover:border-blue-400 transition-all group relative bg-slate-50/50">
+                                          <div className="flex justify-between items-start mb-2">
+                                              <div className="font-bold text-sm text-slate-800 truncate pr-2" title={t.name}>{t.name}</div>
+                                              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${getStatusColor(t.status)}`}>{t.status || 'LOCAL'}</span>
+                                          </div>
+                                          <p className="text-xs text-slate-500 line-clamp-3 mb-3 italic">"{t.content}"</p>
+                                          <div className="flex justify-between items-center mt-auto border-t pt-3">
+                                              <span className="text-[10px] font-bold text-slate-400">{t.category || 'UTILITY'}</span>
+                                              <div className="flex gap-2">
+                                                  <button 
+                                                    onClick={() => handleEditTemplate(t)}
+                                                    className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1 text-[10px] font-bold"
+                                                    title="Edit / New Version"
+                                                  >
+                                                    <Edit size={12} /> Edit
+                                                  </button>
+                                                  <button 
+                                                    onClick={() => handleDeleteTemplate(t)}
+                                                    disabled={deletingId === t.id}
+                                                    className="p-1.5 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-colors flex items-center gap-1 text-[10px] font-bold"
+                                                    title="Delete"
+                                                  >
+                                                     {deletingId === t.id ? <Loader2 size={12} className="animate-spin"/> : <Trash2 size={12} />}
+                                                  </button>
+                                              </div>
+                                          </div>
+                                      </div>
+                                  ))}
+                              </div>
+                          </div>
+                      );
+                  })}
+                  {templates.length === 0 && <p className="text-center text-slate-400 italic">No templates loaded. Try syncing from System Health.</p>}
               </div>
           </div>
       )}
