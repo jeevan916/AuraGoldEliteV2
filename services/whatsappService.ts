@@ -12,6 +12,7 @@ export interface WhatsAppResponse {
 
 // Meta API v22.0 Alignment
 const API_VERSION = "v22.0";
+const API_BASE = process.env.VITE_API_BASE_URL || '';
 
 export const whatsappService = {
   formatPhoneNumber(phone: string): string {
@@ -49,7 +50,7 @@ export const whatsappService = {
      }
 
      try {
-         const response = await fetch('/api/whatsapp/templates', {
+         const response = await fetch(`${API_BASE}/api/whatsapp/templates`, {
              method: 'GET',
              headers: {
                  'Content-Type': 'application/json',
@@ -98,7 +99,7 @@ export const whatsappService = {
      };
 
      try {
-         const response = await fetch('/api/whatsapp/templates', {
+         const response = await fetch(`${API_BASE}/api/whatsapp/templates`, {
              method: 'POST',
              headers: {
                  'Content-Type': 'application/json',
@@ -143,7 +144,7 @@ export const whatsappService = {
       const payload = { components: components };
 
       try {
-          const response = await fetch(`/api/whatsapp/templates/${templateId}`, {
+          const response = await fetch(`${API_BASE}/api/whatsapp/templates/${templateId}`, {
               method: 'POST',
               headers: {
                   'Content-Type': 'application/json',
@@ -169,7 +170,7 @@ export const whatsappService = {
       }
 
       try {
-          const response = await fetch(`/api/whatsapp/templates?name=${templateName}`, {
+          const response = await fetch(`${API_BASE}/api/whatsapp/templates?name=${templateName}`, {
               method: 'DELETE',
               headers: {
                   'x-waba-id': settings.whatsappBusinessAccountId,
@@ -208,7 +209,7 @@ export const whatsappService = {
             components.push({ type: "button", sub_type: "url", index: 0, parameters: [{ type: "text", text: buttonVariable }] });
         }
 
-        const response = await fetch('/api/whatsapp/send', {
+        const response = await fetch(`${API_BASE}/api/whatsapp/send`, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
@@ -254,7 +255,7 @@ export const whatsappService = {
     }
 
     try {
-      const response = await fetch('/api/whatsapp/send', {
+      const response = await fetch(`${API_BASE}/api/whatsapp/send`, {
         method: 'POST',
         headers: { 
             'Content-Type': 'application/json',

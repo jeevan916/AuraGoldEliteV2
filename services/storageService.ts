@@ -13,6 +13,7 @@ export interface AppState {
 }
 
 const STORAGE_KEY = 'aura_gold_app_state';
+const API_BASE = process.env.VITE_API_BASE_URL || '';
 
 const DEFAULT_STATE: AppState = {
   orders: [],
@@ -70,7 +71,7 @@ class StorageService {
 
   private async pollLogs() {
       try {
-          const res = await fetch('/api/whatsapp/logs/poll');
+          const res = await fetch(`${API_BASE}/api/whatsapp/logs/poll`);
           if (res.ok) {
               const data = await res.json();
               if (data.success && data.logs) {
@@ -106,7 +107,7 @@ class StorageService {
     this.notify();
 
     try {
-      const res = await fetch('/api/bootstrap');
+      const res = await fetch(`${API_BASE}/api/bootstrap`);
       if (!res.ok) throw new Error("Bootstrap failed");
       
       const response = await res.json();
@@ -139,7 +140,7 @@ class StorageService {
       this.saveToLocal();
       this.notify();
       try {
-          await fetch(`/api/sync/${endpoint}`, {
+          await fetch(`${API_BASE}/api/sync/${endpoint}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)

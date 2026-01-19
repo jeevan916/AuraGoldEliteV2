@@ -1,3 +1,4 @@
+
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Order } from '../types';
@@ -9,19 +10,19 @@ export const generateOrderPDF = (order: Order) => {
 
   // Header
   doc.setFontSize(22);
-  doc.setTextColor(217, 119, 6); 
-  doc.text("AuraGold Elite", margin, yPos);
+  doc.setTextColor(217, 119, 6); // Amber-600
+  doc.text("AuraGold", margin, yPos);
   
   doc.setFontSize(10);
   doc.setTextColor(100);
-  doc.text("Bespoke Luxury Jewelry & Bullion", margin, yPos + 6);
-  doc.text("Authorized Manufacturer & Retailer", margin, yPos + 11);
+  doc.text("Luxury Jewelry & Custom Designs", margin, yPos + 6);
+  doc.text("Mumbai, India | +91 98765 43210", margin, yPos + 11);
 
   // Invoice Details
   doc.setFontSize(10);
   doc.setTextColor(0);
-  doc.text(`Digital Agreement #: ${order.id}`, 140, yPos);
-  doc.text(`Booking Date: ${new Date(order.createdAt).toLocaleDateString()}`, 140, yPos + 6);
+  doc.text(`Order Agreement #: ${order.id}`, 140, yPos);
+  doc.text(`Date: ${new Date(order.createdAt).toLocaleDateString()}`, 140, yPos + 6);
 
   yPos += 30;
 
@@ -30,12 +31,14 @@ export const generateOrderPDF = (order: Order) => {
   doc.line(margin, yPos - 5, 195, yPos - 5);
   doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
-  doc.text("Client Identification", margin, yPos);
+  doc.text("Customer Details", margin, yPos);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   yPos += 6;
   doc.text(`Name: ${order.customerName}`, margin, yPos);
-  doc.text(`Mobile: ${order.customerContact}`, margin, yPos + 5);
+  // Fix: Order uses customerContact instead of phone for consistency with Form
+  doc.text(`Contact: ${order.customerContact}`, margin, yPos + 5);
+  // Fix: Order uses customerEmail
   doc.text(`Email: ${order.customerEmail || 'N/A'}`, margin, yPos + 10);
 
   yPos += 20;
@@ -43,76 +46,42 @@ export const generateOrderPDF = (order: Order) => {
   // Items Table
   doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
-  doc.text("Jewellery Specification", margin, yPos);
+  doc.text("Order Items", margin, yPos);
   yPos += 5;
 
   const itemRows = order.items.map(item => [
-    `${item.category} (${item.metalColor} ${item.purity})\nStones: ${item.stoneEntries.length} items`,
+    // Fix: JewelryDetail properties (metalColor, purity)
+    `${item.category} (${item.metalColor} ${item.purity})`,
     `${item.netWeight}g`,
+    // Fix: wastagePercentage instead of wastagePercent
     `${item.wastagePercentage}%`,
-    `₹${item.stoneCharges.toLocaleString()}`,
-    `₹${Math.round(item.finalAmount).toLocaleString()}`
+    `₹${item.stoneCharges}`,
+    // Fix: finalAmount instead of priceAtBooking
+    `₹${item.finalAmount.toLocaleString()}`
   ]);
 
   autoTable(doc, {
     startY: yPos,
-    head: [['Description & Detail', 'Net Wt', 'VA %', 'Stones', 'Gross Price']],
+    head: [['Item Description', 'Net Wt', 'VA%', 'Stone', 'Total Price']],
     body: itemRows,
     theme: 'grid',
-    headStyles: { fillColor: [15, 23, 42], textColor: 255 },
-    styles: { fontSize: 8 },
-    foot: [['', '', '', 'CART TOTAL:', `₹${Math.round(order.totalAmount).toLocaleString()}`]],
-    footStyles: { fillColor: [248, 249, 250], textColor: 0, fontStyle: 'bold' }
+    headStyles: { fillColor: [217, 119, 6], textColor: 255 },
+    styles: { fontSize: 9 },
+    foot: [['', '', '', 'GRAND TOTAL:', `₹${order.totalAmount.toLocaleString()}`]],
+    footStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold' }
   });
 
-  yPos = (doc as any).lastAutoTable.finalY + 15;
-
-  // Old Gold Exchange Section (If exists)
-  if (order.oldGoldExchange && order.oldGoldExchange.length > 0) {
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.text("Old Gold Exchange Deduction", margin, yPos);
-      yPos += 5;
-
-      const exchangeRows = order.oldGoldExchange.map(e => [
-          e.description,
-          `${e.grossWeight}g`,
-          `${e.purityPercent}%`,
-          `₹${e.rate}`,
-          `₹${Math.round(e.totalValue).toLocaleString()}`
-      ]);
-
-      autoTable(doc, {
-          startY: yPos,
-          head: [['Exchanged Item', 'Gross Wt', 'Purity', 'Rate', 'Valuation']],
-          body: exchangeRows,
-          theme: 'striped',
-          headStyles: { fillColor: [5, 150, 105], textColor: 255 },
-          styles: { fontSize: 8 },
-          foot: [['', '', '', 'TOTAL DEDUCTION:', `₹${Math.round(order.exchangeValue).toLocaleString()}`]],
-          footStyles: { fillColor: [240, 253, 244], textColor: [6, 95, 70], fontStyle: 'bold' }
-      });
-      yPos = (doc as any).lastAutoTable.finalY + 15;
-  }
-
-  // Net Summary
-  doc.setDrawColor(15, 23, 42);
-  doc.setLineWidth(0.5);
-  doc.rect(margin, yPos, 180, 15);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text("NET PAYABLE AMOUNT:", margin + 5, yPos + 10);
-  doc.text(`INR ${Math.round(order.netPayable).toLocaleString()}`, 145, yPos + 10);
-  yPos += 25;
+  yPos = (doc as any).lastAutoTable.finalY + 20;
 
   // Payment Plan
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
-  doc.text("Contracted Payment Schedule", margin, yPos);
+  doc.text("Payment Schedule Agreement", margin, yPos);
   yPos += 5;
 
+  // Fix: Order uses paymentPlan.milestones
   const planRows = order.paymentPlan.milestones.map((m, idx) => [
-    m.description || (idx === 0 ? 'Advance' : `Installment ${idx}`),
+    idx === 0 ? 'Advance / Downpayment' : `Installment ${idx}`,
     new Date(m.dueDate).toLocaleDateString(),
     `₹${m.targetAmount.toLocaleString()}`,
     m.status
@@ -120,42 +89,55 @@ export const generateOrderPDF = (order: Order) => {
 
   autoTable(doc, {
     startY: yPos,
-    head: [['Phase', 'Due Date', 'Target Amount', 'Current Status']],
+    head: [['Milestone', 'Due Date', 'Amount', 'Status']],
     body: planRows,
-    theme: 'grid',
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [217, 119, 6] }
+    theme: 'striped',
+    styles: { fontSize: 9 },
   });
 
   yPos = (doc as any).lastAutoTable.finalY + 20;
 
-  // Terms & Signatures
-  if (yPos > 240) { doc.addPage(); yPos = 20; }
+  // Terms & Legal
+  if (yPos > 240) {
+    doc.addPage();
+    yPos = 20;
+  }
 
-  doc.setFontSize(9);
+  doc.setFontSize(11);
   doc.setFont("helvetica", "bold");
-  doc.text("Contractual Terms & Conditions", margin, yPos);
-  yPos += 6;
+  doc.text("Terms & Conditions", margin, yPos);
+  yPos += 8;
+
+  doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
-  doc.setTextColor(100);
+  doc.setTextColor(80);
 
   const terms = [
-    "1. RATE PROTECTION: Gold rate is locked only for payments cleared on or before scheduled dates.",
-    "2. LAPSE CLAUSE: Late payments exceeding 48 hours revoke rate protection; balance recalculated at market price.",
-    "3. WEIGHT VARIATION: Final item weight may vary by +/- 3%. Difference settled during handover.",
-    "4. DELIVERY: Physical handover strictly after 100% financial settlement.",
-    "5. KYC: Government ID (PAN/Aadhar) mandatory for valuations above INR 2,00,000."
+    "1. Gold Rate Protection: Locked for the duration of the plan up to the cap limit.",
+    "2. Cancellations: Deduction on labor/making charges incurred.",
+    "3. Late Payments: Penalty may apply after 7 days overdue.",
+    "4. Delivery: Handed over only after 100% settlement.",
+    "5. Weight: Final weight may vary +/- 5%; differences adjusted in final payment."
   ];
 
-  terms.forEach(term => { doc.text(term, margin, yPos); yPos += 4; });
+  terms.forEach(term => {
+    doc.text(term, margin, yPos);
+    yPos += 5;
+  });
 
-  yPos += 15;
+  // Signatures
+  yPos += 20;
+  if (yPos > 260) {
+    doc.addPage();
+    yPos = 40;
+  }
+
   doc.setDrawColor(0);
-  doc.line(margin, yPos, margin + 50, yPos);
-  doc.line(140, yPos, 190, yPos);
-  doc.text("Authorized Signatory", margin, yPos + 4);
-  doc.text("Client Signature", 140, yPos + 4);
+  doc.line(margin, yPos, margin + 60, yPos);
+  doc.line(130, yPos, 190, yPos);
+  
+  doc.text("Customer Signature", margin, yPos + 5);
+  doc.text("Authorized Signatory (AuraGold)", 130, yPos + 5);
 
-  doc.save(`AuraGold_Contract_${order.id}.pdf`);
+  doc.save(`AuraGold_Agreement_${order.id}.pdf`);
 };

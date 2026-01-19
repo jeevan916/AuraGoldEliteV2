@@ -9,13 +9,15 @@ export interface GoldRateResponse {
   raw?: any;
 }
 
+const API_BASE = process.env.VITE_API_BASE_URL || '';
+
 export const goldRateService = {
   /**
    * Fetches the live gold rate from the backend proxy.
    */
   async fetchLiveRate(): Promise<GoldRateResponse> {
     try {
-        const apiUrl = `/api/gold-rate`;
+        const apiUrl = `${API_BASE}/api/gold-rate`;
         
         const response = await fetch(apiUrl, {
           headers: { 

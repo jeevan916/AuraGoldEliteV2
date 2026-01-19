@@ -1,5 +1,7 @@
+
 import { GlobalSettings, PaymentPlanTemplate, WhatsAppTemplate, CatalogItem, SystemTrigger } from './types';
 
+// Helper to safely access environment variables
 const getEnv = (key: string): string => {
   try {
     if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env[key]) {
@@ -16,17 +18,15 @@ export const INITIAL_SETTINGS: GlobalSettings = {
   currentGoldRate24K: 7200,
   currentGoldRate22K: 6600,
   currentGoldRate18K: 5400,
-  purityFactor22K: 0.916,
-  purityFactor18K: 0.750,
   defaultTaxRate: 3,
   goldRateProtectionMax: 500,
-  gracePeriodHours: 24,
-  followUpIntervalDays: 3,
+  gracePeriodHours: 24, // Default 24 hours grace
+  followUpIntervalDays: 3, // Default follow up every 3 days
   whatsappPhoneNumberId: getEnv('VITE_WHATSAPP_PHONE_ID'),
   whatsappBusinessAccountId: getEnv('VITE_WHATSAPP_WABA_ID'),
   whatsappBusinessToken: getEnv('VITE_WHATSAPP_TOKEN'),
-  setuClientId: '',
-  setuSchemeId: '',
+  setuClientId: '', // Initialized for V2
+  setuSchemeId: '', // Maps to Product Instance ID
   setuSecret: ''
 };
 
@@ -71,6 +71,7 @@ export const RISK_PROFILES = [
   { id: 'HIGH_RISK', label: 'High Risk / Defaulter', color: 'bg-rose-100 text-rose-800' }
 ];
 
+// --- COMPLIANCE ENGINE: RECOVERY TEMPLATES ---
 export const RECOVERY_TEMPLATES = [
     {
         id: 'auragold_gentle_reminder',
@@ -149,6 +150,7 @@ export const INITIAL_TEMPLATES: WhatsAppTemplate[] = [
   }
 ];
 
+// --- CORE SYSTEM TEMPLATES FOR AUTO-HEAL ---
 export const REQUIRED_SYSTEM_TEMPLATES = [
   {
     name: 'auragold_order_confirmation',

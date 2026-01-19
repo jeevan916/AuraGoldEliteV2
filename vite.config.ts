@@ -1,3 +1,4 @@
+
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import process from 'node:process';
@@ -12,13 +13,13 @@ export default defineConfig(({ mode }) => {
     base: './', 
     define: {
       'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),
+      'process.env.VITE_API_BASE_URL': JSON.stringify(env.VITE_API_BASE_URL || 'https://order.auragoldelite.com'),
     },
     build: {
       outDir: 'dist',
       emptyOutDir: true,
       target: 'esnext',
       sourcemap: false,
-      // Removed minify: 'terser' as it causes build failure if the package is missing.
       rollupOptions: {
         output: {
           manualChunks: {
