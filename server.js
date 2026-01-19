@@ -90,13 +90,31 @@ app.use('/api', coreRouter);
 app.use('/api/*', (req, res) => res.status(404).json({ error: `API route ${req.originalUrl} not found.` }));
 
 // --- STATIC SERVING ---
-const possibleDistPaths = [
-    path.join(process.cwd(), 'dist'),
-    path.join(__dirname, 'dist'),
-    __dirname 
-];
+const getValidDistPath = () => {
+    // 1. Check for standard 'dist' folder (Local dev / Standard build structure)
+    const distFolder = path.join(__dirname, 'dist');
+    if (fs.existsSync(path.join(distFolder, 'index.html'))) {
+        return distFolder;
+    }
 
-let finalDistPath = possibleDistPaths.find(p => fs.existsSync(path.join(p, 'index.html')));
+    // 2. Check current directory (Production deployment where files are flattened)
+    // CRITICAL CHECK: Ensure we don't serve the SOURCE index.html (which contains .tsx refs)
+    const localIndex = path.join(__dirname, 'index.html');
+    if (fs.existsSync(localIndex)) {
+        try {
+            const content = fs.readFileSync(localIndex, 'utf-8');
+            // If the file imports index.tsx, it is SOURCE code, not build artifact. Ignore it.
+            if (!content.includes('src="./index.tsx"') && !content.includes('src="/index.tsx"')) {
+                return __dirname;
+            }
+        } catch (e) {
+            console.warn("[System] Error reading local index.html", e);
+        }
+    }
+    return null;
+};
+
+let finalDistPath = getValidDistPath();
 
 if (finalDistPath) {
     console.log(`[System] Serving static assets from: ${finalDistPath}`);
@@ -107,7 +125,18 @@ if (finalDistPath) {
         }
     });
 } else {
-    app.get('/', (req, res) => res.status(200).send('Backend Online. Frontend dist not found.'));
+    app.get('/', (req, res) => {
+        res.status(200).send(`
+            <html>
+                <head><title>AuraGold Backend</title></head>
+                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                    <h1>Backend Online</h1>
+                    <p>API services are operational.</p>
+                    <p style="color: gray; font-size: 0.8em;">Frontend build artifacts not found in 'dist/' or root.</p>
+                </body>
+            </html>
+        `);
+    });
 }
 
 // Init DB & Start Server
