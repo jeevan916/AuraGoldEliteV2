@@ -27,35 +27,13 @@ const loadEnv = () => {
     let loaded = false;
     for (const p of searchPaths) {
         if (fs.existsSync(p)) {
-            console.log(`[System] Loading .env from: ${p}`);
             dotenv.config({ path: p });
             loaded = true;
             break;
         }
     }
-    
-    if (!loaded) {
-        console.warn('[System] WARNING: No .env file found in search paths. Using system environment variables.');
-    }
 };
 loadEnv();
-
-// --- DEPLOYMENT AUTO-FIX ---
-const resolveRootConflict = () => {
-    const distIndex = path.join(__dirname, 'dist', 'index.html');
-    const rootIndex = path.join(__dirname, 'index.html');
-    const backupIndex = path.join(__dirname, 'index.html.original_source');
-
-    if (fs.existsSync(distIndex) && fs.existsSync(rootIndex)) {
-        try {
-            const content = fs.readFileSync(rootIndex, 'utf-8');
-            if (content.includes('src="./index.tsx"') || content.includes('src="/index.tsx"')) {
-                fs.renameSync(rootIndex, backupIndex);
-            }
-        } catch (e) {}
-    }
-};
-resolveRootConflict();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -99,7 +77,6 @@ async function initDb() {
         connection.release();
         return { success: true };
     } catch (err) {
-        console.error("DB Init Failed:", err.message);
         pool = null; 
         return { success: false, error: err.message };
     }
@@ -114,7 +91,11 @@ const ensureDb = async (req, res, next) => {
     next();
 };
 
-// --- WHATSAPP WEBHOOK: VERIFICATION (GET) ---
+/**
+ * WHATSAPP WEBHOOK HANDLERS
+ */
+
+// 1. VERIFICATION (GET) - Required by Meta to verify server ownership
 app.get('/api/whatsapp/webhook', (req, res) => {
     const verify_token = process.env.WHATSAPP_VERIFY_TOKEN || "auragold_elite_secure_2025";
     const mode = req.query['hub.mode'];
@@ -123,19 +104,19 @@ app.get('/api/whatsapp/webhook', (req, res) => {
 
     if (mode && token) {
         if (mode === 'subscribe' && token === verify_token) {
-            console.log(`[Webhook] Meta Verification Successful (v22.0)`);
+            console.log(`[Webhook] Verification Successful for version ${META_API_VERSION}`);
             return res.status(200).send(challenge);
         } else {
-            console.warn(`[Webhook] Meta Verification Failed: Token mismatch`);
+            console.error("[Webhook] Verification Failed: Token Mismatch");
             return res.sendStatus(403);
         }
     }
     res.sendStatus(400);
 });
 
-// --- WHATSAPP WEBHOOK: EVENT HANDLER (POST) ---
+// 2. EVENT RECEIVER (POST) - Processes incoming messages and status updates
 app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
-    // Acknowledge receipt to Meta immediately
+    // Meta requires a 200 OK response quickly to avoid retries
     res.status(200).send('EVENT_RECEIVED');
 
     try {
@@ -145,15 +126,13 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
         const change = body.entry[0].changes[0].value;
         const connection = await pool.getConnection();
 
-        // CASE 1: Incoming Message
+        // INCOMING CUSTOMER MESSAGE
         if (change.messages && change.messages[0]) {
             const msg = change.messages[0];
-            const from = msg.from; // Sender's phone
-            const msgBody = msg.text?.body || `[Media/Unsupported: ${msg.type}]`;
+            const from = msg.from; 
+            const msgBody = msg.text?.body || `[Non-text message: ${msg.type}]`;
             const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
             const contactName = change.contacts?.[0]?.profile?.name || "Customer";
-
-            console.log(`[Webhook] New Message from ${from}: ${msgBody}`);
 
             const logEntry = {
                 id: msg.id,
@@ -170,15 +149,15 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
                 `INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data)`,
                 [logEntry.id, from, 'inbound', new Date(timestamp), JSON.stringify(logEntry)]
             );
+            console.log(`[Webhook] Logged Inbound: ${from}`);
         }
 
-        // CASE 2: Status Update (Sent, Delivered, Read)
+        // STATUS UPDATE (Sent, Delivered, Read, Failed)
         if (change.statuses && change.statuses[0]) {
             const statusUpdate = change.statuses[0];
             const msgId = statusUpdate.id;
-            const newStatus = statusUpdate.status.toUpperCase(); // SENT, DELIVERED, READ, FAILED
+            const newStatus = statusUpdate.status.toUpperCase(); 
 
-            // Update existing log entry in DB
             const [rows] = await connection.query('SELECT data FROM whatsapp_logs WHERE id = ?', [msgId]);
             if (rows.length > 0) {
                 const existingData = JSON.parse(rows[0].data);
@@ -187,7 +166,6 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
                     'UPDATE whatsapp_logs SET data = ? WHERE id = ?',
                     [JSON.stringify(existingData), msgId]
                 );
-                console.log(`[Webhook] Message ${msgId} status updated to: ${newStatus}`);
             }
         }
 
@@ -197,12 +175,17 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
     }
 });
 
+/**
+ * STANDARD API ROUTES
+ */
+
 app.get('/api/health', async (req, res) => {
-    res.json({ status: 'ok', time: new Date(), api_version: META_API_VERSION });
+    res.json({ status: 'ok', api_version: META_API_VERSION });
 });
 
 const createSyncHandler = (table) => async (req, res) => {
     const items = req.body[table] || req.body.orders || req.body.customers || req.body.logs || req.body.templates || req.body.catalog || req.body.plans;
+    if (!items) return res.status(400).json({error: "No data payload"});
     try {
         const connection = await pool.getConnection();
         await connection.beginTransaction();
@@ -278,10 +261,7 @@ app.post('/api/whatsapp/send', async (req, res) => {
     
     if (templateName) {
         payload.type = "template"; 
-        payload.template = { name: templateName, language: { code: language || "en_US" } };
-        if (components) {
-            payload.template.components = components;
-        }
+        payload.template = { name: templateName, language: { code: language || "en_US" }, components };
     } else { 
         payload.type = "text"; 
         payload.text = { body: message }; 
@@ -298,61 +278,7 @@ app.post('/api/whatsapp/send', async (req, res) => {
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-app.get('/api/whatsapp/templates', async (req, res) => {
-    const wabaId = req.headers['x-waba-id'];
-    const token = req.headers['x-auth-token'];
-    try {
-        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates?limit=100&fields=name,status,components,category,rejected_reason`, {
-            method: 'GET',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-        });
-        const data = await r.json();
-        res.status(r.status).json({ success: r.ok, data: data.data });
-    } catch(e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
-app.post('/api/whatsapp/templates', async (req, res) => {
-    const wabaId = req.headers['x-waba-id'];
-    const token = req.headers['x-auth-token'];
-    try {
-        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(req.body)
-        });
-        const data = await r.json();
-        res.status(r.status).json({ success: r.ok, data });
-    } catch(e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
-app.post('/api/whatsapp/templates/:id', async (req, res) => {
-    const token = req.headers['x-auth-token'];
-    try {
-        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${req.params.id}`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(req.body)
-        });
-        const data = await r.json();
-        res.status(r.status).json({ success: r.ok, data });
-    } catch(e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
-app.delete('/api/whatsapp/templates', async (req, res) => {
-    const wabaId = req.headers['x-waba-id'];
-    const token = req.headers['x-auth-token'];
-    const name = req.query.name;
-    try {
-        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates?name=${name}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-        });
-        const data = await r.json();
-        res.status(r.status).json({ success: r.ok, data });
-    } catch(e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
-// SETU AND RAZORPAY PROXIES
+// SETU UPI V2 PROXY
 app.post('/api/setu/create-link', ensureDb, async (req, res) => {
     try {
         const { amount, billerBillID, customerID, name, orderId } = req.body;
@@ -394,4 +320,4 @@ if (fs.existsSync(distPath)) {
     });
 }
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT} | Meta v22.0 Active`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT} | Webhook active`));
