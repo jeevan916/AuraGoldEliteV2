@@ -4,7 +4,7 @@ import {
   MessageSquare, BrainCircuit, Sparkles, Save, Edit, 
   Copy, RefreshCw, Zap, ShieldAlert, Users, Star, Cloud, CheckCircle, UploadCloud, Globe, Laptop,
   Activity, AlertTriangle, AlertCircle, RefreshCcw, Loader2, Terminal, Check, Server, PlusCircle, Code, Trash2, FolderOpen,
-  Wrench, ArrowRight, GitMerge, FileJson, XCircle, Stethoscope, Search, FileWarning, ShieldCheck, Workflow
+  Wrench, ArrowRight, GitMerge, FileJson, XCircle, Stethoscope, Search, FileWarning, ShieldCheck, Workflow, MousePointerClick, Clock
 } from 'lucide-react';
 import { WhatsAppTemplate, PsychologicalTactic, RiskProfile, MetaCategory, AppTemplateGroup, SystemTrigger } from '../types';
 import { PSYCHOLOGICAL_TACTICS, RISK_PROFILES, REQUIRED_SYSTEM_TEMPLATES, SYSTEM_TRIGGER_MAP } from '../constants';
@@ -188,12 +188,12 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       );
 
       if (missing.length === 0) {
-          addLog("All Core Intelligence templates are active.");
+          addLog("All Core Action templates are active.");
           setRepairing(false);
           return;
       }
 
-      addLog(`Critical: Found ${missing.length} missing automated templates.`);
+      addLog(`Critical: Found ${missing.length} missing action templates.`);
       let restoredCount = 0;
       let currentTemplates = [...templates];
 
@@ -546,34 +546,32 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
             <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm shrink-0">
                 <div className="flex items-center gap-2 mb-3">
                     <Workflow size={18} className="text-blue-500" />
-                    <h3 className="font-bold text-slate-800 text-sm">Automation Workflow Guide</h3>
+                    <h3 className="font-bold text-slate-800 text-sm">System Workflow</h3>
                 </div>
-                <div className="flex flex-col md:flex-row gap-4 md:gap-0 items-center justify-between text-xs text-slate-500 relative">
-                    <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border">
-                        <Activity size={14} className="text-emerald-500" />
-                        <span>1. App Event Occurs</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="flex items-center gap-3 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+                        <MousePointerClick size={16} className="text-amber-500" />
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">User Action</span>
+                        <ArrowRight size={12} className="text-slate-300" />
+                        <span className="text-xs font-bold text-slate-800">Core Action Template</span>
                     </div>
-                    <ArrowRight className="hidden md:block text-slate-300" />
-                    <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border">
-                        <GitMerge size={14} className="text-indigo-500" />
-                        <span>2. Trigger Logic Matches</span>
-                    </div>
-                    <ArrowRight className="hidden md:block text-slate-300" />
-                    <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border">
-                        <MessageSquare size={14} className="text-amber-500" />
-                        <span>3. Template Asset Sent</span>
+                    <div className="flex items-center gap-3 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+                        <Clock size={16} className="text-indigo-500" />
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Time / AI</span>
+                        <ArrowRight size={12} className="text-slate-300" />
+                        <span className="text-xs font-bold text-slate-800">Automation Rule</span>
                     </div>
                 </div>
             </div>
 
             <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
                 
-                {/* LEFT: Core Health (Auto-Heal) */}
+                {/* LEFT: Core Action Templates (Fixed) */}
                 <div className="lg:col-span-4 flex flex-col gap-4 bg-white rounded-[2.5rem] border shadow-sm overflow-hidden">
                     <div className="p-6 pb-2 border-b border-slate-50 bg-slate-50/50">
                         <div className="flex justify-between items-center mb-1">
                             <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                <ShieldCheck className="text-emerald-500" size={18} /> Template Assets (Inventory)
+                                <ShieldCheck className="text-emerald-500" size={18} /> Core Action Templates
                             </h3>
                             <button 
                                 onClick={handleAutoHeal}
@@ -584,7 +582,9 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                                 Auto-Heal
                             </button>
                         </div>
-                        <p className="text-[10px] text-slate-400 font-medium">Actual message templates stored in Meta.</p>
+                        <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
+                            Fixed messages triggered by app buttons (Receipts, OTPs, Status Updates). These are required for app functionality.
+                        </p>
                     </div>
                     <div className="overflow-y-auto p-4 space-y-2 custom-scrollbar">
                         {REQUIRED_SYSTEM_TEMPLATES.map(req => {
@@ -613,13 +613,15 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                     </div>
                 </div>
 
-                {/* RIGHT: Automation Map */}
+                {/* RIGHT: Automation Rules (Dynamic) */}
                 <div className="lg:col-span-8 bg-white rounded-[2.5rem] border shadow-sm overflow-hidden flex flex-col">
                     <div className="p-6 border-b border-slate-50 bg-slate-50/50">
                         <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                            <BrainCircuit className="text-indigo-500" size={18} /> Trigger Logic (Rules)
+                            <BrainCircuit className="text-indigo-500" size={18} /> Automation Rules (Time & AI)
                         </h3>
-                        <p className="text-xs text-slate-500 mt-1">Maps internal app events to specific templates in the inventory.</p>
+                        <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                            Rules that run in the background (Overdue checks, Grace periods). These pick dynamic variants based on strategy.
+                        </p>
                     </div>
                     <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
                         {SYSTEM_TRIGGER_MAP.map((trigger, idx) => {
@@ -641,7 +643,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                                                 <p className="text-[10px] text-slate-400 font-medium">{trigger.description}</p>
                                             </div>
                                             <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${match ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                                                {match ? 'Active' : 'Missing Asset'}
+                                                {match ? 'Rule Active' : 'Missing Logic'}
                                             </span>
                                         </div>
                                         
