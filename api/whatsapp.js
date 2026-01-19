@@ -122,7 +122,7 @@ router.get('/templates', ensureDb, async (req, res) => {
 });
 
 // Create Template
-router.post('/templates', async (req, res) => {
+router.post('/templates', ensureDb, async (req, res) => {
     const wabaId = req.headers['x-waba-id'];
     const token = req.headers['x-auth-token'];
     const payload = req.body;
@@ -139,14 +139,37 @@ router.post('/templates', async (req, res) => {
         
         if (data.error) return res.status(400).json({ success: false, error: data.error.message });
         
+        // --- SAVE TO DB (Synchronous Update) ---
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        
+        const newId = data.id; // Meta returns { id: "..." }
+        const appTpl = {
+            id: newId,
+            name: payload.name,
+            category: payload.category,
+            content: payload.components?.find(c => c.type === 'BODY')?.text || '',
+            status: 'PENDING', // Initially pending
+            source: 'META',
+            structure: payload.components
+        };
+
+        await connection.query(
+            `INSERT INTO templates (id, name, category, data) VALUES (?, ?, ?, ?) 
+             ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), data=VALUES(data)`,
+            [newId, payload.name, payload.category, JSON.stringify(appTpl)]
+        );
+        connection.release();
+        // ---------------------------------------
+
         res.json({ success: true, data: data });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-// Edit Template (Usually creates a new version or edits draft)
-router.post('/templates/:id', async (req, res) => {
+// Edit Template
+router.post('/templates/:id', ensureDb, async (req, res) => {
     const templateId = req.params.id;
     const token = req.headers['x-auth-token'];
     const payload = req.body;
@@ -163,6 +186,27 @@ router.post('/templates/:id', async (req, res) => {
         
         if (data.error) return res.status(400).json({ success: false, error: data.error.message });
         
+        // --- SAVE TO DB (Update Existing) ---
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        
+        // Fetch current to merge
+        const [rows] = await connection.query('SELECT data FROM templates WHERE id = ?', [templateId]);
+        if (rows.length > 0) {
+            const currentTpl = JSON.parse(rows[0].data);
+            
+            // Merge new structure
+            currentTpl.structure = payload.components;
+            currentTpl.content = payload.components?.find(c => c.type === 'BODY')?.text || currentTpl.content;
+            
+            await connection.query(
+                `UPDATE templates SET data = ? WHERE id = ?`,
+                [JSON.stringify(currentTpl), templateId]
+            );
+        }
+        connection.release();
+        // -------------------------------------
+
         res.json({ success: true, data });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });

@@ -28,6 +28,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
   const [activeTab, setActiveTab] = useState<'ITEMS' | 'FINANCIAL' | 'LOGS' | 'PROOF'>('FINANCIAL');
   const [isUpdatingWeight, setIsUpdatingWeight] = useState<string | null>(null); // Track item ID being edited
   const [newWeight, setNewWeight] = useState('');
+  const [sendingAgreement, setSendingAgreement] = useState(false);
 
   const handlePaymentUpdate = (updatedOrder: Order) => {
     onOrderUpdate(updatedOrder);
@@ -40,39 +41,57 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
 
   const handleResendAgreement = async () => {
       if(!confirm("Resend original Order Agreement via WhatsApp?")) return;
-
-      const itemName = order.items.length > 0 ? order.items[0].category + (order.items.length > 1 ? ` & ${order.items.length - 1} others` : '') : 'Jewellery';
-      const termsText = `${order.paymentPlan.months || 1} Months Installment`;
-      
-      const scheduleString = order.paymentPlan.milestones.map((m, i) => {
-          const date = new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-          return `${i+1}. ${date}: ₹${m.targetAmount.toLocaleString()}`;
-      }).join('\n');
+      setSendingAgreement(true);
 
       try {
+          const itemName = order.items.length > 0 ? order.items[0].category + (order.items.length > 1 ? ` & ${order.items.length - 1} others` : '') : 'Jewellery';
+          const termsText = `${order.paymentPlan.months || 1} Months Installment`;
+          
+          // Safer Schedule String Generation
+          // WhatsApp body variables have character limits. We show top 5 milestones + summary if too long.
+          const allMilestones = order.paymentPlan.milestones;
+          let scheduleString = '';
+          
+          if (allMilestones.length > 5) {
+              const firstFew = allMilestones.slice(0, 4).map((m, i) => {
+                  const date = new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                  return `${i+1}. ${date}: ₹${m.targetAmount.toLocaleString()}`;
+              }).join('\n');
+              scheduleString = `${firstFew}\n...and ${allMilestones.length - 4} more installments.`;
+          } else {
+              scheduleString = allMilestones.map((m, i) => {
+                  const date = new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                  return `${i+1}. ${date}: ₹${m.targetAmount.toLocaleString()}`;
+              }).join('\n');
+          }
+
           const res = await whatsappService.sendTemplateMessage(
               order.customerContact,
               'auragold_order_agreement',
               'en_US',
               [
-                  order.customerName,
-                  itemName,
-                  order.totalAmount.toLocaleString(),
-                  termsText,
-                  scheduleString,
-                  order.shareToken
+                  order.customerName,                      // {{1}} Name
+                  itemName,                                // {{2}} Item
+                  order.totalAmount.toLocaleString(),      // {{3}} Total
+                  termsText,                               // {{4}} Terms
+                  scheduleString,                          // {{5}} Schedule
+                  order.shareToken                         // {{6}} Link Token
               ],
               order.customerName
           );
 
           if (res.success) {
-              alert("Agreement Sent!");
+              alert("Agreement Sent Successfully!");
               if (res.logEntry && onAddLog) onAddLog(res.logEntry);
           } else {
-              alert("Failed: " + res.error);
+              console.error("Agreement Send Error:", res.error);
+              alert(`Failed to send: ${res.error}`);
           }
       } catch (e: any) {
+          console.error("Agreement Logic Error:", e);
           alert("Error: " + e.message);
+      } finally {
+          setSendingAgreement(false);
       }
   };
 
@@ -494,7 +513,12 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           <ArrowLeft size={20} /> Back
         </button>
         <div className="flex gap-2">
-           <Button size="sm" variant="secondary" onClick={handleResendAgreement}>
+           <Button 
+             size="sm" 
+             variant="secondary" 
+             onClick={handleResendAgreement}
+             loading={sendingAgreement}
+           >
              <Send size={14} /> Resend Agreement
            </Button>
            <Button size="sm" variant="secondary" onClick={handleOpenCustomerLink}>
