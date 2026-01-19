@@ -1,7 +1,8 @@
 
-import { WhatsAppLogEntry, GlobalSettings, WhatsAppTemplate } from "../types";
+import { WhatsAppLogEntry, GlobalSettings, WhatsAppTemplate, MetaCategory, AppTemplateGroup } from "../types";
 import { storageService } from "./storageService";
 import { errorService } from "./errorService";
+import { REQUIRED_SYSTEM_TEMPLATES } from "../constants";
 
 export interface WhatsAppResponse {
   success: boolean;
@@ -185,7 +186,8 @@ export const whatsappService = {
       }
   },
 
-  async sendTemplateMessage(to: string, templateName: string, languageCode: string = 'en_US', bodyVariables: string[] = [], customerName: string, buttonVariable?: string): Promise<WhatsAppResponse> {
+  // Main sending function with Auto-Heal
+  async sendTemplateMessage(to: string, templateName: string, languageCode: string = 'en_US', bodyVariables: string[] = [], customerName: string, buttonVariable?: string, retryCount = 0): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
     if (!recipient) return { success: false, error: "Invalid Phone Number" };
 
@@ -227,7 +229,42 @@ export const whatsappService = {
 
         const data = await response.json();
         
-        if (!data.success) throw new Error(data.error || "Send Failed");
+        if (!data.success) {
+            const errorMsg = JSON.stringify(data.error || "");
+            
+            // AUTO-HEAL: If template missing, try to create it and retry once
+            if (retryCount === 0 && (errorMsg.includes("does not exist") || errorMsg.includes("not found"))) {
+                console.log(`[WhatsApp] Template '${templateName}' missing. Attempting auto-creation...`);
+                
+                const definition = REQUIRED_SYSTEM_TEMPLATES.find(t => t.name === templateName);
+                if (definition) {
+                    const createPayload: WhatsAppTemplate = {
+                        id: `auto-${Date.now()}`,
+                        name: definition.name,
+                        content: definition.content,
+                        category: definition.category as MetaCategory,
+                        variableExamples: definition.examples,
+                        appGroup: definition.appGroup as AppTemplateGroup,
+                        tactic: 'AUTHORITY',
+                        targetProfile: 'REGULAR',
+                        isAiGenerated: false,
+                        source: 'LOCAL'
+                    };
+                    
+                    const createRes = await this.createMetaTemplate(createPayload);
+                    if (createRes.success) {
+                        console.log(`[WhatsApp] Auto-creation successful. Retrying send...`);
+                        // Wait a moment for propagation
+                        await new Promise(r => setTimeout(r, 2000));
+                        return this.sendTemplateMessage(to, templateName, languageCode, bodyVariables, customerName, buttonVariable, retryCount + 1);
+                    } else {
+                        console.error(`[WhatsApp] Auto-creation failed:`, createRes.error);
+                    }
+                }
+            }
+            
+            throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+        }
 
         return {
           success: true,

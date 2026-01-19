@@ -298,7 +298,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
 
         const termsText = `${finalOrder.paymentPlan.months || 1} Months Installment`;
 
-        await whatsappService.sendTemplateMessage(
+        const waRes = await whatsappService.sendTemplateMessage(
             finalOrder.customerContact,
             'auragold_order_agreement',
             'en_US',
@@ -312,6 +312,11 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
             ],
             finalOrder.customerName
         );
+
+        if (!waRes.success) {
+            console.warn("WhatsApp Send Failed:", waRes.error);
+            alert(`Order Saved, but WhatsApp failed: ${waRes.error}`);
+        }
     } catch (e) {
         console.warn("Failed to send order creation template", e);
     }
