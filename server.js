@@ -22,48 +22,39 @@ const __dirname = path.dirname(__filename);
 
 // --- ROBUST ENV LOADING ---
 const loadEnv = () => {
-    // Priority search for .env files based on Hostinger and standard deployments
     const searchPaths = [
-        path.resolve(process.cwd(), '.builds/config/.env'), // User specified path
         path.resolve(process.cwd(), '.env'),
-        path.resolve(__dirname, '.builds/config/.env'),
         path.resolve(__dirname, '.env'),
-        '/home/public_html/.builds/config/.env',
-        '/home/public_html/.env',
-        path.join(process.cwd(), '..', '.builds/config/.env')
+        '/home/public_html/.env'
     ];
 
-    let loaded = false;
     for (const p of searchPaths) {
         if (fs.existsSync(p)) {
             dotenv.config({ path: p });
             console.log(`[System] Configuration loaded from: ${p}`);
-            loaded = true;
             break;
         }
-    }
-    
-    if (!loaded) {
-        console.warn("[System] Warning: No .env file found in expected locations. Relying on system-level environment variables.");
     }
 };
 loadEnv();
 
 // --- CONFLICT RESOLUTION ---
-// Hostinger specific: Ensures root index.html doesn't block the Node process
+// On Hostinger, Apache often serves index.html before Node.js. 
+// We must rename the SOURCE index.html to ensure the Node app handles the request.
 const resolveIndexConflict = () => {
     const rootDir = process.cwd();
     const rootIndex = path.join(rootDir, 'index.html');
     const distIndex = path.join(rootDir, 'dist', 'index.html');
     
-    if (fs.existsSync(rootIndex) && fs.existsSync(distIndex)) {
+    // If we have a dist/index.html, we are in production.
+    if (fs.existsSync(distIndex) && fs.existsSync(rootIndex)) {
         try {
             const content = fs.readFileSync(rootIndex, 'utf8');
-            if (content.includes('src="./index.tsx"') || content.includes('type="module"')) {
-                const timestamp = Date.now();
-                const backupName = `index.html.source_backup_${timestamp}`;
+            // Only rename if it's the source version (containing index.tsx)
+            if (content.includes('src="./index.tsx"')) {
+                const backupName = `index.source.html.bak`;
                 fs.renameSync(rootIndex, path.join(rootDir, backupName));
-                console.log(`[System] Resolved routing conflict: Renamed root source file to ${backupName}`);
+                console.log(`[System] Moved source index.html to ${backupName} to prevent production conflicts.`);
             }
         } catch (e) {
             console.error("[System] Conflict resolution failed:", e.message);
@@ -75,56 +66,49 @@ resolveIndexConflict();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.set('trust proxy', 1); 
 app.use(compression());    
 app.use(cors());
-app.use(express.json({ limit: '100mb' }));
+app.use(express.json({ limit: '10mb' }));
 
-// --- API CLUSTERING ---
+// --- API ROUTES ---
 app.use('/api', ratesRouter);
 app.use('/api', paymentsRouter);
 app.use('/api/whatsapp', whatsappRouter);
 app.use('/api/sync', syncRouter);
 app.use('/api', coreRouter);
 
-// JSON 404 for unmatched API routes
-app.use('/api/*', (req, res) => res.status(404).json({ error: `API route ${req.originalUrl} not found.` }));
+// --- STATIC ASSETS & SPA ROUTING ---
+const distPath = path.join(process.cwd(), 'dist');
 
-// --- STATIC SERVING ---
-const possibleDistPaths = [
-    path.join(process.cwd(), 'dist'),
-    path.join(__dirname, 'dist'),
-    __dirname 
-];
+if (fs.existsSync(path.join(distPath, 'index.html'))) {
+    // 1. Serve static files from dist
+    app.use(express.static(distPath, {
+        index: false // Don't serve index.html automatically to control SPA behavior
+    }));
 
-let finalDistPath = possibleDistPaths.find(p => fs.existsSync(path.join(p, 'index.html')));
-
-if (finalDistPath) {
-    console.log(`[System] Serving static assets from: ${finalDistPath}`);
-    app.use(express.static(finalDistPath));
+    // 2. SPA Fallback: Serve index.html for all non-file, non-API requests
     app.get('*', (req, res) => {
-        if (!req.path.startsWith('/api')) {
-            res.sendFile(path.join(finalDistPath, 'index.html'));
+        // Prevent accidental serving of index.html for missing assets (prevents MIME type errors)
+        if (req.path.startsWith('/api') || req.path.includes('.')) {
+            return res.status(404).send('Not Found');
         }
+        res.sendFile(path.join(distPath, 'index.html'));
     });
 } else {
-    app.get('/', (req, res) => res.status(200).send(`
-        <div style="font-family: sans-serif; padding: 40px; text-align: center;">
-            <h1 style="color: #B8860B;">AuraGold Engine Online</h1>
-            <p>The backend is running, but the frontend build (dist/) was not found.</p>
-            <p>Please run <code>npm run build</code> and ensure the dist folder is uploaded.</p>
-        </div>
-    `));
+    // Fallback if build is missing
+    app.get('/', (req, res) => {
+        res.status(200).send(`
+            <div style="font-family: sans-serif; padding: 50px; text-align: center; background: #f8f9fa; height: 100vh;">
+                <h1 style="color: #B8860B;">AuraGold Engine - Build Required</h1>
+                <p>The backend is running, but the <b>dist/</b> folder (frontend) is missing.</p>
+                <p style="background: #eee; padding: 10px; display: inline-block; border-radius: 5px;">Run <code>npm run build</code> locally and upload the <b>dist</b> folder to your server.</p>
+            </div>
+        `);
+    });
 }
 
-// Init DB & Start Server
 initDb().then((result) => {
-    if (result.success) {
-        console.log("[Database] Connectivity verified.");
-    } else {
-        console.error("[Database] Initialization failed:", result.error);
-    }
-    
+    if (result.success) console.log("[Database] Connected.");
     app.listen(PORT, '0.0.0.0', () => {
         console.log(`[Server] Cluster operational on port ${PORT}`);
     });

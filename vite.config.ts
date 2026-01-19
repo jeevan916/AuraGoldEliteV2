@@ -9,9 +9,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    // Use relative base to ensure it works on any path/subdomain
-    base: './', 
-    envDir: envDir,
+    base: './', // Crucial for Hostinger and generic deployments
     define: {
       'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),
     },
