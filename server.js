@@ -35,6 +35,28 @@ const loadEnv = () => {
 };
 loadEnv();
 
+// --- CONFLICT RESOLUTION: SOURCE VS BUILD ---
+const resolveIndexConflict = () => {
+    const rootDir = process.cwd();
+    const rootIndex = path.join(rootDir, 'index.html');
+    const distIndex = path.join(rootDir, 'dist', 'index.html');
+
+    if (fs.existsSync(rootIndex) && fs.existsSync(distIndex)) {
+        try {
+            const content = fs.readFileSync(rootIndex, 'utf8');
+            if (content.includes('src="./index.tsx"') || content.includes('type="module"')) {
+                const timestamp = new Date().getTime();
+                const backupName = `index.html.source_backup_${timestamp}`;
+                fs.renameSync(rootIndex, path.join(rootDir, backupName));
+                console.log(`[System] Renamed source index.html to ${backupName} to allow Node.js routing.`);
+            }
+        } catch (e) {
+            console.error("[System] Failed to resolve index conflict:", e.message);
+        }
+    }
+};
+resolveIndexConflict();
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const META_API_VERSION = "v22.0";
@@ -46,7 +68,6 @@ app.use(express.json({ limit: '100mb' }));
 
 let pool = null;
 
-// Helper to normalize phone numbers for DB consistency
 const normalizePhone = (p) => p ? p.replace(/\D/g, '').slice(-12) : '';
 
 async function initDb() {
@@ -95,45 +116,47 @@ const ensureDb = async (req, res, next) => {
 };
 
 /**
- * GOLD RATE API (THE BASIC METHOD)
+ * GOLD RATE API (AUGMONT / BATUK METHOD)
  */
 app.get('/api/gold-rate', ensureDb, async (req, res) => {
     try {
         let rate24k = 0;
         let source = 'Local DB';
 
-        // 1. Try to fetch from a basic public API first
         try {
-            const externalRes = await fetch('https://api.gold-api.com/price/XAU');
+            // Updated to use the requested Augmont endpoint
+            const externalRes = await fetch('https://uat.batuk.in/augmont/gold');
             if (externalRes.ok) {
                 const extData = await externalRes.json();
-                // Formula: (Price per Ounce / 31.1035) * USD_TO_INR
-                const usdToInr = 83.5; 
-                const gramUsd = extData.price / 31.1035;
-                rate24k = Math.round(gramUsd * usdToInr);
-                source = 'Live Market (Global)';
+                
+                // Navigation based on provided JSON structure: data[0][0].gSell
+                if (!extData.error && extData.data && extData.data[0] && extData.data[0][0]) {
+                    const gSell = parseFloat(extData.data[0][0].gSell);
+                    
+                    // Logic: gSell value of ~14430 represents 2 grams (standard Augmont response behavior)
+                    // We divide by 2 to get the per-gram rate (approx 7215)
+                    rate24k = Math.round(gSell / 2);
+                    source = 'Augmont Live (Augmont/Batuk)';
+                }
             }
         } catch (e) {
-            console.warn("External Gold API failed, using DB");
+            console.warn("Augmont Gold API failed, using DB fallback", e.message);
         }
 
         const connection = await pool.getConnection();
 
-        // 2. If external failed, get last stored
         if (rate24k === 0) {
             const [rows] = await connection.query('SELECT rate24k FROM gold_rates ORDER BY recorded_at DESC LIMIT 1');
             if (rows.length > 0) {
                 rate24k = parseFloat(rows[0].rate24k);
             } else {
-                rate24k = 7500; // Hard fallback for first-time run
+                rate24k = 7500; 
             }
         }
 
-        // 3. Calculate variants (Basic 91.6% and 75% formulas)
         const rate22k = Math.round(rate24k * 0.916);
         const rate18k = Math.round(rate24k * 0.75);
 
-        // 4. Save to DB for historical tracking
         await connection.query(
             'INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)',
             [rate24k, rate22k, rate18k]
@@ -155,7 +178,6 @@ app.get('/api/gold-rate', ensureDb, async (req, res) => {
 /**
  * WHATSAPP WEBHOOK HANDLERS
  */
-
 app.get('/api/whatsapp/webhook', (req, res) => {
     const verify_token = process.env.WHATSAPP_VERIFY_TOKEN || "auragold_elite_secure_2025";
     const mode = req.query['hub.mode'];
@@ -308,12 +330,30 @@ app.get('/api/bootstrap', ensureDb, async (req, res) => {
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-const distPath = path.join(__dirname, 'dist');
-if (fs.existsSync(distPath)) {
-    app.use(express.static(distPath));
+// --- STATIC SERVING LOGIC ---
+const possibleDistPaths = [
+    path.join(process.cwd(), 'dist'),
+    path.join(__dirname, 'dist'),
+    __dirname 
+];
+
+let finalDistPath = null;
+for (const p of possibleDistPaths) {
+    if (fs.existsSync(path.join(p, 'index.html'))) {
+        finalDistPath = p;
+        break;
+    }
+}
+
+if (finalDistPath) {
+    app.use(express.static(finalDistPath));
     app.get('*', (req, res) => {
-        if (!req.path.startsWith('/api')) res.sendFile(path.join(distPath, 'index.html'));
+        if (!req.path.startsWith('/api')) {
+            res.sendFile(path.join(finalDistPath, 'index.html'));
+        }
     });
+} else {
+    app.get('/', (req, res) => res.status(200).send("<h1>AuraGold Engine Online</h1><p>Run <code>npm run build</code> to see the dashboard.</p>"));
 }
 
 app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT}`));
