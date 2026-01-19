@@ -4,7 +4,7 @@ import {
   MessageSquare, BrainCircuit, Sparkles, Save, Edit, 
   Copy, RefreshCw, Zap, ShieldAlert, Users, Star, Cloud, CheckCircle, UploadCloud, Globe, Laptop,
   Activity, AlertTriangle, AlertCircle, RefreshCcw, Loader2, Terminal, Check, Server, PlusCircle, Code, Trash2, FolderOpen,
-  Wrench, ArrowRight, GitMerge, FileJson, XCircle, Stethoscope, Search, FileWarning, ShieldCheck, Workflow, MousePointerClick, Clock
+  Wrench, ArrowRight, GitMerge, FileJson, XCircle, Stethoscope, Search, FileWarning, ShieldCheck, Workflow, MousePointerClick, Clock, Layers
 } from 'lucide-react';
 import { WhatsAppTemplate, PsychologicalTactic, RiskProfile, MetaCategory, AppTemplateGroup, SystemTrigger } from '../types';
 import { PSYCHOLOGICAL_TACTICS, RISK_PROFILES, REQUIRED_SYSTEM_TEMPLATES, SYSTEM_TRIGGER_MAP } from '../constants';
@@ -17,7 +17,8 @@ interface WhatsAppTemplatesProps {
 }
 
 const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'SYSTEM' | 'STRATEGY' | 'LIBRARY' | 'ISSUES'>('SYSTEM');
+  // SPLIT TABS: Explicit separation of Core (Fixed) and Automation (Dynamic)
+  const [activeTab, setActiveTab] = useState<'CORE' | 'AUTOMATION' | 'BUILDER' | 'LIBRARY' | 'ISSUES'>('CORE');
   
   // Prompt-Based Generator State
   const [promptText, setPromptText] = useState('');
@@ -28,15 +29,13 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   const [generatedContent, setGeneratedContent] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<MetaCategory>('UTILITY');
   const [selectedGroup, setSelectedGroup] = useState<AppTemplateGroup>('UNCATEGORIZED');
-  const [editingStructure, setEditingStructure] = useState<any[]>([]); // Preserves Buttons/Headers during edit
+  const [editingStructure, setEditingStructure] = useState<any[]>([]); 
   const [variableExamples, setVariableExamples] = useState<string[]>([]);
-  const [highlightEditor, setHighlightEditor] = useState(false); // Visual feedback
+  const [highlightEditor, setHighlightEditor] = useState(false); 
   const [aiAnalysisReason, setAiAnalysisReason] = useState<string | null>(null);
-  
-  // Track Meta ID for Editing (Crucial for In-Place Fixes)
   const [editingMetaId, setEditingMetaId] = useState<string | null>(null);
 
-  // Tactic State (Fallback/Legacy)
+  // Tactic State 
   const [selectedTactic, setSelectedTactic] = useState<PsychologicalTactic>('AUTHORITY');
   const [selectedProfile, setSelectedProfile] = useState<RiskProfile>('REGULAR');
 
@@ -45,39 +44,22 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deployingTriggerId, setDeployingTriggerId] = useState<string | null>(null);
   
-  // AI Fix State
   const [isFixing, setIsFixing] = useState<string | null>(null);
-
-  // Auto-Repair State
   const [repairing, setRepairing] = useState(false);
   const [repairLogs, setRepairLogs] = useState<string[]>([]);
   
-  // Debug Log State
-  const [debugLogs, setDebugLogs] = useState<{timestamp: string, label: string, data: any, isError: boolean}[]>([]);
-  
   const logsEndRef = useRef<HTMLDivElement>(null);
-  const debugEndRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
 
   const rejectedTemplates = useMemo(() => (templates || []).filter(t => t && t.status === 'REJECTED'), [templates]);
 
   useEffect(() => {
     if (logsEndRef.current) logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    if (debugEndRef.current) debugEndRef.current.scrollIntoView({ behavior: 'smooth' });
-  }, [repairLogs, debugLogs]);
+  }, [repairLogs]);
 
   const addLog = (msg: string) => setRepairLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
   
-  const addDebugLog = (label: string, data: any, isError: boolean = false) => {
-      setDebugLogs(prev => [{
-          timestamp: new Date().toLocaleTimeString(),
-          label,
-          data,
-          isError
-      }, ...prev]);
-  };
-
-  // Helper to guess group if missing - Robust against nulls
+  // Helper to guess group if missing
   function inferGroup(t: WhatsAppTemplate): AppTemplateGroup {
       if (!t) return 'UNCATEGORIZED';
       const name = t.name || '';
@@ -128,8 +110,6 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                   const existingIndex = updatedList.findIndex(t => t.name === mt.name);
                   const bodyComp = mt.components?.find((c: any) => c.type === 'BODY');
                   const text = bodyComp?.text || "No Content";
-                  
-                  // Preserve existing local group if updating
                   const existingGroup = existingIndex >= 0 ? updatedList[existingIndex].appGroup : undefined;
 
                   const tplObj: WhatsAppTemplate = {
@@ -142,9 +122,9 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                       structure: mt.components,
                       source: 'META',
                       status: mt.status,
-                      rejectionReason: mt.rejected_reason, // Capture the specific reason from Meta
+                      rejectionReason: mt.rejected_reason,
                       category: mt.category,
-                      appGroup: existingGroup // Maintain app context
+                      appGroup: existingGroup
                   };
 
                   if (existingIndex >= 0) {
@@ -156,7 +136,6 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                           category: mt.category 
                       };
                   } else {
-                      // Infer group for new ones
                       tplObj.appGroup = inferGroup(tplObj);
                       newTpls.push(tplObj);
                   }
@@ -200,7 +179,6 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       for (const req of missing) {
           addLog(`Deploying Core Template: ${req.name}...`);
           try {
-              // Construct template object compatible with createMetaTemplate
               const payload: WhatsAppTemplate = {
                   id: `heal-${Date.now()}`,
                   name: req.name,
@@ -273,7 +251,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       
       setIsGenerating(true);
       setAiAnalysisReason(null);
-      setEditingMetaId(null); // New generation, not an edit
+      setEditingMetaId(null); 
       try {
           const result = await geminiService.generateTemplateFromPrompt(finalText);
           
@@ -284,11 +262,9 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           setSelectedTactic(result.tactic);
           setVariableExamples(result.examples);
           
-          // Trigger visual feedback
           setHighlightEditor(true);
           setTimeout(() => setHighlightEditor(false), 2000);
           
-          // Move to Editor View
           if (editorRef.current) editorRef.current.scrollIntoView({ behavior: 'smooth' });
 
       } catch (e: any) {
@@ -307,42 +283,19 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       setVariableExamples(tpl.variableExamples || []);
       setAiAnalysisReason(null);
       
-      // Capture Meta ID for In-Place Edits
       if (tpl.source === 'META') {
           setEditingMetaId(tpl.id);
       } else {
           setEditingMetaId(null);
       }
 
-      setActiveTab('STRATEGY');
+      setActiveTab('BUILDER'); // Renamed from STRATEGY
       
       setTimeout(() => {
           if (editorRef.current) {
               editorRef.current.scrollIntoView({ behavior: 'smooth' });
           }
       }, 100);
-  };
-
-  // Special handler to fix rejected system templates by creating a fresh v2
-  const handleFixSystemTemplate = (tpl: WhatsAppTemplate, requiredDef: any) => {
-      // Create a unique name version to avoid Meta conflicts
-      const newName = `${requiredDef.name}_v${Math.floor(Date.now() / 1000).toString().slice(-4)}`;
-      
-      setTemplateName(newName);
-      // LOAD THE SAFE CONTENT FROM CONSTANTS, NOT THE REJECTED CONTENT
-      setGeneratedContent(requiredDef.content);
-      setSelectedCategory(requiredDef.category as MetaCategory);
-      setSelectedGroup(requiredDef.appGroup as AppTemplateGroup);
-      setVariableExamples(requiredDef.examples);
-      setEditingStructure([]); // Reset structure to allow pure text rebuild if needed
-      setAiAnalysisReason(`Core Template Restoration: Replaced rejected content with safe default for ${requiredDef.name}.`);
-      setEditingMetaId(null); // Force creation of new safe version
-      
-      setActiveTab('STRATEGY');
-      setHighlightEditor(true);
-      setTimeout(() => setHighlightEditor(false), 2000);
-      
-      if (editorRef.current) editorRef.current.scrollIntoView({ behavior: 'smooth' });
   };
 
   const handleAiAutoFix = async (tpl: WhatsAppTemplate) => {
@@ -354,18 +307,17 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           setGeneratedContent(result.fixedContent);
           setSelectedCategory(result.category);
           setSelectedGroup(tpl.appGroup || 'UNCATEGORIZED');
-          setVariableExamples(result.variableExamples || []); // Use AI generated examples
+          setVariableExamples(result.variableExamples || []); 
           setEditingStructure([]); 
           setAiAnalysisReason(result.diagnosis);
           
-          // IMPORTANT: Set ID for in-place edit if it exists
           if (tpl.source === 'META' && tpl.id) {
               setEditingMetaId(tpl.id);
           } else {
               setEditingMetaId(null);
           }
           
-          setActiveTab('STRATEGY');
+          setActiveTab('BUILDER');
           setHighlightEditor(true);
           setTimeout(() => setHighlightEditor(false), 2000);
           
@@ -408,8 +360,8 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       setGeneratedContent(`New variant for ${trigger.label}: ${placeholderText}...`);
       setSelectedCategory('UTILITY');
       setSelectedGroup(trigger.appGroup);
-      setVariableExamples(trigger.requiredVariables); // Hint for user
-      setActiveTab('STRATEGY');
+      setVariableExamples(trigger.requiredVariables);
+      setActiveTab('BUILDER');
       setAiAnalysisReason(null);
       setEditingMetaId(null);
       
@@ -442,31 +394,18 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           setPushingMeta(true);
           let result;
           
-          // DECISION: EDIT vs CREATE
           if (editingMetaId && !editingMetaId.startsWith('local-')) {
-              // Edit In-Place
               result = await whatsappService.editMetaTemplate(editingMetaId, newTpl);
-              if (result.success) {
-                  alert("Template Edited Successfully!");
-              }
+              if (result.success) alert("Template Edited Successfully!");
           } else {
-              // Create New
               result = await whatsappService.createMetaTemplate(newTpl);
-              if (result.success) {
-                  alert(`Template Deployed! Active Name: ${result.finalName}`);
-              }
+              if (result.success) alert(`Template Deployed! Active Name: ${result.finalName}`);
           }
-
-          addDebugLog(`Deploy: ${templateName}`, {
-              PAYLOAD_SENT: result.debugPayload,
-              META_RESPONSE: result.rawResponse
-          }, !result.success);
           
           setPushingMeta(false);
           
           if (result.success) {
               const deployedTpl = { ...newTpl, name: result.finalName || templateName, source: 'META' as const, status: 'PENDING' as const };
-              // Replace if editing, otherwise add
               if (editingMetaId) {
                   onUpdate(templates.map(t => t.id === editingMetaId ? { ...deployedTpl, id: editingMetaId } : t));
               } else {
@@ -475,7 +414,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
               setAiAnalysisReason(null);
               setEditingMetaId(null);
           } else {
-              alert(`Deployment Error: ${result.error?.message}. Check 'System Health' Raw Logs for details.`);
+              alert(`Deployment Error: ${result.error?.message}.`);
           }
       }
       
@@ -505,9 +444,8 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   ];
 
   return (
-    // ADDED: pb-32 to clear mobile nav bar
     <div className="space-y-6 animate-fadeIn pb-32 flex flex-col">
-      {/* Header & Tabs */}
+      {/* Header & Separate Tabs */}
       <div className="flex flex-col md:flex-row justify-between items-end gap-4 border-b pb-4 shrink-0">
         <div>
           <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
@@ -518,13 +456,17 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
         
         <div className="w-full md:w-auto overflow-x-auto pb-1 custom-scrollbar">
             <div className="flex bg-slate-100 p-1 rounded-xl w-max">
-                {(['SYSTEM', 'STRATEGY', 'LIBRARY'] as const).map(tab => (
+                {(['CORE', 'AUTOMATION', 'BUILDER', 'LIBRARY'] as const).map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
-                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
-                        {tab === 'SYSTEM' ? 'Automation Command Center' : tab === 'STRATEGY' ? 'AI Architect' : 'Library'}
+                        {tab === 'CORE' && <MousePointerClick size={14} className="text-amber-500" />}
+                        {tab === 'AUTOMATION' && <BrainCircuit size={14} className="text-indigo-500" />}
+                        {tab === 'BUILDER' && <Wrench size={14} className="text-emerald-500" />}
+                        {tab === 'LIBRARY' && <FolderOpen size={14} className="text-slate-400" />}
+                        {tab === 'CORE' ? 'Core Actions' : tab === 'AUTOMATION' ? 'Automation Rules' : tab === 'BUILDER' ? 'AI Builder' : 'Library'}
                     </button>
                 ))}
                 {rejectedTemplates.length > 0 && (
@@ -539,143 +481,161 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
         </div>
       </div>
 
-      {/* --- TAB: SYSTEM & AUTOMATION (MERGED) --- */}
-      {activeTab === 'SYSTEM' && (
+      {/* --- TAB: CORE ACTIONS (Fixed/Required) --- */}
+      {activeTab === 'CORE' && (
         <div className="flex flex-col gap-6 h-[calc(100vh-200px)] overflow-hidden">
-            {/* Context Header: Explaining the flow */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm shrink-0">
-                <div className="flex items-center gap-2 mb-3">
-                    <Workflow size={18} className="text-blue-500" />
-                    <h3 className="font-bold text-slate-800 text-sm">System Workflow</h3>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="flex items-center gap-3 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-                        <MousePointerClick size={16} className="text-amber-500" />
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">User Action</span>
-                        <ArrowRight size={12} className="text-slate-300" />
-                        <span className="text-xs font-bold text-slate-800">Core Action Template</span>
-                    </div>
-                    <div className="flex items-center gap-3 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-                        <Clock size={16} className="text-indigo-500" />
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Time / AI</span>
-                        <ArrowRight size={12} className="text-slate-300" />
-                        <span className="text-xs font-bold text-slate-800">Automation Rule</span>
+            {/* Header / Guide */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm shrink-0 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="bg-amber-100 text-amber-700 p-2 rounded-xl"><ShieldCheck size={20} /></div>
+                    <div>
+                        <h3 className="font-bold text-slate-800 text-sm">Core Action Templates</h3>
+                        <p className="text-[10px] text-slate-500">Fixed messages triggered by buttons (Receipts, OTPs, Status Updates). These are hard requirements.</p>
                     </div>
                 </div>
+                <button 
+                    onClick={handleAutoHeal}
+                    disabled={repairing}
+                    className="text-[10px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-4 py-2 rounded-xl transition-colors flex items-center gap-2"
+                >
+                    {repairing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    Check & Repair
+                </button>
             </div>
 
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0">
-                
-                {/* LEFT: Core Action Templates (Fixed) */}
-                <div className="lg:col-span-4 flex flex-col gap-4 bg-white rounded-[2.5rem] border shadow-sm overflow-hidden">
-                    <div className="p-6 pb-2 border-b border-slate-50 bg-slate-50/50">
-                        <div className="flex justify-between items-center mb-1">
-                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                <ShieldCheck className="text-emerald-500" size={18} /> Core Action Templates
-                            </h3>
-                            <button 
-                                onClick={handleAutoHeal}
-                                disabled={repairing}
-                                className="text-[10px] font-black uppercase tracking-widest text-emerald-600 hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
-                            >
-                                {repairing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                                Auto-Heal
-                            </button>
-                        </div>
-                        <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
-                            Fixed messages triggered by app buttons (Receipts, OTPs, Status Updates). These are required for app functionality.
-                        </p>
-                    </div>
-                    <div className="overflow-y-auto p-4 space-y-2 custom-scrollbar">
-                        {REQUIRED_SYSTEM_TEMPLATES.map(req => {
-                            const match = templates.find(t => t.name === req.name || t.name.startsWith(req.name));
-                            return (
-                                <div key={req.name} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-slate-200 transition-colors group">
-                                    <div className={`w-2 h-2 rounded-full shrink-0 ${match ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'}`}></div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-xs font-bold text-slate-700 truncate" title={req.name}>{req.name}</p>
-                                        <p className="text-[9px] text-slate-400 uppercase">{req.category}</p>
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0 overflow-y-auto p-2">
+                <div className="space-y-3">
+                    {REQUIRED_SYSTEM_TEMPLATES.map(req => {
+                        const match = templates.find(t => t.name === req.name || t.name.startsWith(req.name));
+                        return (
+                            <div key={req.name} className="flex flex-col gap-2 p-4 rounded-2xl border border-slate-100 bg-white hover:border-amber-200 transition-colors shadow-sm">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-3 h-3 rounded-full shrink-0 ${match ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'}`}></div>
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-800">{req.name}</p>
+                                            <p className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">{req.appGroup}</p>
+                                        </div>
                                     </div>
-                                    {!match && (
-                                        <span className="text-[9px] font-black bg-rose-100 text-rose-600 px-2 py-0.5 rounded">MISSING</span>
-                                    )}
+                                    <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase ${match ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                        {match ? 'Active' : 'Missing'}
+                                    </span>
                                 </div>
-                            )
-                        })}
+                                <div className="bg-slate-50 p-3 rounded-xl text-[10px] text-slate-600 font-mono leading-relaxed border border-slate-100">
+                                    {match ? match.content : req.content}
+                                </div>
+                            </div>
+                        )
+                    })}
+                </div>
+                
+                {/* Console Log */}
+                <div className="bg-slate-900 rounded-3xl p-6 text-emerald-400 font-mono text-[10px] overflow-hidden flex flex-col">
+                    <div className="flex items-center gap-2 mb-4 text-slate-500 uppercase font-bold tracking-widest text-[9px] border-b border-slate-800 pb-2">
+                        <Terminal size={14} /> System Health Console
                     </div>
-                    {/* Console Log Area */}
-                    <div className="p-4 bg-slate-900 text-emerald-400 font-mono text-[10px] h-48 overflow-y-auto border-t border-slate-800">
-                        <div className="flex items-center gap-2 mb-2 text-slate-500 uppercase font-bold tracking-widest text-[9px]">
-                            <Terminal size={10} /> System Console
-                        </div>
+                    <div className="flex-1 overflow-y-auto space-y-1">
                         {repairLogs.length === 0 ? <span className="opacity-30">System idle. Ready for diagnostics.</span> : repairLogs.map((l, i) => <div key={i}>{l}</div>)}
                         <div ref={logsEndRef} />
                     </div>
                 </div>
+            </div>
+        </div>
+      )}
 
-                {/* RIGHT: Automation Rules (Dynamic) */}
-                <div className="lg:col-span-8 bg-white rounded-[2.5rem] border shadow-sm overflow-hidden flex flex-col">
-                    <div className="p-6 border-b border-slate-50 bg-slate-50/50">
-                        <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                            <BrainCircuit className="text-indigo-500" size={18} /> Automation Rules (Time & AI)
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                            Rules that run in the background (Overdue checks, Grace periods). These pick dynamic variants based on strategy.
-                        </p>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
-                        {SYSTEM_TRIGGER_MAP.map((trigger, idx) => {
-                            const match = templates.find(t => t.name === trigger.defaultTemplateName || t.name.startsWith(trigger.defaultTemplateName));
-                            const requiredDef = REQUIRED_SYSTEM_TEMPLATES.find(r => r.name === trigger.defaultTemplateName);
-                            
-                            return (
-                                <div key={trigger.id} className="flex gap-4 p-4 rounded-2xl border border-slate-100 hover:border-indigo-100 transition-all hover:shadow-sm">
-                                    <div className="flex flex-col items-center gap-2 pt-1">
-                                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-black text-xs text-slate-500">
-                                            {idx + 1}
-                                        </div>
-                                        <div className="w-px flex-1 bg-slate-100"></div>
+      {/* --- TAB: AUTOMATION RULES (Logic + Library Integration) --- */}
+      {activeTab === 'AUTOMATION' && (
+        <div className="flex flex-col gap-6 h-[calc(100vh-200px)] overflow-hidden">
+            {/* Header / Guide */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm shrink-0 flex items-center gap-3">
+                <div className="bg-indigo-100 text-indigo-700 p-2 rounded-xl"><BrainCircuit size={20} /></div>
+                <div>
+                    <h3 className="font-bold text-slate-800 text-sm">Automation Rules (Intelligent Triggers)</h3>
+                    <p className="text-[10px] text-slate-500">Events that trigger messages based on Time, Risk, or AI Logic. Shows mapped templates from Library.</p>
+                </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2 space-y-6 custom-scrollbar">
+                {SYSTEM_TRIGGER_MAP.map((trigger, idx) => {
+                    const match = templates.find(t => t.name === trigger.defaultTemplateName || t.name.startsWith(trigger.defaultTemplateName));
+                    const requiredDef = REQUIRED_SYSTEM_TEMPLATES.find(r => r.name === trigger.defaultTemplateName);
+                    // INTEGRATION: Find all library templates that fit this rule
+                    const availableVariants = templates.filter(t => t.appGroup === trigger.appGroup);
+
+                    return (
+                        <div key={trigger.id} className="flex gap-4 p-5 rounded-[2rem] border border-slate-100 bg-white hover:border-indigo-100 transition-all shadow-sm">
+                            <div className="flex flex-col items-center gap-2 pt-1">
+                                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-black text-xs text-slate-500">
+                                    {idx + 1}
+                                </div>
+                                <div className="w-px flex-1 bg-slate-100"></div>
+                            </div>
+                            <div className="flex-1 space-y-4">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h4 className="font-bold text-slate-800 text-sm">{trigger.label}</h4>
+                                        <p className="text-[10px] text-slate-400 font-medium">{trigger.description}</p>
                                     </div>
-                                    <div className="flex-1 space-y-3">
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <h4 className="font-bold text-slate-800 text-sm">{trigger.label}</h4>
-                                                <p className="text-[10px] text-slate-400 font-medium">{trigger.description}</p>
-                                            </div>
-                                            <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${match ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                                                {match ? 'Rule Active' : 'Missing Logic'}
-                                            </span>
-                                        </div>
-                                        
-                                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center gap-3">
-                                            <ArrowRight size={14} className="text-slate-300" />
-                                            <div className="flex-1">
-                                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Target Template Name</p>
-                                                <p className="font-mono text-xs text-indigo-600 font-bold truncate">
-                                                    {match ? match.name : trigger.defaultTemplateName}
-                                                </p>
-                                            </div>
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={() => handleCreateVariant(trigger)}
+                                            className="flex items-center gap-1 bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase hover:bg-indigo-100 transition-colors"
+                                        >
+                                            <PlusCircle size={12} /> Create Variant
+                                        </button>
+                                        <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${match ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                                            {match ? 'Active' : 'No Default'}
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                {/* The "Library Integration" View */}
+                                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <Layers size={14} className="text-slate-400" />
+                                        <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Strategy Pool (Library Assets)</span>
+                                    </div>
+                                    
+                                    {availableVariants.length === 0 ? (
+                                        <div className="text-center py-4 text-xs text-slate-400 italic">
+                                            No templates found in library for group: {trigger.appGroup}
                                             {!match && requiredDef && (
                                                 <button 
                                                     onClick={() => handleDeployStandard(trigger, requiredDef)}
-                                                    className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-md hover:bg-indigo-700"
+                                                    className="block mx-auto mt-2 text-indigo-600 font-bold hover:underline"
                                                 >
-                                                    Create Asset
+                                                    Generate Default Asset
                                                 </button>
                                             )}
                                         </div>
-                                    </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            {availableVariants.map(variant => (
+                                                <div key={variant.id} className={`p-3 rounded-xl border bg-white flex flex-col gap-2 ${variant.name === trigger.defaultTemplateName ? 'border-emerald-200 ring-1 ring-emerald-100' : 'border-slate-100'}`}>
+                                                    <div className="flex justify-between items-start">
+                                                        <span className="font-bold text-xs text-slate-700 truncate pr-2" title={variant.name}>{variant.name}</span>
+                                                        {variant.name === trigger.defaultTemplateName && <CheckCircle size={12} className="text-emerald-500" />}
+                                                    </div>
+                                                    <p className="text-[9px] text-slate-500 line-clamp-2 italic">"{variant.content}"</p>
+                                                    <div className="flex justify-between items-center mt-auto pt-1">
+                                                        <span className="text-[8px] font-black uppercase text-slate-300">{variant.tactic}</span>
+                                                        <button onClick={() => handleEditTemplate(variant)} className="text-[9px] font-bold text-blue-600 hover:underline">Edit</button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
-                            )
-                        })}
-                    </div>
-                </div>
-
+                            </div>
+                        </div>
+                    )
+                })}
             </div>
         </div>
       )}
       
-      {activeTab === 'STRATEGY' && (
+      {/* --- TAB: BUILDER (Strategy) --- */}
+      {activeTab === 'BUILDER' && (
           // CHANGED: Use flex-col for mobile, grid for LG
           <div className="flex flex-col lg:grid lg:grid-cols-12 gap-8">
               <div className="lg:col-span-4 space-y-6">
