@@ -133,7 +133,8 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                           status: mt.status, 
                           rejectionReason: mt.rejected_reason,
                           structure: mt.components, 
-                          category: mt.category 
+                          category: mt.category,
+                          content: text // Ensure content is fresh
                       };
                   } else {
                       tplObj.appGroup = inferGroup(tplObj);
@@ -158,59 +159,107 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       }
   };
 
+  // --- THE CORE ACTION AUTO-HEAL LOGIC ---
   const handleAutoHeal = async () => {
       setRepairing(true);
-      addLog("Initializing Core Intelligence Auto-Heal...");
+      addLog("Initializing Structural Integrity Check...");
       
-      const missing = REQUIRED_SYSTEM_TEMPLATES.filter(req => 
-          !templates.some(t => t.name === req.name || t.name.startsWith(req.name))
-      );
-
-      if (missing.length === 0) {
-          addLog("All Core Action templates are active.");
-          setRepairing(false);
-          return;
-      }
-
-      addLog(`Critical: Found ${missing.length} missing action templates.`);
       let restoredCount = 0;
       let currentTemplates = [...templates];
 
-      for (const req of missing) {
-          addLog(`Deploying Core Template: ${req.name}...`);
-          try {
-              const payload: WhatsAppTemplate = {
-                  id: `heal-${Date.now()}`,
-                  name: req.name,
-                  content: req.content,
-                  tactic: 'AUTHORITY',
-                  targetProfile: 'REGULAR',
-                  isAiGenerated: false,
-                  source: 'LOCAL',
-                  category: req.category as MetaCategory,
-                  variableExamples: req.examples,
-                  appGroup: req.appGroup as AppTemplateGroup
-              };
-
-              const result = await whatsappService.createMetaTemplate(payload);
-              
-              if (result.success) {
-                  addLog(`SUCCESS: ${req.name} deployed. Active as: ${result.finalName}`);
+      // 1. Sync first to get reality
+      const remoteTemplates = await handleSyncFromMeta(true);
+      
+      for (const req of REQUIRED_SYSTEM_TEMPLATES) {
+          const match = remoteTemplates.find(t => t.name === req.name);
+          
+          if (!match) {
+              // CASE A: MISSING - Deploy New
+              addLog(`MISSING: ${req.name}. Deploying fresh...`);
+              await deployHelper(req);
+              restoredCount++;
+          } else {
+              // CASE B: EXISTS - Check Structure
+              // 1. Check if Meta Status is REJECTED
+              if (match.status === 'REJECTED') {
+                  addLog(`REJECTED: ${req.name}. Initiating AI Compliance Fix...`);
+                  await repairHelper(match, req);
                   restoredCount++;
-                  const newTpl: WhatsAppTemplate = { ...payload, name: result.finalName!, source: 'META', status: 'PENDING' };
-                  currentTemplates = [newTpl, ...currentTemplates];
-                  onUpdate(currentTemplates);
-              } else {
-                  addLog(`FAILED: ${req.name} - ${result.error?.message || 'Unknown error'}`);
+                  continue;
               }
-          } catch (e: any) {
-              addLog(`CRITICAL EXCEPTION: ${req.name} - ${e.message}`);
+
+              // 2. Check Content Mismatch (Variables)
+              // We compare number of {{x}} placeholders
+              const reqVars = (req.content.match(/{{[0-9]+}}/g) || []).length;
+              const remoteVars = (match.content.match(/{{[0-9]+}}/g) || []).length;
+              
+              // 3. Basic string similarity check (poor man's diff)
+              // If lengths differ significantly, assume broken
+              const isDrasticallyDifferent = Math.abs(req.content.length - match.content.length) > 50;
+
+              if (reqVars !== remoteVars || isDrasticallyDifferent) {
+                  addLog(`MISMATCH: ${req.name}. App expects ${reqVars} vars, Meta has ${remoteVars}. Harmonizing...`);
+                  await repairHelper(match, req); // We treat mismatch as a repair job
+                  restoredCount++;
+              } else {
+                  addLog(`OK: ${req.name} matches core definition.`);
+              }
           }
       }
 
-      addLog(`Core Regeneration Cycle Complete. Restored ${restoredCount}/${missing.length} templates.`);
+      addLog(`Core Regeneration Cycle Complete. Actions taken: ${restoredCount}.`);
       setRepairing(false);
       handleSyncFromMeta(true); 
+  };
+
+  const deployHelper = async (req: any) => {
+      // Before deploying, ask AI to ensure the *required* content is actually compliant
+      // This prevents us from deploying something that immediately gets rejected
+      const validation = await geminiService.validateAndFixTemplate(req.content, req.name, req.category);
+      
+      const payload: WhatsAppTemplate = {
+          id: `heal-${Date.now()}`,
+          name: req.name,
+          content: validation.optimizedContent, // Use AI optimized content
+          tactic: 'AUTHORITY',
+          targetProfile: 'REGULAR',
+          isAiGenerated: !validation.isCompliant,
+          source: 'LOCAL',
+          category: req.category as MetaCategory,
+          variableExamples: req.examples,
+          appGroup: req.appGroup as AppTemplateGroup
+      };
+
+      const result = await whatsappService.createMetaTemplate(payload);
+      if (result.success) {
+          addLog(`SUCCESS: ${req.name} deployed.`);
+      } else {
+          addLog(`FAILED: ${req.name} - ${result.error?.message}`);
+      }
+  };
+
+  const repairHelper = async (existingMetaTpl: WhatsAppTemplate, requiredDef: any) => {
+      // AI Task: Take the REQUIRED definition, and rewrite it to be compliant, 
+      // but strictly keeping the variable count so the app code doesn't break.
+      const fix = await geminiService.validateAndFixTemplate(requiredDef.content, requiredDef.name, requiredDef.category);
+      
+      if (!fix.isCompliant) {
+          addLog(`AI OPTIMIZATION: Rewrote ${requiredDef.name} to satisfy Meta policy.`);
+      }
+
+      const payload: WhatsAppTemplate = {
+          ...existingMetaTpl,
+          content: fix.optimizedContent,
+          variableExamples: requiredDef.examples, // Reset examples to core defaults
+          structure: undefined // Clear structure to force rebuild from content
+      };
+
+      const result = await whatsappService.editMetaTemplate(existingMetaTpl.id, payload);
+      if (result.success) {
+          addLog(`FIXED: ${requiredDef.name} updated on Meta.`);
+      } else {
+          addLog(`FIX FAILED: ${requiredDef.name} - ${result.error?.message}`);
+      }
   };
 
   const handleDeployStandard = async (trigger: SystemTrigger, def: any) => {
@@ -506,24 +555,36 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
             <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0 overflow-y-auto p-2">
                 <div className="space-y-3">
                     {REQUIRED_SYSTEM_TEMPLATES.map(req => {
+                        // Compare local template list (from Meta sync) with Required Definition
                         const match = templates.find(t => t.name === req.name || t.name.startsWith(req.name));
+                        const isMismatch = match && (
+                            // Mismatch if variable count differs OR text length deviates significantly (structure changed)
+                            (match.content?.match(/{{[0-9]+}}/g)?.length || 0) !== (req.content.match(/{{[0-9]+}}/g)?.length || 0)
+                        );
+
                         return (
-                            <div key={req.name} className="flex flex-col gap-2 p-4 rounded-2xl border border-slate-100 bg-white hover:border-amber-200 transition-colors shadow-sm">
+                            <div key={req.name} className={`flex flex-col gap-2 p-4 rounded-2xl border bg-white transition-colors shadow-sm ${isMismatch ? 'border-amber-400 bg-amber-50' : 'border-slate-100 hover:border-amber-200'}`}>
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
-                                        <div className={`w-3 h-3 rounded-full shrink-0 ${match ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'}`}></div>
+                                        <div className={`w-3 h-3 rounded-full shrink-0 ${match ? (isMismatch ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500') : 'bg-rose-500 animate-pulse'}`}></div>
                                         <div>
                                             <p className="text-xs font-bold text-slate-800">{req.name}</p>
                                             <p className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">{req.appGroup}</p>
                                         </div>
                                     </div>
-                                    <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase ${match ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                                        {match ? 'Active' : 'Missing'}
+                                    <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase ${match ? (isMismatch ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-600') : 'bg-rose-50 text-rose-600'}`}>
+                                        {match ? (isMismatch ? 'Structure Mismatch' : 'Active') : 'Missing'}
                                     </span>
                                 </div>
                                 <div className="bg-slate-50 p-3 rounded-xl text-[10px] text-slate-600 font-mono leading-relaxed border border-slate-100">
-                                    {match ? match.content : req.content}
+                                    <p className="font-bold text-[8px] text-slate-400 mb-1 uppercase">Required Structure:</p>
+                                    "{req.content}"
                                 </div>
+                                {isMismatch && (
+                                    <div className="text-[9px] text-amber-700 italic flex items-center gap-1">
+                                        <AlertTriangle size={10} /> Auto-Heal will overwrite Meta version to match App requirements.
+                                    </div>
+                                )}
                             </div>
                         )
                     })}

@@ -183,7 +183,7 @@ export const geminiService = {
       Act as a Meta Policy Expert. Analyze the rejection reason and the content. 
       
       CRITICAL COMPLIANCE RULES:
-      1. Naming: DO NOT CHANGE THE NAME. DO NOT ADD SUFFIXES LIKE '_v2'. We will use the Edit API to fix it in-place to avoid spam filters.
+      1. Naming: DO NOT CHANGE THE NAME. We will use the Edit API to fix it in-place.
       2. Utility Tone: The 'UTILITY' category requires a strictly transactional tone. DO NOT use generic greetings like 'Hello {{1}}'. DO NOT use promotional phrases or 'ensure your order is processed'.
       3. Variables: Provide valid 'variableExamples'.
       
@@ -193,6 +193,35 @@ export const geminiService = {
         responseMimeType: "application/json",
         systemInstruction: "Return JSON with keys: diagnosis (explain specifically why it was rejected based on the log), fixedContent (the rewritten compliant text), category (the correct category), fixedName (MUST BE IDENTICAL to original name), variableExamples (array of strings matching {{1}}, {{2}} variables - MANDATORY)."
       }
+    });
+    return JSON.parse(response.text || "{}");
+  },
+
+  // NEW: Ensures structural integrity before syncing
+  async validateAndFixTemplate(requiredContent: string, requiredName: string, category: string): Promise<{ isCompliant: boolean, optimizedContent: string, explanation: string }> {
+    const ai = getAI();
+    if (!ai) return { isCompliant: true, optimizedContent: requiredContent, explanation: "AI Unavailable" };
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `
+        Analyze this Core WhatsApp Template required by our App.
+        Name: ${requiredName}
+        Category: ${category}
+        Content: "${requiredContent}"
+
+        Task: Check if this content is likely to be rejected by Meta. 
+        Rules:
+        1. Variable count {{1}}, {{2}} MUST remain exactly the same as input.
+        2. If Category is UTILITY, tone must be transactional (no "Happy to help", no "Offers").
+        3. If Category is MARKETING, tone can be promotional.
+
+        If it violates rules, rewrite it to be compliant while KEEPING VARIABLES intact.
+        `,
+        config: {
+            responseMimeType: "application/json",
+            systemInstruction: "Return JSON: isCompliant (boolean), optimizedContent (string, same variables), explanation (string)."
+        }
     });
     return JSON.parse(response.text || "{}");
   },
