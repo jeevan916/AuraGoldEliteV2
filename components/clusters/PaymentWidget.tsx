@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2, AlertCircle } from 'lucide-react';
+import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { Card, Button } from '../shared/BaseUI';
 import { Order, OrderStatus, WhatsAppLogEntry } from '../../types';
 import { whatsappService } from '../../services/whatsappService';
@@ -162,19 +162,16 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       setErrorMsg(null);
 
       try {
-          // 1. Validation Layer
           const val = parseFloat(amount);
           if (!val || val <= 0) throw new Error("Invalid Amount: Must be greater than 0");
-          
           if (!order.customerName) throw new Error("Validation Error: Customer Name is missing");
           if (!order.customerContact) throw new Error("Validation Error: Customer Mobile Number is missing");
 
-          errorService.logActivity('USER_ACTION', `Generating Setu Link for ₹${val}`);
+          errorService.logActivity('API_CALL', `Requesting Setu Link for Order ${order.id} (₹${val})`);
 
-          // 2. Call Backend Proxy
-          const transactionId = `${order.id}-${Date.now()}`;
+          const transactionId = `AG-${order.id.split('-').pop()}-${Date.now()}`;
 
-          const linkResponse = await fetch('/api/setu/create-link', {
+          const response = await fetch('/api/setu/create-link', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -182,79 +179,75 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                   billerBillID: transactionId,
                   customerID: order.customerContact, 
                   name: order.customerName,
-                  orderId: order.id // CRITICAL for Webhook tracking
+                  orderId: order.id
               })
           });
 
-          const linkData = await linkResponse.json();
+          const responseBody = await response.json();
 
-          // 3. Granular Error Handling
-          if (!linkData.success) {
-              throw new Error(linkData.error?.message || "Setu Link Generation Failed");
+          // OBSERVABILITY: Log the full response to help debug 'shortLink' missing errors
+          if (!response.ok || !responseBody.success) {
+              errorService.logError(
+                  'Setu_Gateway', 
+                  `HTTP ${response.status}: Failed to generate link`, 
+                  'HIGH', 
+                  JSON.stringify(responseBody)
+              );
+              throw new Error(responseBody.error || "Gateway reported an error. See logs.");
           }
 
-          // 4. Robust Response Parsing (V1 & V2)
-          // Setu structure: { data: { paymentLink: { shortURL: ... } } }
-          // Or sometimes V1: { data: { shortLink: ... } }
-          const responseData = linkData.data?.data; // Payload is wrapped in 'data'
-          const paymentLinkObj = responseData?.paymentLink;
-          
-          const shortLink = 
-              paymentLinkObj?.shortURL || 
-              paymentLinkObj?.shortLink || 
-              responseData?.shortLink || 
-              responseData?.shortURL;
+          // ROBUST PATH VALIDATION FOR SHORTLINK
+          // Setu V2 often wraps payload in 'data' field
+          const payload = responseBody.data?.data || responseBody.data;
+          const shortLink = payload?.paymentLink?.shortURL || payload?.shortURL || payload?.shortLink;
 
           if (!shortLink) {
-              console.error("[Setu Error] Invalid Response Structure:", linkData);
+              // CUSTOM ERROR: Throw if shortLink is missing from a 'successful' response
               errorService.logError(
-                  'SetuPayment', 
-                  'Missing shortLink in Setu response', 
-                  'HIGH', 
-                  JSON.stringify(linkData)
+                  'Setu_Structure_Mismatch', 
+                  'Link generated but shortLink property missing in JSON payload', 
+                  'CRITICAL', 
+                  JSON.stringify(responseBody)
               );
-              throw new Error("Gateway generated a response but no link was found. Please retry.");
+              throw new Error("Payment link was not returned by the gateway. This has been logged for engineering review.");
           }
 
-          // 5. Parse Suffix for Template
           const baseUrl = "https://setu.co/upi/s/";
-          
           if (!shortLink.startsWith(baseUrl)) {
-              // Fallback to text message if base URL mismatch
-              console.warn("Setu base URL mismatch", shortLink);
+              console.warn("Non-standard Setu URL detected", shortLink);
               const fallbackRes = await whatsappService.sendMessage(
                   order.customerContact, 
-                  `Payment Due: ₹${val}. Pay here: ${shortLink}`, 
+                  `Dear ${order.customerName}, payment of ₹${val} is due. Pay securely: ${shortLink}`, 
                   order.customerName
               );
-              if (fallbackRes.success) alert("Sent as text link (URL format mismatch).");
-              else throw new Error("Failed to send fallback text.");
+              if (fallbackRes.success) alert("Link delivered as standard text message.");
+              else throw new Error("Failed to deliver payment link.");
               return;
           }
 
           const linkSuffix = shortLink.replace(baseUrl, '');
 
-          // 6. Send Template with Button
+          // Send modern template with dynamic button
           const result = await whatsappService.sendTemplateMessage(
               order.customerContact, 
               'setu_payment_button', 
               'en_US', 
-              [order.customerName, val.toLocaleString()], // Body Variables
+              [order.customerName, val.toLocaleString()], 
               order.customerName,
-              linkSuffix // Button Variable (The hash)
+              linkSuffix 
           );
 
           if (result.success) {
-              alert("Payment Button sent via WhatsApp!");
+              alert("Modern Payment Button delivered to customer!");
               if (result.logEntry && onAddLog) onAddLog(result.logEntry);
+              setAmount('');
           } else {
-              throw new Error(result.error || "WhatsApp Delivery Failed");
+              throw new Error(result.error || "WhatsApp template delivery failed");
           }
 
       } catch (e: any) {
-          console.error(e);
-          setErrorMsg(e.message || "An unexpected error occurred");
-          errorService.logError('PaymentWidget', `Setu Failure: ${e.message}`);
+          console.error("[Setu Execution Failed]", e);
+          setErrorMsg(e.message);
       } finally {
           setLoading(false);
       }
@@ -311,23 +304,25 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
              </button>
         </div>
 
-        {/* Fallback UI for Errors with Retry */}
+        {/* Dynamic Error State with Retry Logic */}
         {errorMsg && (
-            <div className="mb-4 bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start gap-3 animate-fadeIn">
-                <AlertCircle className="text-rose-600 shrink-0" size={20} />
-                <div className="flex-1">
-                    <p className="text-xs font-bold text-rose-700">Action Failed</p>
-                    <p className="text-[10px] text-rose-600 mt-1 mb-2">{errorMsg}</p>
-                    {activeTab === 'REQUEST' && (
-                        <button 
-                            onClick={() => handleGenerateSetuLink()} 
-                            className="text-[10px] font-black uppercase bg-white border border-rose-200 px-3 py-1.5 rounded hover:bg-rose-50 text-rose-800 transition-colors shadow-sm"
-                        >
-                            Retry Setu Link
-                        </button>
-                    )}
+            <div className="mb-6 bg-rose-50 border border-rose-200 rounded-2xl p-5 flex items-start gap-4 animate-fadeIn">
+                <div className="p-2 bg-white rounded-lg shadow-sm">
+                    <AlertCircle className="text-rose-600" size={24} />
                 </div>
-                <button onClick={() => setErrorMsg(null)} className="ml-auto text-rose-400 hover:text-rose-600"><X size={16} /></button>
+                <div className="flex-1">
+                    <p className="text-sm font-black text-rose-800 uppercase tracking-tight">Initiation Failed</p>
+                    <p className="text-xs text-rose-600 mt-1 leading-relaxed">{errorMsg}</p>
+                    <div className="mt-4 flex gap-3">
+                        <button 
+                            onClick={() => activeTab === 'REQUEST' ? handleGenerateSetuLink() : handleCreateRazorpayOrder()} 
+                            className="bg-rose-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-rose-700 shadow-sm"
+                        >
+                            <RefreshCw size={12} /> Retry Action
+                        </button>
+                        <button onClick={() => setErrorMsg(null)} className="text-[10px] font-bold text-rose-400 hover:text-rose-600">Dismiss</button>
+                    </div>
+                </div>
             </div>
         )}
 
@@ -387,7 +382,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                     disabled={loading || !amount}
                     className="w-full bg-indigo-600 text-white py-4 rounded-xl font-black uppercase tracking-widest shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-2"
                  >
-                     {loading ? 'Processing...' : 'Generate Payment Link'}
+                     {loading ? <Loader2 className="animate-spin" size={16} /> : 'Generate Payment Link'}
                  </button>
              </div>
         )}
@@ -414,7 +409,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                                 className="flex-1 bg-white border border-slate-200 py-3 rounded-xl text-xs font-bold hover:bg-slate-50 flex flex-col items-center gap-1 disabled:opacity-50"
                              >
                                 {loading ? <Loader2 size={16} className="animate-spin text-amber-500" /> : <Zap size={16} className="text-amber-500" />} 
-                                Setu Link
+                                Setu UPI Link
                              </button>
                         </div>
                         <div className="relative">

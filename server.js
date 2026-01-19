@@ -367,16 +367,13 @@ app.post('/api/setu/create-link', ensureDb, async (req, res) => {
 
         if (!rows.length || !rows[0].config) throw new Error("Setu configuration not found");
         const config = JSON.parse(rows[0].config);
-        const { schemeId, secret, clientId } = config; // schemeId maps to ProductInstanceID
+        const { schemeId, secret, clientId } = config;
 
         // 1. Get Auth Token
         const authResponse = await fetch('https://prod.setu.co/api/v2/auth/token', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                clientID: clientId,
-                secret: secret
-            })
+            body: JSON.stringify({ clientID: clientId, secret: secret })
         });
 
         const authData = await authResponse.json();
@@ -386,26 +383,23 @@ app.post('/api/setu/create-link', ensureDb, async (req, res) => {
         
         const token = authData.data.token;
 
-        // 2. Create Payment Link
+        // 2. Create Payment Link (Standard V2 Format)
         const endpoint = 'https://prod.setu.co/api/v2/payment-links'; 
-        
-        // CONVERT AMOUNT TO SUBUNIT (PAISA)
-        // Setu V2 expects amount.value in paisa (100 paisa = 1 Rupee)
         const amountInPaisa = Math.round(parseFloat(amount) * 100);
 
         const payload = {
-            billerBillID,
+            billerBillID, // Mandatory Bill Identifier (Mapped from transactionId in request)
             amount: { 
                 value: amountInPaisa, 
                 currencyCode: "INR" 
             },
             amountExactness: "EXACT",
             name: name || "AuraGold Jewellers",
-            transactionNote: `Payment for ${billerBillID}`,
+            transactionNote: `Jewellery Payment ref: ${orderId}`,
             additionalInfo: { 
-                source: "AuraGold_App", 
+                source: "AuraGold_Enterprise_OS", 
                 customerID: customerID,
-                orderId: orderId // CRITICAL for webhook correlation
+                orderId: orderId 
             }
         };
 
@@ -413,20 +407,27 @@ app.post('/api/setu/create-link', ensureDb, async (req, res) => {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json', 
-                'X-Setu-Product-Instance-ID': schemeId, // This field stores the Product Instance ID in settings
+                'X-Setu-Product-Instance-ID': schemeId, 
                 'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify(payload)
         });
 
         const linkData = await linkResponse.json();
-        if (!linkResponse.ok) throw new Error(linkData.error?.message || "Setu Link Creation Failed");
+        
+        if (!linkResponse.ok) {
+            return res.status(linkResponse.status).json({ 
+                success: false, 
+                error: linkData.error?.message || "Setu Link Creation Failed",
+                data: linkData 
+            });
+        }
         
         res.json({ success: true, data: linkData });
 
     } catch (e) {
-        console.error("Setu V2 Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error("[Backend Setu Error]:", e);
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
@@ -438,81 +439,53 @@ app.post('/api/setu/webhook', ensureDb, async (req, res) => {
     try {
         const { success, data } = req.body;
         
-        // 1. Verify Payment Success
         if (!success || data?.status !== 'PAYMENT_SUCCESS') {
-            console.log("[Setu Webhook] Ignored non-success event:", req.body);
             return;
         }
 
         const { amountPaid, additionalInfo, billerBillID } = data;
-        
-        // Convert back from paisa if needed, Setu webhook sends amountPaid object
-        // Usually amountPaid.value is in Rupee float in webhook or paisa? 
-        // Docs say amountPaid.value is number. If V2 follows request format, it might be paisa.
-        // Let's handle generic case: if > 100000 likely paisa for jewelry transaction of 1000rs?
-        // Actually Setu V2 webhook docs say: "value": 100.00 (in Rupees usually for display).
-        // BUT if we sent in Paisa, response usually matches. 
-        // SAFEST: Let's log it. For now assume it needs /100 if we sent *100.
-        // Correction: Standard Setu response `amountPaid` value is often in Rupees.
-        // We will assume RUPEES unless extremely large integer.
-        
         let paymentAmount = amountPaid?.value;
-        // Simple Heuristic: If amount is exactly what we expected in Rupees, fine.
-        // If it's 100x, divide.
-        // Since we don't have order total here easily without fetch, we take value as is.
-        // NOTE: Setu V2 usually normalizes to main currency unit in webhooks.
-        
         const orderId = additionalInfo?.orderId; 
 
         if (!orderId || !paymentAmount) {
-            console.error("[Setu Webhook] Missing orderId or amount:", data);
             return;
         }
 
-        console.log(`[Setu Webhook] Processing Payment: ${paymentAmount} for Order ${orderId}`);
-
         const connection = await pool.getConnection();
-        
-        // 2. Fetch Order
         const [rows] = await connection.query('SELECT data FROM orders WHERE id = ?', [orderId]);
+        
         if (!rows.length) {
-            console.error(`[Setu Webhook] Order ${orderId} not found.`);
             connection.release();
             return;
         }
 
         const order = typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data;
-
-        // 3. Idempotency Check (Prevent duplicate recording)
         const duplicate = order.payments.some(p => p.note && p.note.includes(billerBillID));
+        
         if (duplicate) {
-            console.log(`[Setu Webhook] Payment ${billerBillID} already recorded.`);
             connection.release();
             return;
         }
 
-        // 4. Update Order Logic
         const newPayment = {
             id: `PAY-SETU-${Date.now()}`,
             date: new Date().toISOString(),
-            amount: paymentAmount, // Assuming Rupees
+            amount: paymentAmount,
             method: 'UPI_SETU',
-            note: `Auto-Recorded via Setu (Ref: ${billerBillID})`
+            note: `Auto-Recorded ref: ${billerBillID}`
         };
 
         const updatedPayments = [...order.payments, newPayment];
         const totalPaid = updatedPayments.reduce((acc, p) => acc + p.amount, 0);
         
-        // Update Milestones
         let runningSum = 0;
         const updatedMilestones = order.paymentPlan.milestones.map(m => {
             runningSum += m.targetAmount;
-            // Precise status update
             const status = totalPaid >= runningSum ? 'PAID' : (totalPaid > (runningSum - m.targetAmount) ? 'PARTIAL' : 'PENDING');
             return { ...m, status };
         });
 
-        const isComplete = totalPaid >= order.totalAmount - 1; // Tolerance for float diff
+        const isComplete = totalPaid >= order.totalAmount - 1;
         const updatedOrder = {
             ...order,
             payments: updatedPayments,
@@ -520,17 +493,14 @@ app.post('/api/setu/webhook', ensureDb, async (req, res) => {
             status: isComplete ? 'COMPLETED' : order.status 
         };
 
-        // 5. Commit to DB
         await connection.query(
             `UPDATE orders SET data = ?, status = ?, updated_at = ? WHERE id = ?`, 
             [JSON.stringify(updatedOrder), updatedOrder.status, Date.now(), orderId]
         );
         
         connection.release();
-        console.log(`[Setu Webhook] Success: Order ${orderId} updated.`);
-
     } catch (e) {
-        console.error("[Setu Webhook] Error processing:", e.message);
+        console.error("[Setu Webhook Error]:", e.message);
     }
 });
 
@@ -548,15 +518,12 @@ const isSourceCode = (filePath) => {
 if (fs.existsSync(path.join(distPath, 'index.html'))) {
     staticPath = distPath;
     indexPath = path.join(distPath, 'index.html');
-    console.log("[System] Mode: SERVING FROM /dist");
 } else if (fs.existsSync(rootIndexPath)) {
     if (isSourceCode(rootIndexPath)) {
-        console.error("CRITICAL: Root index.html detected as SOURCE CODE. Skipping static serve.");
         staticPath = null;
     } else {
         staticPath = __dirname;
         indexPath = rootIndexPath;
-        console.log("[System] Mode: PRODUCTION (Serving from root)");
     }
 }
 

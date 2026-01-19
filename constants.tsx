@@ -72,8 +72,6 @@ export const RISK_PROFILES = [
 ];
 
 // --- COMPLIANCE ENGINE: RECOVERY TEMPLATES ---
-// These are the STRICT templates available to the AI. 
-// The AI cannot invent new ones; it must pick one of these IDs.
 export const RECOVERY_TEMPLATES = [
     {
         id: 'auragold_gentle_reminder',
@@ -116,7 +114,7 @@ export const SYSTEM_TRIGGER_MAP: SystemTrigger[] = [
     { id: 'TRIG_6', label: 'Protection Lapsed', description: 'Contract violation notice.', requiredVariables: ['Customer Name', 'Order ID', 'Link'], defaultTemplateName: 'auragold_protection_lapsed', appGroup: 'SYSTEM_NOTIFICATIONS' },
     { id: 'TRIG_7', label: 'Lapse Quote', description: 'New market rate offer post-lapse.', requiredVariables: ['Customer Name', 'Old Price', 'New Price', 'Rate', 'Link'], defaultTemplateName: 'auragold_lapse_quote', appGroup: 'PAYMENT_COLLECTION' },
     { id: 'TRIG_8', label: 'Refund/Cancel', description: 'Order cancellation notice.', requiredVariables: ['Customer Name', 'Refund Amount', 'Order ID'], defaultTemplateName: 'auragold_refund_processed', appGroup: 'GENERAL_SUPPORT' },
-    { id: 'TRIG_9', label: 'Setu UPI Request', description: 'DeepLink for direct UPI payment.', requiredVariables: ['Customer Name', 'Amount Due', 'Link ID'], defaultTemplateName: 'setu_payment_link_v1', appGroup: 'SETU_PAYMENT' }
+    { id: 'TRIG_9', label: 'Setu UPI Request', description: 'DeepLink for direct UPI payment.', requiredVariables: ['Customer Name', 'Amount Due', 'Link ID'], defaultTemplateName: 'setu_payment_button', appGroup: 'SETU_PAYMENT' }
 ];
 
 export const INITIAL_TEMPLATES: WhatsAppTemplate[] = [
@@ -153,9 +151,7 @@ export const INITIAL_TEMPLATES: WhatsAppTemplate[] = [
 ];
 
 // --- CORE SYSTEM TEMPLATES FOR AUTO-HEAL ---
-// These are essential for the Auto-Pilot, Repopulation, and Lapse logic to work via WhatsApp API.
 export const REQUIRED_SYSTEM_TEMPLATES = [
-  // 1. Order Confirmation
   {
     name: 'auragold_order_confirmation',
     description: 'Sent immediately when an order is created.',
@@ -165,7 +161,6 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     content: "Hello {{1}}, thank you for shopping with AuraGold! Your order {{2}} ({{3}}) has been placed. Track your order here: https://order.auragoldelite.com/?token={{4}} for details.",
     examples: ["John Doe", "ORD-12345", "₹50,000", "AbCd123"]
   },
-  // 2. Standard Payment Request
   {
     name: 'auragold_payment_request',
     description: 'Sent when a scheduled payment is due.',
@@ -175,7 +170,31 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     content: "Dear {{1}}, a gentle reminder that your payment of {{2}} is due by {{3}}. Please complete the payment securely using this link: https://order.auragoldelite.com/?token={{4}} securely.",
     examples: ["Sarah", "₹12,500", "25 Oct 2023", "XyZ987"]
   },
-  // 3. Production Update
+  {
+    name: 'setu_payment_button',
+    description: 'Compliant Setu payment template with dynamic UPI button.',
+    category: 'UTILITY',
+    appGroup: 'SETU_PAYMENT',
+    variables: ['customer_name', 'amount_due'],
+    content: "Dear {{1}}, your payment of ₹{{2}} is due. Click below to pay securely via UPI.",
+    examples: ["Aditi", "15,000"],
+    structure: [
+        { 
+            type: "BODY", 
+            text: "Dear {{1}}, your payment of ₹{{2}} is due. Click below to pay securely via UPI." 
+        },
+        { 
+            type: "BUTTONS", 
+            buttons: [
+                { 
+                    type: "URL", 
+                    text: "Pay Now", 
+                    url: "https://setu.co/upi/s/{{1}}" 
+                } 
+            ]
+        }
+    ]
+  },
   {
     name: 'auragold_production_update',
     description: 'Sent when the jewelry status changes.',
@@ -185,7 +204,6 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     content: "Great news {{1}}! Your {{2}} has moved to the {{3}} stage. See photos and updates here: https://order.auragoldelite.com/?token={{4}} on portal.",
     examples: ["Michael", "Ring", "Quality Check", "LmNoP456"]
   },
-  // 4. Grace Warning
   {
     name: 'auragold_grace_warning',
     description: 'Critical warning sent hours before lapse.',
@@ -195,7 +213,6 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     content: "Dear {{1}}, payment of ₹{{2}} is pending. Your Gold Rate Protection expires in {{3}} hours. Please complete payment to retain your booked rate.",
     examples: ["Aditi", "12500", "4"]
   },
-  // 5. Protection Lapse Notice
   {
     name: 'auragold_protection_lapsed',
     description: 'Sent when rate protection is revoked.',
@@ -204,71 +221,5 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     variables: ['customer_name', 'order_id', 'action_link'],
     content: "Notice for {{1}}: Gold Rate Protection for Order {{2}} has LAPSED due to non-payment. Your order now floats at market price. Select action: https://order.auragoldelite.com/?token={{3}}",
     examples: ["Raj", "ORD-99", "abc12345"]
-  },
-  // 6. Dynamic Lapse Quotation
-  {
-    name: 'auragold_lapse_quote',
-    description: 'Dynamic quote sent after lapse.',
-    category: 'UTILITY',
-    appGroup: 'PAYMENT_COLLECTION',
-    variables: ['customer_name', 'old_price', 'new_price', 'current_rate', 'link'],
-    content: "Action Required {{1}}: Order value increased. Old: ₹{{2}}, New Market Price: ₹{{3}} (@ ₹{{4}}/g). Accept or Cancel here: https://order.auragoldelite.com/?token={{5}}",
-    examples: ["Priya", "50000", "52500", "7200", "token123"]
-  },
-  // 7. Repopulation Success
-  {
-    name: 'auragold_repopulation_success',
-    description: 'Sent when customer accepts new rate.',
-    category: 'UTILITY',
-    appGroup: 'ORDER_STATUS',
-    variables: ['customer_name', 'new_rate', 'next_due_date'],
-    content: "Success {{1}}. Your order is active at the new rate of ₹{{2}}/g. Your next payment is due on {{3}}. Thank you.",
-    examples: ["Sneha", "7100", "25 Oct"]
-  },
-  // 8. Refund Processed
-  {
-    name: 'auragold_refund_processed',
-    description: 'Sent upon order cancellation and refund.',
-    category: 'UTILITY',
-    appGroup: 'GENERAL_SUPPORT',
-    variables: ['customer_name', 'refund_amount', 'order_id'],
-    content: "Dear {{1}}, your order {{3}} is cancelled. Refund of ₹{{2}} has been initiated. Allow 3-5 days for credit.",
-    examples: ["Amit", "10000", "ORD-123"]
-  },
-  // 9. Rate Enforcer Alert
-  {
-    name: 'auragold_rate_enforcer',
-    description: 'Alert when market rate crosses booked limit.',
-    category: 'UTILITY',
-    appGroup: 'PAYMENT_COLLECTION',
-    variables: ['customer_name', 'amount_due', 'booked_rate'],
-    content: "Update for {{1}}: The market gold rate has crossed your booked limit. A payment of ₹{{2}} is required to maintain your protected rate of ₹{{3}}/g.",
-    examples: ["Karan", "5000", "6500"]
-  },
-  // 10. Auto-Pilot Check
-  {
-    name: 'auragold_auto_pilot_check',
-    description: 'Zero API dependency check / General nudge.',
-    category: 'UTILITY',
-    appGroup: 'GENERAL_SUPPORT',
-    variables: ['customer_name', 'status'],
-    content: "Hello {{1}}, just a quick check on your order status: {{2}}. Let us know if you need assistance.",
-    examples: ["Rahul", "Pending Design"]
-  },
-  // 11. Setu UPI Payment Link (Button)
-  {
-    name: 'setu_payment_button',
-    description: 'Payment request with secure UPI button.',
-    category: 'UTILITY',
-    appGroup: 'SETU_PAYMENT',
-    variables: ['customer_name', 'amount'],
-    content: "Dear {{1}}, your payment of ₹{{2}} is due. Please click the button below to pay securely via UPI.",
-    examples: ["Raj", "5000"],
-    structure: [
-        { type: "BODY", text: "Dear {{1}}, your payment of ₹{{2}} is due. Please click the button below to pay securely via UPI." },
-        { type: "BUTTONS", buttons: [
-            { type: "URL", text: "Pay Now", url: "https://setu.co/upi/s/{{1}}" } 
-        ]}
-    ]
   }
 ];
