@@ -27,9 +27,6 @@ class ErrorService {
     }
   }
 
-  /**
-   * Initializes global listeners for uncaught errors and promise rejections.
-   */
   public initGlobalListeners() {
     window.addEventListener('error', (event) => {
       if (event.message?.includes('cdn.tailwindcss.com')) return;
@@ -45,17 +42,21 @@ class ErrorService {
       const reason = event.reason;
       let msg = "Unhandled Promise Rejection";
       let source = "Network/API";
+      let raw = null;
 
       if (typeof reason === 'string') msg = reason;
-      else if (reason?.message) msg = reason.message;
+      else if (reason?.message) {
+          msg = reason.message;
+          raw = reason; // Store the actual error object
+      }
       
       if (msg.includes('generativelanguage')) source = 'Gemini AI API';
       if (msg.includes('facebook') || msg.includes('whatsapp')) source = 'Meta WhatsApp API';
 
-      this.logError(source, msg, 'CRITICAL', reason?.stack);
+      this.logError(source, msg, 'CRITICAL', reason?.stack, undefined, raw);
     });
 
-    this.logActivity('STATUS_UPDATE', 'Self-Healing Intelligence Active');
+    this.logActivity('STATUS_UPDATE', 'Self-Healing Intelligence V2.5 Active');
   }
 
   private notify() {
@@ -104,7 +105,8 @@ class ErrorService {
     message: string, 
     severity: ErrorSeverity = 'MEDIUM', 
     stack?: string,
-    retryAction?: () => Promise<void>
+    retryAction?: () => Promise<void>,
+    rawContext?: any
   ) {
     // Debounce duplicate errors
     if (message === this.lastErrorMsg && Date.now() - this.lastErrorTime < 2000) return;
@@ -119,13 +121,13 @@ class ErrorService {
       stack,
       severity,
       status: 'NEW',
-      retryAction
+      retryAction,
+      rawContext // Pass through the raw data from the caller
     };
 
     this.errors = [newError, ...this.errors].slice(0, this.MAX_ERRORS);
     this.notify();
 
-    // Trigger Intelligent Analysis for significant errors
     if (severity !== 'LOW') {
         this.runIntelligentAnalysis(newError.id);
     }
@@ -136,31 +138,24 @@ class ErrorService {
     if (errorIndex === -1) return;
 
     const errorObj = this.errors[errorIndex];
-    
-    // 1. Immediate Rule-Based Triage
-    if (errorObj.message.includes('403')) {
-        this.updateError(errorIndex, {
-            aiDiagnosis: "Permission Denied. Check API Keys.",
-            status: 'UNRESOLVABLE',
-            resolutionPath: 'settings'
-        });
-        return;
-    }
-
     this.updateError(errorIndex, { status: 'ANALYZING' });
 
     try {
-      // 2. Consult Gemini "Doctor"
-      const diagnosis = await geminiService.diagnoseError(errorObj.message, errorObj.source, errorObj.stack);
+      // Pass the rawContext to Gemini for deep inspection
+      const diagnosis = await geminiService.diagnoseError(
+          errorObj.message, 
+          errorObj.source, 
+          errorObj.stack, 
+          errorObj.rawContext
+      );
       
       this.updateError(errorIndex, {
           aiDiagnosis: diagnosis.explanation,
           implementationPrompt: diagnosis.implementationPrompt,
           resolutionPath: diagnosis.resolutionPath,
-          resolutionCTA: diagnosis.fixType === 'AUTO' ? 'Auto-Repairing...' : 'View Fix Prompt'
+          resolutionCTA: diagnosis.fixType === 'AUTO' ? 'Auto-Repairing...' : (diagnosis.implementationPrompt ? 'View Fix Directive' : 'Manual Review')
       });
 
-      // 3. Attempt Auto-Repair
       if (diagnosis.fixType === 'AUTO') {
           if (diagnosis.action === 'REPAIR_TEMPLATE' || errorObj.message.toLowerCase().includes('template')) {
              await this.attemptTemplateAutoHeal(errorIndex, errorObj.message);
@@ -173,12 +168,12 @@ class ErrorService {
       }
 
     } catch (err) {
-      this.updateError(errorIndex, { status: 'UNRESOLVABLE', aiDiagnosis: "Analysis Timeout." });
+      this.updateError(errorIndex, { status: 'UNRESOLVABLE', aiDiagnosis: "Diagnostic Engine Failure." });
     }
   }
 
   private async attemptTemplateAutoHeal(index: number, msg: string) {
-      this.logActivity('AUTO_HEAL', 'Scanning for missing templates based on error...');
+      this.logActivity('AUTO_HEAL', 'Executing payload repair based on API feedback...');
       
       const failedNameMatch = msg.match(/template\s+['"]?([a-z0-9_]+)['"]?/i);
       const failedName = failedNameMatch ? failedNameMatch[1] : null;
@@ -186,7 +181,7 @@ class ErrorService {
       let fixed = false;
       const candidates = failedName 
         ? REQUIRED_SYSTEM_TEMPLATES.filter(t => t.name.includes(failedName))
-        : REQUIRED_SYSTEM_TEMPLATES; // If name unknown, check all core
+        : REQUIRED_SYSTEM_TEMPLATES; 
 
       for (const tpl of candidates) {
           const payload = {
@@ -195,18 +190,17 @@ class ErrorService {
                isAiGenerated: false, source: 'LOCAL', category: tpl.category,
                variableExamples: tpl.examples, appGroup: tpl.appGroup
           };
-          // Try to create/restore it
           const res = await whatsappService.createMetaTemplate(payload as any);
           if (res.success) {
               fixed = true;
-              this.logActivity('AUTO_HEAL', `Restored template: ${tpl.name}`);
+              this.logActivity('AUTO_HEAL', `Successfully restored structural integrity for: ${tpl.name}`);
           }
       }
 
       if (fixed) {
-          this.updateError(index, { status: 'AUTO_FIXED', aiFixApplied: `Restored missing template(s): ${failedName || 'Core Set'}` });
+          this.updateError(index, { status: 'AUTO_FIXED', aiFixApplied: `Repaired template structure: ${failedName || 'Core Registry'}` });
       } else {
-          this.updateError(index, { status: 'UNRESOLVABLE', aiFixApplied: 'Auto-Heal Failed. Template might be rejected by Meta.' });
+          this.updateError(index, { status: 'UNRESOLVABLE', aiFixApplied: 'Structural repair unsuccessful. Manual engineering required.' });
       }
   }
 

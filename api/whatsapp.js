@@ -38,7 +38,6 @@ router.post('/webhook', ensureDb, async (req, res) => {
             
             await connection.query(`INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data)`, [logEntry.id, fromFormatted, 'inbound', new Date(timestamp), JSON.stringify(logEntry)]);
             
-            // Real-time Trigger
             if (req.io) req.io.emit('whatsapp_update', logEntry);
         }
 
@@ -50,7 +49,6 @@ router.post('/webhook', ensureDb, async (req, res) => {
                 data.status = statusUpdate.status.toUpperCase();
                 await connection.query('UPDATE whatsapp_logs SET data = ? WHERE id = ?', [JSON.stringify(data), statusUpdate.id]);
                 
-                // Real-time Trigger
                 if (req.io) req.io.emit('whatsapp_update', data);
             }
         }
@@ -58,7 +56,6 @@ router.post('/webhook', ensureDb, async (req, res) => {
     } catch (e) { console.error(e); }
 });
 
-// Logs Polling (Fallback)
 router.get('/logs/poll', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
@@ -69,13 +66,9 @@ router.get('/logs/poll', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- TEMPLATE MANAGEMENT ENDPOINTS ---
-
-// Fetch Templates & Sync to DB
 router.get('/templates', ensureDb, async (req, res) => {
     const wabaId = req.headers['x-waba-id'];
     const token = req.headers['x-auth-token'];
-    
     if (!wabaId || !token) return res.status(401).json({ success: false, error: "Missing Credentials" });
 
     try {
@@ -84,49 +77,26 @@ router.get('/templates', ensureDb, async (req, res) => {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await r.json();
-        
-        if (data.error) return res.status(400).json({ success: false, error: data.error.message });
-        
-        // SYNC TO DB: Save fetched templates to MySQL
+        if (data.error) return res.status(400).json({ success: false, error: data.error });
+
         const pool = getPool();
         const connection = await pool.getConnection();
-        
         const templates = data.data || [];
         for (const tpl of templates) {
-            // Meta structure to App structure
-            const appTpl = {
-                id: tpl.id,
-                name: tpl.name,
-                category: tpl.category,
-                content: tpl.components?.find(c => c.type === 'BODY')?.text || '',
-                status: tpl.status,
-                source: 'META',
-                structure: tpl.components,
-                rejectionReason: tpl.rejected_reason
-            };
-            
-            await connection.query(
-                `INSERT INTO templates (id, name, category, data) VALUES (?, ?, ?, ?) 
-                 ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), data=VALUES(data)`,
-                [tpl.id, tpl.name, tpl.category, JSON.stringify(appTpl)]
-            );
+            const appTpl = { id: tpl.id, name: tpl.name, category: tpl.category, content: tpl.components?.find(c => c.type === 'BODY')?.text || '', status: tpl.status, source: 'META', structure: tpl.components, rejectionReason: tpl.rejected_reason };
+            await connection.query(`INSERT INTO templates (id, name, category, data) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), data=VALUES(data)`, [tpl.id, tpl.name, tpl.category, JSON.stringify(appTpl)]);
         }
-        
         connection.release();
-        
         res.json({ success: true, data: data.data });
     } catch (e) {
-        console.error("Fetch Templates Error:", e.message);
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-// Create Template
 router.post('/templates', ensureDb, async (req, res) => {
     const wabaId = req.headers['x-waba-id'];
     const token = req.headers['x-auth-token'];
     const payload = req.body;
-
     if (!wabaId || !token) return res.status(401).json({ success: false, error: "Missing Credentials" });
 
     try {
@@ -136,44 +106,24 @@ router.post('/templates', ensureDb, async (req, res) => {
             body: JSON.stringify(payload)
         });
         const data = await r.json();
-        
-        if (data.error) return res.status(400).json({ success: false, error: data.error.message });
-        
-        // --- SAVE TO DB (Synchronous Update) ---
+        if (data.error) return res.status(400).json({ success: false, error: data.error });
+
         const pool = getPool();
         const connection = await pool.getConnection();
-        
-        const newId = data.id; // Meta returns { id: "..." }
-        const appTpl = {
-            id: newId,
-            name: payload.name,
-            category: payload.category,
-            content: payload.components?.find(c => c.type === 'BODY')?.text || '',
-            status: 'PENDING', // Initially pending
-            source: 'META',
-            structure: payload.components
-        };
-
-        await connection.query(
-            `INSERT INTO templates (id, name, category, data) VALUES (?, ?, ?, ?) 
-             ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), data=VALUES(data)`,
-            [newId, payload.name, payload.category, JSON.stringify(appTpl)]
-        );
+        const newId = data.id;
+        const appTpl = { id: newId, name: payload.name, category: payload.category, content: payload.components?.find(c => c.type === 'BODY')?.text || '', status: 'PENDING', source: 'META', structure: payload.components };
+        await connection.query(`INSERT INTO templates (id, name, category, data) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), data=VALUES(data)`, [newId, payload.name, payload.category, JSON.stringify(appTpl)]);
         connection.release();
-        // ---------------------------------------
-
         res.json({ success: true, data: data });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-// Edit Template
 router.post('/templates/:id', ensureDb, async (req, res) => {
     const templateId = req.params.id;
     const token = req.headers['x-auth-token'];
     const payload = req.body;
-
     if (!token) return res.status(401).json({ success: false, error: "Missing Credentials" });
 
     try {
@@ -183,67 +133,48 @@ router.post('/templates/:id', ensureDb, async (req, res) => {
             body: JSON.stringify(payload)
         });
         const data = await r.json();
-        
-        if (data.error) return res.status(400).json({ success: false, error: data.error.message });
-        
-        // --- SAVE TO DB (Update Existing) ---
+        if (data.error) return res.status(400).json({ success: false, error: data.error });
+
         const pool = getPool();
         const connection = await pool.getConnection();
-        
-        // Fetch current to merge
         const [rows] = await connection.query('SELECT data FROM templates WHERE id = ?', [templateId]);
         if (rows.length > 0) {
             const currentTpl = JSON.parse(rows[0].data);
-            
-            // Merge new structure
             currentTpl.structure = payload.components;
             currentTpl.content = payload.components?.find(c => c.type === 'BODY')?.text || currentTpl.content;
-            
-            await connection.query(
-                `UPDATE templates SET data = ? WHERE id = ?`,
-                [JSON.stringify(currentTpl), templateId]
-            );
+            await connection.query(`UPDATE templates SET data = ? WHERE id = ?`, [JSON.stringify(currentTpl), templateId]);
         }
         connection.release();
-        // -------------------------------------
-
         res.json({ success: true, data });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-// Delete Template
 router.delete('/templates', ensureDb, async (req, res) => {
     const wabaId = req.headers['x-waba-id'];
     const token = req.headers['x-auth-token'];
     const name = req.query.name;
-
     if (!wabaId || !token || !name) return res.status(400).json({ success: false, error: "Missing Params" });
 
     try {
-        // 1. Delete from Meta
         const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates?name=${name}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await r.json();
-        
-        if (data.error) return res.status(400).json({ success: false, error: data.error.message });
-        
-        // 2. Delete from DB
+        if (data.error) return res.status(400).json({ success: false, error: data.error });
+
         const pool = getPool();
         const connection = await pool.getConnection();
         await connection.query('DELETE FROM templates WHERE name = ?', [name]);
         connection.release();
-        
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-// Send Message
 router.post('/send', ensureDb, async (req, res) => {
     const { to, message, templateName, language, components, customerName } = req.body;
     const phoneId = req.headers['x-phone-id'];
@@ -260,9 +191,9 @@ router.post('/send', ensureDb, async (req, res) => {
         });
         const data = await r.json();
         
-        // Log error from Meta if request failed
         if (!r.ok || data.error) {
-             return res.status(400).json({ success: false, error: data.error?.message || "Meta API Error" });
+             // CRITICAL: Return full data object so Gemini can analyze specific error codes
+             return res.status(400).json({ success: false, error: data.error?.message || "Meta API Error", raw: data });
         }
 
         if (data.messages) {
@@ -270,10 +201,7 @@ router.post('/send', ensureDb, async (req, res) => {
             const connection = await pool.getConnection();
             const log = { id: data.messages[0].id, customerName: customerName || "Customer", phoneNumber: normalizePhone(to), message: templateName ? `[Template: ${templateName}]` : message, status: 'SENT', timestamp: new Date().toISOString(), direction: 'outbound', type: templateName ? 'TEMPLATE' : 'CUSTOM' };
             await connection.query('INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)', [log.id, log.phoneNumber, 'outbound', new Date(), JSON.stringify(log)]);
-            
-            // Real-time Trigger
             if (req.io) req.io.emit('whatsapp_update', log);
-            
             connection.release();
         }
         res.status(r.status).json({ success: r.ok, data });

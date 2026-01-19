@@ -3,11 +3,12 @@ import { GoogleGenAI } from "@google/genai";
 import { Order, CollectionTone, Customer, WhatsAppLogEntry, CreditworthinessReport, AiChatInsight, WhatsAppTemplate, AppResolutionPath, ActivityLogEntry, MetaCategory, AppTemplateGroup, PsychologicalTactic, PaymentPlanTemplate } from "../types";
 import { RECOVERY_TEMPLATES } from "../constants";
 
-// Safe access to API_KEY from environment
+// Use gemini-2.5-flash-preview as the default engine for speed + intelligence
+const DEFAULT_MODEL = 'gemini-2.5-flash-preview';
+
 const getAI = () => {
     const key = process.env.API_KEY;
     if (!key || key.includes('API_KEY')) {
-        // Return a dummy object if key is missing to prevent crash on init
         console.warn("Gemini API Key missing or invalid.");
         return null;
     }
@@ -26,11 +27,8 @@ export const geminiService = {
 
     try {
         const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: DEFAULT_MODEL,
         contents: `Analyze these overdue jewelry accounts: \n${riskSummary}\nProvide a 3-point executive recovery strategy for a high-end jewelry store.`,
-        config: {
-            
-        }
         });
         return response.text || "Unable to analyze risk.";
     } catch (e) {
@@ -44,7 +42,6 @@ export const geminiService = {
     currentGoldRate: number
   ): Promise<{ message: string, tone: CollectionTone, reasoning: string, templateId?: string, variables?: string[] }> {
     const ai = getAI();
-    // Fallback if AI unavailable
     const fallbackTemplate = RECOVERY_TEMPLATES[0];
     const paid = order.payments.reduce((acc, p) => acc + p.amount, 0);
     const balance = order.totalAmount - paid;
@@ -62,7 +59,7 @@ export const geminiService = {
 
     try {
         const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: DEFAULT_MODEL,
         contents: `
         Context:
         - Customer: ${order.customerName}
@@ -80,14 +77,14 @@ export const geminiService = {
         Return JSON:
         {
             "selectedTemplateId": "string (must match one id from list)",
-            "mappedVariables": ["string", "string", ...], (Extract values for {{1}}, {{2}} etc from context),
+            "mappedVariables": ["string", "string", ...],
             "reasoning": "string",
-            "previewMessage": "string (the final text with variables filled)"
+            "previewMessage": "string"
         }
         `,
         config: { 
             responseMimeType: "application/json",
-            systemInstruction: "You are a Compliance Officer for a Jewelry Brand. You must strictly select a pre-approved template ID. Do not hallucinage new templates."
+            systemInstruction: "You are a Compliance Officer for a Jewelry Brand. You must strictly select a pre-approved template ID. Do not hallucinate new templates."
         }
         });
         
@@ -119,7 +116,7 @@ export const geminiService = {
 
     try {
         const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: DEFAULT_MODEL,
         contents: `Analyze this customer for a luxury jewelry boutique: 
         Profile: ${JSON.stringify(customer)}
         Purchase History: ${JSON.stringify(orders)}
@@ -139,7 +136,7 @@ export const geminiService = {
 
     try {
         const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: DEFAULT_MODEL,
         contents: `Analyze the current chat with ${customerName}. 
         Recent Messages: ${JSON.stringify(messages.slice(-5))}
         Available Templates: ${JSON.stringify(templates.map(t => ({id: t.id, name: t.name, content: t.content})))}`,
@@ -157,7 +154,7 @@ export const geminiService = {
     if (!ai) throw new Error("AI Key Missing");
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: DEFAULT_MODEL,
       contents: `Generate a Meta-compliant WhatsApp template based on: ${prompt}`,
       config: {
         responseMimeType: "application/json",
@@ -172,7 +169,7 @@ export const geminiService = {
     if (!ai) throw new Error("AI Key Missing");
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: DEFAULT_MODEL,
       contents: `
       URGENT: This WhatsApp template was REJECTED by Meta. You must fix it.
       
@@ -206,13 +203,12 @@ export const geminiService = {
     return JSON.parse(response.text || "{}");
   },
 
-  // NEW: Ensures structural integrity before syncing
   async validateAndFixTemplate(requiredContent: string, requiredName: string, category: string): Promise<{ isCompliant: boolean, optimizedContent: string, explanation: string }> {
     const ai = getAI();
     if (!ai) return { isCompliant: true, optimizedContent: requiredContent, explanation: "AI Unavailable" };
 
     const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: DEFAULT_MODEL,
         contents: `
         Analyze this Core WhatsApp Template required by our App.
         Name: ${requiredName}
@@ -222,7 +218,7 @@ export const geminiService = {
         Task: Check if this content is likely to be rejected by Meta. 
         Rules:
         1. Variable count {{1}}, {{2}} MUST remain exactly the same as input.
-        2. If Category is UTILITY, tone must be transactional (no "Happy to help", no "Offers").
+        2. If Category is UTILITY, tone must be transactional.
         3. If Category is MARKETING, tone can be promotional.
 
         If it violates rules, rewrite it to be compliant while KEEPING VARIABLES intact.
@@ -240,7 +236,7 @@ export const geminiService = {
     if (!ai) throw new Error("AI Key Missing");
 
     const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: DEFAULT_MODEL,
         contents: `Create a jewelry gold purchase plan based on this strategy: "${prompt}"`,
         config: {
             responseMimeType: "application/json",
@@ -250,11 +246,11 @@ export const geminiService = {
     return JSON.parse(response.text || "{}");
   },
 
-  // --- INTELLIGENT DIAGNOSTICS & IMPLEMENTATION GENERATOR ---
-  async diagnoseError(message: string, source: string, stack?: string): Promise<{ 
+  // --- SELF-HEALING INTELLIGENCE UPGRADE (V2.5) ---
+  async diagnoseError(message: string, source: string, stack?: string, rawContext?: any): Promise<{ 
       explanation: string, 
       fixType: 'AUTO' | 'MANUAL_CODE' | 'CONFIG', 
-      implementationPrompt?: string, // The golden code prompt
+      implementationPrompt?: string, 
       action?: 'REPAIR_TEMPLATE' | 'RETRY_API', 
       suggestedFixData?: any,
       resolutionPath?: AppResolutionPath
@@ -264,27 +260,33 @@ export const geminiService = {
 
     try {
         const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: DEFAULT_MODEL,
         contents: `
-        SYSTEM ERROR DETECTED:
-        Source: ${source}
-        Message: ${message}
+        [CORE ARCHITECT DIAGNOSTICS]
+        Source Component/Service: ${source}
+        Error Message: ${message}
         Stack Trace: ${stack || 'N/A'}
+        
+        [RAW DATA PAYLOAD]
+        ${rawContext ? JSON.stringify(rawContext, null, 2) : 'No raw context available.'}
 
-        Your Role: Senior React Native/Web Engineer & System Architect.
+        Your Role: Lead Systems Engineer for AuraGold Elite.
 
-        Task:
-        1. Analyze the root cause.
-        2. Determine if this can be auto-fixed (e.g., missing data that can be re-fetched, missing template that can be re-created) or if it requires a CODE CHANGE.
-        3. If it requires a code change, generate a specific, copy-pasteable prompt that the user can give to an AI coding assistant to fix the file.
+        Goal: 
+        Analyze the raw payload to find hidden API errors (e.g. Meta code 100, Razorpay 400).
+        If it's a structural code error, provide a high-precision implementation prompt to change the app code.
+
+        Guidelines for Prompt Generation:
+        - Be EXTREMELY specific. Use file names and function names.
+        - E.g., "In services/whatsappService.ts, the sendTemplateMessage function expects 6 variables but only 4 are provided. Add the missing 'schedule' and 'token' variables."
 
         Output JSON Format:
         {
-            "explanation": "Human readable summary of what broke",
+            "explanation": "Summarize the failure from the raw data. E.g., 'Meta rejected variable 5 for being too long.'",
             "fixType": "AUTO" | "MANUAL_CODE" | "CONFIG",
-            "implementationPrompt": "Strictly technical prompt for AI Studio. E.g., 'Update OrderForm.tsx to handle null coalescing on items array...'",
-            "action": "REPAIR_TEMPLATE" (only if missing template) | "RETRY_API" | null,
-            "suggestedFixData": { ...any context data for auto fix... },
+            "implementationPrompt": "Strictly technical directive for a coding AI to fix the file. MUST use markdown style instructions.",
+            "action": "REPAIR_TEMPLATE" | "RETRY_API" | null,
+            "suggestedFixData": { ...context... },
             "resolutionPath": "settings" | "templates" | "whatsapp" | "none"
         }
         `,
@@ -295,7 +297,7 @@ export const geminiService = {
         
         return JSON.parse(response.text || "{}");
     } catch (e) {
-        return { explanation: "Diagnosis failed.", fixType: 'MANUAL_CODE' };
+        return { explanation: "Deep diagnosis failed.", fixType: 'MANUAL_CODE' };
     }
   },
 
@@ -304,7 +306,7 @@ export const geminiService = {
     if (!ai) return {};
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: DEFAULT_MODEL,
       contents: `Analyze these system activities for performance or business bottlenecks: ${JSON.stringify(activities.slice(0, 30))}`,
       config: {
         responseMimeType: "application/json",

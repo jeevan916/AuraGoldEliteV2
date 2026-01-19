@@ -41,7 +41,7 @@ export interface Milestone {
   cumulativeTarget: number;
   status: 'PENDING' | 'PARTIAL' | 'PAID';
   warningCount: number;
-  description?: string; // Manual instruction/note
+  description?: string; 
 }
 
 export interface PaymentPlan {
@@ -113,7 +113,7 @@ export interface Order {
   paymentPlan: PaymentPlan;
   status: OrderStatus;
   createdAt: string;
-  originalSnapshot?: OrderSnapshot; // Stores the proof of contract before lapse
+  originalSnapshot?: OrderSnapshot; 
 }
 
 export interface GlobalSettings {
@@ -122,15 +122,15 @@ export interface GlobalSettings {
   currentGoldRate18K: number;
   defaultTaxRate: number;
   goldRateProtectionMax: number;
-  gracePeriodHours: number; // New: Hours before lapse triggers
-  followUpIntervalDays: number; // New: Days between post-lapse reminders
+  gracePeriodHours: number; 
+  followUpIntervalDays: number; 
   whatsappPhoneNumberId?: string;
   whatsappBusinessAccountId?: string;
   whatsappBusinessToken?: string;
   razorpayKeyId?: string;
   razorpayKeySecret?: string;
-  setuClientId?: string; // New for V2
-  setuSchemeId?: string; // Mapped to Product Instance ID in V2
+  setuClientId?: string; 
+  setuSchemeId?: string; 
   setuSecret?: string;
   msg91AuthKey?: string;
   msg91SenderId?: string;
@@ -183,11 +183,11 @@ export interface AppError {
   stack?: string;
   severity: ErrorSeverity;
   status: ErrorStatus;
+  rawContext?: any; // NEW: Holds full raw response/payload for deep AI analysis
   
-  // Intelligent Diagnosis Fields
   aiDiagnosis?: string;
-  aiFixApplied?: string; // If auto-fixed, what did we do?
-  implementationPrompt?: string; // If code change needed, here is the prompt for AI Studio
+  aiFixApplied?: string; 
+  implementationPrompt?: string; 
   resolutionPath?: AppResolutionPath;
   resolutionCTA?: string;
   suggestedFixData?: any;
@@ -205,15 +205,13 @@ export interface ActivityLogEntry {
 export interface NotificationTrigger {
   id: string;
   customerName: string;
-  customerContact: string; // Added for direct sending
+  customerContact: string; 
   type: 'UPCOMING' | 'OVERDUE' | 'SYSTEM';
-  message: string; // The preview text
+  message: string; 
   date: string;
   sent: boolean;
   tone?: CollectionTone;
   strategyReasoning?: string;
-  
-  // COMPLIANCE FIELDS
   aiRecommendedTemplateId?: string;
   aiRecommendedVariables?: string[];
 }
@@ -232,7 +230,7 @@ export interface WhatsAppTemplate {
   isAiGenerated: boolean;
   source: 'LOCAL' | 'META';
   status?: string;
-  rejectionReason?: string; // New field for Meta rejection logs
+  rejectionReason?: string; 
   category?: MetaCategory;
   appGroup?: AppTemplateGroup;
   structure?: any[];
@@ -243,7 +241,7 @@ export interface SystemTrigger {
   id: string;
   label: string;
   description: string;
-  requiredVariables: string[]; // e.g., ["name", "amount"]
+  requiredVariables: string[]; 
   defaultTemplateName: string;
   appGroup: AppTemplateGroup;
 }
