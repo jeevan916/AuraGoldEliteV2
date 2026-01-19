@@ -125,7 +125,6 @@ class StorageService {
           
           // CRITICAL FIX: Ensure all REQUIRED templates are present in memory.
           // If DB misses them, we inject the local definition.
-          // We assume 'name' is the unique key for system templates.
           REQUIRED_SYSTEM_TEMPLATES.forEach(req => {
               const exists = fetchedTemplates.find((t: any) => t.name === req.name);
               if (!exists) {
