@@ -12,124 +12,65 @@ import './index.css';
 import { useOrders } from './hooks/useOrders';
 import { useWhatsApp } from './hooks/useWhatsApp';
 import { errorService } from './services/errorService';
-import { goldRateService } from './services/goldRateService';
 import { storageService } from './services/storageService';
-import { Order, GlobalSettings, NotificationTrigger, PaymentPlanTemplate, AppError, ActivityLogEntry, Customer } from './types';
+import { Order, GlobalSettings, NotificationTrigger, PaymentPlanTemplate, AppError, ActivityLogEntry, Customer, MainView } from './types';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-// --- STABLE LAZY LOADER ---
-const lazyRetry = (importFn: () => Promise<any>, moduleName: string) => {
-  return lazy(async () => {
-    try {
-      return await importFn();
-    } catch (error: any) {
-      console.warn(`[App] Module ${moduleName} missing. Showing update prompt.`);
-      return { 
-          default: () => (
-            <div className="flex flex-col items-center justify-center h-full min-h-[400px] p-8 text-center animate-fadeIn">
-                <div className="w-20 h-20 bg-slate-100 text-slate-400 rounded-3xl flex items-center justify-center mb-6 shadow-inner">
-                    <DownloadCloud size={32} />
-                </div>
-                <h2 className="text-xl font-black text-slate-800 mb-2">Update Required</h2>
-                <p className="text-slate-500 text-sm mb-8 max-w-xs mx-auto leading-relaxed">
-                    A new version of <strong>{moduleName}</strong> has been deployed. Please refresh to continue.
-                </p>
-                <button 
-                    onClick={() => window.location.reload()}
-                    className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl active:scale-95 flex items-center gap-3"
-                >
-                    <RefreshCw size={16} /> Load New Version
-                </button>
-            </div>
-          )
-      };
-    }
-  });
-};
-
-// --- Lazy Loaded Components ---
-const Dashboard = lazyRetry(() => import('./components/Dashboard'), 'Dashboard');
-const OrderForm = lazyRetry(() => import('./components/OrderForm'), 'OrderForm');
-const OrderDetails = lazyRetry(() => import('./components/OrderDetails'), 'OrderDetails');
-const OrderBook = lazyRetry(() => import('./components/OrderBook'), 'OrderBook');
-const CustomerList = lazyRetry(() => import('./components/CustomerList'), 'CustomerList');
-const CustomerProfile = lazyRetry(() => import('./components/CustomerProfile'), 'CustomerProfile'); // New Module
-const PaymentCollections = lazyRetry(() => import('./components/PaymentCollections'), 'Collections');
-const WhatsAppPanel = lazyRetry(() => import('./components/WhatsAppPanel'), 'WhatsApp');
-const WhatsAppTemplates = lazyRetry(() => import('./components/WhatsAppTemplates'), 'Templates');
-const WhatsAppLogs = lazyRetry(() => import('./components/WhatsAppLogs'), 'WhatsAppLogs'); // Restored
-const NotificationCenter = lazyRetry(() => import('./components/NotificationCenter'), 'NotificationCenter');
-const PlanManager = lazyRetry(() => import('./components/PlanManager'), 'PlanManager');
-const MarketIntelligence = lazyRetry(() => import('./components/MarketIntelligence'), 'MarketIntelligence');
-const Settings = lazyRetry(() => import('./components/Settings'), 'Settings');
-const ErrorLogPanel = lazyRetry(() => import('./components/ErrorLogPanel'), 'SystemLogs');
-const CustomerOrderView = lazyRetry(() => import('./components/CustomerOrderView'), 'CustomerView');
-
-// --- Types & UI Helpers ---
-type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW';
+// --- Components (Standard Lazy Loading) ---
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const OrderForm = lazy(() => import('./components/OrderForm'));
+const OrderDetails = lazy(() => import('./components/OrderDetails'));
+const OrderBook = lazy(() => import('./components/OrderBook'));
+const CustomerList = lazy(() => import('./components/CustomerList'));
+const CustomerProfile = lazy(() => import('./components/CustomerProfile'));
+const PaymentCollections = lazy(() => import('./components/PaymentCollections'));
+const WhatsAppPanel = lazy(() => import('./components/WhatsAppPanel'));
+const WhatsAppTemplates = lazy(() => import('./components/WhatsAppTemplates'));
+const WhatsAppLogs = lazy(() => import('./components/WhatsAppLogs'));
+const NotificationCenter = lazy(() => import('./components/NotificationCenter'));
+const PlanManager = lazy(() => import('./components/PlanManager'));
+const MarketIntelligence = lazy(() => import('./components/MarketIntelligence'));
+const Settings = lazy(() => import('./components/Settings'));
+const ErrorLogPanel = lazy(() => import('./components/ErrorLogPanel'));
+const CustomerOrderView = lazy(() => import('./components/CustomerOrderView'));
 
 const LoadingScreen = () => (
-  <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 space-y-4 min-h-[50vh]">
-    <Loader2 className="animate-spin text-amber-500" size={32} />
-    <p className="text-xs font-black uppercase tracking-widest">Loading Module...</p>
+  <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 space-y-6 min-h-[60vh]">
+    <div className="relative">
+      <div className="w-16 h-16 border-4 border-slate-100 border-t-amber-500 rounded-full animate-spin"></div>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-amber-500 font-black text-xl">A</span>
+      </div>
+    </div>
+    <p className="text-[10px] font-black uppercase tracking-[0.4em] ml-[0.4em]">Initializing Core</p>
   </div>
-);
-
-const TabBarItem = ({ icon, label, active, onClick }: any) => (
-  <button 
-    onClick={onClick}
-    className={`flex flex-col items-center gap-1 w-14 transition-all ${active ? 'text-amber-600' : 'text-slate-400 opacity-60'}`}
-  >
-    <div className={`p-1.5 rounded-xl ${active ? 'bg-amber-50' : ''}`}>
-        {React.cloneElement(icon, { size: 22 })}
-    </div>
-    <span className={`text-[9px] font-black uppercase tracking-tighter ${active ? 'opacity-100' : 'opacity-80'}`}>{label}</span>
-  </button>
-);
-
-const MenuItem = ({ icon, label, desc, onClick, colorClass }: any) => (
-  <button 
-    onClick={onClick}
-    className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all flex flex-col items-start text-left group"
-  >
-    <div className={`p-3 rounded-2xl mb-3 transition-colors ${colorClass}`}>
-        {React.cloneElement(icon, { size: 24 })}
-    </div>
-    <h3 className="font-bold text-slate-800 text-sm group-hover:text-slate-900 transition-colors">{label}</h3>
-    <p className="text-[10px] text-slate-500 leading-relaxed mt-1">{desc}</p>
-  </button>
 );
 
 const App = () => {
   const [view, setView] = useState<MainView>('DASH');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
-  const [selectedChatPhone, setSelectedChatPhone] = useState<string | null>(null); // For linking Logs to Chat
+  const [selectedChatPhone, setSelectedChatPhone] = useState<string | null>(null);
   const [settings, setSettings] = useState<GlobalSettings>(storageService.getSettings());
   const [planTemplates, setPlanTemplates] = useState<PaymentPlanTemplate[]>(storageService.getPlanTemplates());
   
-  // System Log State (For Auto-Repair Engine)
   const [systemErrors, setSystemErrors] = useState<AppError[]>([]);
   const [systemActivities, setSystemActivities] = useState<ActivityLogEntry[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>(storageService.getCustomers());
 
-  // Manual Customer Metadata State
-  const [manualCustomers, setManualCustomers] = useState<Customer[]>(storageService.getCustomers());
-
-  // Custom Hooks
   const { orders, addOrder, updateOrder, recordPayment, updateItemStatus } = useOrders();
   const { logs, addLog, templates, setTemplates } = useWhatsApp();
 
-  // Initialization
   useEffect(() => {
     errorService.initGlobalListeners();
-    
-    // Subscribe to Error Service for Real-time Logging/Auto-Repair UI
     const unsubscribeErrors = errorService.subscribe((errs, acts) => {
         setSystemErrors(errs);
         setSystemActivities(acts);
     });
 
-    // Check for share token in URL
+    // CRITICAL: Bind global dispatcher for components that rely on window.dispatchView
+    (window as any).dispatchView = (v: MainView) => setView(v);
+
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');
     if (token) {
@@ -137,131 +78,43 @@ const App = () => {
         if (order) {
             setSelectedOrderId(order.id);
             setView('CUSTOMER_VIEW');
-            return;
         }
     }
 
-    // Attempt Server Sync
     storageService.syncFromServer().then(res => {
         if (res.success) {
             setSettings(storageService.getSettings());
             setPlanTemplates(storageService.getPlanTemplates());
-            setManualCustomers(storageService.getCustomers());
+            setCustomers(storageService.getCustomers());
             console.log("[App] Sync Successful");
         }
     });
 
-    // Make view dispatcher global for components
-    (window as any).dispatchView = (v: MainView) => setView(v);
-
-    return () => {
-        unsubscribeErrors();
-    };
-  }, []);
-
-  // --- DERIVED CUSTOMER LIST LOGIC (One Customer -> Multiple Orders) ---
-  const derivedCustomers = useMemo(() => {
-      const customerMap = new Map<string, Customer>();
-      
-      // Helper: Normalize to last 10 digits for loose matching
-      const normalize = (p: string) => p ? p.replace(/\D/g, '').slice(-10) : '';
-
-      // 1. Initialize with manually added customers (Metadata source)
-      manualCustomers.forEach(c => {
-          const key = normalize(c.contact);
-          if (key) {
-              customerMap.set(key, {
-                  ...c,
-                  totalSpent: 0,
-                  orderIds: []
-              });
-          }
-      });
-
-      // 2. Aggregate data from Orders (Source of Truth for Transactions)
-      orders.forEach(order => {
-          const key = normalize(order.customerContact);
-          if (!key) return;
-
-          const existing = customerMap.get(key);
-          
-          if (existing) {
-              // Update existing profile with order data if not already linked
-              if (!existing.orderIds.includes(order.id)) {
-                  existing.orderIds.push(order.id);
-                  existing.totalSpent += order.totalAmount;
-              }
-              // Update name if manual record is empty
-              if (!existing.name) existing.name = order.customerName;
-          } else {
-              // Create new ephemeral profile from order
-              customerMap.set(key, {
-                  id: `CUST-${key}`, // Use phone as predictable ID
-                  name: order.customerName,
-                  contact: order.customerContact, // Keep original format
-                  email: order.customerEmail,
-                  secondaryContact: order.secondaryContact,
-                  orderIds: [order.id],
-                  totalSpent: order.totalAmount,
-                  joinDate: order.createdAt
-              });
-          }
-      });
-
-      return Array.from(customerMap.values()).sort((a, b) => b.totalSpent - a.totalSpent);
-  }, [orders, manualCustomers]);
-
-  const handleAddCustomer = (newCustomer: Customer) => {
-      const updated = [...manualCustomers, newCustomer];
-      setManualCustomers(updated);
-      storageService.setCustomers(updated); 
-  };
+    return () => { unsubscribeErrors(); };
+  }, [orders]);
 
   const handleUpdateSettings = async (newSettings: GlobalSettings) => {
       setSettings(newSettings);
-      // storageService.setSettings automatically calls pushEntity/sync/settings
       await storageService.setSettings(newSettings);
   };
 
   const selectedOrder = useMemo(() => orders.find(o => o.id === selectedOrderId), [orders, selectedOrderId]);
-  const selectedCustomer = useMemo(() => derivedCustomers.find(c => c.id === selectedCustomerId), [derivedCustomers, selectedCustomerId]);
+  const selectedCustomer = useMemo(() => customers.find(c => c.id === selectedCustomerId), [customers, selectedCustomerId]);
 
-  // Derived Data for Notification Center
   const notificationTriggers = useMemo<NotificationTrigger[]>(() => {
     const triggers: NotificationTrigger[] = [];
     const now = new Date();
-    
     orders.forEach(order => {
         if (order.status === 'COMPLETED' || order.status === 'CANCELLED') return;
-
         order.paymentPlan.milestones.forEach(m => {
             if (m.status !== 'PAID') {
                 const dueDate = new Date(m.dueDate);
                 const diffTime = dueDate.getTime() - now.getTime();
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
                 if (diffDays <= 3 && diffDays >= 0) {
-                    triggers.push({
-                        id: `due-${m.id}-${Date.now()}`,
-                        customerName: order.customerName,
-                        customerContact: order.customerContact,
-                        type: 'UPCOMING',
-                        message: `Payment of ₹${m.targetAmount} due in ${diffDays} days.`,
-                        date: m.dueDate,
-                        sent: false,
-                        tone: 'POLITE'
-                    });
+                    triggers.push({ id: `due-${m.id}`, customerName: order.customerName, customerContact: order.customerContact, type: 'UPCOMING', message: `Payment of ₹${m.targetAmount} due in ${diffDays} days.`, date: m.dueDate, sent: false });
                 } else if (diffDays < 0) {
-                    triggers.push({
-                        id: `over-${m.id}-${Date.now()}`,
-                        customerName: order.customerName,
-                        customerContact: order.customerContact,
-                        type: 'OVERDUE',
-                        message: `Payment of ₹${m.targetAmount} is OVERDUE by ${Math.abs(diffDays)} days.`,
-                        date: m.dueDate,
-                        sent: false,
-                        tone: 'FIRM'
-                    });
+                    triggers.push({ id: `over-${m.id}`, customerName: order.customerName, customerContact: order.customerContact, type: 'OVERDUE', message: `Payment of ₹${m.targetAmount} is OVERDUE by ${Math.abs(diffDays)} days.`, date: m.dueDate, sent: false });
                 }
             }
         });
@@ -271,185 +124,121 @@ const App = () => {
 
   const renderContent = () => {
       switch(view) {
-          case 'DASH': return <Dashboard orders={orders} currentRates={{k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K}} onRefreshRates={async () => {
-              const res = await goldRateService.fetchLiveRate();
-              if (res.success) setSettings({...settings, currentGoldRate24K: res.rate24K, currentGoldRate22K: res.rate22K});
-          }} />;
-          
+          case 'DASH': return <Dashboard orders={orders} currentRates={{k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K}} onNavigate={setView} />;
           case 'ORDER_NEW': return <OrderForm settings={settings} planTemplates={planTemplates} onSubmit={(o) => { addOrder(o); setSelectedOrderId(o.id); setView('ORDER_DETAILS'); }} onCancel={() => setView('DASH')} />;
-          
           case 'ORDER_BOOK': return <OrderBook orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onUpdateOrder={updateOrder} />;
-          
-          case 'ORDER_DETAILS': return selectedOrder ? 
-            <OrderDetails order={selectedOrder} settings={settings} onBack={() => setView('ORDER_BOOK')} onUpdateStatus={updateItemStatus} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} logs={logs} onAddLog={addLog} /> : 
-            <div className="text-center p-10">Order Not Found</div>;
-            
-          case 'CUSTOMERS': return <CustomerList customers={derivedCustomers} orders={orders} onSelectCustomer={(id) => { setSelectedCustomerId(id); setView('CUSTOMER_PROFILE'); }} onAddCustomer={handleAddCustomer} />;
-          
-          case 'CUSTOMER_PROFILE': return selectedCustomer ? 
-            <CustomerProfile customer={selectedCustomer} orders={orders} onBack={() => setView('CUSTOMERS')} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onNewOrder={(cust) => { /* Pre-fill logic could go here */ setView('ORDER_NEW'); }} /> :
-            <div className="text-center p-10">Customer Not Found</div>;
-
-          case 'COLLECTIONS': return <PaymentCollections orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onSendWhatsApp={() => {}} onAddLog={addLog} settings={settings} />;
-          
-          case 'WHATSAPP': return <WhatsAppPanel logs={logs} customers={derivedCustomers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} initialContact={selectedChatPhone} />;
-          
+          case 'ORDER_DETAILS': return selectedOrder ? <OrderDetails order={selectedOrder} settings={settings} onBack={() => setView('ORDER_BOOK')} onUpdateStatus={(itemId, status) => updateItemStatus(selectedOrder.id, itemId, status)} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} logs={logs} onAddLog={addLog} /> : null;
+          case 'CUSTOMERS': return <CustomerList customers={customers} orders={orders} onSelectCustomer={(id) => { setSelectedCustomerId(id); setView('CUSTOMER_PROFILE'); }} onAddCustomer={(c) => { const upd = [...customers, c]; setCustomers(upd); storageService.setCustomers(upd); }} />;
+          case 'CUSTOMER_PROFILE': return selectedCustomer ? <CustomerProfile customer={selectedCustomer} orders={orders} onBack={() => setView('CUSTOMERS')} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onNewOrder={() => setView('ORDER_NEW')} /> : null;
+          case 'COLLECTIONS': return <PaymentCollections orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onAddLog={addLog} settings={settings} onSendWhatsApp={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} />;
+          case 'WHATSAPP': return <WhatsAppPanel logs={logs} customers={customers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} initialContact={selectedChatPhone} />;
           case 'TEMPLATES': return <WhatsAppTemplates templates={templates} onUpdate={setTemplates} />;
-          
           case 'LOGS': return <WhatsAppLogs logs={logs} onViewChat={(phone) => { setSelectedChatPhone(phone); setView('WHATSAPP'); }} />;
-
           case 'PLANS': return <PlanManager templates={planTemplates} onUpdate={(tpls) => { setPlanTemplates(tpls); storageService.setPlanTemplates(tpls); }} />;
-          
-          case 'STRATEGY': return <NotificationCenter notifications={notificationTriggers} customers={derivedCustomers} onSend={async (id, ch) => { alert(`Sent via ${ch}`); }} onRefresh={() => {}} loading={false} />;
-          
+          case 'STRATEGY': return <NotificationCenter notifications={notificationTriggers} customers={customers} onSend={() => {}} onRefresh={() => {}} loading={false} />;
           case 'MARKET': return <MarketIntelligence />;
-          
           case 'SYS_LOGS': return <ErrorLogPanel errors={systemErrors} activities={systemActivities} onClear={() => { errorService.clearErrors(); errorService.clearActivity(); }} />;
-          
           case 'SETTINGS': return <Settings settings={settings} onUpdate={handleUpdateSettings} />;
-          
-          case 'CUSTOMER_VIEW': return selectedOrder ? <CustomerOrderView order={selectedOrder} /> : <div className="text-center p-10">Invalid or Expired Token</div>;
-          
-          case 'MENU': return (
-              <div className="grid grid-cols-2 gap-4 pb-24 animate-fadeIn">
-                  <MenuItem onClick={() => setView('ORDER_BOOK')} icon={<BookOpen />} label="Order Registry" desc="Manage all bookings" colorClass="bg-blue-50 text-blue-600" />
-                  <MenuItem onClick={() => setView('CUSTOMERS')} icon={<Users />} label="Client Directory" desc="View customer profiles" colorClass="bg-emerald-50 text-emerald-600" />
-                  <MenuItem onClick={() => setView('COLLECTIONS')} icon={<ReceiptIndianRupee />} label="Payments" desc="Track cash flow" colorClass="bg-amber-50 text-amber-600" />
-                  <MenuItem onClick={() => setView('WHATSAPP')} icon={<MessageSquare />} label="WhatsApp" desc="Connect with clients" colorClass="bg-teal-50 text-teal-600" />
-                  <MenuItem onClick={() => setView('LOGS')} icon={<ScrollText />} label="Comm. Logs" desc="History of messages" colorClass="bg-cyan-50 text-cyan-600" />
-                  <MenuItem onClick={() => setView('TEMPLATES')} icon={<FileText />} label="Templates" desc="Edit message formats" colorClass="bg-indigo-50 text-indigo-600" />
-                  <MenuItem onClick={() => setView('PLANS')} icon={<Calculator />} label="Plan Manager" desc="Configure schemes" colorClass="bg-violet-50 text-violet-600" />
-                  <MenuItem onClick={() => setView('MARKET')} icon={<Globe />} label="Market Intel" desc="Live rates & news" colorClass="bg-sky-50 text-sky-600" />
-                  <MenuItem onClick={() => setView('SYS_LOGS')} icon={<HardDrive />} label="System Logs" desc="Debug & Audit" colorClass="bg-slate-100 text-slate-600" />
-                  <MenuItem onClick={() => setView('SETTINGS')} icon={<SettingsIcon />} label="Configuration" desc="Database & Rates" colorClass="bg-slate-800 text-white" />
-              </div>
-          );
-          
-          default: return <Dashboard orders={orders} currentRates={{k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K}} />;
+          case 'MENU': return <div className="grid grid-cols-2 gap-4 pb-24 animate-fadeIn">
+            <MenuItem onClick={() => setView('ORDER_BOOK')} icon={<BookOpen />} label="Registry" desc="Master ledger" colorClass="bg-blue-50 text-blue-600" />
+            <MenuItem onClick={() => setView('CUSTOMERS')} icon={<Users />} label="Clients" desc="CRM profiles" colorClass="bg-emerald-50 text-emerald-600" />
+            <MenuItem onClick={() => setView('WHATSAPP')} icon={<MessageSquare />} label="WhatsApp" desc="Direct chat hub" colorClass="bg-teal-50 text-teal-600" />
+            <MenuItem onClick={() => setView('SYS_LOGS')} icon={<HardDrive />} label="System" desc="Health & Audit" colorClass="bg-slate-100 text-slate-600" />
+            <MenuItem onClick={() => setView('SETTINGS')} icon={<SettingsIcon />} label="Settings" desc="Pricing Matrix" colorClass="bg-slate-900 text-white" />
+          </div>;
+          case 'CUSTOMER_VIEW': return selectedOrder ? <CustomerOrderView order={selectedOrder} /> : null;
+          default: return <Dashboard orders={orders} currentRates={{k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K}} onNavigate={setView} />;
       }
   };
 
-  // Special layout for Customer View (No App Shell)
-  if (view === 'CUSTOMER_VIEW') {
-      return (
-          <ErrorBoundary>
-              <Suspense fallback={<LoadingScreen />}>
-                  <CustomerOrderView order={selectedOrder!} />
-              </Suspense>
-          </ErrorBoundary>
-      );
-  }
-
   return (
     <ErrorBoundary>
-      <div className="flex h-screen bg-[#f8f9fa] font-sans text-slate-900 overflow-hidden">
-        
+      <div className="flex h-screen bg-[#F8F9FA] font-sans text-slate-900 overflow-hidden">
         {/* Desktop Sidebar */}
-        <div className="hidden lg:flex flex-col w-72 bg-white border-r border-slate-200 h-full p-6 shadow-sm z-20">
-             <div className="mb-10 flex items-center gap-3 px-2">
-                 <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/20">
-                    <span className="font-serif font-black text-white text-xl">A</span>
+        <div className="hidden lg:flex flex-col w-72 bg-white border-r border-slate-100 p-8 shadow-sm z-20">
+             <div className="mb-12 flex items-center gap-4">
+                 <div className="w-12 h-12 bg-slate-900 rounded-[1rem] flex items-center justify-center shadow-xl shadow-slate-900/10">
+                    <span className="text-amber-500 font-black text-2xl">A</span>
                  </div>
                  <div>
-                    <h1 className="font-serif font-black text-xl tracking-tight text-slate-900">AuraGold</h1>
-                    <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Enterprise OS</p>
+                    <h1 className="font-serif font-black text-xl tracking-tight leading-none mb-1">AuraGold</h1>
+                    <p className="text-[9px] text-slate-400 font-black uppercase tracking-[0.2em]">Enterprise OS</p>
                  </div>
              </div>
-
-             <div className="flex-1 space-y-1 overflow-y-auto custom-scrollbar pr-2">
-                 <SidebarItem active={view === 'DASH'} onClick={() => setView('DASH')} icon={Home} label="Dashboard" />
-                 <SidebarItem active={view === 'ORDER_BOOK' || view === 'ORDER_DETAILS'} onClick={() => setView('ORDER_BOOK')} icon={BookOpen} label="Order Book" />
-                 <SidebarItem active={view === 'ORDER_NEW'} onClick={() => setView('ORDER_NEW')} icon={Plus} label="New Booking" highlight />
-                 
-                 <div className="my-6 border-t border-slate-100"></div>
-                 <p className="px-4 text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Operations</p>
-                 
-                 <SidebarItem active={view === 'CUSTOMERS' || view === 'CUSTOMER_PROFILE'} onClick={() => setView('CUSTOMERS')} icon={Users} label="Clients" />
-                 <SidebarItem active={view === 'COLLECTIONS'} onClick={() => setView('COLLECTIONS')} icon={ReceiptIndianRupee} label="Payments" />
-                 <SidebarItem active={view === 'STRATEGY'} onClick={() => setView('STRATEGY')} icon={BrainCircuit} label="Recovery AI" />
-                 <SidebarItem active={view === 'PLANS'} onClick={() => setView('PLANS')} icon={Calculator} label="Plan Manager" />
-                 
-                 <div className="my-6 border-t border-slate-100"></div>
-                 <p className="px-4 text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Connect</p>
-
-                 <SidebarItem active={view === 'WHATSAPP'} onClick={() => setView('WHATSAPP')} icon={MessageSquare} label="WhatsApp" />
-                 <SidebarItem active={view === 'LOGS'} onClick={() => setView('LOGS')} icon={ScrollText} label="Comm. Logs" />
-                 <SidebarItem active={view === 'TEMPLATES'} onClick={() => setView('TEMPLATES')} icon={FileText} label="Templates" />
-                 <SidebarItem active={view === 'MARKET'} onClick={() => setView('MARKET')} icon={Globe} label="Market Intel" />
-             </div>
-
-             <div className="mt-4 pt-4 border-t border-slate-100">
-                 <SidebarItem active={view === 'SYS_LOGS'} onClick={() => setView('SYS_LOGS')} icon={HardDrive} label="System Logs" />
-                 <SidebarItem active={view === 'SETTINGS'} onClick={() => setView('SETTINGS')} icon={SettingsIcon} label="Settings" />
-                 <div className="px-4 mt-4 flex items-center gap-2 text-[10px] text-slate-400">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                    <span>System Online • v5.0.2</span>
+             <div className="flex-1 space-y-1.5 overflow-y-auto custom-scrollbar pr-2">
+                 <SidebarItem active={view === 'DASH'} onClick={() => setView('DASH')} icon={Home} label="Intelligence" />
+                 <SidebarItem active={view === 'ORDER_BOOK'} onClick={() => setView('ORDER_BOOK')} icon={BookOpen} label="Order Registry" />
+                 <SidebarItem active={view === 'CUSTOMERS'} onClick={() => setView('CUSTOMERS')} icon={Users} label="Client CRM" />
+                 <SidebarItem active={view === 'COLLECTIONS'} onClick={() => setView('COLLECTIONS')} icon={ReceiptIndianRupee} label="Financials" />
+                 <SidebarItem active={view === 'WHATSAPP'} onClick={() => setView('WHATSAPP')} icon={MessageSquare} label="Comm. Hub" />
+                 <div className="pt-6 pb-2">
+                    <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest ml-4">System</p>
                  </div>
+                 <SidebarItem active={view === 'SETTINGS'} onClick={() => setView('SETTINGS')} icon={SettingsIcon} label="Matrix Config" />
+                 <SidebarItem active={view === 'SYS_LOGS'} onClick={() => setView('SYS_LOGS')} icon={HardDrive} label="Core Logs" />
              </div>
         </div>
 
-        {/* Mobile Header */}
-        <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-md border-b z-40 flex items-center justify-between px-4 shadow-sm">
-             <div className="flex items-center gap-2">
-                 <div className="w-8 h-8 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center">
-                    <span className="font-serif font-black text-white text-lg">A</span>
-                 </div>
-                 <span className="font-serif font-bold text-lg text-slate-900">AuraGold</span>
-             </div>
-             {view !== 'DASH' && (
-                 <button onClick={() => setView('DASH')} className="p-2 bg-slate-100 rounded-full text-slate-600">
-                     <ArrowLeft size={20} />
-                 </button>
-             )}
-        </div>
-
-        {/* Main Content Area */}
+        {/* Main Workspace */}
         <div className="flex-1 overflow-hidden relative flex flex-col">
-            <main className="flex-1 overflow-y-auto p-4 lg:p-8 pt-20 lg:pt-8 pb-32 lg:pb-8">
-               <Suspense fallback={<LoadingScreen />}>
-                  {renderContent()}
-               </Suspense>
+            <main className="flex-1 overflow-y-auto p-4 lg:p-10 pt-20 lg:pt-10 pb-32 lg:pb-10 custom-scrollbar">
+               <Suspense fallback={<LoadingScreen />}>{renderContent()}</Suspense>
             </main>
         </div>
 
-        {/* Mobile Bottom Tab Bar */}
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 h-[84px] pb-6 px-6 flex justify-between items-center z-50 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)]">
+        {/* Mobile Tab Bar */}
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-slate-100 h-[84px] pb-6 px-8 flex justify-between items-center z-50 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
              <TabBarItem active={view === 'DASH'} onClick={() => setView('DASH')} icon={<Home />} label="Home" />
-             <TabBarItem active={view === 'ORDER_BOOK' || view === 'ORDER_NEW'} onClick={() => setView('ORDER_BOOK')} icon={<BookOpen />} label="Orders" />
-             
-             {/* Floating FAB for Menu */}
-             <div className="-mt-8">
-                 <button 
-                    onClick={() => setView(view === 'MENU' ? 'DASH' : 'MENU')}
-                    className={`w-14 h-14 rounded-full flex items-center justify-center shadow-2xl shadow-slate-900/30 transition-transform active:scale-90 ${view === 'MENU' ? 'bg-slate-800 text-white' : 'bg-slate-900 text-white'}`}
-                 >
-                    {view === 'MENU' ? <X size={24} /> : <Menu size={24} />}
-                 </button>
+             <TabBarItem active={view === 'ORDER_BOOK'} onClick={() => setView('ORDER_BOOK')} icon={<BookOpen />} label="Orders" />
+             <div className="-mt-12">
+                <button 
+                  onClick={() => setView('MENU')} 
+                  className={`w-16 h-16 rounded-3xl flex items-center justify-center shadow-2xl transition-all duration-300 ${view === 'MENU' ? 'bg-rose-500 text-white rotate-45' : 'bg-slate-900 text-white'}`}
+                >
+                  <Plus size={32} />
+                </button>
              </div>
-
              <TabBarItem active={view === 'COLLECTIONS'} onClick={() => setView('COLLECTIONS')} icon={<ReceiptIndianRupee />} label="Pay" />
              <TabBarItem active={view === 'WHATSAPP'} onClick={() => setView('WHATSAPP')} icon={<MessageSquare />} label="Chat" />
         </div>
-
       </div>
     </ErrorBoundary>
   );
 };
 
-const SidebarItem = ({ active, onClick, icon: Icon, label, highlight }: any) => (
+const SidebarItem = ({ active, onClick, icon: Icon, label }: any) => (
   <button 
-    onClick={onClick}
-    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-xs font-bold transition-all group ${
-        active 
-        ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20' 
-        : highlight 
-            ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' 
-            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-    }`}
+    onClick={onClick} 
+    className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all duration-200 
+                ${active ? 'bg-slate-900 text-white shadow-xl shadow-slate-900/10' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}
   >
-    <Icon size={18} className={active ? 'text-amber-400' : (highlight ? 'text-amber-600' : 'text-slate-400 group-hover:text-slate-600')} />
+    <Icon size={18} className={active ? 'text-amber-500' : 'text-slate-300'} />
     <span>{label}</span>
-    {active && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-400"></div>}
+  </button>
+);
+
+const TabBarItem = ({ icon, label, active, onClick }: any) => (
+  <button 
+    onClick={onClick} 
+    className={`flex flex-col items-center gap-1.5 w-14 transition-all duration-300 ${active ? 'text-amber-600' : 'text-slate-300 opacity-60'}`}
+  >
+    <div className={`transition-transform duration-300 ${active ? 'scale-110' : ''}`}>
+      {React.cloneElement(icon, { size: 24, strokeWidth: active ? 2.5 : 2 })}
+    </div>
+    <span className="text-[9px] font-black uppercase tracking-widest">{label}</span>
+  </button>
+);
+
+const MenuItem = ({ icon, label, desc, onClick, colorClass }: any) => (
+  <button 
+    onClick={onClick} 
+    className={`bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm transition-all flex flex-col items-start text-left group active:scale-95 hover:border-amber-100 hover:shadow-xl`}
+  >
+    <div className={`p-4 rounded-2xl mb-4 shadow-sm transition-transform group-hover:scale-110 ${colorClass}`}>
+      {React.cloneElement(icon, { size: 24 })}
+    </div>
+    <h3 className="font-bold text-slate-800 text-sm tracking-tight">{label}</h3>
+    <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-2 uppercase tracking-wider">{desc}</p>
   </button>
 );
 

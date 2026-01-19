@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Zap, ArrowRight, CheckCircle2, BrainCircuit, MessageSquare, FileText, ScrollText, TrendingUp, BookOpen, RefreshCw, Loader2 } from 'lucide-react';
-import { Order, OrderStatus } from '../types';
+import { Order, OrderStatus, MainView } from '../types';
 import { Card, SectionHeader, Badge, Button } from './shared/BaseUI';
 import { PaymentWidget } from './clusters/PaymentWidget';
 
@@ -9,9 +9,10 @@ interface DashboardProps {
   orders: Order[];
   currentRates?: { k24: number, k22: number };
   onRefreshRates?: () => Promise<void>;
+  onNavigate?: (view: MainView) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRates }) => {
+const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRates, onNavigate }) => {
   const today = new Date().toISOString().split('T')[0];
   const [refreshing, setRefreshing] = useState(false);
   
@@ -31,6 +32,18 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
       }
   };
 
+  /**
+   * Safe navigation handler that prefers the prop but falls back to the global dispatcher
+   * to maintain backward compatibility with legacy button definitions.
+   */
+  const navigateTo = (view: MainView) => {
+    if (onNavigate) {
+      onNavigate(view);
+    } else if ((window as any).dispatchView) {
+      (window as any).dispatchView(view);
+    }
+  };
+
   return (
     <div className="space-y-8 pb-24 animate-fadeIn">
       
@@ -47,7 +60,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
                     </p>
                 </div>
                 <button 
-                    onClick={() => (window as any).dispatchView('STRATEGY')} 
+                    onClick={() => navigateTo('STRATEGY')} 
                     className="bg-white text-emerald-900 px-4 py-2 rounded-xl font-black text-xs uppercase tracking-widest shadow-md hover:bg-emerald-50 transition-colors flex items-center gap-2"
                 >
                     Launch Console <ArrowRight size={12} />
@@ -89,11 +102,11 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
             </div>
          </Card>
          <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => (window as any).dispatchView('ORDER_BOOK')} className="bg-emerald-50 hover:bg-emerald-100 rounded-2xl flex flex-col items-center justify-center text-emerald-700 transition-colors">
+            <button onClick={() => navigateTo('ORDER_BOOK')} className="bg-emerald-50 hover:bg-emerald-100 rounded-2xl flex flex-col items-center justify-center text-emerald-700 transition-colors">
                 <BookOpen size={18} />
                 <span className="text-[8px] font-black uppercase mt-1">Book</span>
             </button>
-            <button onClick={() => (window as any).dispatchView('TEMPLATES')} className="bg-blue-50 hover:bg-blue-100 rounded-2xl flex flex-col items-center justify-center text-blue-700 transition-colors">
+            <button onClick={() => navigateTo('TEMPLATES')} className="bg-blue-50 hover:bg-blue-100 rounded-2xl flex flex-col items-center justify-center text-blue-700 transition-colors">
                 <FileText size={18} />
                 <span className="text-[8px] font-black uppercase mt-1">Templates</span>
             </button>
@@ -135,7 +148,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
 
       {/* 4. New Booking CTA */}
       <button 
-        onClick={() => (window as any).dispatchView('ORDER_NEW')}
+        onClick={() => navigateTo('ORDER_NEW')}
         className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest text-sm flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-transform"
       >
         <Zap size={20} className="text-amber-400" /> Start New Booking
