@@ -1,9 +1,9 @@
 
-import React, { useState } from 'react';
-import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCheck, History, Eye, RefreshCw, XCircle, ExternalLink, Share2 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { Order, GlobalSettings, WhatsAppLogEntry, ProductionStatus, ProtectionStatus, OrderStatus } from '../types';
 import { generateOrderPDF } from '../services/pdfGenerator';
-import { Button, SectionHeader } from './shared/BaseUI';
+import { Button } from './shared/BaseUI';
 
 // Importing Clusters (Plug & Play Units)
 import { PaymentWidget } from './clusters/PaymentWidget';
@@ -32,6 +32,114 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
   const handleOpenCustomerLink = () => {
       const link = `${window.location.origin}/?token=${order.shareToken}`;
       window.open(link, '_blank');
+  };
+
+  // --- GOLD RATE PROTECTION LOGIC ---
+  const liabilityState = useMemo(() => {
+      if (order.paymentPlan.protectionStatus !== ProtectionStatus.ACTIVE) return null;
+      
+      const currentRate = settings.currentGoldRate22K;
+      const bookedRate = order.paymentPlan.protectionRateBooked || order.goldRateAtBooking;
+      const limit = order.paymentPlan.protectionLimit || 0;
+      
+      const diff = currentRate - bookedRate;
+      const isLiability = diff > limit;
+      const surchargePerGram = isLiability ? diff - limit : 0;
+      
+      // Calculate estimated impact
+      const totalWeight = order.items.reduce((sum, item) => sum + item.netWeight, 0);
+      const estimatedImpact = surchargePerGram * totalWeight * (1 + (settings.defaultTaxRate/100));
+
+      return { currentRate, bookedRate, limit, diff, isLiability, surchargePerGram, estimatedImpact };
+  }, [order, settings]);
+
+  const handleApplySurcharge = () => {
+      if (!liabilityState || !liabilityState.isLiability) return;
+      
+      if (!confirm(`SECURITY ALERT: The market rate has risen by ₹${liabilityState.diff}/g, exceeding the protection limit of ₹${liabilityState.limit}/g.\n\nApplying this adjustment will increase the contract value by approx ₹${Math.round(liabilityState.estimatedImpact)}.\n\nProceed?`)) return;
+
+      const newEffectiveRate = liabilityState.bookedRate + liabilityState.surchargePerGram;
+
+      const updatedItems = order.items.map(item => {
+          // Standardize scaling to 22K base
+          let scaling = 1;
+          if (item.purity === '24K') scaling = 24/22;
+          if (item.purity === '18K') scaling = 18/22;
+          
+          const usedRate = newEffectiveRate * scaling;
+          
+          const metalValue = item.netWeight * usedRate;
+          const wastageValue = metalValue * (item.wastagePercentage / 100);
+          const laborValue = item.makingChargesPerGram * item.netWeight;
+          const subTotal = metalValue + wastageValue + laborValue + item.stoneCharges;
+          const tax = subTotal * (settings.defaultTaxRate / 100);
+          
+          return {
+              ...item,
+              baseMetalValue: metalValue,
+              wastageValue,
+              totalLaborValue: laborValue,
+              taxAmount: tax,
+              finalAmount: subTotal + tax
+          };
+      });
+
+      const newTotal = updatedItems.reduce((s, i) => s + i.finalAmount, 0);
+      const paid = order.payments.reduce((s, p) => s + p.amount, 0);
+      const remaining = newTotal - paid;
+
+      // Adjust unpaid milestones
+      const pendingMilestones = order.paymentPlan.milestones.filter(m => m.status !== 'PAID');
+      const paidMilestones = order.paymentPlan.milestones.filter(m => m.status === 'PAID');
+      
+      let newMilestones = [];
+      
+      if (pendingMilestones.length > 0) {
+          // Spread increase over pending milestones
+          const perMilestone = remaining / pendingMilestones.length;
+          let runningSum = paid;
+          
+          newMilestones = [...paidMilestones, ...pendingMilestones.map(m => {
+              const amt = Math.round(perMilestone);
+              runningSum += amt;
+              return { ...m, targetAmount: amt, cumulativeTarget: runningSum, description: m.description ? (m.description.includes('(Adj)') ? m.description : m.description + ' (Adj)') : 'Installment (Adj)' };
+          })];
+          
+          // Fix rounding on last
+          const totalScheduled = newMilestones.reduce((s, m) => s + m.targetAmount, 0);
+          const drift = newTotal - totalScheduled;
+          if (drift !== 0 && newMilestones.length > 0) {
+              newMilestones[newMilestones.length - 1].targetAmount += drift;
+              newMilestones[newMilestones.length - 1].cumulativeTarget += drift;
+          }
+      } else {
+          // All paid, but surcharge created new balance
+          newMilestones = [...paidMilestones, {
+              id: `SUR-${Date.now()}`,
+              dueDate: new Date().toISOString().split('T')[0],
+              targetAmount: Math.round(remaining),
+              cumulativeTarget: Math.round(newTotal),
+              status: 'PENDING',
+              warningCount: 0,
+              description: 'Limit Surcharge'
+          }];
+      }
+
+      const updatedOrder: Order = {
+          ...order,
+          items: updatedItems,
+          totalAmount: newTotal,
+          goldRateAtBooking: newEffectiveRate, 
+          status: OrderStatus.ACTIVE, // Ensure active if new dues added
+          paymentPlan: {
+              ...order.paymentPlan,
+              milestones: newMilestones as any[],
+              protectionRateBooked: newEffectiveRate // Update base so we don't apply surcharge twice
+          }
+      };
+      
+      onOrderUpdate(updatedOrder);
+      alert("Contract Updated: Surcharge applied successfully.");
   };
 
   const handleLapseProtection = () => {
@@ -82,15 +190,13 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       const remainingBalance = newTotal - totalPaid;
 
       // 2. Recalculate Milestones (Compress into existing timeline)
-      // Filter out PAID milestones
       const paidMilestones = order.paymentPlan.milestones.filter(m => m.status === 'PAID');
       const pendingMilestones = order.paymentPlan.milestones.filter(m => m.status !== 'PAID');
 
       if (pendingMilestones.length === 0 && remainingBalance > 0) {
-          // Edge case: All milestones marked paid but rate increased balance. Add 'Final Adjustment' milestone.
           pendingMilestones.push({
               id: `ADJ-${Date.now()}`,
-              dueDate: order.paymentPlan.milestones[order.paymentPlan.milestones.length - 1].dueDate, // Same last date
+              dueDate: order.paymentPlan.milestones[order.paymentPlan.milestones.length - 1].dueDate,
               targetAmount: 0,
               cumulativeTarget: 0,
               status: 'PENDING',
@@ -98,13 +204,12 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           });
       }
 
-      // Distribute remaining balance equally among pending milestones
       const newPerMilestone = Math.round(remainingBalance / pendingMilestones.length);
       let runningSum = totalPaid;
 
       const newPendingMilestones = pendingMilestones.map((m, idx) => {
           const amount = (idx === pendingMilestones.length - 1) 
-              ? (remainingBalance - (newPerMilestone * (pendingMilestones.length - 1))) // Handle rounding on last one
+              ? (remainingBalance - (newPerMilestone * (pendingMilestones.length - 1))) 
               : newPerMilestone;
           
           runningSum += amount;
@@ -112,8 +217,8 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
               ...m,
               targetAmount: amount,
               cumulativeTarget: runningSum,
-              status: 'PENDING' as const, // Reset status logic just in case, though they were pending
-              warningCount: 0 // Reset warnings
+              status: 'PENDING' as const, 
+              warningCount: 0 
           };
       });
 
@@ -125,11 +230,11 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           items: updatedItems,
           totalAmount: newTotal,
           goldRateAtBooking: currentRate,
-          status: OrderStatus.ACTIVE, // Reactivate
+          status: OrderStatus.ACTIVE,
           paymentPlan: {
               ...order.paymentPlan,
               milestones: newMilestones,
-              protectionStatus: ProtectionStatus.ACTIVE, // Re-protect at new rate
+              protectionStatus: ProtectionStatus.ACTIVE,
               protectionRateBooked: currentRate
           }
       };
@@ -140,13 +245,12 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
 
   const handleRefundCancel = () => {
       if(!confirm("Process Refund & Cancel Order? This action terminates the contract.")) return;
-      
       const updated: Order = {
           ...order,
           status: OrderStatus.CANCELLED,
           paymentPlan: {
               ...order.paymentPlan,
-              protectionStatus: ProtectionStatus.LAPSED // Remains lapsed/cancelled
+              protectionStatus: ProtectionStatus.LAPSED 
           }
       };
       onOrderUpdate(updated);
@@ -161,7 +265,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
               items: order.items.map(i => ({...i, productionStatus: ProductionStatus.DELIVERED}))
           };
           onOrderUpdate(updated);
-          onBack(); // Go back to dashboard
+          onBack(); 
       }
   };
 
@@ -199,7 +303,6 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
             </p>
          </div>
          
-         {/* Rate Protection Status Indicator */}
          <div className="absolute top-6 right-8">
              <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border backdrop-blur-md ${isLapsed ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'}`}>
                  {isLapsed ? <AlertTriangle size={16} /> : <Lock size={16} />}
@@ -211,7 +314,6 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
          </div>
       </div>
 
-      {/* 2. Navigation Tabs */}
       <div className="flex bg-white p-1 rounded-2xl border shadow-sm overflow-x-auto">
         <TabButton active={activeTab === 'FINANCIAL'} onClick={() => setActiveTab('FINANCIAL')} icon={CreditCard} label="Ledger & Pay" />
         <TabButton active={activeTab === 'ITEMS'} onClick={() => setActiveTab('ITEMS')} icon={Box} label="Items" />
@@ -219,12 +321,64 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
         {isLapsed && <TabButton active={activeTab === 'PROOF'} onClick={() => setActiveTab('PROOF')} icon={History} label="Lapse Recovery" />}
       </div>
 
-      {/* 3. Plug & Play Content Zones */}
       <div>
         {activeTab === 'FINANCIAL' && (
           <div className="animate-fadeIn space-y-6">
             
-            {/* If Lapsed, show Alert Banner directing to Recovery Tab */}
+            {/* LIABILITY MONITOR */}
+            {liabilityState && (
+                <div className={`p-5 rounded-[2rem] border transition-all ${liabilityState.isLiability ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-100'}`}>
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-2">
+                            {liabilityState.isLiability ? <ShieldAlert className="text-amber-600" size={20} /> : <ShieldCheck className="text-emerald-500" size={20} />}
+                            <div>
+                                <h3 className={`font-black text-sm uppercase tracking-wide ${liabilityState.isLiability ? 'text-amber-800' : 'text-slate-700'}`}>Protection Monitor</h3>
+                                <p className="text-[10px] text-slate-500">Limits jeweler liability if rate rise exceeds protection limit.</p>
+                            </div>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Market Status</p>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-slate-600">Current: ₹{liabilityState.currentRate}</span>
+                                <span className={`text-xs font-bold ${liabilityState.diff > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                    {liabilityState.diff > 0 ? '+' : ''}{liabilityState.diff}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div className="bg-white/50 p-3 rounded-xl border border-black/5">
+                            <p className="text-[9px] font-black uppercase text-slate-400">Booked Rate</p>
+                            <p className="font-bold text-slate-800">₹{liabilityState.bookedRate}</p>
+                        </div>
+                        <div className="bg-white/50 p-3 rounded-xl border border-black/5">
+                            <p className="text-[9px] font-black uppercase text-slate-400">Limit (Absorbed)</p>
+                            <p className="font-bold text-slate-800">Up to +₹{liabilityState.limit}</p>
+                        </div>
+                        <div className={`p-3 rounded-xl border ${liabilityState.isLiability ? 'bg-rose-100 border-rose-200 text-rose-800' : 'bg-emerald-50 border-emerald-100 text-emerald-700'}`}>
+                            <p className="text-[9px] font-black uppercase opacity-70">Liability Gap</p>
+                            <p className="font-black">₹{Math.max(0, liabilityState.diff - liabilityState.limit)} /g</p>
+                        </div>
+                        {liabilityState.isLiability && (
+                            <div className="bg-amber-100 border-amber-200 text-amber-800 p-3 rounded-xl border">
+                                <p className="text-[9px] font-black uppercase opacity-70">Est. Surcharge</p>
+                                <p className="font-black">+₹{Math.round(liabilityState.estimatedImpact).toLocaleString()}</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {liabilityState.isLiability && (
+                        <button 
+                            onClick={handleApplySurcharge}
+                            className="w-full bg-amber-600 text-white py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-amber-700 transition-all shadow-md flex items-center justify-center gap-2"
+                        >
+                            <TrendingUp size={16} /> Apply Market Adjustment (Limit Liability)
+                        </button>
+                    )}
+                </div>
+            )}
+
             {isLapsed && (
                 <div className="bg-rose-50 border border-rose-100 p-4 rounded-2xl flex justify-between items-center">
                     <div className="flex items-center gap-3 text-rose-700">
@@ -238,7 +392,6 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                 </div>
             )}
 
-            {/* Plugging in the Payment Cluster */}
             <PaymentWidget 
               order={order} 
               onPaymentRecorded={handlePaymentUpdate}
@@ -246,7 +399,6 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
               variant="FULL"
             />
 
-            {/* Lifecycle Controls */}
             {order.status !== OrderStatus.DELIVERED && (
                 <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
                     <h3 className="font-black text-slate-800 text-sm uppercase tracking-wide">Contract Controls</h3>
@@ -273,9 +425,6 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                             </div>
                         )}
                     </div>
-                    <p className="text-[10px] text-slate-400 text-center">
-                        Actions taken here are legally binding based on the contract terms. Archiving removes this order from live metrics.
-                    </p>
                 </div>
             )}
           </div>
@@ -283,7 +432,6 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
 
         {activeTab === 'LOGS' && (
           <div className="animate-fadeIn h-[600px]">
-            {/* Plugging in the Communication Cluster */}
             <CommunicationWidget 
               logs={logs}
               customerPhone={order.customerContact}
@@ -363,10 +511,6 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                             </div>
                         </button>
                     </div>
-                    
-                    <p className="text-[9px] text-amber-800/60 text-center mt-4">
-                        *Repopulating will update all items to current market price and compress remaining due into the existing timeline.
-                    </p>
                 </div>
             </div>
         )}
