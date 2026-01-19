@@ -41,12 +41,10 @@ export const whatsappService = {
   },
 
   async fetchMetaTemplates(): Promise<any[]> {
-     errorService.logActivity('API_CALL', `Fetching Meta Templates (${API_VERSION})...`);
      const settings = this.getSettings();
      const token = settings.whatsappBusinessToken?.trim();
      
      if (!settings.whatsappBusinessAccountId || !token) {
-         errorService.logWarning("WhatsApp API", "Credentials missing for template fetch.");
          return [];
      }
 
@@ -61,23 +59,19 @@ export const whatsappService = {
          });
 
          const data = await response.json();
-         if (!data.success) throw new Error(data.error || "Failed to fetch templates via proxy");
-         
-         errorService.logActivity('API_SUCCESS', `Fetched ${data.data?.length || 0} templates from Meta.`);
+         if (!data.success) throw new Error(data.error || "Failed to fetch templates");
          return data.data || [];
      } catch (e: any) {
-         errorService.logError("WhatsApp API", `Template Fetch Failed: ${e.message}`, "MEDIUM");
          return [];
      }
   },
 
   async createMetaTemplate(template: WhatsAppTemplate): Promise<{ success: boolean; finalName?: string; error?: any; debugPayload?: any; rawResponse?: any }> {
-     errorService.logActivity('API_CALL', `Creating Template (${API_VERSION}): ${template.name}`);
      const settings = this.getSettings();
      const token = settings.whatsappBusinessToken?.trim();
      
      if (!settings.whatsappBusinessAccountId || !token) {
-         return { success: false, error: { message: "Credentials missing in Settings" } };
+         return { success: false, error: { message: "Credentials missing" } };
      }
 
      const finalName = template.name.toLowerCase().replace(/[^a-z0-9_]/g, '_');
@@ -117,30 +111,17 @@ export const whatsappService = {
          const data = await response.json();
          
          if (!data.success) {
-             errorService.logError('WhatsApp API', `Template Creation Failed: ${JSON.stringify(data.error)}`);
-             return { 
-                 success: false, 
-                 error: { message: data.error }, 
-                 debugPayload: payload,
-                 rawResponse: data 
-             };
+             return { success: false, error: { message: data.error } };
          }
 
-         errorService.logActivity('API_SUCCESS', `Template Created: ${finalName}`);
-         return {
-             success: true,
-             finalName: data.data.name || finalName,
-             rawResponse: data
-         };
+         return { success: true, finalName: data.data.name || finalName };
 
      } catch (e: any) {
-         errorService.logError('WhatsApp API', `Network Error: ${e.message}`);
-         return { success: false, error: e, debugPayload: payload };
+         return { success: false, error: e };
      }
   },
 
   async editMetaTemplate(templateId: string, template: WhatsAppTemplate): Promise<{ success: boolean; error?: any; debugPayload?: any; rawResponse?: any }> {
-      errorService.logActivity('API_CALL', `Editing Template ID: ${templateId} (${API_VERSION})`);
       const settings = this.getSettings();
       const token = settings.whatsappBusinessToken?.trim();
       
@@ -173,27 +154,18 @@ export const whatsappService = {
           });
 
           const data = await response.json();
-          if (!data.success) {
-              errorService.logError('WhatsApp API', `Edit Failed: ${JSON.stringify(data.error)}`);
-              return { success: false, error: { message: data.error || "Edit Failed" }, debugPayload: payload, rawResponse: data };
-          }
-
-          errorService.logActivity('API_SUCCESS', `Template Edited Successfully`);
-          return { success: true, rawResponse: data };
-
+          return { success: data.success, error: data.error };
       } catch (e: any) {
-          errorService.logError('WhatsApp API', `Edit Network Error: ${e.message}`);
-          return { success: false, error: e, debugPayload: payload };
+          return { success: false, error: e };
       }
   },
 
   async deleteMetaTemplate(templateName: string): Promise<{ success: boolean; error?: string }> {
-      errorService.logActivity('API_CALL', `Deleting Template: ${templateName} (${API_VERSION})`);
       const settings = this.getSettings();
       const token = settings.whatsappBusinessToken?.trim();
       
       if (!settings.whatsappBusinessAccountId || !token) {
-          return { success: false, error: "Credentials missing in Settings" };
+          return { success: false, error: "Credentials missing" };
       }
 
       try {
@@ -206,37 +178,25 @@ export const whatsappService = {
           });
 
           const data = await response.json();
-          if (!data.success) throw new Error(data.error || "Deletion Failed");
-          
-          errorService.logActivity('API_SUCCESS', `Template Deleted`);
-          return { success: true };
+          return { success: data.success, error: data.error };
       } catch (e: any) {
-          errorService.logError('WhatsApp API', `Delete Error: ${e.message}`);
           return { success: false, error: e.message };
       }
   },
 
   async sendTemplateMessage(to: string, templateName: string, languageCode: string = 'en_US', bodyVariables: string[] = [], customerName: string, buttonVariable?: string): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
-    
-    if (!recipient) {
-        errorService.logError("WhatsApp API", "Invalid Phone Number - Cannot Send", "MEDIUM");
-        return { success: false, error: "Invalid Phone Number" };
-    }
-
-    errorService.logActivity('TEMPLATE_SENT', `Sending '${templateName}' to ${customerName} (${recipient}) using v22.0...`);
+    if (!recipient) return { success: false, error: "Invalid Phone Number" };
 
     const settings = this.getSettings();
     const token = settings.whatsappBusinessToken?.trim();
     
     if (!settings.whatsappPhoneNumberId || !token) {
-        errorService.logError("WhatsApp API", "Credentials Missing - Cannot Send", "HIGH");
         return { success: false, error: "API Credentials Missing" };
     }
 
     try {
         const components: any[] = [];
-
         if (bodyVariables.length > 0) {
             components.push({
                 type: "body",
@@ -245,12 +205,7 @@ export const whatsappService = {
         }
 
         if (buttonVariable) {
-            components.push({
-                type: "button",
-                sub_type: "url",
-                index: 0,
-                parameters: [{ type: "text", text: buttonVariable }]
-            });
+            components.push({ type: "button", sub_type: "url", index: 0, parameters: [{ type: "text", text: buttonVariable }] });
         }
 
         const response = await fetch('/api/whatsapp/send', {
@@ -264,17 +219,14 @@ export const whatsappService = {
                 to: recipient,
                 templateName,
                 language: languageCode,
-                components: components
+                components: components,
+                customerName // Passed for server-side logging
             })
         });
 
         const data = await response.json();
         
-        if (!data.success || !data.data || !data.data.messages || data.data.messages.length === 0) {
-            throw new Error(data.data?.error?.message || JSON.stringify(data.error) || "Message not queued by Meta (v22.0)");
-        }
-
-        errorService.logActivity('API_SUCCESS', `Template delivered (v22.0). ID: ${data.data?.messages?.[0]?.id}`);
+        if (!data.success) throw new Error(data.error || "Send Failed");
 
         return {
           success: true,
@@ -286,26 +238,18 @@ export const whatsappService = {
           }
         };
     } catch (error: any) {
-        errorService.logError("WhatsApp API", `Send Failed (v22.0): ${error.message}`, "MEDIUM");
         return { success: false, error: error.message };
     }
   },
 
   async sendMessage(to: string, message: string, customerName: string): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
-    
-    if (!recipient) {
-        errorService.logError("WhatsApp API", "Invalid Phone Number - Cannot Send", "MEDIUM");
-        return { success: false, error: "Invalid Phone Number" };
-    }
-
-    errorService.logActivity('MANUAL_MESSAGE_SENT', `Sending message to ${customerName} (v22.0)...`);
+    if (!recipient) return { success: false, error: "Invalid Phone Number" };
 
     const settings = this.getSettings();
     const token = settings.whatsappBusinessToken?.trim();
     
     if (!settings.whatsappPhoneNumberId || !token) {
-        errorService.logError("WhatsApp API", "Credentials Missing - Cannot Send", "HIGH");
         return { success: false, error: "API Credentials Missing" };
     }
 
@@ -319,17 +263,13 @@ export const whatsappService = {
         },
         body: JSON.stringify({
             to: recipient,
-            message
+            message,
+            customerName // Passed for server-side logging
         })
       });
 
       const data = await response.json();
-      
-      if (!data.success || !data.data || !data.data.messages || data.data.messages.length === 0) {
-          throw new Error(data.data?.error?.message || JSON.stringify(data.error) || "Message not queued by Meta (v22.0)");
-      }
-
-      errorService.logActivity('API_SUCCESS', `Message sent (v22.0). ID: ${data.data?.messages?.[0]?.id}`);
+      if (!data.success) throw new Error(data.error || "Send Failed");
 
       return {
         success: true,
@@ -341,7 +281,6 @@ export const whatsappService = {
         }
       };
     } catch (e: any) { 
-        errorService.logError("WhatsApp API", `Send Failed (v22.0): ${e.message}`, "MEDIUM");
         return { success: false, error: e.message }; 
     }
   }

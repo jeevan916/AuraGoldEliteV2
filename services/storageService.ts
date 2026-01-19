@@ -30,9 +30,11 @@ class StorageService {
   private state: AppState = DEFAULT_STATE;
   private listeners: (() => void)[] = [];
   private syncStatus: 'CONNECTED' | 'LOCAL_FALLBACK' | 'SYNCING' | 'ERROR' = 'LOCAL_FALLBACK';
+  private pollInterval: any = null;
 
   constructor() {
     this.loadFromLocal();
+    this.startPolling();
   }
 
   private loadFromLocal() {
@@ -60,6 +62,35 @@ class StorageService {
 
   public getSyncStatus() { return this.syncStatus; }
 
+  // --- AJAX POLLING LOOP ---
+  private startPolling() {
+      if (this.pollInterval) clearInterval(this.pollInterval);
+      // Poll for new messages every 10 seconds
+      this.pollInterval = setInterval(() => {
+          this.pollLogs();
+      }, 10000);
+  }
+
+  private async pollLogs() {
+      try {
+          const res = await fetch('/api/whatsapp/logs/poll');
+          if (res.ok) {
+              const data = await res.json();
+              if (data.success && data.logs) {
+                  // Merge logs - unique by ID
+                  const existingIds = new Set(this.state.logs.map(l => l.id));
+                  const newLogs = data.logs.filter((l: any) => !existingIds.has(l.id));
+                  
+                  if (newLogs.length > 0) {
+                      this.state.logs = [...newLogs, ...this.state.logs].slice(0, 500);
+                      this.saveToLocal();
+                      this.notify();
+                  }
+              }
+          }
+      } catch (e) {}
+  }
+
   // --- BOOTSTRAP: FETCH ALL FROM DB ---
   public async syncFromServer(): Promise<{ success: boolean; message: string }> {
     this.syncStatus = 'SYNCING';
@@ -73,7 +104,6 @@ class StorageService {
       if (response.success && response.data) {
           const dbData = response.data;
           
-          // Merge DB data with defaults
           this.state = {
               orders: dbData.orders || [],
               customers: dbData.customers || [],
@@ -83,7 +113,7 @@ class StorageService {
               planTemplates: (dbData.planTemplates && dbData.planTemplates.length > 0) ? dbData.planTemplates : INITIAL_PLAN_TEMPLATES,
               catalog: (dbData.catalog && dbData.catalog.length > 0) ? dbData.catalog : INITIAL_CATALOG,
               lastUpdated: Date.now()
-          } as any; // Type casting for ease
+          } as any;
 
           this.saveToLocal();
           this.syncStatus = 'CONNECTED';
@@ -99,10 +129,8 @@ class StorageService {
     return { success: this.syncStatus === 'CONNECTED', message: this.syncStatus };
   }
 
-  // --- ENTITY SYNC METHODS ---
-
   private async pushEntity(endpoint: string, payload: any) {
-      this.saveToLocal(); // Always save local first for optimistic UI
+      this.saveToLocal();
       this.notify();
       
       try {
@@ -129,6 +157,7 @@ class StorageService {
   public getLogs() { return this.state.logs; }
   public setLogs(logs: WhatsAppLogEntry[]) { 
     this.state.logs = logs; 
+    // Usually handled by polling or immediate send, but kept for manual overrides
     this.pushEntity('logs', { logs }); 
   }
 

@@ -95,7 +95,6 @@ const ensureDb = async (req, res, next) => {
  * WHATSAPP WEBHOOK HANDLERS
  */
 
-// 1. VERIFICATION (GET) - Required by Meta to verify server ownership
 app.get('/api/whatsapp/webhook', (req, res) => {
     const verify_token = process.env.WHATSAPP_VERIFY_TOKEN || "auragold_elite_secure_2025";
     const mode = req.query['hub.mode'];
@@ -114,9 +113,7 @@ app.get('/api/whatsapp/webhook', (req, res) => {
     res.sendStatus(400);
 });
 
-// 2. EVENT RECEIVER (POST) - Processes incoming messages and status updates
 app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
-    // Meta requires a 200 OK response quickly to avoid retries
     res.status(200).send('EVENT_RECEIVED');
 
     try {
@@ -126,7 +123,7 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
         const change = body.entry[0].changes[0].value;
         const connection = await pool.getConnection();
 
-        // INCOMING CUSTOMER MESSAGE
+        // INCOMING CUSTOMER MESSAGE (RECEIVE LIVE)
         if (change.messages && change.messages[0]) {
             const msg = change.messages[0];
             const from = msg.from; 
@@ -139,7 +136,7 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
                 customerName: contactName,
                 phoneNumber: from,
                 message: msgBody,
-                status: 'READ',
+                status: 'READ', // Mark as read by receiver implicitly
                 timestamp,
                 direction: 'inbound',
                 type: 'INBOUND'
@@ -149,10 +146,10 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
                 `INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data)`,
                 [logEntry.id, from, 'inbound', new Date(timestamp), JSON.stringify(logEntry)]
             );
-            console.log(`[Webhook] Logged Inbound: ${from}`);
+            console.log(`[Webhook] Live Inbound Stored: ${from}`);
         }
 
-        // STATUS UPDATE (Sent, Delivered, Read, Failed)
+        // STATUS UPDATE
         if (change.statuses && change.statuses[0]) {
             const statusUpdate = change.statuses[0];
             const msgId = statusUpdate.id;
@@ -176,12 +173,27 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
 });
 
 /**
+ * AJAX POLLING ENDPOINT (GET RECENT LOGS)
+ */
+app.get('/api/whatsapp/logs/poll', ensureDb, async (req, res) => {
+    try {
+        const lastSync = req.query.lastSync || 0;
+        const connection = await pool.getConnection();
+        // Return logs from the last hour or specifically since last request for efficiency
+        const [rows] = await connection.query(
+            'SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 100'
+        );
+        connection.release();
+        const logs = rows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
+        res.json({ success: true, logs });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
  * STANDARD API ROUTES
  */
-
-app.get('/api/health', async (req, res) => {
-    res.json({ status: 'ok', api_version: META_API_VERSION });
-});
 
 const createSyncHandler = (table) => async (req, res) => {
     const items = req.body[table] || req.body.orders || req.body.customers || req.body.logs || req.body.templates || req.body.catalog || req.body.plans;
@@ -252,8 +264,8 @@ app.get('/api/bootstrap', ensureDb, async (req, res) => {
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/whatsapp/send', async (req, res) => {
-    const { to, message, templateName, language, components } = req.body;
+app.post('/api/whatsapp/send', ensureDb, async (req, res) => {
+    const { to, message, templateName, language, components, customerName } = req.body;
     const phoneId = req.headers['x-phone-id'];
     const token = req.headers['x-auth-token'];
     
@@ -274,6 +286,27 @@ app.post('/api/whatsapp/send', async (req, res) => {
             body: JSON.stringify(payload)
         });
         const data = await r.json();
+
+        if (r.ok && data.messages && data.messages[0]) {
+            // IMMEDIATE LOCAL PERSISTENCE FOR OUTBOUND
+            const connection = await pool.getConnection();
+            const logEntry = {
+                id: data.messages[0].id,
+                customerName: customerName || "Customer",
+                phoneNumber: to,
+                message: templateName ? `[Template: ${templateName}]` : message,
+                status: 'SENT',
+                timestamp: new Date().toISOString(),
+                direction: 'outbound',
+                type: templateName ? 'TEMPLATE' : 'CUSTOM'
+            };
+            await connection.query(
+                `INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)`,
+                [logEntry.id, to, 'outbound', new Date(logEntry.timestamp), JSON.stringify(logEntry)]
+            );
+            connection.release();
+        }
+
         res.status(r.status).json({ success: r.ok, data });
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
@@ -320,4 +353,4 @@ if (fs.existsSync(distPath)) {
     });
 }
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT} | Webhook active`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT} | AJAX Polling Enabled`));
