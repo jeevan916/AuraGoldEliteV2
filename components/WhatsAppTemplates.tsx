@@ -17,7 +17,7 @@ interface WhatsAppTemplatesProps {
 }
 
 const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpdate }) => {
-  // SPLIT TABS: Explicit separation of Core (Fixed) and Automation (Dynamic)
+  // SPLIT TABS: Explicit separation of Core (Action) and Automation (Logic)
   const [activeTab, setActiveTab] = useState<'CORE' | 'AUTOMATION' | 'BUILDER' | 'LIBRARY' | 'ISSUES'>('CORE');
   
   // Prompt-Based Generator State
