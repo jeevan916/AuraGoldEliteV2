@@ -93,7 +93,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
 
   const submitOrder = () => {
     if (cartItems.length === 0 || !customer.name) return;
-    const milestones = planMode === 'MANUAL' ? manualMilestones.map((m, i) => ({ ...m, id: `M-${i}`, status: 'PENDING', warningCount: 0 } as any) : generateMilestones(netPayable);
+    const milestones = planMode === 'MANUAL' ? manualMilestones.map((m, i) => ({ ...m, id: `M-${i}`, status: 'PENDING', warningCount: 0 } as any)) : generateMilestones(netPayable);
     const finalOrder: Order = {
       id: `ORD-${Date.now()}`, shareToken: Math.random().toString(36).substring(2, 10), customerName: customer.name, customerContact: customer.contact, customerEmail: customer.email, items: cartItems, oldGoldExchange: exchanges, payments: [], totalAmount: cartTotal, exchangeValue: exchangeTotalValue, netPayable: netPayable, goldRateAtBooking: orderRate, status: OrderStatus.ACTIVE, createdAt: new Date().toISOString(),
       paymentPlan: { ...plan, milestones, protectionStatus: ProtectionStatus.ACTIVE, protectionRateBooked: protectionRate, protectionDeadline: milestones[milestones.length - 1].dueDate, protectionLimit: settings.goldRateProtectionMax } as PaymentPlan
