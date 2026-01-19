@@ -31,7 +31,7 @@ router.post('/webhook', ensureDb, async (req, res) => {
         if (change.messages && change.messages[0]) {
             const msg = change.messages[0];
             const fromFormatted = normalizePhone(msg.from);
-            const msgBody = msg.text?.body || `[Interactive/Media Event]`;
+            const msgBody = msg.text?.body || `[Media: ${msg.type}]`;
             const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
             const contactName = change.contacts?.[0]?.profile?.name || "Customer";
             const logEntry = { id: msg.id, customerName: contactName, phoneNumber: fromFormatted, message: msgBody, status: 'READ', timestamp, direction: 'inbound', type: 'INBOUND' };
@@ -48,7 +48,7 @@ router.post('/webhook', ensureDb, async (req, res) => {
             }
         }
         connection.release();
-    } catch (e) { console.error("[Webhook Processing Error]", e); }
+    } catch (e) { console.error(e); }
 });
 
 // Logs Polling
@@ -62,56 +62,30 @@ router.get('/logs/poll', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Interactive Template / Custom Message Sending
+// Send Message
 router.post('/send', ensureDb, async (req, res) => {
     const { to, message, templateName, language, components, customerName } = req.body;
     const phoneId = req.headers['x-phone-id'];
     const token = req.headers['x-auth-token'];
-    
-    if (!phoneId || !token) return res.status(400).json({ success: false, error: "Meta API Headers Missing" });
-
     let payload = { messaging_product: "whatsapp", to: normalizePhone(to) };
-    
-    if (templateName) {
-        payload.type = "template";
-        payload.template = { 
-            name: templateName, 
-            language: { code: language || "en_US" }, 
-            components: components // Expecting formatted array from Service
-        };
-    } else {
-        payload.text = { body: message };
-    }
+    if (templateName) payload.template = { name: templateName, language: { code: language || "en_US" }, components };
+    else payload.text = { body: message };
     
     try {
-        const metaRes = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${phoneId}/messages`, {
+        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${phoneId}/messages`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        
-        const data = await metaRes.json();
-        
-        if (metaRes.ok && data.messages) {
+        const data = await r.json();
+        if (r.ok && data.messages) {
             const pool = getPool();
             const connection = await pool.getConnection();
-            const logId = data.messages[0].id;
-            const logEntry = { 
-                id: logId, 
-                customerName: customerName || "Customer", 
-                phoneNumber: normalizePhone(to), 
-                message: templateName ? `[Template: ${templateName}]` : message, 
-                status: 'SENT', 
-                timestamp: new Date().toISOString(), 
-                direction: 'outbound', 
-                type: templateName ? 'TEMPLATE' : 'CUSTOM' 
-            };
-            await connection.query('INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)', [logId, logEntry.phoneNumber, 'outbound', new Date(), JSON.stringify(logEntry)]);
+            const log = { id: data.messages[0].id, customerName: customerName || "Customer", phoneNumber: normalizePhone(to), message: templateName ? `[Template: ${templateName}]` : message, status: 'SENT', timestamp: new Date().toISOString(), direction: 'outbound', type: templateName ? 'TEMPLATE' : 'CUSTOM' };
+            await connection.query('INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)', [log.id, log.phoneNumber, 'outbound', new Date(), JSON.stringify(log)]);
             connection.release();
-            res.json({ success: true, data });
-        } else {
-            res.status(metaRes.status).json({ success: false, error: data.error?.message || "Meta API reported an error" });
         }
+        res.status(r.status).json({ success: r.ok, data });
     } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 

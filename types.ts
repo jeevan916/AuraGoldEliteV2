@@ -23,24 +23,6 @@ export enum ProtectionStatus {
   LAPSED = 'LAPSED'
 }
 
-// Added missing CollectionTone for AI communication strategies
-export type CollectionTone = 'POLITE' | 'FIRM' | 'URGENT' | 'ENCOURAGING';
-
-// Added missing PsychologicalTactic for behavioral nudges
-export type PsychologicalTactic = 'LOSS_AVERSION' | 'SOCIAL_PROOF' | 'AUTHORITY' | 'RECIPROCITY' | 'URGENCY' | 'EMPATHY';
-
-// Added missing RiskProfile for customer segmentation
-export type RiskProfile = 'VIP' | 'REGULAR' | 'FORGETFUL' | 'HIGH_RISK';
-
-// Added missing MetaCategory for WhatsApp Template compliance
-export type MetaCategory = 'UTILITY' | 'MARKETING' | 'AUTHENTICATION';
-
-// Added missing AppTemplateGroup for organizing templates
-export type AppTemplateGroup = 'PAYMENT_COLLECTION' | 'ORDER_STATUS' | 'MARKETING_PROMO' | 'GENERAL_SUPPORT' | 'SYSTEM_NOTIFICATIONS' | 'SETU_PAYMENT' | 'UNCATEGORIZED';
-
-// Added missing AppResolutionPath for error diagnostic steering
-export type AppResolutionPath = 'settings' | 'templates' | 'whatsapp' | 'none';
-
 export interface CatalogItem {
   id: string;
   category: string;
@@ -59,7 +41,7 @@ export interface Milestone {
   cumulativeTarget: number;
   status: 'PENDING' | 'PARTIAL' | 'PAID';
   warningCount: number;
-  description?: string; 
+  description?: string; // Manual instruction/note
 }
 
 export interface PaymentPlan {
@@ -131,26 +113,24 @@ export interface Order {
   paymentPlan: PaymentPlan;
   status: OrderStatus;
   createdAt: string;
-  originalSnapshot?: OrderSnapshot; 
+  originalSnapshot?: OrderSnapshot; // Stores the proof of contract before lapse
 }
 
 export interface GlobalSettings {
   currentGoldRate24K: number;
   currentGoldRate22K: number;
   currentGoldRate18K: number;
-  purityFactor22K: number; // Configurable purity spread
-  purityFactor18K: number; // Configurable purity spread
   defaultTaxRate: number;
   goldRateProtectionMax: number;
-  gracePeriodHours: number;
-  followUpIntervalDays: number;
+  gracePeriodHours: number; // New: Hours before lapse triggers
+  followUpIntervalDays: number; // New: Days between post-lapse reminders
   whatsappPhoneNumberId?: string;
   whatsappBusinessAccountId?: string;
   whatsappBusinessToken?: string;
   razorpayKeyId?: string;
   razorpayKeySecret?: string;
-  setuClientId?: string;
-  setuSchemeId?: string;
+  setuClientId?: string; // New for V2
+  setuSchemeId?: string; // Mapped to Product Instance ID in V2
   setuSecret?: string;
   msg91AuthKey?: string;
   msg91SenderId?: string;
@@ -170,6 +150,9 @@ export interface WhatsAppLogEntry {
   context?: string;
 }
 
+export type CollectionTone = 'POLITE' | 'FIRM' | 'URGENT' | 'ENCOURAGING';
+export type AppResolutionPath = 'settings' | 'templates' | 'whatsapp' | 'none';
+
 export interface Customer {
   id: string;
   name: string;
@@ -179,7 +162,14 @@ export interface Customer {
   orderIds: string[];
   totalSpent: number;
   joinDate: string;
-  lastActive?: string;
+}
+
+export interface CreditworthinessReport {
+  riskLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
+  persona: string;
+  nextBestAction: string;
+  communicationStrategy: string;
+  negotiationLeverage: string;
 }
 
 export type ErrorSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
@@ -193,17 +183,21 @@ export interface AppError {
   stack?: string;
   severity: ErrorSeverity;
   status: ErrorStatus;
+  
+  // Intelligent Diagnosis Fields
   aiDiagnosis?: string;
-  aiFixApplied?: string;
-  implementationPrompt?: string;
-  resolutionPath?: string;
+  aiFixApplied?: string; // If auto-fixed, what did we do?
+  implementationPrompt?: string; // If code change needed, here is the prompt for AI Studio
+  resolutionPath?: AppResolutionPath;
   resolutionCTA?: string;
+  suggestedFixData?: any;
+  retryAction?: () => Promise<void>;
 }
 
 export interface ActivityLogEntry {
   id: string;
   timestamp: string;
-  actionType: string;
+  actionType: 'ORDER_CREATED' | 'STATUS_UPDATE' | 'TEMPLATE_SENT' | 'MANUAL_MESSAGE_SENT' | 'PAYMENT_RECORDED' | 'PROTECTION_LAPSED' | 'AUTO_HEAL' | 'NAVIGATION' | 'API_CALL' | 'API_SUCCESS' | 'USER_ACTION';
   details: string;
   metadata?: any;
 }
@@ -211,15 +205,47 @@ export interface ActivityLogEntry {
 export interface NotificationTrigger {
   id: string;
   customerName: string;
-  customerContact: string;
+  customerContact: string; // Added for direct sending
   type: 'UPCOMING' | 'OVERDUE' | 'SYSTEM';
-  message: string;
+  message: string; // The preview text
   date: string;
   sent: boolean;
   tone?: CollectionTone;
   strategyReasoning?: string;
+  
+  // COMPLIANCE FIELDS
   aiRecommendedTemplateId?: string;
   aiRecommendedVariables?: string[];
+}
+
+export type PsychologicalTactic = 'LOSS_AVERSION' | 'SOCIAL_PROOF' | 'AUTHORITY' | 'RECIPROCITY' | 'URGENCY' | 'EMPATHY';
+export type RiskProfile = 'VIP' | 'REGULAR' | 'FORGETFUL' | 'HIGH_RISK';
+export type MetaCategory = 'UTILITY' | 'MARKETING' | 'AUTHENTICATION';
+export type AppTemplateGroup = 'PAYMENT_COLLECTION' | 'ORDER_STATUS' | 'MARKETING_PROMO' | 'GENERAL_SUPPORT' | 'SYSTEM_NOTIFICATIONS' | 'SETU_PAYMENT' | 'UNCATEGORIZED';
+
+export interface WhatsAppTemplate {
+  id: string;
+  name: string;
+  content: string;
+  tactic: PsychologicalTactic;
+  targetProfile: RiskProfile;
+  isAiGenerated: boolean;
+  source: 'LOCAL' | 'META';
+  status?: string;
+  rejectionReason?: string; // New field for Meta rejection logs
+  category?: MetaCategory;
+  appGroup?: AppTemplateGroup;
+  structure?: any[];
+  variableExamples?: string[];
+}
+
+export interface SystemTrigger {
+  id: string;
+  label: string;
+  description: string;
+  requiredVariables: string[]; // e.g., ["name", "amount"]
+  defaultTemplateName: string;
+  appGroup: AppTemplateGroup;
 }
 
 export interface PaymentPlanTemplate {
@@ -231,42 +257,6 @@ export interface PaymentPlanTemplate {
   enabled: boolean;
 }
 
-export interface WhatsAppTemplate {
-  id: string;
-  name: string;
-  content: string;
-  tactic: string;
-  targetProfile: string;
-  isAiGenerated: boolean;
-  source: 'LOCAL' | 'META';
-  status?: string;
-  rejectionReason?: string;
-  category?: MetaCategory;
-  appGroup?: AppTemplateGroup;
-  structure?: any[];
-  variableExamples?: string[];
-}
-
-// Added missing SystemTrigger interface for system automation mapping
-export interface SystemTrigger {
-  id: string;
-  label: string;
-  description: string;
-  requiredVariables: string[];
-  defaultTemplateName: string;
-  appGroup: AppTemplateGroup;
-}
-
-// Added missing CreditworthinessReport for AI customer analysis
-export interface CreditworthinessReport {
-  riskLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
-  persona: string;
-  nextBestAction: string;
-  communicationStrategy: string;
-  negotiationLeverage: string;
-}
-
-// Added missing AiChatInsight for real-time AI response suggestions
 export interface AiChatInsight {
   intent: string;
   tone: string;

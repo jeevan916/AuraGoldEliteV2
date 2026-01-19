@@ -28,39 +28,17 @@ router.post('/customers', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/logs/system', ensureDb, async (req, res) => {
-    try {
-        const pool = getPool();
-        const connection = await pool.getConnection();
-        const { error, activity } = req.body;
-        
-        if (error) {
-            // Log application errors to a permanent table if needed, or integrations with metadata
-            console.log("[System Error Recorded]", error.message);
-        }
-        
-        if (activity) {
-            // Permanent record of user actions
-            await connection.query('INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)', [activity.id, 'SYSTEM', 'INTERNAL', new Date(), JSON.stringify(activity)]);
-        }
-        
-        connection.release();
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 router.post('/settings', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
         const { settings } = req.body;
 
+        // 1. Persist Core Application Settings
         const coreConfig = {
             currentGoldRate24K: settings.currentGoldRate24K,
             currentGoldRate22K: settings.currentGoldRate22K,
             currentGoldRate18K: settings.currentGoldRate18K,
-            purityFactor22K: settings.purityFactor22K,
-            purityFactor18K: settings.purityFactor18K,
             defaultTaxRate: settings.defaultTaxRate,
             goldRateProtectionMax: settings.goldRateProtectionMax,
             gracePeriodHours: settings.gracePeriodHours,
@@ -68,16 +46,27 @@ router.post('/settings', ensureDb, async (req, res) => {
         };
         await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['core_settings', JSON.stringify(coreConfig)]);
 
+        // 2. Persist WhatsApp Credentials
         if (settings.whatsappPhoneNumberId) {
-            const waConfig = { phoneId: settings.whatsappPhoneNumberId, accountId: settings.whatsappBusinessAccountId, token: settings.whatsappBusinessToken };
+            const waConfig = { 
+                phoneId: settings.whatsappPhoneNumberId, 
+                accountId: settings.whatsappBusinessAccountId, 
+                token: settings.whatsappBusinessToken 
+            };
             await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['whatsapp', JSON.stringify(waConfig)]);
         }
 
+        // 3. Persist Setu Credentials
         if (settings.setuClientId) {
-            const setuConfig = { clientId: settings.setuClientId, secret: settings.setuSecret, schemeId: settings.setuSchemeId };
+            const setuConfig = { 
+                clientId: settings.setuClientId, 
+                secret: settings.setuSecret, 
+                schemeId: settings.setuSchemeId 
+            };
             await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['setu', JSON.stringify(setuConfig)]);
         }
 
+        // 4. Persist Other Gateways
         if (settings.razorpayKeyId) {
             const rzpConfig = { keyId: settings.razorpayKeyId, secret: settings.razorpayKeySecret };
             await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['razorpay', JSON.stringify(rzpConfig)]);
@@ -85,7 +74,10 @@ router.post('/settings', ensureDb, async (req, res) => {
 
         connection.release();
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { 
+        console.error("[API Settings Sync Error]", e);
+        res.status(500).json({ error: e.message }); 
+    }
 });
 
 export default router;

@@ -3,12 +3,12 @@ import { useState, useEffect } from 'react';
 import { Order, OrderStatus, ProductionStatus } from '../types';
 import { errorService } from '../services/errorService';
 import { storageService } from '../services/storageService';
-import { whatsappService } from '../services/whatsappService';
 
 export function useOrders() {
   const [orders, setOrdersState] = useState<Order[]>(storageService.getOrders());
 
   useEffect(() => {
+    // Subscribe to storage changes (e.g. from server sync)
     const unsubscribe = storageService.subscribe(() => {
         setOrdersState([...storageService.getOrders()]);
     });
@@ -20,24 +20,10 @@ export function useOrders() {
       storageService.setOrders(newOrders);
   };
 
-  const addOrder = async (newOrder: Order) => {
+  const addOrder = (newOrder: Order) => {
     const updated = [newOrder, ...orders];
     setOrders(updated);
     errorService.logActivity('ORDER_CREATED', `Order ${newOrder.id} for ${newOrder.customerName}`);
-    
-    // Trigger Interactive Confirmation Template
-    try {
-        await whatsappService.sendTemplateMessage(
-            newOrder.customerContact,
-            'auragold_order_receipt',
-            'en_US',
-            [newOrder.customerName, newOrder.id, `₹${newOrder.totalAmount.toLocaleString()}`],
-            newOrder.customerName,
-            newOrder.shareToken // URL Suffix for button
-        );
-    } catch (e) {
-        console.warn("Auto-WhatsApp failed on booking creation", e);
-    }
   };
 
   const updateOrder = (updatedOrder: Order) => {
@@ -46,8 +32,29 @@ export function useOrders() {
   };
 
   const recordPayment = (orderId: string, amount: number, method: string, date: string, note: string) => {
-    // Logic moved to clusters/PaymentWidget for gateway compatibility
-    // Kept as shim for legacy hooks if any
+    const updated = orders.map(o => {
+      if (o.id !== orderId) return o;
+      const newPayment = { id: `PAY-${Date.now()}`, date: date || new Date().toISOString(), amount, method, note };
+      const totalPaid = o.payments.reduce((acc, p) => acc + p.amount, 0) + amount;
+      
+      let runningSum = 0;
+      const updatedMilestones = o.paymentPlan.milestones.map(m => {
+        runningSum += m.targetAmount;
+        return { 
+          ...m, 
+          status: totalPaid >= runningSum ? 'PAID' as const : (totalPaid > (runningSum - m.targetAmount) ? 'PARTIAL' as const : 'PENDING' as const) 
+        };
+      });
+
+      const allPaid = totalPaid >= o.totalAmount - 0.01;
+      return { 
+        ...o, 
+        payments: [...o.payments, newPayment], 
+        paymentPlan: { ...o.paymentPlan, milestones: updatedMilestones },
+        status: allPaid ? OrderStatus.COMPLETED : (updatedMilestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date()) ? OrderStatus.OVERDUE : OrderStatus.ACTIVE)
+      };
+    });
+    setOrders(updated);
   };
 
   const updateItemStatus = (orderId: string, itemId: string, status: ProductionStatus) => {

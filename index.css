@@ -1,107 +1,27 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --gold-primary: #B8860B;
-    --gold-light: #FFD700;
-    --slate-deep: #0F172A;
-    --slate-muted: #64748B;
-    --cream-soft: #F8F9FA;
-  }
-
   body {
-    @apply antialiased text-slate-900 bg-[#F8F9FA];
+    @apply antialiased text-slate-900 bg-slate-50;
     font-family: 'Inter', sans-serif;
     -webkit-tap-highlight-color: transparent;
-    scroll-behavior: smooth;
   }
-
-  h1, h2, h3, .font-luxury {
-    font-family: 'Playfair Display', serif;
-  }
+  .font-serif-luxury { font-family: 'Playfair Display', serif; }
 }
 
 @layer components {
-  /* Luxury Card System */
-  .pos-card { 
-    @apply bg-white rounded-[2rem] border border-slate-100 shadow-sm transition-all duration-300;
-  }
-  .pos-card:hover {
-    @apply shadow-xl shadow-slate-200/50 border-amber-100;
-  }
-
-  /* Refined Input System */
-  .input-gold { 
-    @apply w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-[16px] font-bold 
-           focus:bg-white focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 
-           transition-all outline-none placeholder:text-slate-400;
-  }
-
-  /* Luxury Buttons */
-  .btn-gold { 
-    @apply bg-slate-900 text-white px-8 py-4 rounded-2xl font-black uppercase text-[10px] 
-           tracking-[0.2em] shadow-xl shadow-slate-900/20 active:scale-95 transition-all 
-           hover:bg-slate-800 hover:shadow-2xl flex items-center justify-center gap-2;
-  }
-
-  .btn-shimmer {
-    position: relative;
-    overflow: hidden;
-  }
-  .btn-shimmer::after {
-    content: '';
-    position: absolute;
-    top: -50%;
-    left: -50%;
-    width: 200%;
-    height: 200%;
-    background: linear-gradient(
-      45deg,
-      transparent,
-      rgba(255, 255, 255, 0.1),
-      transparent
-    );
-    transform: rotate(45deg);
-    animation: shimmer 3s infinite;
-  }
-
-  /* Glass Effects */
-  .glass-panel {
-    @apply bg-white/80 backdrop-blur-md border border-white/20;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 4px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-track {
-    @apply bg-transparent;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    @apply bg-slate-200 rounded-full;
+  .pos-card { @apply bg-white rounded-3xl border border-slate-200 shadow-sm; }
+  .input-gold { @apply w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-base font-bold focus:bg-white focus:border-gold transition-all outline-none; }
+  .btn-gold { @apply bg-luxury text-white px-8 py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all; }
+  .glass-nav { 
+      @apply fixed bottom-0 left-0 right-0 h-[84px] flex justify-around items-center px-2 z-[50];
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid rgba(0, 0, 0, 0.05);
+      box-shadow: 0 -10px 25px rgba(0, 0, 0, 0.05);
+      padding-bottom: env(safe-area-inset-bottom);
   }
 }
-
-@keyframes shimmer {
-  0% { transform: translateX(-100%) rotate(45deg); }
-  100% { transform: translateX(100%) rotate(45deg); }
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.animate-fadeIn {
-  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-/* Safe Area Adjustments */
-.safe-pb {
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
-/* Typography Overrides */
-.text-gold { color: var(--gold-primary); }
-.bg-gold { background-color: var(--gold-primary); }
