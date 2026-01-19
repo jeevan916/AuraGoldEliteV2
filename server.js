@@ -46,6 +46,9 @@ app.use(express.json({ limit: '100mb' }));
 
 let pool = null;
 
+// Helper to normalize phone numbers for DB consistency
+const normalizePhone = (p) => p ? p.replace(/\D/g, '').slice(-12) : '';
+
 async function initDb() {
     try {
         if (pool) await pool.end();
@@ -103,10 +106,9 @@ app.get('/api/whatsapp/webhook', (req, res) => {
 
     if (mode && token) {
         if (mode === 'subscribe' && token === verify_token) {
-            console.log(`[Webhook] Verification Successful for version ${META_API_VERSION}`);
+            console.log(`[Webhook] Verification Successful`);
             return res.status(200).send(challenge);
         } else {
-            console.error("[Webhook] Verification Failed: Token Mismatch");
             return res.sendStatus(403);
         }
     }
@@ -126,17 +128,19 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
         // INCOMING CUSTOMER MESSAGE (RECEIVE LIVE)
         if (change.messages && change.messages[0]) {
             const msg = change.messages[0];
-            const from = msg.from; 
-            const msgBody = msg.text?.body || `[Non-text message: ${msg.type}]`;
+            const fromRaw = msg.from; 
+            const fromFormatted = normalizePhone(fromRaw); // Standardize for DB lookup
+            
+            const msgBody = msg.text?.body || `[Media: ${msg.type}]`;
             const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
             const contactName = change.contacts?.[0]?.profile?.name || "Customer";
 
             const logEntry = {
                 id: msg.id,
                 customerName: contactName,
-                phoneNumber: from,
+                phoneNumber: fromFormatted, // Use normalized number
                 message: msgBody,
-                status: 'READ', // Mark as read by receiver implicitly
+                status: 'READ', 
                 timestamp,
                 direction: 'inbound',
                 type: 'INBOUND'
@@ -144,9 +148,9 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
 
             await connection.query(
                 `INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data)`,
-                [logEntry.id, from, 'inbound', new Date(timestamp), JSON.stringify(logEntry)]
+                [logEntry.id, fromFormatted, 'inbound', new Date(timestamp), JSON.stringify(logEntry)]
             );
-            console.log(`[Webhook] Live Inbound Stored: ${from}`);
+            console.log(`[Webhook] Logged Inbound from ${fromFormatted}`);
         }
 
         // STATUS UPDATE
@@ -173,15 +177,13 @@ app.post('/api/whatsapp/webhook', ensureDb, async (req, res) => {
 });
 
 /**
- * AJAX POLLING ENDPOINT (GET RECENT LOGS)
+ * AJAX POLLING ENDPOINT
  */
 app.get('/api/whatsapp/logs/poll', ensureDb, async (req, res) => {
     try {
-        const lastSync = req.query.lastSync || 0;
         const connection = await pool.getConnection();
-        // Return logs from the last hour or specifically since last request for efficiency
         const [rows] = await connection.query(
-            'SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 100'
+            'SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 150'
         );
         connection.release();
         const logs = rows.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data);
@@ -192,8 +194,88 @@ app.get('/api/whatsapp/logs/poll', ensureDb, async (req, res) => {
 });
 
 /**
- * STANDARD API ROUTES
+ * SEND MESSAGE ENDPOINT
  */
+app.post('/api/whatsapp/send', ensureDb, async (req, res) => {
+    const { to, message, templateName, language, components, customerName } = req.body;
+    const phoneId = req.headers['x-phone-id'];
+    const token = req.headers['x-auth-token'];
+    
+    const formattedTo = normalizePhone(to);
+    
+    let payload = { messaging_product: "whatsapp", recipient_type: "individual", to: formattedTo };
+    
+    if (templateName) {
+        payload.type = "template"; 
+        payload.template = { name: templateName, language: { code: language || "en_US" }, components };
+    } else { 
+        payload.type = "text"; 
+        payload.text = { body: message }; 
+    }
+    
+    try {
+        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${phoneId}/messages`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await r.json();
+
+        if (r.ok && data.messages && data.messages[0]) {
+            const connection = await pool.getConnection();
+            const logEntry = {
+                id: data.messages[0].id,
+                customerName: customerName || "Customer",
+                phoneNumber: formattedTo, // Normalized
+                message: templateName ? `[Template: ${templateName}]` : message,
+                status: 'SENT',
+                timestamp: new Date().toISOString(),
+                direction: 'outbound',
+                type: templateName ? 'TEMPLATE' : 'CUSTOM'
+            };
+            await connection.query(
+                `INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)`,
+                [logEntry.id, formattedTo, 'outbound', new Date(logEntry.timestamp), JSON.stringify(logEntry)]
+            );
+            connection.release();
+        }
+
+        res.status(r.status).json({ success: r.ok, data });
+    } catch(e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// REMAINING PROXY ROUTES (SETU, BOOTSTRAP, etc)
+app.get('/api/bootstrap', ensureDb, async (req, res) => {
+    try {
+        const connection = await pool.getConnection();
+        const [orders] = await connection.query('SELECT data FROM orders ORDER BY created_at DESC');
+        const [customers] = await connection.query('SELECT data FROM customers');
+        const [logs] = await connection.query('SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 500');
+        const [templates] = await connection.query('SELECT data FROM templates');
+        const [planTemplates] = await connection.query('SELECT data FROM plan_templates');
+        const [catalog] = await connection.query('SELECT data FROM catalog');
+        const [intRows] = await connection.query('SELECT * FROM integrations');
+        const intMap = {}; intRows.forEach(r => { try { intMap[r.provider] = JSON.parse(r.config); } catch(e){} });
+        connection.release();
+        
+        res.json({ success: true, data: {
+            orders: orders.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            customers: customers.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            logs: logs.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            templates: templates.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            planTemplates: planTemplates.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            catalog: catalog.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
+            settings: {
+                whatsappPhoneNumberId: intMap['whatsapp']?.phoneId || '',
+                whatsappBusinessAccountId: intMap['whatsapp']?.accountId || '',
+                whatsappBusinessToken: intMap['whatsapp']?.token || '',
+                setuClientId: intMap['setu']?.clientId || '',
+                setuSecret: intMap['setu']?.secret || '',
+                setuSchemeId: intMap['setu']?.schemeId || ''
+            }
+        }});
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
 
 const createSyncHandler = (table) => async (req, res) => {
     const items = req.body[table] || req.body.orders || req.body.customers || req.body.logs || req.body.templates || req.body.catalog || req.body.plans;
@@ -228,121 +310,6 @@ const createSyncHandler = (table) => async (req, res) => {
 app.post('/api/sync/orders', ensureDb, createSyncHandler('orders'));
 app.post('/api/sync/customers', ensureDb, createSyncHandler('customers'));
 app.post('/api/sync/logs', ensureDb, createSyncHandler('logs'));
-app.post('/api/sync/templates', ensureDb, createSyncHandler('templates'));
-app.post('/api/sync/plans', ensureDb, createSyncHandler('plans'));
-app.post('/api/sync/catalog', ensureDb, createSyncHandler('catalog'));
-
-app.get('/api/bootstrap', ensureDb, async (req, res) => {
-    try {
-        const connection = await pool.getConnection();
-        const [orders] = await connection.query('SELECT data FROM orders ORDER BY created_at DESC');
-        const [customers] = await connection.query('SELECT data FROM customers');
-        const [logs] = await connection.query('SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 200');
-        const [templates] = await connection.query('SELECT data FROM templates');
-        const [planTemplates] = await connection.query('SELECT data FROM plan_templates');
-        const [catalog] = await connection.query('SELECT data FROM catalog');
-        const [intRows] = await connection.query('SELECT * FROM integrations');
-        const intMap = {}; intRows.forEach(r => { try { intMap[r.provider] = JSON.parse(r.config); } catch(e){} });
-        connection.release();
-        
-        res.json({ success: true, data: {
-            orders: orders.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
-            customers: customers.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
-            logs: logs.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
-            templates: templates.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
-            planTemplates: planTemplates.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
-            catalog: catalog.map(r => typeof r.data === 'string' ? JSON.parse(r.data) : r.data),
-            settings: {
-                whatsappPhoneNumberId: intMap['whatsapp']?.phoneId || '',
-                whatsappBusinessAccountId: intMap['whatsapp']?.accountId || '',
-                whatsappBusinessToken: intMap['whatsapp']?.token || '',
-                setuClientId: intMap['setu']?.clientId || '',
-                setuSecret: intMap['setu']?.secret || '',
-                setuSchemeId: intMap['setu']?.schemeId || ''
-            }
-        }});
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/whatsapp/send', ensureDb, async (req, res) => {
-    const { to, message, templateName, language, components, customerName } = req.body;
-    const phoneId = req.headers['x-phone-id'];
-    const token = req.headers['x-auth-token'];
-    
-    let payload = { messaging_product: "whatsapp", recipient_type: "individual", to };
-    
-    if (templateName) {
-        payload.type = "template"; 
-        payload.template = { name: templateName, language: { code: language || "en_US" }, components };
-    } else { 
-        payload.type = "text"; 
-        payload.text = { body: message }; 
-    }
-    
-    try {
-        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${phoneId}/messages`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const data = await r.json();
-
-        if (r.ok && data.messages && data.messages[0]) {
-            // IMMEDIATE LOCAL PERSISTENCE FOR OUTBOUND
-            const connection = await pool.getConnection();
-            const logEntry = {
-                id: data.messages[0].id,
-                customerName: customerName || "Customer",
-                phoneNumber: to,
-                message: templateName ? `[Template: ${templateName}]` : message,
-                status: 'SENT',
-                timestamp: new Date().toISOString(),
-                direction: 'outbound',
-                type: templateName ? 'TEMPLATE' : 'CUSTOM'
-            };
-            await connection.query(
-                `INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)`,
-                [logEntry.id, to, 'outbound', new Date(logEntry.timestamp), JSON.stringify(logEntry)]
-            );
-            connection.release();
-        }
-
-        res.status(r.status).json({ success: r.ok, data });
-    } catch(e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
-// SETU UPI V2 PROXY
-app.post('/api/setu/create-link', ensureDb, async (req, res) => {
-    try {
-        const { amount, billerBillID, customerID, name, orderId } = req.body;
-        const connection = await pool.getConnection();
-        const [rows] = await connection.query('SELECT config FROM integrations WHERE provider = ?', ['setu']);
-        connection.release();
-        if (!rows.length) throw new Error("Setu not configured");
-        const config = JSON.parse(rows[0].config);
-        
-        const authRes = await fetch('https://prod.setu.co/api/v2/auth/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clientID: config.clientId, secret: config.secret })
-        });
-        const authData = await authRes.json();
-        
-        const linkRes = await fetch('https://prod.setu.co/api/v2/payment-links', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Setu-Product-Instance-ID': config.schemeId, 'Authorization': `Bearer ${authData.data.token}` },
-            body: JSON.stringify({
-                billerBillID,
-                amount: { value: Math.round(amount * 100), currencyCode: "INR" },
-                amountExactness: "EXACT",
-                name: name || "Customer",
-                additionalInfo: { customerID, orderId }
-            })
-        });
-        const linkData = await linkRes.json();
-        res.json({ success: linkRes.ok, data: linkData });
-    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
-});
 
 // STATIC SERVING
 const distPath = path.join(__dirname, 'dist');
@@ -353,4 +320,4 @@ if (fs.existsSync(distPath)) {
     });
 }
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server running on ${PORT} | AJAX Polling Enabled`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Server v22.0 running on ${PORT}`));

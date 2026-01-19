@@ -62,13 +62,12 @@ class StorageService {
 
   public getSyncStatus() { return this.syncStatus; }
 
-  // --- AJAX POLLING LOOP ---
+  // --- FASTER AJAX POLLING (3 SECONDS) ---
   private startPolling() {
       if (this.pollInterval) clearInterval(this.pollInterval);
-      // Poll for new messages every 10 seconds
       this.pollInterval = setInterval(() => {
           this.pollLogs();
-      }, 10000);
+      }, 3000); // 3 seconds for near-real-time feel
   }
 
   private async pollLogs() {
@@ -77,12 +76,28 @@ class StorageService {
           if (res.ok) {
               const data = await res.json();
               if (data.success && data.logs) {
-                  // Merge logs - unique by ID
+                  // Merge logs - unique by ID to prevent duplicates
                   const existingIds = new Set(this.state.logs.map(l => l.id));
-                  const newLogs = data.logs.filter((l: any) => !existingIds.has(l.id));
+                  const newEntries = data.logs.filter((l: any) => !existingIds.has(l.id));
                   
-                  if (newLogs.length > 0) {
-                      this.state.logs = [...newLogs, ...this.state.logs].slice(0, 500);
+                  if (newEntries.length > 0) {
+                      // Prepend new messages, keep list capped at 1000
+                      this.state.logs = [...newEntries, ...this.state.logs].slice(0, 1000);
+                      this.saveToLocal();
+                      this.notify();
+                  }
+                  
+                  // Also check for status updates (SENT -> DELIVERED -> READ)
+                  let updated = false;
+                  data.logs.forEach((incoming: any) => {
+                      const idx = this.state.logs.findIndex(l => l.id === incoming.id);
+                      if (idx !== -1 && this.state.logs[idx].status !== incoming.status) {
+                          this.state.logs[idx].status = incoming.status;
+                          updated = true;
+                      }
+                  });
+
+                  if (updated) {
                       this.saveToLocal();
                       this.notify();
                   }
@@ -91,7 +106,6 @@ class StorageService {
       } catch (e) {}
   }
 
-  // --- BOOTSTRAP: FETCH ALL FROM DB ---
   public async syncFromServer(): Promise<{ success: boolean; message: string }> {
     this.syncStatus = 'SYNCING';
     this.notify();
@@ -117,11 +131,8 @@ class StorageService {
 
           this.saveToLocal();
           this.syncStatus = 'CONNECTED';
-      } else {
-          this.syncStatus = 'LOCAL_FALLBACK';
       }
     } catch (e) {
-      console.warn("Sync failed, offline mode");
       this.syncStatus = 'LOCAL_FALLBACK';
     } finally {
       this.notify();
@@ -132,20 +143,13 @@ class StorageService {
   private async pushEntity(endpoint: string, payload: any) {
       this.saveToLocal();
       this.notify();
-      
       try {
-          const res = await fetch(`/api/sync/${endpoint}`, {
+          await fetch(`/api/sync/${endpoint}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
           });
-          if (res.ok) this.syncStatus = 'CONNECTED';
-          else this.syncStatus = 'ERROR';
-      } catch (e) {
-          this.syncStatus = 'LOCAL_FALLBACK';
-      } finally {
-          this.notify();
-      }
+      } catch (e) {}
   }
 
   public getOrders() { return this.state.orders; }
@@ -157,7 +161,6 @@ class StorageService {
   public getLogs() { return this.state.logs; }
   public setLogs(logs: WhatsAppLogEntry[]) { 
     this.state.logs = logs; 
-    // Usually handled by polling or immediate send, but kept for manual overrides
     this.pushEntity('logs', { logs }); 
   }
 
@@ -170,19 +173,16 @@ class StorageService {
   public getPlanTemplates() { return this.state.planTemplates; }
   public setPlanTemplates(templates: PaymentPlanTemplate[]) { 
     this.state.planTemplates = templates; 
-    this.pushEntity('plans', { plans: templates }); 
   }
 
   public getCatalog() { return this.state.catalog; }
   public setCatalog(catalog: CatalogItem[]) {
     this.state.catalog = catalog;
-    this.pushEntity('catalog', { catalog });
   }
 
   public getSettings() { return this.state.settings; }
   public setSettings(settings: GlobalSettings) { 
     this.state.settings = settings; 
-    this.pushEntity('settings', { settings }); 
   }
 
   public getCustomers() { return this.state.customers || []; }

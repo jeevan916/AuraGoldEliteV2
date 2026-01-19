@@ -24,6 +24,9 @@ interface ActiveSession {
     name: string;
 }
 
+// Normalizer for grouping
+const normalize = (p: string) => p ? p.replace(/\D/g, '').slice(-10) : '';
+
 const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({ 
   logs, 
   customers = [], 
@@ -32,7 +35,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
   onAddLog,
   initialContact = null
 }) => {
-  const [selectedContact, setSelectedContact] = useState<string | null>(initialContact);
+  const [selectedContact, setSelectedContact] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
   const [search, setSearch] = useState('');
   
@@ -52,25 +55,39 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // --- CORE FIX: GROUPING BY NORMALIZED 10 DIGIT KEY ---
   const conversations = useMemo(() => {
       const grouped: Record<string, WhatsAppLogEntry[]> = {};
+      
       logs.forEach(log => {
-          const key = log.phoneNumber;
+          const key = normalize(log.phoneNumber);
+          if (!key) return;
           if (!grouped[key]) grouped[key] = [];
           grouped[key].push(log);
       });
       
-      const logConvos = Object.entries(grouped).map(([phone, msgs]) => ({
-          phone,
-          name: msgs[0].customerName,
-          lastMessage: msgs.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0],
-          messages: msgs.sort((a,b) => new Date(a.timestamp).getTime() - new Date(a.timestamp).getTime()),
-          timestamp: msgs.sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0].timestamp
-      }));
+      const logConvos = Object.entries(grouped).map(([key, msgs]) => {
+          // Sort messages by time
+          const sortedMsgs = msgs.sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+          // Find most descriptive name
+          const name = msgs.find(m => m.customerName !== 'Customer' && m.customerName !== 'New Chat')?.customerName || msgs[0].customerName;
+          
+          return {
+              key, // Grouping key
+              phone: msgs[0].phoneNumber, // Display phone (likely 91...)
+              name,
+              lastMessage: sortedMsgs[sortedMsgs.length - 1],
+              messages: sortedMsgs,
+              timestamp: sortedMsgs[sortedMsgs.length - 1].timestamp
+          };
+      });
 
+      // Inject ephemeral sessions that don't have logs yet
       activeSessions.forEach(session => {
-          if (!grouped[session.phone]) {
+          const key = normalize(session.phone);
+          if (!grouped[key]) {
               logConvos.push({
+                  key,
                   phone: session.phone,
                   name: session.name,
                   lastMessage: { message: "Starting...", timestamp: new Date().toISOString(), status: 'QUEUED', id: 'temp', customerName: session.name, phoneNumber: session.phone, type: 'CUSTOM', direction: 'outbound' as const },
@@ -85,34 +102,29 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
 
   useEffect(() => {
     if (initialContact) {
-        // Smart Matching: Normalize input and existing keys to last 10 digits
-        const target = initialContact.replace(/\D/g, '').slice(-10);
-        const match = conversations.find(c => c.phone.replace(/\D/g, '').slice(-10) === target);
-        
-        if (match) {
-            setSelectedContact(match.phone);
-        } else {
-            // Fallback: If no history, assume user wants to start new with this number
-            setSelectedContact(initialContact);
-        }
+        const target = normalize(initialContact);
+        const match = conversations.find(c => c.key === target);
+        if (match) setSelectedContact(match.key);
+        else setSelectedContact(target);
     }
-  }, [initialContact, conversations]); // Added conversations dependency to ensure it updates when logs load
+  }, [initialContact, conversations.length]);
 
   const filteredConversations = conversations.filter(c => 
       c.name.toLowerCase().includes(search.toLowerCase()) || 
       c.phone.includes(search)
   );
 
-  const activeConversation = selectedContact ? conversations.find(c => c.phone === selectedContact) : null;
+  const activeConversation = selectedContact ? conversations.find(c => c.key === selectedContact) : null;
   const isNewConversation = activeConversation ? activeConversation.messages.length === 0 : false;
 
   useEffect(() => {
     if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-  }, [activeConversation?.messages, selectedContact]);
+  }, [activeConversation?.messages.length, selectedContact]);
   
+  // AI Analysis Logic
   useEffect(() => {
     const runAnalysis = async () => {
-        if (!activeConversation) {
+        if (!activeConversation || activeConversation.messages.length === 0) {
             setAiInsight(null);
             return;
         }
@@ -129,29 +141,26 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
         }
     };
     runAnalysis();
-  }, [activeConversation?.messages, activeConversation?.name, templates]);
+  }, [activeConversation?.messages.length, activeConversation?.name]);
 
-  useEffect(() => {
-    if (selectedTemplate) {
-      const matches = selectedTemplate.content.match(/{{(.*?)}}/g);
-      const newPlaceholders = matches ? matches.map(m => m.replace(/{{|}}/g, '')) : [];
-      setParamPlaceholders(newPlaceholders);
-      const newParams = new Array(newPlaceholders.length).fill('');
-      newPlaceholders.forEach((m, idx) => {
-          if (m.toLowerCase().includes('name') && activeConversation) newParams[idx] = activeConversation.name;
-      });
-      setTemplateParams(newParams);
-    }
-  }, [selectedTemplate, activeConversation]);
-
+  // Fix for error in file components/WhatsAppPanel.tsx on line 388: Cannot find name 'handleStartNewChat'.
   const handleStartNewChat = () => {
-    if(!newChatPhone) return;
+    if (!newChatPhone) return;
     const formatted = whatsappService.formatPhoneNumber(newChatPhone);
-    const exists = activeSessions.find(s => s.phone === formatted);
-    if (!exists) setActiveSessions(prev => [...prev, { phone: formatted, name: newChatName || 'Customer' }]);
-    setSelectedContact(formatted);
+    const key = normalize(formatted);
+    
+    // Only add to activeSessions if it doesn't exist in conversations
+    if (!conversations.some(c => c.key === key)) {
+      setActiveSessions(prev => [...prev, { 
+        phone: formatted, 
+        name: newChatName || 'New Chat' 
+      }]);
+    }
+    
+    setSelectedContact(key);
     setShowNewChatModal(false);
-    setTimeout(() => setShowTemplateModal(true), 100);
+    setNewChatPhone('');
+    setNewChatName('');
   };
 
   const handleSendMessage = async () => {
@@ -171,8 +180,6 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
           onAddLog(result.logEntry);
           setShowTemplateModal(false);
           setSelectedTemplate(null);
-      } else {
-          alert(`Error: ${result.error}`);
       }
       setIsSending(false);
   };
@@ -188,6 +195,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
 
   return (
     <div className="flex h-[calc(100vh-140px)] bg-white rounded-3xl border shadow-xl overflow-hidden animate-fadeIn relative">
+      {/* Sidebar */}
       <div className="w-full md:w-80 bg-slate-50 border-r flex flex-col">
         <div className="p-4 border-b bg-white">
             <div className="flex justify-between items-center mb-4">
@@ -210,12 +218,12 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
         <div className="flex-1 overflow-y-auto">
             {filteredConversations.map(c => (
                 <div 
-                    key={c.phone} onClick={() => setSelectedContact(c.phone)}
-                    className={`p-4 cursor-pointer hover:bg-slate-100 transition-colors border-b border-slate-100 ${selectedContact === c.phone ? 'bg-amber-50 border-l-4 border-l-amber-500' : ''}`}
+                    key={c.key} onClick={() => setSelectedContact(c.key)}
+                    className={`p-4 cursor-pointer hover:bg-slate-100 transition-colors border-b border-slate-100 ${selectedContact === c.key ? 'bg-amber-50 border-l-4 border-l-amber-500' : ''}`}
                 >
                     <div className="flex justify-between items-start mb-1">
                         <h3 className="font-bold text-slate-800 text-sm truncate">{c.name}</h3>
-                        <span className="text-[10px] text-slate-400">{c.messages.length > 0 ? new Date(c.lastMessage.timestamp).toLocaleDateString() : 'New'}</span>
+                        <span className="text-[10px] text-slate-400">{c.messages.length > 0 ? new Date(c.timestamp).toLocaleDateString() : 'New'}</span>
                     </div>
                     <div className="flex justify-between items-center">
                         <p className="text-xs text-slate-500 truncate w-40">{c.messages.length > 0 ? c.lastMessage.message : 'No messages yet'}</p>
@@ -226,6 +234,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
         </div>
       </div>
 
+      {/* Main Chat Area */}
       <div className="flex-1 flex flex-col bg-[#f0f2f5] relative">
          {activeConversation ? (
             <>
@@ -311,14 +320,15 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
          )}
       </div>
 
+      {/* Modals... */}
       {showTemplateModal && (
           <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
-              <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-fadeIn">
+              <div className="bg-white w-full max-md:h-[80vh] max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-fadeIn">
                   <div className="p-4 border-b flex justify-between items-center bg-slate-50">
                       <h3 className="font-bold text-slate-800">WhatsApp Templates</h3>
                       <button onClick={() => setShowTemplateModal(false)} className="text-slate-400 hover:text-rose-500"><X size={20} /></button>
                   </div>
-                  <div className="p-4 flex-1 overflow-y-auto space-y-4 max-h-[60vh]">
+                  <div className="p-4 flex-1 overflow-y-auto space-y-4">
                     {!selectedTemplate ? (
                         <div className="space-y-2">
                             {templates.map(t => (
