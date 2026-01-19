@@ -3,10 +3,10 @@ import React, { useState, useMemo } from 'react';
 import { 
   AlertTriangle, CheckCircle2, XCircle, Activity, Zap, 
   Terminal, ShieldCheck, HeartPulse, Search, Copy, 
-  Wrench, Code, RefreshCw
+  Wrench, Code, RefreshCw, Loader2, BrainCircuit
 } from 'lucide-react';
 import { AppError, ActivityLogEntry, AppResolutionPath } from '../types';
-import { geminiService } from '../services/geminiService';
+import { errorService } from '../services/errorService';
 
 interface ErrorLogPanelProps {
   errors: AppError[];
@@ -42,6 +42,10 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
   const copyToClipboard = (text: string) => {
       navigator.clipboard.writeText(text);
       alert("Implementation Prompt Copied! Paste this into AI Studio to fix the bug.");
+  };
+
+  const handleReanalyze = (errorId: string) => {
+      errorService.runIntelligentAnalysis(errorId);
   };
 
   return (
@@ -129,7 +133,8 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
                 {filteredErrors.map(err => (
                 <div key={err.id} className={`bg-white rounded-2xl border-l-4 shadow-sm overflow-hidden animate-fadeIn transition-all hover:shadow-md ${
                     err.status === 'AUTO_FIXED' ? 'border-l-emerald-500' : 
-                    err.status === 'REQUIRES_CODE_CHANGE' ? 'border-l-rose-500' : 'border-l-amber-500'
+                    err.status === 'REQUIRES_CODE_CHANGE' ? 'border-l-rose-500' : 
+                    err.status === 'ANALYZING' ? 'border-l-indigo-500' : 'border-l-amber-500'
                 }`}>
                     <div className="p-5">
                         <div className="flex justify-between items-start mb-4">
@@ -137,12 +142,23 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
                                 <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-full ${
                                     err.status === 'AUTO_FIXED' ? 'bg-emerald-100 text-emerald-700' :
                                     err.status === 'REQUIRES_CODE_CHANGE' ? 'bg-rose-100 text-rose-700' :
+                                    err.status === 'ANALYZING' ? 'bg-indigo-100 text-indigo-700 animate-pulse' :
                                     'bg-amber-100 text-amber-700'
                                 }`}>
                                     {err.status.replace(/_/g, ' ')}
                                 </span>
                                 <span className="text-[10px] font-bold text-slate-400">{err.source} • {new Date(err.timestamp).toLocaleTimeString()}</span>
                             </div>
+                            
+                            {err.status !== 'ANALYZING' && (
+                                <button 
+                                    onClick={() => handleReanalyze(err.id)}
+                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                                    title="Deep Analysis with Gemini 2.5"
+                                >
+                                    <BrainCircuit size={18} />
+                                </button>
+                            )}
                         </div>
 
                         <div className="flex flex-col gap-4">
@@ -158,7 +174,7 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
                                 }`}>
                                     <div className="flex items-start gap-3">
                                         <div className="p-2 bg-white rounded-lg shadow-sm text-indigo-600">
-                                            <Zap size={16} />
+                                            {err.status === 'ANALYZING' ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
                                         </div>
                                         <div className="flex-1">
                                             <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest mb-1">AI Diagnosis</p>

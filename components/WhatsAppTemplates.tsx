@@ -162,7 +162,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   // --- THE CORE ACTION AUTO-HEAL LOGIC ---
   const handleAutoHeal = async () => {
       setRepairing(true);
-      addLog("Initializing Structural Integrity Check...");
+      addLog("Initializing Gemini 2.5 Structural Integrity Check...");
       
       let restoredCount = 0;
       let currentTemplates = [...templates];
@@ -175,31 +175,28 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           
           if (!match) {
               // CASE A: MISSING - Deploy New
-              addLog(`MISSING: ${req.name}. Deploying fresh...`);
+              addLog(`MISSING: ${req.name}. Deploying fresh with AI Optimization...`);
               await deployHelper(req);
               restoredCount++;
           } else {
               // CASE B: EXISTS - Check Structure
               // 1. Check if Meta Status is REJECTED
               if (match.status === 'REJECTED') {
-                  addLog(`REJECTED: ${req.name}. Initiating AI Compliance Fix...`);
+                  addLog(`REJECTED: ${req.name}. Gemini 2.5 Fixing Compliance...`);
                   await repairHelper(match, req);
                   restoredCount++;
                   continue;
               }
 
               // 2. Check Content Mismatch (Variables)
-              // We compare number of {{x}} placeholders
               const reqVars = (req.content.match(/{{[0-9]+}}/g) || []).length;
               const remoteVars = (match.content.match(/{{[0-9]+}}/g) || []).length;
               
-              // 3. Basic string similarity check (poor man's diff)
-              // If lengths differ significantly, assume broken
               const isDrasticallyDifferent = Math.abs(req.content.length - match.content.length) > 50;
 
               if (reqVars !== remoteVars || isDrasticallyDifferent) {
                   addLog(`MISMATCH: ${req.name}. App expects ${reqVars} vars, Meta has ${remoteVars}. Harmonizing...`);
-                  await repairHelper(match, req); // We treat mismatch as a repair job
+                  await repairHelper(match, req); 
                   restoredCount++;
               } else {
                   addLog(`OK: ${req.name} matches core definition.`);
@@ -213,14 +210,12 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   };
 
   const deployHelper = async (req: any) => {
-      // Before deploying, ask AI to ensure the *required* content is actually compliant
-      // This prevents us from deploying something that immediately gets rejected
       const validation = await geminiService.validateAndFixTemplate(req.content, req.name, req.category);
       
       const payload: WhatsAppTemplate = {
           id: `heal-${Date.now()}`,
           name: req.name,
-          content: validation.optimizedContent, // Use AI optimized content
+          content: validation.optimizedContent, 
           tactic: 'AUTHORITY',
           targetProfile: 'REGULAR',
           isAiGenerated: !validation.isCompliant,
@@ -239,8 +234,6 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
   };
 
   const repairHelper = async (existingMetaTpl: WhatsAppTemplate, requiredDef: any) => {
-      // AI Task: Take the REQUIRED definition, and rewrite it to be compliant, 
-      // but strictly keeping the variable count so the app code doesn't break.
       const fix = await geminiService.validateAndFixTemplate(requiredDef.content, requiredDef.name, requiredDef.category);
       
       if (!fix.isCompliant) {
@@ -250,8 +243,8 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       const payload: WhatsAppTemplate = {
           ...existingMetaTpl,
           content: fix.optimizedContent,
-          variableExamples: requiredDef.examples, // Reset examples to core defaults
-          structure: undefined // Clear structure to force rebuild from content
+          variableExamples: requiredDef.examples, 
+          structure: undefined 
       };
 
       const result = await whatsappService.editMetaTemplate(existingMetaTpl.id, payload);
@@ -338,7 +331,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           setEditingMetaId(null);
       }
 
-      setActiveTab('BUILDER'); // Renamed from STRATEGY
+      setActiveTab('BUILDER'); 
       
       setTimeout(() => {
           if (editorRef.current) {
@@ -545,10 +538,10 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                 <button 
                     onClick={handleAutoHeal}
                     disabled={repairing}
-                    className="text-[10px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-4 py-2 rounded-xl transition-colors flex items-center gap-2"
+                    className="text-[10px] font-black uppercase tracking-widest text-white bg-emerald-600 hover:bg-emerald-700 px-6 py-2.5 rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-95"
                 >
                     {repairing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                    Check & Repair
+                    AI Self-Heal Core
                 </button>
             </div>
 
@@ -854,17 +847,24 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       {/* --- TAB: ISSUES (REJECTED LIST) --- */}
       {activeTab === 'ISSUES' && (
           <div className="space-y-6">
-              <div className="bg-rose-50 border-l-4 border-rose-500 p-6 rounded-r-2xl shadow-sm flex items-start gap-4">
-                  <div className="p-2 bg-white rounded-full text-rose-500"><ShieldAlert size={24}/></div>
-                  <div>
-                      <h3 className="text-lg font-black text-rose-800">Compliance Violations Detected</h3>
-                      <p className="text-sm text-rose-700 mt-1">
-                          Meta has rejected {rejectedTemplates.length} templates. This usually happens due to promotional language in Utility categories, abusive formatting, or vague variables.
-                      </p>
-                      <p className="text-xs font-bold text-rose-600 mt-2 uppercase tracking-wide">
-                          Use "Auto-Fix with AI" to generate a policy-compliant version instantly.
-                      </p>
+              <div className="bg-rose-50 border-l-4 border-rose-500 p-6 rounded-r-2xl shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                      <div className="p-2 bg-white rounded-full text-rose-500 shrink-0"><ShieldAlert size={24}/></div>
+                      <div>
+                          <h3 className="text-lg font-black text-rose-800">Compliance Violations Detected</h3>
+                          <p className="text-sm text-rose-700 mt-1">
+                              Meta has rejected {rejectedTemplates.length} templates. AI can fix these immediately.
+                          </p>
+                      </div>
                   </div>
+                  <button 
+                    onClick={handleAutoHeal}
+                    disabled={repairing}
+                    className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-95 whitespace-nowrap"
+                  >
+                      {repairing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
+                      AI Self-Heal All Issues
+                  </button>
               </div>
 
               <div className="grid grid-cols-1 gap-4">

@@ -133,12 +133,13 @@ class ErrorService {
     }
   }
 
-  private async runIntelligentAnalysis(errorId: string) {
+  // Changed to public to allow manual re-trigger from UI
+  public async runIntelligentAnalysis(errorId: string) {
     const errorIndex = this.errors.findIndex(e => e.id === errorId);
     if (errorIndex === -1) return;
 
     const errorObj = this.errors[errorIndex];
-    this.updateError(errorIndex, { status: 'ANALYZING' });
+    this.updateError(errorIndex, { status: 'ANALYZING', aiDiagnosis: "Gemini 2.5 Flash is deep-diving into raw payloads..." });
 
     try {
       // Pass the rawContext to Gemini for deep inspection
