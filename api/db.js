@@ -31,9 +31,22 @@ export async function initDb() {
             `CREATE TABLE IF NOT EXISTS catalog (id VARCHAR(100) PRIMARY KEY, category VARCHAR(100), data LONGTEXT)`
         ];
         for (const sql of tables) await connection.query(sql);
+
+        // SEED DEFAULT SETTINGS IF MISSING
+        const [rows] = await connection.query("SELECT * FROM integrations WHERE provider = 'core_settings'");
+        if (rows.length === 0) {
+            const defaults = {
+                currentGoldRate24K: 7500, currentGoldRate22K: 6870, currentGoldRate18K: 5625,
+                purityFactor22K: 0.916, purityFactor18K: 0.75,
+                defaultTaxRate: 3, goldRateProtectionMax: 500, gracePeriodHours: 24, followUpIntervalDays: 3
+            };
+            await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?)", ['core_settings', JSON.stringify(defaults)]);
+        }
+
         connection.release();
         return { success: true };
     } catch (err) {
+        console.error("[DB INIT ERROR]", err.message);
         pool = null; 
         return { success: false, error: err.message };
     }
@@ -49,4 +62,4 @@ export const ensureDb = async (req, res, next) => {
     next();
 };
 
-export const normalizePhone = (p) => p ? p.replace(/\D/g, '').slice(-12) : '';
+export const normalizePhone = (p) => p ? p.replace(/\D/g, '').slice(-10) : '';

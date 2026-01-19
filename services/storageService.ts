@@ -21,7 +21,11 @@ const DEFAULT_STATE: AppState = {
   templates: INITIAL_TEMPLATES,
   planTemplates: INITIAL_PLAN_TEMPLATES,
   catalog: INITIAL_CATALOG,
-  settings: INITIAL_SETTINGS,
+  settings: {
+      ...INITIAL_SETTINGS,
+      purityFactor22K: 0.916,
+      purityFactor18K: 0.75
+  },
   customers: [],
   lastUpdated: Date.now()
 };
@@ -31,10 +35,12 @@ class StorageService {
   private listeners: (() => void)[] = [];
   private syncStatus: 'CONNECTED' | 'LOCAL_FALLBACK' | 'SYNCING' | 'ERROR' = 'LOCAL_FALLBACK';
   private pollInterval: any = null;
+  private syncQueue: { endpoint: string, payload: any }[] = [];
 
   constructor() {
     this.loadFromLocal();
     this.startPolling();
+    this.processQueue();
   }
 
   private loadFromLocal() {
@@ -42,9 +48,7 @@ class StorageService {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (!parsed.catalog) parsed.catalog = INITIAL_CATALOG;
-        if (!parsed.customers) parsed.customers = [];
-        this.state = parsed;
+        this.state = { ...DEFAULT_STATE, ...parsed };
       }
     } catch (e) {
       console.warn("Local storage error", e);
@@ -60,12 +64,27 @@ class StorageService {
     }
   }
 
-  public getSyncStatus() { return this.syncStatus; }
-
   private startPolling() {
       if (this.pollInterval) clearInterval(this.pollInterval);
       this.pollInterval = setInterval(() => {
           this.pollLogs();
+      }, 5000);
+  }
+
+  private async processQueue() {
+      setInterval(async () => {
+          if (this.syncQueue.length === 0) return;
+          const item = this.syncQueue[0];
+          try {
+              const res = await fetch(`/api/sync/${item.endpoint}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(item.payload)
+              });
+              if (res.ok) {
+                  this.syncQueue.shift(); // Remove on success
+              }
+          } catch (e) {}
       }, 3000);
   }
 
@@ -77,24 +96,8 @@ class StorageService {
               if (data.success && data.logs) {
                   const existingIds = new Set(this.state.logs.map(l => l.id));
                   const newEntries = data.logs.filter((l: any) => !existingIds.has(l.id));
-                  
                   if (newEntries.length > 0) {
                       this.state.logs = [...newEntries, ...this.state.logs].slice(0, 1000);
-                      this.saveToLocal();
-                      this.notify();
-                  }
-                  
-                  let updated = false;
-                  data.logs.forEach((incoming: any) => {
-                      const idx = this.state.logs.findIndex(l => l.id === incoming.id);
-                      if (idx !== -1 && this.state.logs[idx].status !== incoming.status) {
-                          this.state.logs[idx].status = incoming.status;
-                          updated = true;
-                      }
-                  });
-
-                  if (updated) {
-                      this.saveToLocal();
                       this.notify();
                   }
               }
@@ -109,22 +112,9 @@ class StorageService {
     try {
       const res = await fetch('/api/bootstrap');
       if (!res.ok) throw new Error("Bootstrap failed");
-      
       const response = await res.json();
       if (response.success && response.data) {
-          const dbData = response.data;
-          
-          this.state = {
-              orders: dbData.orders || [],
-              customers: dbData.customers || [],
-              settings: dbData.settings || INITIAL_SETTINGS,
-              templates: (dbData.templates && dbData.templates.length > 0) ? dbData.templates : INITIAL_TEMPLATES,
-              logs: dbData.logs || [],
-              planTemplates: (dbData.planTemplates && dbData.planTemplates.length > 0) ? dbData.planTemplates : INITIAL_PLAN_TEMPLATES,
-              catalog: (dbData.catalog && dbData.catalog.length > 0) ? dbData.catalog : INITIAL_CATALOG,
-              lastUpdated: Date.now()
-          } as any;
-
+          this.state = { ...this.state, ...response.data };
           this.saveToLocal();
           this.syncStatus = 'CONNECTED';
       }
@@ -139,64 +129,25 @@ class StorageService {
   private async pushEntity(endpoint: string, payload: any) {
       this.saveToLocal();
       this.notify();
-      try {
-          await fetch(`/api/sync/${endpoint}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-          });
-      } catch (e) {}
+      this.syncQueue.push({ endpoint, payload });
   }
 
   public getOrders() { return this.state.orders; }
-  public setOrders(orders: Order[]) { 
-    this.state.orders = orders; 
-    this.pushEntity('orders', { orders }); 
-  }
-
+  public setOrders(orders: Order[]) { this.state.orders = orders; this.pushEntity('orders', { orders }); }
   public getLogs() { return this.state.logs; }
-  public setLogs(logs: WhatsAppLogEntry[]) { 
-    this.state.logs = logs; 
-    this.pushEntity('logs', { logs }); 
-  }
-
-  public getTemplates() { return this.state.templates; }
-  public setTemplates(templates: WhatsAppTemplate[]) { 
-    this.state.templates = templates; 
-    this.pushEntity('templates', { templates }); 
-  }
-
-  public getPlanTemplates() { return this.state.planTemplates; }
-  public setPlanTemplates(templates: PaymentPlanTemplate[]) { 
-    this.state.planTemplates = templates; 
-  }
-
-  public getCatalog() { return this.state.catalog; }
-  public setCatalog(catalog: CatalogItem[]) {
-    this.state.catalog = catalog;
-  }
-
+  public setLogs(logs: WhatsAppLogEntry[]) { this.state.logs = logs; this.pushEntity('logs', { logs }); }
   public getSettings() { return this.state.settings; }
-  public setSettings(settings: GlobalSettings) { 
-    this.state.settings = settings; 
-    this.pushEntity('settings', { settings }); 
-  }
-
+  public setSettings(settings: GlobalSettings) { this.state.settings = settings; this.pushEntity('settings', { settings }); }
   public getCustomers() { return this.state.customers || []; }
-  public setCustomers(customers: Customer[]) {
-      this.state.customers = customers;
-      this.pushEntity('customers', { customers });
-  }
-
-  public subscribe(cb: () => void) {
-    this.listeners.push(cb);
-    return () => { this.listeners = this.listeners.filter(l => l !== cb); };
-  }
-
-  private notify() { 
-    this.listeners.forEach(cb => cb()); 
-  }
-
+  public setCustomers(customers: Customer[]) { this.state.customers = customers; this.pushEntity('customers', { customers }); }
+  public getPlanTemplates() { return this.state.planTemplates; }
+  public setPlanTemplates(tpls: PaymentPlanTemplate[]) { this.state.planTemplates = tpls; }
+  public getTemplates() { return this.state.templates; }
+  public setTemplates(templates: WhatsAppTemplate[]) { this.state.templates = templates; this.pushEntity('templates', { templates }); }
+  public getCatalog() { return this.state.catalog; }
+  public setCatalog(catalog: CatalogItem[]) { this.state.catalog = catalog; }
+  public subscribe(cb: () => void) { this.listeners.push(cb); return () => { this.listeners = this.listeners.filter(l => l !== cb); }; }
+  private notify() { this.listeners.forEach(cb => cb()); }
   public async forceSync() { return this.syncFromServer(); }
 }
 

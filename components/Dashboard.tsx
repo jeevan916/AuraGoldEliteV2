@@ -1,24 +1,23 @@
 
 import React, { useState } from 'react';
-import { Zap, ArrowRight, CheckCircle2, BrainCircuit, MessageSquare, FileText, ScrollText, TrendingUp, BookOpen, RefreshCw, Loader2 } from 'lucide-react';
+import { Zap, ArrowRight, CheckCircle2, BrainCircuit, TrendingUp, BookOpen, RefreshCw, Loader2, FileText } from 'lucide-react';
 import { Order, OrderStatus } from '../types';
-import { Card, SectionHeader, Badge, Button } from './shared/BaseUI';
+import { Card, SectionHeader, Badge } from './shared/BaseUI';
 import { PaymentWidget } from './clusters/PaymentWidget';
+import { MainView } from '../App';
 
 interface DashboardProps {
   orders: Order[];
   currentRates?: { k24: number, k22: number };
   onRefreshRates?: () => Promise<void>;
+  onNavigate: (view: MainView) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRates }) => {
+const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRates, onNavigate }) => {
   const today = new Date().toISOString().split('T')[0];
   const [refreshing, setRefreshing] = useState(false);
   
-  // Filter: Exclude Archived/Delivered orders from "Live" Dashboard
   const liveOrders = orders.filter(o => o.status !== OrderStatus.DELIVERED && o.status !== OrderStatus.CANCELLED);
-
-  // Logic to find overdue/due today orders
   const criticalOrders = liveOrders.filter(o => 
     o.paymentPlan.milestones.some(m => m.status !== 'PAID' && m.dueDate <= today)
   );
@@ -33,8 +32,6 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
 
   return (
     <div className="space-y-8 pb-24 animate-fadeIn">
-      
-      {/* 1. AI CASH FLOW ENGINE (Renamed from Recovery) */}
       <div className="bg-slate-900 bg-gradient-to-r from-emerald-900 to-slate-900 rounded-[2rem] p-6 text-white relative overflow-hidden shadow-xl border border-emerald-500/30">
         <div className="relative z-10">
             <div className="flex justify-between items-start">
@@ -43,11 +40,11 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
                         <BrainCircuit className="text-amber-400" /> AI Cash Flow Engine
                     </h3>
                     <p className="text-emerald-100/60 text-xs font-medium mt-1 max-w-[200px]">
-                        Payment Assurance & Gold Rate Protection Monitor active.
+                        Payment Assurance active.
                     </p>
                 </div>
                 <button 
-                    onClick={() => (window as any).dispatchView('STRATEGY')} 
+                    onClick={() => onNavigate('STRATEGY')} 
                     className="bg-white text-emerald-900 px-4 py-2 rounded-xl font-black text-xs uppercase tracking-widest shadow-md hover:bg-emerald-50 transition-colors flex items-center gap-2"
                 >
                     Launch Console <ArrowRight size={12} />
@@ -64,22 +61,16 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
                  </div>
             </div>
         </div>
-        {/* Decor */}
         <div className="absolute right-0 bottom-0 opacity-10 transform translate-x-1/4 translate-y-1/4">
             <TrendingUp size={180} />
         </div>
       </div>
 
-      {/* 2. Live Rates & Quick Links */}
       <div className="grid grid-cols-2 gap-3">
          <Card className="p-4 bg-white border-slate-200 relative overflow-hidden">
             <div className="flex justify-between items-start">
                 <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Standard 22K</p>
-                <button 
-                    onClick={handleRefresh} 
-                    disabled={refreshing}
-                    className="text-slate-300 hover:text-amber-500 transition-colors active:rotate-180"
-                >
+                <button onClick={handleRefresh} disabled={refreshing} className="text-slate-300 hover:text-amber-500 transition-colors">
                     {refreshing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
                 </button>
             </div>
@@ -89,25 +80,19 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
             </div>
          </Card>
          <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => (window as any).dispatchView('ORDER_BOOK')} className="bg-emerald-50 hover:bg-emerald-100 rounded-2xl flex flex-col items-center justify-center text-emerald-700 transition-colors">
+            <button onClick={() => onNavigate('ORDER_BOOK')} className="bg-emerald-50 hover:bg-emerald-100 rounded-2xl flex flex-col items-center justify-center text-emerald-700 transition-colors">
                 <BookOpen size={18} />
                 <span className="text-[8px] font-black uppercase mt-1">Book</span>
             </button>
-            <button onClick={() => (window as any).dispatchView('TEMPLATES')} className="bg-blue-50 hover:bg-blue-100 rounded-2xl flex flex-col items-center justify-center text-blue-700 transition-colors">
+            <button onClick={() => onNavigate('TEMPLATES')} className="bg-blue-50 hover:bg-blue-100 rounded-2xl flex flex-col items-center justify-center text-blue-700 transition-colors">
                 <FileText size={18} />
                 <span className="text-[8px] font-black uppercase mt-1">Templates</span>
             </button>
          </div>
       </div>
 
-      {/* 3. Collection Queue (Strictly active commitments) */}
       <div>
-        <SectionHeader 
-          title="Collection Queue" 
-          subtitle="Contractual milestones requiring attention" 
-          action={<Badge label={`${criticalOrders.length} Pending`} variant="danger" />}
-        />
-        
+        <SectionHeader title="Collection Queue" subtitle="Milestones requiring attention" action={<Badge label={`${criticalOrders.length} Pending`} variant="danger" />} />
         <div className="space-y-4">
           {criticalOrders.length === 0 ? (
              <div className="py-12 text-center opacity-30">
@@ -119,23 +104,16 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
               <div key={order.id} className="animate-fadeIn">
                 <div className="flex justify-between items-center mb-2 px-1">
                   <span className="text-xs font-bold text-slate-800">{order.customerName}</span>
-                  <span className="text-[9px] font-black text-rose-500 uppercase">Payment Due</span>
                 </div>
-                {/* PLUG AND PLAY: Using the PaymentWidget in Compact Mode */}
-                <PaymentWidget 
-                  order={order} 
-                  variant="COMPACT" 
-                  onPaymentRecorded={(updated) => console.log('Updated via Dash', updated)} 
-                />
+                <PaymentWidget order={order} variant="COMPACT" onPaymentRecorded={() => {}} />
               </div>
             ))
           )}
         </div>
       </div>
 
-      {/* 4. New Booking CTA */}
       <button 
-        onClick={() => (window as any).dispatchView('ORDER_NEW')}
+        onClick={() => onNavigate('ORDER_NEW')}
         className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest text-sm flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-transform"
       >
         <Zap size={20} className="text-amber-400" /> Start New Booking

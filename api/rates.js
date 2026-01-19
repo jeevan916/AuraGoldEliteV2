@@ -11,7 +11,6 @@ router.get('/gold-rate', ensureDb, async (req, res) => {
         let source = 'Local DB';
         
         try {
-            // Augmont/Batuk API Source
             const externalRes = await fetch('https://uat.batuk.in/augmont/gold', {
                 method: 'GET',
                 headers: { 'Accept': 'application/json' }
@@ -19,16 +18,11 @@ router.get('/gold-rate', ensureDb, async (req, res) => {
             
             if (externalRes.ok) {
                 const extData = await externalRes.json();
-                rawResponse = extData; // Store for diagnostics
-                
-                // Augmont structure check: data[0][0].gSell
+                rawResponse = extData;
                 if (!extData.error && extData.data && extData.data[0] && extData.data[0][0]) {
                     const priceData = extData.data[0][0];
-                    // gSell is usually the price per gram (approx 7000-8000 INR currently)
                     const gSell = parseFloat(priceData.gSell);
-                    
                     if (gSell > 0) {
-                        // REMOVED: Math.round(gSell / 2) - This was causing inaccuracies
                         rate24k = Math.round(gSell);
                         source = 'Augmont Live';
                     }
@@ -41,17 +35,22 @@ router.get('/gold-rate', ensureDb, async (req, res) => {
         const pool = getPool();
         const connection = await pool.getConnection();
         
-        // If external API failed or returned 0, use last known good rate from DB
+        // 1. Get Factors from Settings
+        const [intRows] = await connection.query("SELECT config FROM integrations WHERE provider = 'core_settings'");
+        const settings = intRows.length > 0 ? JSON.parse(intRows[0].config) : { purityFactor22K: 0.916, purityFactor18K: 0.75 };
+        const f22k = settings.purityFactor22K || 0.916;
+        const f18k = settings.purityFactor18K || 0.75;
+
+        // 2. Fetch fallback rate if live failed
         if (rate24k === 0) {
             const [rows] = await connection.query('SELECT rate24k FROM gold_rates ORDER BY recorded_at DESC LIMIT 1');
             rate24k = rows.length > 0 ? parseFloat(rows[0].rate24k) : 7500;
         }
 
-        // Standard conversion logic
-        const rate22k = Math.round(rate24k * 0.916);
-        const rate18k = Math.round(rate24k * 0.75);
+        // 3. Dynamic Calculation based on Wiring
+        const rate22k = Math.round(rate24k * f22k);
+        const rate18k = Math.round(rate24k * f18k);
         
-        // Record history
         await connection.query('INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)', [rate24k, rate22k, rate18k]);
         connection.release();
 
@@ -60,11 +59,12 @@ router.get('/gold-rate', ensureDb, async (req, res) => {
             k24: rate24k, 
             k22: rate22k, 
             k18: rate18k, 
+            factors: { k22: f22k, k18: f18k },
             source,
             raw: rawResponse 
         });
     } catch (e) { 
-        res.status(500).json({ success: false, error: e.message, raw: rawResponse }); 
+        res.status(500).json({ success: false, error: e.message }); 
     }
 });
 
