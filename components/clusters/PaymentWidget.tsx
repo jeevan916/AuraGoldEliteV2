@@ -172,8 +172,6 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           errorService.logActivity('USER_ACTION', `Generating Setu Link for ₹${val}`);
 
           // 2. Call Backend Proxy
-          // billerBillID acts as the unique transaction ID for Setu.
-          // merchantId is handled internally by the backend using the schemeId credential.
           const transactionId = `${order.id}-${Date.now()}`;
 
           const linkResponse = await fetch('/api/setu/create-link', {
@@ -192,50 +190,37 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
           // 3. Granular Error Handling
           if (!linkData.success) {
-              const rawError = linkData.error;
-              
-              // Log specific codes for debugging
-              console.error("[Setu API Exception]", {
-                  errorCode: rawError?.code || rawError?.error?.code || 'UNKNOWN',
-                  errorMsg: rawError?.message || rawError?.error?.message || JSON.stringify(rawError)
-              });
-
-              let userMsg = "Unable to generate payment link. Please try again.";
-              
-              // Normalize error string for inspection
-              const errorString = typeof rawError === 'string' ? rawError.toLowerCase() : JSON.stringify(rawError).toLowerCase();
-
-              // Detect Code
-              if (errorString.includes('amount')) userMsg = "The entered amount is invalid. Please check Gateway limits.";
-              else if (errorString.includes('auth') || errorString.includes('401')) userMsg = "Gateway Authentication Failed. Check API Keys.";
-              else if (errorString.includes('verified') || errorString.includes('merchant')) userMsg = "Merchant account is not active.";
-              else if (errorString.includes('platform')) userMsg = "Setu Platform is currently experiencing downtime.";
-
-              throw new Error(userMsg);
+              throw new Error(linkData.error?.message || "Setu Link Generation Failed");
           }
 
-          // 4. Validate Response Structure (Supports V1 & V2)
-          // We check for 'shortURL' (V2 standard) or 'shortLink' (V1 legacy).
-          const paymentLinkData = linkData.data?.data?.paymentLink;
-          const shortLink = paymentLinkData?.shortLink || paymentLinkData?.shortURL;
+          // 4. Robust Response Parsing (V1 & V2)
+          // Setu structure: { data: { paymentLink: { shortURL: ... } } }
+          // Or sometimes V1: { data: { shortLink: ... } }
+          const responseData = linkData.data?.data; // Payload is wrapped in 'data'
+          const paymentLinkObj = responseData?.paymentLink;
+          
+          const shortLink = 
+              paymentLinkObj?.shortURL || 
+              paymentLinkObj?.shortLink || 
+              responseData?.shortLink || 
+              responseData?.shortURL;
 
           if (!shortLink) {
-              // Log detailed telemetry for debugging
+              console.error("[Setu Error] Invalid Response Structure:", linkData);
               errorService.logError(
                   'SetuPayment', 
-                  'Link Generation Failed: Missing shortLink in API response', 
+                  'Missing shortLink in Setu response', 
                   'HIGH', 
                   JSON.stringify(linkData)
               );
-              throw new Error("Payment Gateway responded without a valid link. Please retry.");
+              throw new Error("Gateway generated a response but no link was found. Please retry.");
           }
 
           // 5. Parse Suffix for Template
-          // Template Base: https://setu.co/upi/s/
           const baseUrl = "https://setu.co/upi/s/";
           
           if (!shortLink.startsWith(baseUrl)) {
-              // Fallback to text message if base URL mismatch (e.g. Setu changes domain)
+              // Fallback to text message if base URL mismatch
               console.warn("Setu base URL mismatch", shortLink);
               const fallbackRes = await whatsappService.sendMessage(
                   order.customerContact, 
@@ -268,7 +253,6 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
       } catch (e: any) {
           console.error(e);
-          // Fallback UI State
           setErrorMsg(e.message || "An unexpected error occurred");
           errorService.logError('PaymentWidget', `Setu Failure: ${e.message}`);
       } finally {
@@ -327,16 +311,21 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
              </button>
         </div>
 
-        {/* Fallback UI for Errors */}
+        {/* Fallback UI for Errors with Retry */}
         {errorMsg && (
             <div className="mb-4 bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start gap-3 animate-fadeIn">
                 <AlertCircle className="text-rose-600 shrink-0" size={20} />
-                <div>
+                <div className="flex-1">
                     <p className="text-xs font-bold text-rose-700">Action Failed</p>
-                    <p className="text-[10px] text-rose-600 mt-1">{errorMsg}</p>
-                    <button onClick={() => handleGenerateSetuLink()} className="mt-2 text-[10px] font-black uppercase bg-white/50 px-2 py-1 rounded hover:bg-white text-rose-800">
-                        Retry Now
-                    </button>
+                    <p className="text-[10px] text-rose-600 mt-1 mb-2">{errorMsg}</p>
+                    {activeTab === 'REQUEST' && (
+                        <button 
+                            onClick={() => handleGenerateSetuLink()} 
+                            className="text-[10px] font-black uppercase bg-white border border-rose-200 px-3 py-1.5 rounded hover:bg-rose-50 text-rose-800 transition-colors shadow-sm"
+                        >
+                            Retry Setu Link
+                        </button>
+                    )}
                 </div>
                 <button onClick={() => setErrorMsg(null)} className="ml-auto text-rose-400 hover:text-rose-600"><X size={16} /></button>
             </div>

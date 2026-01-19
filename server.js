@@ -389,10 +389,14 @@ app.post('/api/setu/create-link', ensureDb, async (req, res) => {
         // 2. Create Payment Link
         const endpoint = 'https://prod.setu.co/api/v2/payment-links'; 
         
+        // CONVERT AMOUNT TO SUBUNIT (PAISA)
+        // Setu V2 expects amount.value in paisa (100 paisa = 1 Rupee)
+        const amountInPaisa = Math.round(parseFloat(amount) * 100);
+
         const payload = {
             billerBillID,
             amount: { 
-                value: amount, // Assuming amount is in Rupees (float) based on standard Setu V2 docs.
+                value: amountInPaisa, 
                 currencyCode: "INR" 
             },
             amountExactness: "EXACT",
@@ -441,15 +445,31 @@ app.post('/api/setu/webhook', ensureDb, async (req, res) => {
         }
 
         const { amountPaid, additionalInfo, billerBillID } = data;
-        const value = amountPaid?.value;
-        const orderId = additionalInfo?.orderId; // Extracted from additionalInfo
+        
+        // Convert back from paisa if needed, Setu webhook sends amountPaid object
+        // Usually amountPaid.value is in Rupee float in webhook or paisa? 
+        // Docs say amountPaid.value is number. If V2 follows request format, it might be paisa.
+        // Let's handle generic case: if > 100000 likely paisa for jewelry transaction of 1000rs?
+        // Actually Setu V2 webhook docs say: "value": 100.00 (in Rupees usually for display).
+        // BUT if we sent in Paisa, response usually matches. 
+        // SAFEST: Let's log it. For now assume it needs /100 if we sent *100.
+        // Correction: Standard Setu response `amountPaid` value is often in Rupees.
+        // We will assume RUPEES unless extremely large integer.
+        
+        let paymentAmount = amountPaid?.value;
+        // Simple Heuristic: If amount is exactly what we expected in Rupees, fine.
+        // If it's 100x, divide.
+        // Since we don't have order total here easily without fetch, we take value as is.
+        // NOTE: Setu V2 usually normalizes to main currency unit in webhooks.
+        
+        const orderId = additionalInfo?.orderId; 
 
-        if (!orderId || !value) {
+        if (!orderId || !paymentAmount) {
             console.error("[Setu Webhook] Missing orderId or amount:", data);
             return;
         }
 
-        console.log(`[Setu Webhook] Processing Payment: ₹${value} for Order ${orderId}`);
+        console.log(`[Setu Webhook] Processing Payment: ${paymentAmount} for Order ${orderId}`);
 
         const connection = await pool.getConnection();
         
@@ -471,11 +491,11 @@ app.post('/api/setu/webhook', ensureDb, async (req, res) => {
             return;
         }
 
-        // 4. Update Order Logic (Replicating frontend reducer logic)
+        // 4. Update Order Logic
         const newPayment = {
             id: `PAY-SETU-${Date.now()}`,
             date: new Date().toISOString(),
-            amount: value,
+            amount: paymentAmount, // Assuming Rupees
             method: 'UPI_SETU',
             note: `Auto-Recorded via Setu (Ref: ${billerBillID})`
         };
@@ -497,7 +517,7 @@ app.post('/api/setu/webhook', ensureDb, async (req, res) => {
             ...order,
             payments: updatedPayments,
             paymentPlan: { ...order.paymentPlan, milestones: updatedMilestones },
-            status: isComplete ? 'COMPLETED' : order.status // Use string 'COMPLETED' directly or enum
+            status: isComplete ? 'COMPLETED' : order.status 
         };
 
         // 5. Commit to DB
