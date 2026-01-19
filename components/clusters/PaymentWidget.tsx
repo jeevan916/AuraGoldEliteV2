@@ -34,7 +34,6 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       }
   }, [nextMilestone, remaining, amount]);
 
-  // Reset error when tab changes
   useEffect(() => {
       setErrorMsg(null);
   }, [activeTab]);
@@ -80,9 +79,18 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
     try {
       updateOrderWithPayment(val, mode, 'Manual Entry');
 
-      const res = await whatsappService.sendMessage(
-          order.customerContact, 
-          `Payment Received: ₹${val.toLocaleString()}. Remaining: ₹${(remaining - val).toLocaleString()}. Thank you!`, 
+      // SCENARIO 4: Store Payment Receipt
+      const res = await whatsappService.sendTemplateMessage(
+          order.customerContact,
+          'auragold_payment_receipt_store',
+          'en_US',
+          [
+              order.customerName,
+              val.toLocaleString(),
+              mode,
+              order.id,
+              (remaining - val).toLocaleString()
+          ],
           order.customerName
       );
 
@@ -138,6 +146,14 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
               order_id: orderData.id,
               handler: function (response: any) {
                   updateOrderWithPayment(val, 'RAZORPAY', `Online ID: ${response.razorpay_payment_id}`);
+                  // SCENARIO 6: Remote Success
+                  whatsappService.sendTemplateMessage(
+                      order.customerContact,
+                      'auragold_payment_success_remote',
+                      'en_US',
+                      [order.customerName, val.toLocaleString(), 'Razorpay', order.id, (remaining - val).toLocaleString()],
+                      order.customerName
+                  );
                   alert("Payment Successful!");
               },
               prefill: {
@@ -185,7 +201,6 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
           const responseBody = await response.json();
 
-          // OBSERVABILITY: Log the full response to help debug 'shortLink' missing errors
           if (!response.ok || !responseBody.success) {
               errorService.logError(
                   'Setu_Gateway', 
@@ -196,13 +211,10 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
               throw new Error(responseBody.error || "Gateway reported an error. See logs.");
           }
 
-          // ROBUST PATH VALIDATION FOR SHORTLINK
-          // Setu V2 often wraps payload in 'data' field
           const payload = responseBody.data?.data || responseBody.data;
           const shortLink = payload?.paymentLink?.shortURL || payload?.shortURL || payload?.shortLink;
 
           if (!shortLink) {
-              // CUSTOM ERROR: Throw if shortLink is missing from a 'successful' response
               errorService.logError(
                   'Setu_Structure_Mismatch', 
                   'Link generated but shortLink property missing in JSON payload', 
@@ -213,21 +225,9 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           }
 
           const baseUrl = "https://setu.co/upi/s/";
-          if (!shortLink.startsWith(baseUrl)) {
-              console.warn("Non-standard Setu URL detected", shortLink);
-              const fallbackRes = await whatsappService.sendMessage(
-                  order.customerContact, 
-                  `Dear ${order.customerName}, payment of ₹${val} is due. Pay securely: ${shortLink}`, 
-                  order.customerName
-              );
-              if (fallbackRes.success) alert("Link delivered as standard text message.");
-              else throw new Error("Failed to deliver payment link.");
-              return;
-          }
-
           const linkSuffix = shortLink.replace(baseUrl, '');
 
-          // Send modern template with dynamic button
+          // SCENARIO 8: Setu UPI Button (Manual)
           const result = await whatsappService.sendTemplateMessage(
               order.customerContact, 
               'setu_payment_button', 
@@ -304,7 +304,6 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
              </button>
         </div>
 
-        {/* Dynamic Error State with Retry Logic */}
         {errorMsg && (
             <div className="mb-6 bg-rose-50 border border-rose-200 rounded-2xl p-5 flex items-start gap-4 animate-fadeIn">
                 <div className="p-2 bg-white rounded-lg shadow-sm">

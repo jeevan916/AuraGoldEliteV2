@@ -12,6 +12,7 @@ import {
 } from '../types';
 import { compressImage } from '../services/imageOptimizer';
 import { storageService } from '../services/storageService';
+import { whatsappService } from '../services/whatsappService';
 
 interface OrderFormProps {
   settings: GlobalSettings;
@@ -26,6 +27,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   const [cartItems, setCartItems] = useState<JewelryDetail[]>([]);
   const [orderRate, setOrderRate] = useState(settings.currentGoldRate22K);
   const [protectionRate, setProtectionRate] = useState(settings.currentGoldRate22K);
+  const [creating, setCreating] = useState(false);
   
   // Catalog State
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
@@ -229,17 +231,22 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
     return milestones;
   };
 
-  const submitOrder = () => {
+  const submitOrder = async () => {
     if (cartItems.length === 0) return alert("Please add at least one jewellery item.");
     if (!customer.name || !customer.contact) return alert("Customer Name and Contact Number are mandatory.");
 
+    setCreating(true);
     let milestones: Milestone[] = [];
 
     if (planMode === 'MANUAL') {
         if (Math.abs(manualTotalScheduled - cartTotal) > 10) {
+            setCreating(false);
             return alert(`Manual schedule matches ₹${manualTotalScheduled}, but order total is ₹${Math.round(cartTotal)}. Please balance the payments.`);
         }
-        if (manualMilestones.length === 0) return alert("Please add at least one payment milestone.");
+        if (manualMilestones.length === 0) {
+            setCreating(false);
+            return alert("Please add at least one payment milestone.");
+        }
         
         let cumulative = 0;
         milestones = manualMilestones.map((m, idx) => {
@@ -271,12 +278,34 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
         ...plan, 
         milestones, 
         protectionStatus: ProtectionStatus.ACTIVE, 
-        protectionRateBooked: protectionRate, // Explicit protection rate
+        protectionRateBooked: protectionRate, 
         protectionDeadline: milestones[milestones.length - 1].dueDate, 
         protectionLimit: settings.goldRateProtectionMax 
       } as PaymentPlan
     };
+
+    // SCENARIO 1: Order Created (Send Agreement)
+    try {
+        await whatsappService.sendTemplateMessage(
+            finalOrder.customerContact,
+            'auragold_order_agreement',
+            'en_US',
+            [
+                finalOrder.customerName,
+                finalOrder.id,
+                finalOrder.goldRateAtBooking.toString(),
+                (settings.goldRateProtectionMax || 500).toString(),
+                finalOrder.totalAmount.toLocaleString(),
+                finalOrder.shareToken // Button Variable
+            ],
+            finalOrder.customerName
+        );
+    } catch (e) {
+        console.warn("Failed to send order creation template", e);
+    }
+
     onSubmit(finalOrder);
+    setCreating(false);
   };
 
   return (
@@ -745,8 +774,8 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                     Continue <ChevronRight size={18} />
                 </button>
             ) : (
-                <button onClick={submitOrder} className="flex-[2] bg-emerald-600 text-white py-4 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 shadow-xl tracking-widest">
-                    Generate Contract <Sparkles size={18} />
+                <button disabled={creating} onClick={submitOrder} className="flex-[2] bg-emerald-600 text-white py-4 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 shadow-xl tracking-widest disabled:opacity-50">
+                    {creating ? <Loader2 className="animate-spin" /> : <><Sparkles size={18} /> Generate Contract</>}
                 </button>
             )}
          </div>
