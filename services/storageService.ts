@@ -62,12 +62,11 @@ class StorageService {
 
   public getSyncStatus() { return this.syncStatus; }
 
-  // --- FASTER AJAX POLLING (3 SECONDS) ---
   private startPolling() {
       if (this.pollInterval) clearInterval(this.pollInterval);
       this.pollInterval = setInterval(() => {
           this.pollLogs();
-      }, 3000); // 3 seconds for near-real-time feel
+      }, 3000);
   }
 
   private async pollLogs() {
@@ -76,18 +75,15 @@ class StorageService {
           if (res.ok) {
               const data = await res.json();
               if (data.success && data.logs) {
-                  // Merge logs - unique by ID to prevent duplicates
                   const existingIds = new Set(this.state.logs.map(l => l.id));
                   const newEntries = data.logs.filter((l: any) => !existingIds.has(l.id));
                   
                   if (newEntries.length > 0) {
-                      // Prepend new messages, keep list capped at 1000
                       this.state.logs = [...newEntries, ...this.state.logs].slice(0, 1000);
                       this.saveToLocal();
                       this.notify();
                   }
                   
-                  // Also check for status updates (SENT -> DELIVERED -> READ)
                   let updated = false;
                   data.logs.forEach((incoming: any) => {
                       const idx = this.state.logs.findIndex(l => l.id === incoming.id);
@@ -183,6 +179,7 @@ class StorageService {
   public getSettings() { return this.state.settings; }
   public setSettings(settings: GlobalSettings) { 
     this.state.settings = settings; 
+    this.pushEntity('settings', { settings }); 
   }
 
   public getCustomers() { return this.state.customers || []; }
