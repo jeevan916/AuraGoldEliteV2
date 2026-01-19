@@ -12,57 +12,27 @@ import './index.css';
 import { useOrders } from './hooks/useOrders';
 import { useWhatsApp } from './hooks/useWhatsApp';
 import { errorService } from './services/errorService';
-import { goldRateService } from './services/goldRateService';
 import { storageService } from './services/storageService';
 import { Order, GlobalSettings, NotificationTrigger, PaymentPlanTemplate, AppError, ActivityLogEntry, Customer } from './types';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-// --- STABLE LAZY LOADER ---
-const lazyRetry = (importFn: () => Promise<any>, moduleName: string) => {
-  return lazy(async () => {
-    try {
-      return await importFn();
-    } catch (error: any) {
-      console.warn(`[App] Module ${moduleName} missing. Showing update prompt.`);
-      return { 
-          default: () => (
-            <div className="flex flex-col items-center justify-center h-full min-h-[400px] p-8 text-center animate-fadeIn">
-                <div className="w-20 h-20 bg-slate-100 text-slate-400 rounded-3xl flex items-center justify-center mb-6 shadow-inner">
-                    <DownloadCloud size={32} />
-                </div>
-                <h2 className="text-xl font-black text-slate-800 mb-2">Update Required</h2>
-                <p className="text-slate-500 text-sm mb-8 max-w-xs mx-auto leading-relaxed">
-                    A new version of <strong>{moduleName}</strong> has been deployed. Please refresh to continue.
-                </p>
-                <button 
-                    onClick={() => window.location.reload()}
-                    className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl active:scale-95 flex items-center gap-3"
-                >
-                    <RefreshCw size={16} /> Load New Version
-                </button>
-            </div>
-          )
-      };
-    }
-  });
-};
-
-const Dashboard = lazyRetry(() => import('./components/Dashboard'), 'Dashboard');
-const OrderForm = lazyRetry(() => import('./components/OrderForm'), 'OrderForm');
-const OrderDetails = lazyRetry(() => import('./components/OrderDetails'), 'OrderDetails');
-const OrderBook = lazyRetry(() => import('./components/OrderBook'), 'OrderBook');
-const CustomerList = lazyRetry(() => import('./components/CustomerList'), 'CustomerList');
-const CustomerProfile = lazyRetry(() => import('./components/CustomerProfile'), 'CustomerProfile');
-const PaymentCollections = lazyRetry(() => import('./components/PaymentCollections'), 'Collections');
-const WhatsAppPanel = lazyRetry(() => import('./components/WhatsAppPanel'), 'WhatsApp');
-const WhatsAppTemplates = lazyRetry(() => import('./components/WhatsAppTemplates'), 'Templates');
-const WhatsAppLogs = lazyRetry(() => import('./components/WhatsAppLogs'), 'WhatsAppLogs');
-const NotificationCenter = lazyRetry(() => import('./components/NotificationCenter'), 'NotificationCenter');
-const PlanManager = lazyRetry(() => import('./components/PlanManager'), 'PlanManager');
-const MarketIntelligence = lazyRetry(() => import('./components/MarketIntelligence'), 'MarketIntelligence');
-const Settings = lazyRetry(() => import('./components/Settings'), 'Settings');
-const ErrorLogPanel = lazyRetry(() => import('./components/ErrorLogPanel'), 'SystemLogs');
-const CustomerOrderView = lazyRetry(() => import('./components/CustomerOrderView'), 'CustomerView');
+// --- Standard Lazy Loading for Bundler Stability ---
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const OrderForm = lazy(() => import('./components/OrderForm'));
+const OrderDetails = lazy(() => import('./components/OrderDetails'));
+const OrderBook = lazy(() => import('./components/OrderBook'));
+const CustomerList = lazy(() => import('./components/CustomerList'));
+const CustomerProfile = lazy(() => import('./components/CustomerProfile'));
+const PaymentCollections = lazy(() => import('./components/PaymentCollections'));
+const WhatsAppPanel = lazy(() => import('./components/WhatsAppPanel'));
+const WhatsAppTemplates = lazy(() => import('./components/WhatsAppTemplates'));
+const WhatsAppLogs = lazy(() => import('./components/WhatsAppLogs'));
+const NotificationCenter = lazy(() => import('./components/NotificationCenter'));
+const PlanManager = lazy(() => import('./components/PlanManager'));
+const MarketIntelligence = lazy(() => import('./components/MarketIntelligence'));
+const Settings = lazy(() => import('./components/Settings'));
+const ErrorLogPanel = lazy(() => import('./components/ErrorLogPanel'));
+const CustomerOrderView = lazy(() => import('./components/CustomerOrderView'));
 
 export type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW';
 
@@ -150,10 +120,12 @@ const App = () => {
           case 'DASH': return <Dashboard orders={orders} currentRates={{k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K}} onNavigate={setView} />;
           case 'ORDER_NEW': return <OrderForm settings={settings} planTemplates={planTemplates} onSubmit={(o) => { addOrder(o); setSelectedOrderId(o.id); setView('ORDER_DETAILS'); }} onCancel={() => setView('DASH')} />;
           case 'ORDER_BOOK': return <OrderBook orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onUpdateOrder={updateOrder} onNavigate={setView} />;
-          case 'ORDER_DETAILS': return selectedOrder ? <OrderDetails order={selectedOrder} settings={settings} onBack={() => setView('ORDER_BOOK')} onUpdateStatus={updateItemStatus} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} logs={logs} onAddLog={addLog} /> : null;
+          // Fix: Wrap updateItemStatus call with selectedOrder.id to match OrderDetails onUpdateStatus signature
+          case 'ORDER_DETAILS': return selectedOrder ? <OrderDetails order={selectedOrder} settings={settings} onBack={() => setView('ORDER_BOOK')} onUpdateStatus={(itemId, status) => updateItemStatus(selectedOrder.id, itemId, status)} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} logs={logs} onAddLog={addLog} /> : null;
           case 'CUSTOMERS': return <CustomerList customers={customers} orders={orders} onSelectCustomer={(id) => { setSelectedCustomerId(id); setView('CUSTOMER_PROFILE'); }} onAddCustomer={(c) => { const upd = [...customers, c]; setCustomers(upd); storageService.setCustomers(upd); }} />;
           case 'CUSTOMER_PROFILE': return selectedCustomer ? <CustomerProfile customer={selectedCustomer} orders={orders} onBack={() => setView('CUSTOMERS')} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onNewOrder={() => setView('ORDER_NEW')} /> : null;
-          case 'COLLECTIONS': return <PaymentCollections orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onAddLog={addLog} settings={settings} />;
+          // Fix: Added missing onSendWhatsApp required prop
+          case 'COLLECTIONS': return <PaymentCollections orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onAddLog={addLog} settings={settings} onSendWhatsApp={() => {}} />;
           case 'WHATSAPP': return <WhatsAppPanel logs={logs} customers={customers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} initialContact={selectedChatPhone} />;
           case 'TEMPLATES': return <WhatsAppTemplates templates={templates} onUpdate={setTemplates} />;
           case 'LOGS': return <WhatsAppLogs logs={logs} onViewChat={(phone) => { setSelectedChatPhone(phone); setView('WHATSAPP'); }} />;
@@ -169,6 +141,7 @@ const App = () => {
             <MenuItem onClick={() => setView('SYS_LOGS')} icon={<HardDrive />} label="System" desc="Logs & Audit" colorClass="bg-slate-100" />
             <MenuItem onClick={() => setView('SETTINGS')} icon={<SettingsIcon />} label="Config" desc="Rates & DB" colorClass="bg-slate-800 text-white" />
           </div>;
+          case 'CUSTOMER_VIEW': return selectedOrder ? <CustomerOrderView order={selectedOrder} /> : null;
           default: return <Dashboard orders={orders} currentRates={{k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K}} onNavigate={setView} />;
       }
   };

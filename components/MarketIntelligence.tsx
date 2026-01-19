@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { TrendingUp, Globe, BarChart2, ExternalLink, ArrowRight, DollarSign, Newspaper } from 'lucide-react';
+import { TrendingUp, Globe, BarChart2, ArrowRight, DollarSign, Newspaper, Calendar } from 'lucide-react';
 
 const MarketIntelligence: React.FC = () => {
   const marketResources = [
@@ -17,7 +17,7 @@ const MarketIntelligence: React.FC = () => {
       title: 'Economic Calendar',
       desc: 'Global events affecting bullion prices.',
       url: 'https://www.fxstreet.com/economic-calendar',
-      icon: CalendarIcon,
+      icon: Calendar,
       color: 'bg-blue-50 text-blue-700'
     },
     {
@@ -102,26 +102,5 @@ const MarketIntelligence: React.FC = () => {
     </div>
   );
 };
-
-// Simple Icon component for the map
-const CalendarIcon = (props: any) => (
-    <svg 
-      {...props}
-      xmlns="http://www.w3.org/2000/svg" 
-      width="24" 
-      height="24" 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round"
-    >
-        <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
-        <line x1="16" x2="16" y1="2" y2="6" />
-        <line x1="8" x2="8" y1="2" y2="6" />
-        <line x1="3" x2="21" y1="10" y2="10" />
-    </svg>
-);
 
 export default MarketIntelligence;
