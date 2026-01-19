@@ -1,4 +1,3 @@
-
 import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate, CatalogItem, Customer } from '../types';
 import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES, INITIAL_TEMPLATES, INITIAL_CATALOG } from '../constants';
 
@@ -167,13 +166,15 @@ class StorageService {
   }
 
   public getPlanTemplates() { return this.state.planTemplates; }
-  public setPlanTemplates(templates: PaymentPlanTemplate[]) { 
-    this.state.planTemplates = templates; 
+  public setPlanTemplates(planTemplates: PaymentPlanTemplate[]) { 
+    this.state.planTemplates = planTemplates; 
+    this.pushEntity('plan-templates', { planTemplates });
   }
 
   public getCatalog() { return this.state.catalog; }
   public setCatalog(catalog: CatalogItem[]) {
     this.state.catalog = catalog;
+    this.pushEntity('catalog', { catalog });
   }
 
   public getSettings() { return this.state.settings; }

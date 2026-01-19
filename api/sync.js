@@ -39,13 +39,41 @@ router.post('/templates', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// NEW: Persistence for Catalog Items
+router.post('/catalog', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        // Clear and reload catalog for consistency
+        await connection.query('DELETE FROM catalog'); 
+        for (const item of req.body.catalog) {
+            await connection.query('INSERT INTO catalog (id, category, data) VALUES (?, ?, ?)', [item.id, item.category, JSON.stringify(item)]);
+        }
+        connection.release();
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// NEW: Persistence for Plan Templates
+router.post('/plan-templates', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        await connection.query('DELETE FROM plan_templates');
+        for (const plan of req.body.planTemplates) {
+            await connection.query('INSERT INTO plan_templates (id, name, data) VALUES (?, ?, ?)', [plan.id, plan.name, JSON.stringify(plan)]);
+        }
+        connection.release();
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.post('/settings', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
         const { settings } = req.body;
 
-        // 1. Persist Core Application Settings
         const coreConfig = {
             currentGoldRate24K: settings.currentGoldRate24K,
             currentGoldRate22K: settings.currentGoldRate22K,
@@ -59,27 +87,16 @@ router.post('/settings', ensureDb, async (req, res) => {
         };
         await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['core_settings', JSON.stringify(coreConfig)]);
 
-        // 2. Persist WhatsApp Credentials
         if (settings.whatsappPhoneNumberId) {
-            const waConfig = { 
-                phoneId: settings.whatsappPhoneNumberId, 
-                accountId: settings.whatsappBusinessAccountId, 
-                token: settings.whatsappBusinessToken 
-            };
+            const waConfig = { phoneId: settings.whatsappPhoneNumberId, accountId: settings.whatsappBusinessAccountId, token: settings.whatsappBusinessToken };
             await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['whatsapp', JSON.stringify(waConfig)]);
         }
 
-        // 3. Persist Setu Credentials
         if (settings.setuClientId) {
-            const setuConfig = { 
-                clientId: settings.setuClientId, 
-                secret: settings.setuSecret, 
-                schemeId: settings.setuSchemeId 
-            };
+            const setuConfig = { clientId: settings.setuClientId, secret: settings.setuSecret, schemeId: settings.setuSchemeId };
             await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['setu', JSON.stringify(setuConfig)]);
         }
 
-        // 4. Persist Other Gateways
         if (settings.razorpayKeyId) {
             const rzpConfig = { keyId: settings.razorpayKeyId, secret: settings.razorpayKeySecret };
             await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['razorpay', JSON.stringify(rzpConfig)]);
@@ -88,7 +105,6 @@ router.post('/settings', ensureDb, async (req, res) => {
         connection.release();
         res.json({ success: true });
     } catch (e) { 
-        console.error("[API Settings Sync Error]", e);
         res.status(500).json({ error: e.message }); 
     }
 });

@@ -5,18 +5,6 @@ const router = express.Router();
 
 router.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
-router.get('/debug/db', async (req, res) => {
-    try {
-        const pool = getPool();
-        const connection = await pool.getConnection();
-        await connection.query('SELECT 1');
-        connection.release();
-        res.json({ success: true, config: { host: process.env.DB_HOST, database: process.env.DB_NAME } });
-    } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
-    }
-});
-
 router.get('/bootstrap', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
@@ -25,6 +13,8 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
         const [customers] = await connection.query('SELECT data FROM customers');
         const [logs] = await connection.query('SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 100');
         const [templates] = await connection.query('SELECT data FROM templates');
+        const [catalog] = await connection.query('SELECT data FROM catalog');
+        const [plans] = await connection.query('SELECT data FROM plan_templates');
         const [intRows] = await connection.query('SELECT * FROM integrations');
         connection.release();
         
@@ -38,8 +28,9 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
             customers: customers.map(r => JSON.parse(r.data)),
             logs: logs.map(r => JSON.parse(r.data)),
             templates: templates.map(r => JSON.parse(r.data)),
+            catalog: catalog.map(r => JSON.parse(r.data)),
+            planTemplates: plans.map(r => JSON.parse(r.data)),
             settings: { 
-                // Core Values
                 currentGoldRate24K: core.currentGoldRate24K || 7500,
                 currentGoldRate22K: core.currentGoldRate22K || 6870,
                 currentGoldRate18K: core.currentGoldRate18K || 5625,
@@ -49,8 +40,6 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
                 goldRateProtectionMax: core.goldRateProtectionMax || 500,
                 gracePeriodHours: core.gracePeriodHours || 24,
                 followUpIntervalDays: core.followUpIntervalDays || 3,
-                
-                // Integration Mappings
                 whatsappPhoneNumberId: intMap.whatsapp?.phoneId, 
                 whatsappBusinessAccountId: intMap.whatsapp?.accountId, 
                 whatsappBusinessToken: intMap.whatsapp?.token,
