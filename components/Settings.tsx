@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, Zap, ShieldCheck, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, LayoutGrid, Plus, Trash2, Info, Key, Server, Clock, Calendar, MessageSquare, CreditCard, Smartphone, Wrench } from 'lucide-react';
+import { Save, RefreshCw, Zap, ShieldCheck, Database, ServerCrash, CheckCircle2, AlertTriangle, Loader2, LayoutGrid, Plus, Trash2, Info, Key, Server, Clock, Calendar, MessageSquare, CreditCard, Smartphone, Wrench, Code } from 'lucide-react';
 import { GlobalSettings, CatalogItem } from '../types';
 import { goldRateService } from '../services/goldRateService';
 import { storageService } from '../services/storageService';
@@ -17,6 +17,7 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
   const [catalog, setCatalog] = useState<CatalogItem[]>(storageService.getCatalog());
   
   const [syncing, setSyncing] = useState(false);
+  const [rawRateData, setRawRateData] = useState<any>(null);
   const [dbStatus, setDbStatus] = useState<'IDLE' | 'TESTING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [dbMessage, setDbMessage] = useState('');
   const [debugInfo, setDebugInfo] = useState<any>(null);
@@ -46,7 +47,10 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
             currentGoldRate22K: result.rate22K
           };
           setLocalSettings(updatedSettings);
+          setRawRateData(result.raw);
           onUpdate(updatedSettings);
+        } else {
+            setRawRateData(result.raw || { error: result.error });
         }
     } finally {
         setSyncing(false);
@@ -351,12 +355,23 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200/60 shadow-sm space-y-8 relative overflow-hidden">
              
              {/* Pricing Section */}
-             <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600">
-                    <Zap size={16} />
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                   <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600">
+                       <Zap size={16} />
+                   </div>
+                   <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Market Pricing Matrix</h3>
                 </div>
-                <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Market Pricing Matrix</h3>
+                <button 
+                    disabled={syncing}
+                    className="flex items-center gap-2 bg-slate-100 text-slate-600 px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-slate-200 disabled:opacity-50"
+                    onClick={handleLiveSync}
+                >
+                    <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /> 
+                    Fetch Live
+                </button>
              </div>
+
              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                 <PricingField 
                     label="24K Purity (/g)" 
@@ -369,6 +384,22 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                     onChange={v => setLocalSettings({...localSettings, currentGoldRate22K: v})}
                 />
              </div>
+
+             {/* Raw Response Diagnostics */}
+             {rawRateData && (
+                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 mt-4 animate-fadeIn">
+                     <div className="flex items-center gap-2 mb-4">
+                         <Code size={16} className="text-slate-400" />
+                         <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Raw Rate Response (Diagnostic)</span>
+                     </div>
+                     <pre className="text-[11px] font-mono text-slate-600 overflow-auto bg-white p-4 rounded-xl border border-slate-100 max-h-48 custom-scrollbar">
+                         {JSON.stringify(rawRateData, null, 2)}
+                     </pre>
+                     <p className="text-[9px] text-slate-400 mt-2 italic">
+                         *Verify 'gSell' value above. Our engine rounds this value for 24K and calculates others based on purity.
+                     </p>
+                 </div>
+             )}
              
              {/* Recovery Strategy Settings */}
              <div className="pt-6 border-t border-slate-100 space-y-6">
@@ -544,17 +575,6 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                          </div>
                      </div>
                  </div>
-             </div>
-
-             <div className="flex justify-end border-t pt-6">
-                  <button 
-                    disabled={syncing}
-                    className="flex items-center gap-2 bg-slate-100 text-slate-600 px-6 py-3 rounded-2xl font-bold text-[10px] uppercase tracking-widest hover:bg-slate-200 disabled:opacity-50"
-                    onClick={handleLiveSync}
-                  >
-                    <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /> 
-                    Sync Live Rates
-                  </button>
              </div>
           </div>
           

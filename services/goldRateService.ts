@@ -6,6 +6,7 @@ export interface GoldRateResponse {
   success: boolean;
   error?: string;
   source?: string;
+  raw?: any;
 }
 
 export const goldRateService = {
@@ -35,7 +36,8 @@ export const goldRateService = {
             rate22K: data.k22 || 0,
             rate18K: data.k18 || 0,
             success: data.success,
-            source: data.source
+            source: data.source,
+            raw: data.raw
         };
     } catch (e: any) {
         console.error("[GoldRateService] Fetch Error:", e.message);
