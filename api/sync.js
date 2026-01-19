@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { getPool, ensureDb } from './db.js';
 
@@ -28,6 +27,18 @@ router.post('/customers', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+router.post('/templates', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        for (const tpl of req.body.templates) {
+            await connection.query('INSERT INTO templates (id, name, category, data) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), data=VALUES(data)', [tpl.id, tpl.name, tpl.category || 'UTILITY', JSON.stringify(tpl)]);
+        }
+        connection.release();
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.post('/settings', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
@@ -39,6 +50,8 @@ router.post('/settings', ensureDb, async (req, res) => {
             currentGoldRate24K: settings.currentGoldRate24K,
             currentGoldRate22K: settings.currentGoldRate22K,
             currentGoldRate18K: settings.currentGoldRate18K,
+            purityFactor22K: settings.purityFactor22K,
+            purityFactor18K: settings.purityFactor18K,
             defaultTaxRate: settings.defaultTaxRate,
             goldRateProtectionMax: settings.goldRateProtectionMax,
             gracePeriodHours: settings.gracePeriodHours,

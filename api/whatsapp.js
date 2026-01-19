@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { getPool, ensureDb, normalizePhone } from './db.js';
 
@@ -62,11 +61,94 @@ router.get('/logs/poll', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// --- TEMPLATE MANAGEMENT ROUTES ---
+
+// Fetch Templates from Meta
+router.get('/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    
+    if (!wabaId || !token) return res.status(400).json({ success: false, error: "Missing WABA credentials" });
+
+    try {
+        const response = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        res.status(response.status).json({ success: response.ok, data: data.data, error: data.error?.message });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Create Template in Meta
+router.post('/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    
+    if (!wabaId || !token) return res.status(400).json({ success: false, error: "Missing WABA credentials" });
+
+    try {
+        const response = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        const data = await response.json();
+        res.status(response.status).json({ success: response.ok, data: data, error: data.error?.message });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Edit Template in Meta
+router.post('/templates/:id', async (req, res) => {
+    const token = req.headers['x-auth-token'];
+    const { id } = req.params;
+    
+    if (!token) return res.status(400).json({ success: false, error: "Missing Auth Token" });
+
+    try {
+        const response = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${id}`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body)
+        });
+        const data = await response.json();
+        res.status(response.status).json({ success: response.ok, data: data, error: data.error?.message });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Delete Template in Meta
+router.delete('/templates', async (req, res) => {
+    const wabaId = req.headers['x-waba-id'];
+    const token = req.headers['x-auth-token'];
+    const name = req.query.name;
+    
+    if (!wabaId || !token || !name) return res.status(400).json({ success: false, error: "Missing credentials or template name" });
+
+    try {
+        const response = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates?name=${name}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        res.status(response.status).json({ success: response.ok, data: data, error: data.error?.message });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Send Message
 router.post('/send', ensureDb, async (req, res) => {
     const { to, message, templateName, language, components, customerName } = req.body;
     const phoneId = req.headers['x-phone-id'];
     const token = req.headers['x-auth-token'];
+    
+    if (!phoneId || !token) return res.status(400).json({ success: false, error: "Missing Phone ID or Token" });
+
     let payload = { messaging_product: "whatsapp", to: normalizePhone(to) };
     if (templateName) payload.template = { name: templateName, language: { code: language || "en_US" }, components };
     else payload.text = { body: message };
@@ -85,7 +167,7 @@ router.post('/send', ensureDb, async (req, res) => {
             await connection.query('INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)', [log.id, log.phoneNumber, 'outbound', new Date(), JSON.stringify(log)]);
             connection.release();
         }
-        res.status(r.status).json({ success: r.ok, data });
+        res.status(r.status).json({ success: r.ok, data, error: data.error?.message });
     } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 

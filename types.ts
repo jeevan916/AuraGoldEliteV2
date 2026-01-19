@@ -1,4 +1,3 @@
-
 export type Purity = '18K' | '22K' | '24K';
 
 export enum OrderStatus {
@@ -25,11 +24,11 @@ export enum ProtectionStatus {
 
 export interface StoneEntry {
   id: string;
-  type: string; // Diamond, Ruby, CZ, etc.
-  weight: number; // Carats or Grams
+  type: string;
+  weight: number;
   unit: 'ct' | 'g' | 'pcs';
   rate: number;
-  quality?: string; // VVS1, G-H, etc.
+  quality?: string;
   total: number;
 }
 
@@ -143,6 +142,8 @@ export interface GlobalSettings {
   currentGoldRate24K: number;
   currentGoldRate22K: number;
   currentGoldRate18K: number;
+  purityFactor22K: number; // New: E.g. 0.916
+  purityFactor18K: number; // New: E.g. 0.750
   defaultTaxRate: number;
   goldRateProtectionMax: number;
   gracePeriodHours: number;
@@ -277,7 +278,6 @@ export interface AiChatInsight {
 
 export type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW';
 
-// Added missing CreditworthinessReport interface to satisfy geminiService.ts requirements
 export interface CreditworthinessReport {
   riskLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
   persona: string;

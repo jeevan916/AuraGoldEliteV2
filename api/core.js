@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { getPool, ensureDb } from './db.js';
 
@@ -24,7 +23,8 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
         const connection = await pool.getConnection();
         const [orders] = await connection.query('SELECT data FROM orders');
         const [customers] = await connection.query('SELECT data FROM customers');
-        const [logs] = await connection.query('SELECT data FROM whatsapp_logs LIMIT 100');
+        const [logs] = await connection.query('SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 100');
+        const [templates] = await connection.query('SELECT data FROM templates');
         const [intRows] = await connection.query('SELECT * FROM integrations');
         connection.release();
         
@@ -37,11 +37,14 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
             orders: orders.map(r => JSON.parse(r.data)),
             customers: customers.map(r => JSON.parse(r.data)),
             logs: logs.map(r => JSON.parse(r.data)),
+            templates: templates.map(r => JSON.parse(r.data)),
             settings: { 
                 // Core Values
                 currentGoldRate24K: core.currentGoldRate24K || 7500,
                 currentGoldRate22K: core.currentGoldRate22K || 6870,
                 currentGoldRate18K: core.currentGoldRate18K || 5625,
+                purityFactor22K: core.purityFactor22K || 0.916,
+                purityFactor18K: core.purityFactor18K || 0.750,
                 defaultTaxRate: core.defaultTaxRate || 3,
                 goldRateProtectionMax: core.goldRateProtectionMax || 500,
                 gracePeriodHours: core.gracePeriodHours || 24,
