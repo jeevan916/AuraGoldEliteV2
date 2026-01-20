@@ -1,12 +1,6 @@
 
 import express from 'express';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { getPool, ensureDb, initDb } from './db.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { getPool, ensureDb } from './db.js';
 
 const router = express.Router();
 
@@ -15,30 +9,10 @@ router.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date
 router.get('/debug/db', async (req, res) => {
     try {
         const pool = getPool();
-        if (!pool) throw new Error("Pool not initialized");
         const connection = await pool.getConnection();
         await connection.query('SELECT 1');
         connection.release();
         res.json({ success: true, config: { host: process.env.DB_HOST, database: process.env.DB_NAME } });
-    } catch (e) {
-        res.status(500).json({ success: false, error: e.message, config: { host: process.env.DB_HOST, database: process.env.DB_NAME } });
-    }
-});
-
-router.post('/debug/configure', async (req, res) => {
-    const { host, user, password, database } = req.body;
-    try {
-        // Update process environment for immediate effect
-        process.env.DB_HOST = host;
-        process.env.DB_USER = user;
-        process.env.DB_PASSWORD = password;
-        process.env.DB_NAME = database;
-
-        // Try to re-initialize pool
-        const result = await initDb();
-        if (!result.success) throw new Error(result.error);
-
-        res.json({ success: true, message: "Credentials accepted and database reconnected." });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -50,7 +24,7 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
         const connection = await pool.getConnection();
         const [orders] = await connection.query('SELECT data FROM orders');
         const [customers] = await connection.query('SELECT data FROM customers');
-        const [logs] = await connection.query('SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 100');
+        const [logs] = await connection.query('SELECT data FROM whatsapp_logs LIMIT 100');
         const [templates] = await connection.query('SELECT data FROM templates');
         const [intRows] = await connection.query('SELECT * FROM integrations');
         connection.release();
@@ -70,7 +44,7 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
                 currentGoldRate24K: core.currentGoldRate24K || 7500,
                 currentGoldRate22K: core.currentGoldRate22K || 6870,
                 currentGoldRate18K: core.currentGoldRate18K || 5625,
-                currentSilverRate: core.currentSilverRate || 90,
+                currentSilverRate: core.currentSilverRate || 90, // Added Silver Rate
                 defaultTaxRate: core.defaultTaxRate || 3,
                 goldRateProtectionMax: core.goldRateProtectionMax || 500,
                 gracePeriodHours: core.gracePeriodHours || 24,
@@ -85,9 +59,7 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
                 setuSecret: intMap.setu?.secret,
                 setuSchemeId: intMap.setu?.schemeId,
                 razorpayKeyId: intMap.razorpay?.keyId,
-                razorpayKeySecret: intMap.razorpay?.secret,
-                msg91AuthKey: intMap.msg91?.authKey,
-                msg91SenderId: intMap.msg91?.senderId
+                razorpayKeySecret: intMap.razorpay?.secret
             }
         }});
     } catch (e) { res.status(500).json({ error: e.message }); }

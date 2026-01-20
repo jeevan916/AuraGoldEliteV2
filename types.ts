@@ -120,7 +120,7 @@ export interface GlobalSettings {
   currentGoldRate24K: number;
   currentGoldRate22K: number;
   currentGoldRate18K: number;
-  currentSilverRate: number;
+  currentSilverRate: number; // Added Silver Rate
   defaultTaxRate: number;
   goldRateProtectionMax: number;
   gracePeriodHours: number; 
@@ -153,7 +153,7 @@ export interface WhatsAppLogEntry {
 }
 
 export type CollectionTone = 'POLITE' | 'FIRM' | 'URGENT' | 'ENCOURAGING';
-export type AppResolutionPath = 'settings' | 'templates' | 'whatsapp' | 'architect' | 'none';
+export type AppResolutionPath = 'settings' | 'templates' | 'whatsapp' | 'none';
 
 export interface Customer {
   id: string;
@@ -199,7 +199,7 @@ export interface AppError {
 export interface ActivityLogEntry {
   id: string;
   timestamp: string;
-  actionType: 'ORDER_CREATED' | 'STATUS_UPDATE' | 'TEMPLATE_SENT' | 'MANUAL_MESSAGE_SENT' | 'PAYMENT_RECORDED' | 'PROTECTION_LAPSED' | 'AUTO_HEAL' | 'NAVIGATION' | 'API_CALL' | 'API_SUCCESS' | 'USER_ACTION' | 'CODE_INJECTION';
+  actionType: 'ORDER_CREATED' | 'STATUS_UPDATE' | 'TEMPLATE_SENT' | 'MANUAL_MESSAGE_SENT' | 'PAYMENT_RECORDED' | 'PROTECTION_LAPSED' | 'AUTO_HEAL' | 'NAVIGATION' | 'API_CALL' | 'API_SUCCESS' | 'USER_ACTION';
   details: string;
   metadata?: any;
 }
@@ -262,35 +262,4 @@ export interface AiChatInsight {
   tone: string;
   suggestedReply: string;
   recommendedTemplateId?: string;
-}
-
-export interface ArchitectFile {
-  path: string;
-  content?: string;
-  lastModified?: string;
-}
-
-export interface CodeInjectionResult {
-  success: boolean;
-  message: string;
-  changesApplied?: string[];
-}
-
-/** 
- * COGNITIVE MEMORY TYPES 
- * These persist the system's understanding of itself
- */
-export interface ComponentDiscovery {
-    name: string;
-    path: string;
-    exports: string[];
-    dependencies: string[];
-    purpose: string;
-}
-
-export interface SystemMap {
-    lastIndexed: string;
-    components: ComponentDiscovery[];
-    services: ComponentDiscovery[];
-    apis: string[];
 }
