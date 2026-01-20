@@ -120,7 +120,7 @@ export interface GlobalSettings {
   currentGoldRate24K: number;
   currentGoldRate22K: number;
   currentGoldRate18K: number;
-  currentSilverRate: number; // Added Silver Rate
+  currentSilverRate: number;
   defaultTaxRate: number;
   goldRateProtectionMax: number;
   gracePeriodHours: number; 
@@ -262,4 +262,24 @@ export interface AiChatInsight {
   tone: string;
   suggestedReply: string;
   recommendedTemplateId?: string;
+}
+
+// --- ARCHITECT SPECIFIC TYPES ---
+export interface ArchitectFile {
+  path: string;
+  lastModified: Date;
+}
+
+export interface ComponentDiscovery {
+  name: string;
+  path: string;
+  exports: string[];
+  purpose: string;
+}
+
+export interface SystemMap {
+  lastIndexed: string;
+  components: ComponentDiscovery[];
+  services: ComponentDiscovery[];
+  apis: string[];
 }
