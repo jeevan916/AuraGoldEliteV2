@@ -124,6 +124,7 @@ export interface GlobalSettings {
   goldRateProtectionMax: number;
   gracePeriodHours: number; 
   followUpIntervalDays: number; 
+  goldRateFetchIntervalMinutes: number; // Interval for server-side auto-fetch
   whatsappPhoneNumberId?: string;
   whatsappBusinessAccountId?: string;
   whatsappBusinessToken?: string;

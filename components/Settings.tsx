@@ -404,6 +404,11 @@ const Settings: React.FC<SettingsProps> = ({ settings, onUpdate }) => {
                     value={localSettings.defaultTaxRate} 
                     onChange={v => setLocalSettings({...localSettings, defaultTaxRate: v})}
                 />
+                <PricingField 
+                    label="Auto-Fetch Gold Rate (Minutes)" 
+                    value={localSettings.goldRateFetchIntervalMinutes} 
+                    onChange={v => setLocalSettings({...localSettings, goldRateFetchIntervalMinutes: v})}
+                />
              </div>
 
              {/* Raw Response Diagnostics */}
@@ -638,14 +643,15 @@ const PricingField = ({ label, value, onChange }: { label: string, value: number
   <div className="space-y-3">
     <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">{label}</label>
     <div className="relative">
-        {label.includes('%') ? null : <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium text-[15px]">₹</span>}
+        {label.includes('%') || label.includes('Minutes') ? null : <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium text-[15px]">₹</span>}
         <input 
             type="number" 
-            className={`w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-lg font-black text-slate-800 focus:bg-white transition-all outline-none ${label.includes('%') ? 'pl-4' : 'pl-9'}`} 
+            className={`w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-lg font-black text-slate-800 focus:bg-white transition-all outline-none ${label.includes('%') || label.includes('Minutes') ? 'pl-4' : 'pl-9'}`} 
             value={value}
             onChange={e => onChange(parseFloat(e.target.value) || 0)}
         />
         {label.includes('%') && <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>}
+        {label.includes('Minutes') && <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs uppercase">Mins</span>}
     </div>
   </div>
 );

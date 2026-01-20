@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2, AlertCircle, RefreshCw, Calendar, Clock } from 'lucide-react';
 import { Card, Button } from '../shared/BaseUI';
-import { Order, OrderStatus, WhatsAppLogEntry } from '../../types';
+import { Order, OrderStatus, WhatsAppLogEntry, Milestone } from '../../types';
 import { whatsappService } from '../../services/whatsappService';
 import { storageService } from '../../services/storageService';
 import { errorService } from '../../services/errorService';
@@ -24,6 +24,8 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
   const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
   const remaining = order.totalAmount - totalPaid;
+  
+  // Find the relevant milestone for current collection context
   const nextMilestone = order.paymentPlan.milestones.find(m => m.status !== 'PAID');
 
   useEffect(() => {
@@ -254,15 +256,39 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
   };
 
   if (variant === 'COMPACT') {
+    // Find the actual milestone that is due or overdue
+    const targetMilestone = nextMilestone;
+    const dueDate = targetMilestone ? new Date(targetMilestone.dueDate) : null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let lateDays = 0;
+    if (dueDate && dueDate < today) {
+        const diffTime = Math.abs(today.getTime() - dueDate.getTime());
+        lateDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    }
+
     return (
       <Card className="p-4 flex justify-between items-center bg-slate-50 border-slate-200">
-        <div>
-          <p className="text-[10px] font-black uppercase text-slate-400">Next Milestone</p>
-          <p className="font-black text-slate-800">
-            {nextMilestone ? `₹${nextMilestone.targetAmount.toLocaleString()}` : 'Fully Settled'}
-          </p>
+        <div className="flex gap-4">
+          <div>
+            <div className="flex items-center gap-1.5 mb-1">
+                <Calendar size={12} className="text-slate-400" />
+                <p className="text-[10px] font-black uppercase text-slate-500 tracking-tight">
+                    {dueDate ? dueDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'Settled'}
+                </p>
+                {lateDays > 0 && (
+                    <span className="flex items-center gap-0.5 bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded text-[9px] font-black uppercase animate-pulse">
+                        <Clock size={8} /> {lateDays} Days Late
+                    </span>
+                )}
+            </div>
+            <p className="font-black text-slate-900 text-base">
+              {targetMilestone ? `₹${targetMilestone.targetAmount.toLocaleString()}` : 'No Dues'}
+            </p>
+          </div>
         </div>
-        <Button size="sm" onClick={() => setActiveTab('REQUEST')} disabled={remaining <= 0}>
+        <Button size="sm" variant={lateDays > 0 ? 'danger' : 'primary'} onClick={() => setActiveTab('REQUEST')} disabled={remaining <= 0}>
           Collect
         </Button>
       </Card>

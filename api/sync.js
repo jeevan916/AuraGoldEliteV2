@@ -1,6 +1,7 @@
 
 import express from 'express';
 import { getPool, ensureDb } from './db.js';
+import { refreshInterval } from './rateService.js';
 
 const router = express.Router();
 
@@ -58,9 +59,15 @@ router.post('/settings', ensureDb, async (req, res) => {
             defaultTaxRate: settings.defaultTaxRate,
             goldRateProtectionMax: settings.goldRateProtectionMax,
             gracePeriodHours: settings.gracePeriodHours,
-            followUpIntervalDays: settings.followUpIntervalDays
+            followUpIntervalDays: settings.followUpIntervalDays,
+            goldRateFetchIntervalMinutes: settings.goldRateFetchIntervalMinutes
         };
         await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['core_settings', JSON.stringify(coreConfig)]);
+
+        // Notify rate service about potential interval change
+        if (settings.goldRateFetchIntervalMinutes) {
+            refreshInterval(settings.goldRateFetchIntervalMinutes);
+        }
 
         // 2. Persist WhatsApp Credentials
         if (settings.whatsappPhoneNumberId) {

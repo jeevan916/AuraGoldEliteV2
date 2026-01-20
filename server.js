@@ -19,6 +19,9 @@ import whatsappRouter from './api/whatsapp.js';
 import syncRouter from './api/sync.js';
 import coreRouter from './api/core.js';
 
+// Background Services
+import { initRateService } from './api/rateService.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -91,16 +94,12 @@ app.use('/api/*', (req, res) => res.status(404).json({ error: `API route ${req.o
 
 // --- STATIC SERVING & AUTO-FIX ---
 
-// CRITICAL FIX: If 'dist' exists (production build), we must ensure the server doesn't 
-// accidentally serve the SOURCE 'index.html' located in the root directory.
-// We rename root 'index.html' to 'index.html.bkp' if it contains source code references.
 const distIndex = path.join(__dirname, 'dist', 'index.html');
 const rootIndex = path.join(__dirname, 'index.html');
 
 if (fs.existsSync(distIndex) && fs.existsSync(rootIndex)) {
     try {
         const content = fs.readFileSync(rootIndex, 'utf-8');
-        // Check if this is the source file (contains import to .tsx)
         if (content.includes('src="./index.tsx"') || content.includes('src="/index.tsx"')) {
             console.log("[System] Detected source index.html in root interfering with build.");
             const backupPath = path.join(__dirname, 'index.html.bkp');
@@ -113,19 +112,14 @@ if (fs.existsSync(distIndex) && fs.existsSync(rootIndex)) {
 }
 
 const getValidDistPath = () => {
-    // 1. Check for standard 'dist' folder (Local dev / Standard build structure)
     const distFolder = path.join(__dirname, 'dist');
     if (fs.existsSync(path.join(distFolder, 'index.html'))) {
         return distFolder;
     }
-
-    // 2. Check current directory (Production deployment where files are flattened)
-    // CRITICAL CHECK: Ensure we don't serve the SOURCE index.html (which contains .tsx refs)
     const localIndex = path.join(__dirname, 'index.html');
     if (fs.existsSync(localIndex)) {
         try {
             const content = fs.readFileSync(localIndex, 'utf-8');
-            // If the file imports index.tsx, it is SOURCE code, not build artifact. Ignore it.
             if (!content.includes('src="./index.tsx"') && !content.includes('src="/index.tsx"')) {
                 return __dirname;
             }
@@ -154,7 +148,6 @@ if (finalDistPath) {
                 <body style="font-family: sans-serif; text-align: center; padding: 50px;">
                     <h1>Backend Online</h1>
                     <p>API services are operational.</p>
-                    <p style="color: gray; font-size: 0.8em;">Frontend build artifacts not found in 'dist/' or root.</p>
                 </body>
             </html>
         `);
@@ -165,11 +158,12 @@ if (finalDistPath) {
 initDb().then((result) => {
     if (result.success) {
         console.log("[Database] Connectivity verified.");
+        // Initialize Background Services
+        initRateService();
     } else {
         console.error("[Database] Initialization failed:", result.error);
     }
     
-    // Use httpServer.listen instead of app.listen to support WebSockets
     httpServer.listen(PORT, '0.0.0.0', () => {
         console.log(`[Server] Cluster operational on port ${PORT} (HTTP + WebSocket)`);
     });

@@ -22,6 +22,7 @@ export const INITIAL_SETTINGS: GlobalSettings = {
   goldRateProtectionMax: 500,
   gracePeriodHours: 24, // Default 24 hours grace
   followUpIntervalDays: 3, // Default follow up every 3 days
+  goldRateFetchIntervalMinutes: 60, // Default 60 mins
   whatsappPhoneNumberId: getEnv('VITE_WHATSAPP_PHONE_ID'),
   whatsappBusinessAccountId: getEnv('VITE_WHATSAPP_WABA_ID'),
   whatsappBusinessToken: getEnv('VITE_WHATSAPP_TOKEN'),
