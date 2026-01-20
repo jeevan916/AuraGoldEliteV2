@@ -44,11 +44,12 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
                 currentGoldRate24K: core.currentGoldRate24K || 7500,
                 currentGoldRate22K: core.currentGoldRate22K || 6870,
                 currentGoldRate18K: core.currentGoldRate18K || 5625,
+                currentSilverRate: core.currentSilverRate || 90, // Added Silver Rate
                 defaultTaxRate: core.defaultTaxRate || 3,
                 goldRateProtectionMax: core.goldRateProtectionMax || 500,
                 gracePeriodHours: core.gracePeriodHours || 24,
                 followUpIntervalDays: core.followUpIntervalDays || 3,
-                goldRateFetchIntervalMinutes: core.goldRateFetchIntervalMinutes || 60, // Added missing field
+                goldRateFetchIntervalMinutes: core.goldRateFetchIntervalMinutes || 60,
                 
                 // Integration Mappings
                 whatsappPhoneNumberId: intMap.whatsapp?.phoneId, 

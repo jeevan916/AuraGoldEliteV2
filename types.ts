@@ -1,5 +1,5 @@
 
-export type Purity = '18K' | '22K' | '24K';
+export type Purity = '18K' | '22K' | '24K' | '925' | '999';
 
 export enum OrderStatus {
   ACTIVE = 'ACTIVE',
@@ -62,7 +62,7 @@ export interface PaymentPlan {
 export interface JewelryDetail {
   id: string;
   category: string;
-  metalColor: 'Yellow Gold' | 'Rose Gold' | 'White Gold';
+  metalColor: 'Yellow Gold' | 'Rose Gold' | 'White Gold' | 'Silver';
   grossWeight?: number;
   netWeight: number;
   wastagePercentage: number;
@@ -120,11 +120,12 @@ export interface GlobalSettings {
   currentGoldRate24K: number;
   currentGoldRate22K: number;
   currentGoldRate18K: number;
+  currentSilverRate: number; // Added Silver Rate
   defaultTaxRate: number;
   goldRateProtectionMax: number;
   gracePeriodHours: number; 
   followUpIntervalDays: number; 
-  goldRateFetchIntervalMinutes: number; // Interval for server-side auto-fetch
+  goldRateFetchIntervalMinutes: number; 
   whatsappPhoneNumberId?: string;
   whatsappBusinessAccountId?: string;
   whatsappBusinessToken?: string;
@@ -184,7 +185,7 @@ export interface AppError {
   stack?: string;
   severity: ErrorSeverity;
   status: ErrorStatus;
-  rawContext?: any; // NEW: Holds full raw response/payload for deep AI analysis
+  rawContext?: any; 
   
   aiDiagnosis?: string;
   aiFixApplied?: string; 

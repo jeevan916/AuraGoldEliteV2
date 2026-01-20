@@ -24,6 +24,16 @@ export async function fetchAndSaveRate() {
 
         const priceData = extData.data[0][0];
         const rate24k = Math.round(parseFloat(priceData.gSell));
+        
+        // Attempt to get silver rate, usually sSell. If > 1000, assume per KG and normalize to per gram.
+        let rateSilver = 0;
+        if (priceData.sSell) {
+            const rawSilver = parseFloat(priceData.sSell);
+            rateSilver = rawSilver > 1000 ? Math.round(rawSilver / 1000) : Math.round(rawSilver);
+        } else {
+            rateSilver = 90; // Fallback if missing
+        }
+
         if (!rate24k || rate24k <= 0) throw new Error("Invalid rate value received");
 
         const rate22k = Math.round(rate24k * 0.916);
@@ -34,8 +44,8 @@ export async function fetchAndSaveRate() {
         
         const connection = await pool.getConnection();
         await connection.query(
-            'INSERT INTO gold_rates (rate24k, rate22k, rate18k) VALUES (?, ?, ?)', 
-            [rate24k, rate22k, rate18k]
+            'INSERT INTO gold_rates (rate24k, rate22k, rate18k, rateSilver) VALUES (?, ?, ?, ?)', 
+            [rate24k, rate22k, rate18k, rateSilver]
         );
         
         // Also update core_settings to reflect the latest "cached" rate for UI
@@ -45,12 +55,13 @@ export async function fetchAndSaveRate() {
             config.currentGoldRate24K = rate24k;
             config.currentGoldRate22K = rate22k;
             config.currentGoldRate18K = rate18k;
+            config.currentSilverRate = rateSilver;
             await connection.query("UPDATE integrations SET config = ? WHERE provider = 'core_settings'", [JSON.stringify(config)]);
         }
 
         connection.release();
-        console.log(`[RateService] Rate successfully saved: 24K=₹${rate24k}`);
-        return { success: true, rate24k };
+        console.log(`[RateService] Rates successfully saved: 24K=₹${rate24k}, Silver=₹${rateSilver}`);
+        return { success: true, rate24k, rateSilver };
     } catch (e) {
         console.error("[RateService] Automatic fetch failed:", e.message);
         return { success: false, error: e.message };

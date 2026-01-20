@@ -3,6 +3,7 @@ export interface GoldRateResponse {
   rate24K: number;
   rate22K: number;
   rate18K: number;
+  silver: number;
   success: boolean;
   error?: string;
   source?: string;
@@ -37,6 +38,7 @@ export const goldRateService = {
             rate24K: data.k24 || 0,
             rate22K: data.k22 || 0,
             rate18K: data.k18 || 0,
+            silver: data.silver || 0,
             success: data.success,
             source: data.source,
             raw: data.raw
@@ -47,6 +49,7 @@ export const goldRateService = {
             rate24K: 0, 
             rate22K: 0, 
             rate18K: 0,
+            silver: 0,
             success: false, 
             error: e.message 
         };

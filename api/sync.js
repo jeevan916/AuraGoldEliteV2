@@ -56,6 +56,7 @@ router.post('/settings', ensureDb, async (req, res) => {
             currentGoldRate24K: settings.currentGoldRate24K,
             currentGoldRate22K: settings.currentGoldRate22K,
             currentGoldRate18K: settings.currentGoldRate18K,
+            currentSilverRate: settings.currentSilverRate,
             defaultTaxRate: settings.defaultTaxRate,
             goldRateProtectionMax: settings.goldRateProtectionMax,
             gracePeriodHours: settings.gracePeriodHours,

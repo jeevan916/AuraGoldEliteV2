@@ -14,9 +14,11 @@ interface MarketIntelligenceProps {
 }
 
 type Timeframe = 'TODAY' | '3D' | '5D' | '1W' | '15D' | '1M';
+type MetalType = 'GOLD' | 'SILVER';
 
 const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, settings }) => {
   const [timeframe, setTimeframe] = useState<Timeframe>('1W');
+  const [metal, setMetal] = useState<MetalType>('GOLD');
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -61,10 +63,10 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
           time: timeframe === 'TODAY' 
             ? new Date(h.recorded_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
             : new Date(h.recorded_at).toLocaleDateString([], {day: 'numeric', month: 'short'}),
-          rate: parseFloat(h.rate22k),
+          rate: metal === 'GOLD' ? parseFloat(h.rate22k) : parseFloat(h.rateSilver || 90),
           fullDate: new Date(h.recorded_at).toLocaleString()
       }));
-  }, [history, timeframe]);
+  }, [history, timeframe, metal]);
 
   const stats = useMemo(() => {
       if (chartData.length < 2) return { change: 0, pct: 0 };
@@ -77,43 +79,51 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
 
   // --- ONGOING ORDERS ANALYSIS ---
   const activeAnalytics = useMemo(() => {
-      const activeOrders = orders.filter(o => o.status !== OrderStatus.DELIVERED && o.status !== OrderStatus.CANCELLED);
+      const activeOrders = orders.filter(o => 
+          o.status !== OrderStatus.DELIVERED && 
+          o.status !== OrderStatus.CANCELLED &&
+          // Filter logic for exposure based on metal type
+          (metal === 'GOLD' 
+              ? (!o.items.some(i => i.metalColor === 'Silver')) 
+              : (o.items.some(i => i.metalColor === 'Silver'))
+          )
+      );
       
-      let totalGoldWeight = 0;
-      let totalBookedMetalValue = 0;
+      let totalWeight = 0;
+      let totalBookedValue = 0;
       let totalUnpaidBalance = 0;
 
       activeOrders.forEach(o => {
-          const weight = o.items.reduce((acc, i) => acc + i.netWeight, 0);
-          totalGoldWeight += weight;
+          const relevantItems = o.items.filter(i => metal === 'GOLD' ? i.metalColor !== 'Silver' : i.metalColor === 'Silver');
+          const weight = relevantItems.reduce((acc, i) => acc + i.netWeight, 0);
+          totalWeight += weight;
           
-          const paid = o.payments.reduce((acc, p) => acc + p.amount, 0);
-          const balance = o.totalAmount - paid;
-          totalUnpaidBalance += balance;
-
-          // Estimate the portion of gold weight that is "unpaid"
-          // Formula: (Unpaid Balance / Total Order Value) * Total Order Gold Weight
-          // Note: Using 22K normalized booking rates for simplicity
-          totalBookedMetalValue += weight * o.goldRateAtBooking;
+          if (weight > 0) {
+              const paid = o.payments.reduce((acc, p) => acc + p.amount, 0);
+              const balance = o.totalAmount - paid;
+              totalUnpaidBalance += balance; // Simplified allocation for mixed orders
+              
+              // Use booking rate logic
+              totalBookedValue += weight * o.goldRateAtBooking; 
+          }
       });
 
-      const avgBookingRate = totalGoldWeight > 0 ? (totalBookedMetalValue / totalGoldWeight) : settings.currentGoldRate22K;
+      const currentRate = metal === 'GOLD' ? settings.currentGoldRate22K : settings.currentSilverRate;
+      const avgBookingRate = totalWeight > 0 ? (totalBookedValue / totalWeight) : currentRate;
       
-      // Calculate exposure:
-      // Weight of gold equivalent to the unpaid amount at their BOOKED rates
-      const unpaidGoldWeight = totalGoldWeight > 0 ? (totalUnpaidBalance / (totalBookedMetalValue / totalGoldWeight)) : 0;
-      const currentCostOfUnpaidGold = totalUnpaidBalance > 0 ? (totalUnpaidBalance / avgBookingRate) * settings.currentGoldRate22K : 0;
-      const exposurePL = totalUnpaidBalance - currentCostOfUnpaidGold;
+      const unpaidWeight = totalWeight > 0 ? (totalUnpaidBalance / (totalBookedValue / totalWeight)) : 0;
+      const currentCostOfUnpaid = totalUnpaidBalance > 0 ? (totalUnpaidBalance / avgBookingRate) * currentRate : 0;
+      const exposurePL = totalUnpaidBalance - currentCostOfUnpaid;
 
       return {
-          totalGoldWeight,
+          totalWeight,
           avgBookingRate,
           totalUnpaidBalance,
-          currentCostOfUnpaidGold,
+          currentCostOfUnpaid,
           exposurePL,
           activeOrderCount: activeOrders.length
       };
-  }, [orders, settings]);
+  }, [orders, settings, metal]);
 
   if (loading) {
       return (
@@ -135,15 +145,31 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
            </h2>
            <p className="text-sm text-slate-500 font-medium">Internal Analytics & Bullion Volatility Monitor</p>
         </div>
-        <div className="flex bg-slate-100 p-1 rounded-2xl w-full md:w-auto overflow-x-auto shadow-inner">
-            {(['TODAY', '3D', '5D', '1W', '15D', '1M'] as Timeframe[]).map(t => (
+        <div className="flex gap-4">
+            <div className="flex bg-slate-100 p-1 rounded-2xl shadow-inner">
                 <button 
-                    key={t} onClick={() => setTimeframe(t)}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${timeframe === t ? 'bg-white text-slate-900 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                    onClick={() => setMetal('GOLD')}
+                    className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${metal === 'GOLD' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
                 >
-                    {t}
+                    GOLD
                 </button>
-            ))}
+                <button 
+                    onClick={() => setMetal('SILVER')}
+                    className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${metal === 'SILVER' ? 'bg-slate-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                    SILVER
+                </button>
+            </div>
+            <div className="flex bg-slate-100 p-1 rounded-2xl w-full md:w-auto overflow-x-auto shadow-inner">
+                {(['TODAY', '3D', '5D', '1W', '15D', '1M'] as Timeframe[]).map(t => (
+                    <button 
+                        key={t} onClick={() => setTimeframe(t)}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${timeframe === t ? 'bg-white text-slate-900 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                        {t}
+                    </button>
+                ))}
+            </div>
         </div>
       </div>
 
@@ -154,9 +180,13 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
               <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl relative overflow-hidden">
                   <div className="flex justify-between items-start mb-8 relative z-10">
                       <div>
-                          <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Standard 22K (Live History)</p>
+                          <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">
+                              {metal === 'GOLD' ? 'Standard 22K (Live History)' : 'Fine Silver (1g Live History)'}
+                          </p>
                           <div className="flex items-center gap-4">
-                              <h3 className="text-4xl font-black text-slate-900">₹{settings.currentGoldRate22K.toLocaleString()}</h3>
+                              <h3 className="text-4xl font-black text-slate-900">
+                                  ₹{metal === 'GOLD' ? settings.currentGoldRate22K.toLocaleString() : settings.currentSilverRate.toLocaleString()}
+                              </h3>
                               <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black ${stats.change >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
                                   {stats.change >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
                                   {Math.abs(stats.change).toFixed(2)} ({Math.abs(stats.pct).toFixed(2)}%)
@@ -173,8 +203,8 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
                         <AreaChart data={chartData}>
                             <defs>
                                 <linearGradient id="colorRate" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.2}/>
-                                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                                    <stop offset="5%" stopColor={metal === 'GOLD' ? "#f59e0b" : "#64748b"} stopOpacity={0.2}/>
+                                    <stop offset="95%" stopColor={metal === 'GOLD' ? "#f59e0b" : "#64748b"} stopOpacity={0}/>
                                 </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -186,7 +216,7 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
                                 minTickGap={30}
                             />
                             <YAxis 
-                                domain={['dataMin - 100', 'dataMax + 100']} 
+                                domain={['dataMin - 50', 'dataMax + 50']} 
                                 axisLine={false} 
                                 tickLine={false} 
                                 tick={{fontSize: 9, fontWeight: 'bold', fill: '#94a3b8'}}
@@ -195,12 +225,12 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
                             <Tooltip 
                                 contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', padding: '15px'}}
                                 labelStyle={{fontWeight: 'black', color: '#1e293b', marginBottom: '5px', fontSize: '10px', textTransform: 'uppercase'}}
-                                itemStyle={{fontSize: '14px', fontWeight: 'bold', color: '#f59e0b'}}
+                                itemStyle={{fontSize: '14px', fontWeight: 'bold', color: metal === 'GOLD' ? '#f59e0b' : '#64748b'}}
                             />
                             <Area 
                                 type="monotone" 
                                 dataKey="rate" 
-                                stroke="#f59e0b" 
+                                stroke={metal === 'GOLD' ? "#f59e0b" : "#64748b"} 
                                 strokeWidth={4}
                                 fillOpacity={1} 
                                 fill="url(#colorRate)" 
@@ -220,20 +250,20 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
 
           {/* 3. BOOKING EXPOSURE (COL-SPAN 4) */}
           <div className="lg:col-span-4 space-y-6">
-              <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden border border-slate-800">
+              <div className={`rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden border ${metal === 'GOLD' ? 'bg-slate-900 border-slate-800' : 'bg-slate-700 border-slate-600'}`}>
                   <div className="relative z-10 space-y-8">
                       <div className="flex items-center gap-3">
-                          <div className="p-3 bg-amber-500/20 text-amber-500 rounded-2xl"><Zap size={24} /></div>
+                          <div className={`p-3 rounded-2xl ${metal === 'GOLD' ? 'bg-amber-500/20 text-amber-500' : 'bg-white/20 text-white'}`}><Zap size={24} /></div>
                           <div>
-                              <h4 className="font-black text-lg">Active Exposure</h4>
-                              <p className="text-[10px] uppercase font-bold text-slate-500 tracking-[0.2em]">Risk Analysis</p>
+                              <h4 className="font-black text-lg">Active {metal} Exposure</h4>
+                              <p className="text-[10px] uppercase font-bold opacity-60 tracking-[0.2em]">Risk Analysis</p>
                           </div>
                       </div>
 
                       <div className="space-y-6">
                           <ExposureStat 
-                            label="Total Booked Gold" 
-                            value={`${activeAnalytics.totalGoldWeight.toFixed(3)} g`} 
+                            label={`Total Booked ${metal}`} 
+                            value={`${activeAnalytics.totalWeight.toFixed(3)} g`} 
                             sub={`Across ${activeAnalytics.activeOrderCount} ongoing orders`}
                           />
                           <ExposureStat 
@@ -243,8 +273,8 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
                           />
                           <ExposureStat 
                             label="Unpaid Balance Cost" 
-                            value={`₹${Math.round(activeAnalytics.currentCostOfUnpaidGold).toLocaleString()}`} 
-                            sub={`Replacement value at ₹${settings.currentGoldRate22K}/g`}
+                            value={`₹${Math.round(activeAnalytics.currentCostOfUnpaid).toLocaleString()}`} 
+                            sub={`Replacement value at current rates`}
                           />
                       </div>
 
@@ -256,14 +286,9 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
                               </div>
                               {activeAnalytics.exposurePL >= 0 ? <TrendingUp size={32} /> : <ArrowDownRight size={32} />}
                           </div>
-                          <p className="text-[9px] font-bold mt-2 opacity-80 leading-relaxed italic">
-                              {activeAnalytics.exposurePL >= 0 
-                                ? "*Market drop: Jeweler saves on replacement cost for unpaid balances." 
-                                : "*Market rise: Future replacement cost is higher than contractual balance."}
-                          </p>
                       </div>
                   </div>
-                  <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-[100px]"></div>
+                  <div className={`absolute top-0 right-0 w-64 h-64 rounded-full blur-[100px] ${metal === 'GOLD' ? 'bg-amber-500/5' : 'bg-white/5'}`}></div>
               </div>
 
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-start gap-4">
@@ -271,7 +296,7 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
                   <div>
                       <h4 className="font-bold text-slate-800 text-sm">Hedge Recommendation</h4>
                       <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                          Based on {activeAnalytics.totalGoldWeight.toFixed(1)}g total exposure, we recommend maintaining a 20% liquid bullion reserve.
+                          Based on {activeAnalytics.totalWeight.toFixed(1)}g total exposure, we recommend maintaining a 20% liquid bullion reserve.
                       </p>
                   </div>
               </div>
@@ -284,9 +309,9 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
 
 const ExposureStat = ({ label, value, sub }: any) => (
     <div>
-        <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1">{label}</p>
+        <p className="text-[10px] font-black uppercase tracking-widest mb-1 opacity-60">{label}</p>
         <p className="text-xl font-black text-white">{value}</p>
-        <p className="text-[10px] font-medium text-slate-400">{sub}</p>
+        <p className="text-[10px] font-medium opacity-50">{sub}</p>
     </div>
 );
 

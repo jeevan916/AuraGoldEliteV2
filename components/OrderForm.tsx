@@ -75,9 +75,32 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
       }
   }, [orderRate, step]);
 
+  // Update defaults when metal color changes (switch to Silver purities)
+  useEffect(() => {
+      if (currentItem.metalColor === 'Silver') {
+          if (currentItem.purity !== '925' && currentItem.purity !== '999') {
+              setCurrentItem(prev => ({ ...prev, purity: '925' }));
+          }
+      } else {
+          if (currentItem.purity === '925' || currentItem.purity === '999') {
+              setCurrentItem(prev => ({ ...prev, purity: '22K' }));
+          }
+      }
+  }, [currentItem.metalColor]);
+
   const pricing = useMemo(() => {
-    const rate = currentItem.purity === '24K' ? settings.currentGoldRate24K : 
-                 currentItem.purity === '18K' ? settings.currentGoldRate18K : orderRate;
+    let rate = 0;
+    
+    if (currentItem.metalColor === 'Silver') {
+        // Silver Logic
+        const baseSilver = settings.currentSilverRate;
+        rate = currentItem.purity === '925' ? Math.round(baseSilver * 0.925) : baseSilver;
+    } else {
+        // Gold Logic
+        rate = currentItem.purity === '24K' ? settings.currentGoldRate24K : 
+               currentItem.purity === '18K' ? settings.currentGoldRate18K : orderRate;
+    }
+
     const metalValue = (currentItem.netWeight || 0) * rate;
     const wastageValue = metalValue * ((currentItem.wastagePercentage || 0) / 100);
     const laborValue = (currentItem.makingChargesPerGram || 0) * (currentItem.netWeight || 0);
@@ -271,7 +294,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
       items: cartItems,
       payments: [],
       totalAmount: cartTotal,
-      goldRateAtBooking: orderRate,
+      goldRateAtBooking: orderRate, // Note: This stores base gold rate. Silver orders handle internally.
       status: OrderStatus.ACTIVE,
       createdAt: new Date().toISOString(),
       paymentPlan: { 
@@ -286,11 +309,8 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
 
     // SCENARIO 1: Order Created (Send Agreement)
     try {
-        // Prepare Variables for updated auragold_order_agreement
         const itemName = cartItems.length > 0 ? cartItems[0].category + (cartItems.length > 1 ? ` & ${cartItems.length - 1} others` : '') : 'Jewellery';
         
-        // Generate Schedule List String
-        // Format: "1. 6 Jan: ₹16,155"
         const scheduleString = finalOrder.paymentPlan.milestones.map((m, i) => {
             const date = new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
             return `${i+1}. ${date}: ₹${m.targetAmount.toLocaleString()}`;
@@ -345,7 +365,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
         <div className="space-y-4 animate-fadeIn">
           <div className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center text-white shadow-xl border border-slate-800">
             <div>
-               <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">Locked 22K Rate</p>
+               <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">Locked 22K Rate (Ref)</p>
                <div className="flex items-center gap-2">
                  <span className="text-amber-500 font-black">₹</span>
                  <input 
@@ -400,18 +420,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                       value={currentItem.category} 
                       onChange={e => setCurrentItem({...currentItem, category: e.target.value})}
                     >
-                        {['Ring', 'Necklace', 'Earrings', 'Bangle', 'Bracelet', 'Chain', 'Pendant', 'Set', 'Mangalsutra', 'Coins', 'Kada'].map(c => <option key={c}>{c}</option>)}
-                    </select>
-                </InputWrapper>
-                <InputWrapper label="Purity">
-                    <select 
-                      className="w-full font-bold bg-transparent outline-none text-slate-800" 
-                      value={currentItem.purity} 
-                      onChange={e => setCurrentItem({...currentItem, purity: e.target.value as Purity})}
-                    >
-                        <option value="22K">22K Hallmark</option>
-                        <option value="24K">24K Bullion</option>
-                        <option value="18K">18K Studded</option>
+                        {['Ring', 'Necklace', 'Earrings', 'Bangle', 'Bracelet', 'Chain', 'Pendant', 'Set', 'Mangalsutra', 'Coins', 'Kada', 'Silverware'].map(c => <option key={c}>{c}</option>)}
                     </select>
                 </InputWrapper>
                 <InputWrapper label="Metal Color">
@@ -423,6 +432,27 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                         <option value="Yellow Gold">Yellow Gold</option>
                         <option value="Rose Gold">Rose Gold</option>
                         <option value="White Gold">White Gold</option>
+                        <option value="Silver">Silver (Ag)</option>
+                    </select>
+                </InputWrapper>
+                <InputWrapper label="Purity">
+                    <select 
+                      className="w-full font-bold bg-transparent outline-none text-slate-800" 
+                      value={currentItem.purity} 
+                      onChange={e => setCurrentItem({...currentItem, purity: e.target.value as Purity})}
+                    >
+                        {currentItem.metalColor === 'Silver' ? (
+                            <>
+                                <option value="925">925 Sterling</option>
+                                <option value="999">999 Fine Silver</option>
+                            </>
+                        ) : (
+                            <>
+                                <option value="22K">22K Hallmark</option>
+                                <option value="24K">24K Bullion</option>
+                                <option value="18K">18K Studded</option>
+                            </>
+                        )}
                     </select>
                 </InputWrapper>
             </div>

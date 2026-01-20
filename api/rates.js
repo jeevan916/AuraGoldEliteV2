@@ -14,18 +14,20 @@ router.get('/gold-rate', ensureDb, async (req, res) => {
             const rate24k = result.rate24k;
             const rate22k = Math.round(rate24k * 0.916);
             const rate18k = Math.round(rate24k * 0.75);
+            const rateSilver = result.rateSilver || 90;
             
             res.json({ 
                 success: true, 
                 k24: rate24k, 
                 k22: rate22k, 
                 k18: rate18k, 
+                silver: rateSilver,
                 source: 'Augmont Live (Manual Trigger)'
             });
         } else {
             // Fallback to latest from DB if manual fetch failed
             const pool = getPool();
-            const [rows] = await pool.query('SELECT rate24k, rate22k, rate18k FROM gold_rates ORDER BY recorded_at DESC LIMIT 1');
+            const [rows] = await pool.query('SELECT rate24k, rate22k, rate18k, rateSilver FROM gold_rates ORDER BY recorded_at DESC LIMIT 1');
             
             if (rows.length > 0) {
                 res.json({
@@ -33,6 +35,7 @@ router.get('/gold-rate', ensureDb, async (req, res) => {
                     k24: parseFloat(rows[0].rate24k),
                     k22: parseFloat(rows[0].rate22k),
                     k18: parseFloat(rows[0].rate18k),
+                    silver: parseFloat(rows[0].rateSilver || 90),
                     source: 'Local Cache (API Error Fallback)'
                 });
             } else {
@@ -49,7 +52,7 @@ router.get('/rates/history', ensureDb, async (req, res) => {
         const pool = getPool();
         const connection = await pool.getConnection();
         // Retrieve last 5000 points for granular charting (frontend will filter)
-        const [rows] = await connection.query('SELECT rate24k, rate22k, rate18k, recorded_at FROM gold_rates ORDER BY recorded_at DESC LIMIT 5000');
+        const [rows] = await connection.query('SELECT rate24k, rate22k, rate18k, rateSilver, recorded_at FROM gold_rates ORDER BY recorded_at DESC LIMIT 5000');
         connection.release();
         res.json({ success: true, data: rows });
     } catch (e) {

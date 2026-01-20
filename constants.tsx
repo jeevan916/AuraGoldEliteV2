@@ -18,6 +18,7 @@ export const INITIAL_SETTINGS: GlobalSettings = {
   currentGoldRate24K: 7200,
   currentGoldRate22K: 6600,
   currentGoldRate18K: 5400,
+  currentSilverRate: 90, // Default Silver Rate (1g)
   defaultTaxRate: 3,
   goldRateProtectionMax: 500,
   gracePeriodHours: 24, // Default 24 hours grace
@@ -39,10 +40,10 @@ export const INITIAL_CATALOG: CatalogItem[] = [
 ];
 
 export const JEWELRY_CATEGORIES = [
-  'Ring', 'Necklace', 'Earrings', 'Bracelet', 'Bangle', 'Pendant', 'Chain', 'Mangalsutra', 'Set', 'Coins', 'Kada'
+  'Ring', 'Necklace', 'Earrings', 'Bracelet', 'Bangle', 'Pendant', 'Chain', 'Mangalsutra', 'Set', 'Coins', 'Kada', 'Silverware'
 ];
 
-export const PURITY_OPTIONS = ['22K', '24K', '18K'];
+export const PURITY_OPTIONS = ['22K', '24K', '18K', '999', '925'];
 
 export const PRE_CREATED_PLANS = [
   { name: 'Short Term (3 Months)', months: 3, interest: 0, advance: 20 },

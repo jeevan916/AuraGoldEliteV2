@@ -7,7 +7,7 @@ import { PaymentWidget } from './clusters/PaymentWidget';
 
 interface DashboardProps {
   orders: Order[];
-  currentRates?: { k24: number, k22: number };
+  currentRates?: { k24: number, k22: number, silver: number };
   onRefreshRates?: () => Promise<void>;
 }
 
@@ -34,7 +34,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
   return (
     <div className="space-y-8 pb-24 animate-fadeIn">
       
-      {/* 1. AI CASH FLOW ENGINE (Renamed from Recovery) */}
+      {/* 1. AI CASH FLOW ENGINE */}
       <div className="bg-slate-900 bg-gradient-to-r from-emerald-900 to-slate-900 rounded-[2rem] p-6 text-white relative overflow-hidden shadow-xl border border-emerald-500/30">
         <div className="relative z-10">
             <div className="flex justify-between items-start">
@@ -71,7 +71,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
       </div>
 
       {/* 2. Live Rates & Quick Links */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
          <Card className="p-4 bg-white border-slate-200 relative overflow-hidden">
             <div className="flex justify-between items-start">
                 <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Standard 22K</p>
@@ -88,7 +88,16 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
                 <span className="text-[9px] font-bold text-slate-400 mb-1">/g</span>
             </div>
          </Card>
-         <div className="grid grid-cols-2 gap-2">
+         <Card className="p-4 bg-white border-slate-200 relative overflow-hidden">
+            <div className="flex justify-between items-start">
+                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Silver (1g)</p>
+            </div>
+            <div className="flex items-end gap-1">
+                <p className="text-xl font-black text-slate-600">₹{currentRates?.silver?.toLocaleString()}</p>
+                <span className="text-[9px] font-bold text-slate-400 mb-1">/g</span>
+            </div>
+         </Card>
+         <div className="grid grid-cols-2 gap-2 col-span-2 md:col-span-2">
             <button onClick={() => (window as any).dispatchView('ORDER_BOOK')} className="bg-emerald-50 hover:bg-emerald-100 rounded-2xl flex flex-col items-center justify-center text-emerald-700 transition-colors">
                 <BookOpen size={18} />
                 <span className="text-[8px] font-black uppercase mt-1">Book</span>
