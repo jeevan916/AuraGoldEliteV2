@@ -48,6 +48,7 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
                 goldRateProtectionMax: core.goldRateProtectionMax || 500,
                 gracePeriodHours: core.gracePeriodHours || 24,
                 followUpIntervalDays: core.followUpIntervalDays || 3,
+                goldRateFetchIntervalMinutes: core.goldRateFetchIntervalMinutes || 60, // Added missing field
                 
                 // Integration Mappings
                 whatsappPhoneNumberId: intMap.whatsapp?.phoneId, 

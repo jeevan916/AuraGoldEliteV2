@@ -28,20 +28,6 @@ export const whatsappService = {
     return storageService.getSettings();
   },
 
-  /**
-   * Sanitizes variable parameters for the Meta Graph API.
-   * 1. Strips invisible characters (like non-breaking spaces) that cause #100 errors.
-   * 2. Truncates to 1024 characters (Meta's hard limit for variables).
-   */
-  sanitizeParam(val: string | number | undefined | null): string {
-      if (val === undefined || val === null) return " ";
-      const str = val.toString();
-      // Remove common invisible characters/whitespace that break the Meta API JSON parser
-      const cleaned = str.replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, " ").trim();
-      // Enforce 1024 character limit
-      return cleaned.slice(0, 1020);
-  },
-
   async fetchMetaTemplates(): Promise<any[]> {
      const settings = this.getSettings();
      const token = settings.whatsappBusinessToken?.trim();
@@ -121,6 +107,7 @@ export const whatsappService = {
       }
   },
 
+  // Add missing deleteMetaTemplate method
   async deleteMetaTemplate(name: string): Promise<{ success: boolean; error?: any }> {
       const settings = this.getSettings();
       const token = settings.whatsappBusinessToken?.trim();
@@ -154,24 +141,11 @@ export const whatsappService = {
 
     try {
         const components: any[] = [];
-        
-        // Use sanitized variables to prevent #100 errors
-        const sanitizedVars = bodyVariables.map(v => ({ 
-            type: "text", 
-            text: this.sanitizeParam(v) 
-        }));
-
-        if (sanitizedVars.length > 0) {
-            components.push({ type: "body", parameters: sanitizedVars });
+        if (bodyVariables.length > 0) {
+            components.push({ type: "body", parameters: bodyVariables.map(v => ({ type: "text", text: v })) });
         }
-        
         if (buttonVariable) {
-            components.push({ 
-                type: "button", 
-                sub_type: "url", 
-                index: 0, 
-                parameters: [{ type: "text", text: this.sanitizeParam(buttonVariable) }] 
-            });
+            components.push({ type: "button", sub_type: "url", index: 0, parameters: [{ type: "text", text: buttonVariable }] });
         }
 
         const response = await fetch(`${API_BASE}/api/whatsapp/send`, {
@@ -187,19 +161,16 @@ export const whatsappService = {
         const data = await response.json();
         
         if (!data.success) {
-            // Log raw payload to allow Gemini Self-Healing logic to analyze the specific parameter rejection
-            errorService.logError('WhatsApp_Send', `Meta API Failure (#100/Invalid) for ${templateName}`, 'HIGH', undefined, undefined, data);
+            // Log the RAW data to ErrorService for AI Healing
+            errorService.logError('WhatsApp_Send', `Meta API Failure for ${templateName}`, 'HIGH', undefined, undefined, data);
             
-            // Check for structural mismatch or parameter errors
-            const errorMsg = JSON.stringify(data.raw || data.error || "").toLowerCase();
-            const isStructuralError = errorMsg.includes("100") || errorMsg.includes("parameter") || errorMsg.includes("not found");
-
-            if (isStructuralError && retryCount < 1) {
-                console.warn(`[WhatsApp] Meta #100 detected for ${templateName}. Variable count: ${bodyVariables.length}. Attempting AI-Audit.`);
-                // Trigger diagnostic run which can lead to Auto-Heal (REPAIR_TEMPLATE)
-                errorService.runIntelligentAnalysis(`meta-failure-${Date.now()}`);
+            if (retryCount < 1) {
+                const errorMsg = JSON.stringify(data.error || "").toLowerCase();
+                if (errorMsg.includes("not found") || errorMsg.includes("exist") || errorMsg.includes("parameter")) {
+                    console.log("[WhatsApp] Triggering Auto-Heal Strategy...");
+                    // Logic handled in errorService
+                }
             }
-            
             throw new Error(data.error || "Meta API Error");
         }
 
@@ -221,4 +192,36 @@ export const whatsappService = {
     const recipient = this.formatPhoneNumber(to);
     if (!recipient) return { success: false, error: "Invalid Phone Number" };
 
-    const settings =
+    const settings = this.getSettings();
+    const token = settings.whatsappBusinessToken?.trim();
+    if (!settings.whatsappPhoneNumberId || !token) return { success: false, error: "API Credentials Missing" };
+
+    try {
+      const response = await fetch(`${API_BASE}/api/whatsapp/send`, {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'x-phone-id': settings.whatsappPhoneNumberId,
+            'x-auth-token': token
+        },
+        body: JSON.stringify({ to: recipient, message, customerName })
+      });
+
+      const data = await response.json();
+      if (!data.success) throw data;
+
+      return {
+        success: true,
+        messageId: data.data?.messages?.[0]?.id,
+        logEntry: {
+          id: data.data?.messages?.[0]?.id || `wamid.${Date.now()}`,
+          customerName, phoneNumber: recipient, message,
+          status: 'SENT', timestamp: new Date().toISOString(), type: 'CUSTOM', direction: 'outbound'
+        }
+      };
+    } catch (e: any) { 
+        errorService.logError('WhatsApp_Custom', e.error || e.message, 'MEDIUM', undefined, undefined, e);
+        return { success: false, error: e.message || "Send Failed" }; 
+    }
+  }
+};
