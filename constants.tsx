@@ -108,7 +108,7 @@ export const SYSTEM_TRIGGER_MAP: SystemTrigger[] = [
 
 // --- CORE SYSTEM TEMPLATES (THE 9 MANDATORY ONES) ---
 export const REQUIRED_SYSTEM_TEMPLATES = [
-  // 1) Order Created (Agreement) - UPDATED TO USER SAMPLE
+  // 1) Order Created (Agreement)
   {
     name: 'auragold_order_agreement',
     description: 'Sent on creation. Includes Rate Protection details and Payment Schedule.',
@@ -145,7 +145,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     category: 'UTILITY',
     appGroup: 'PAYMENT_COLLECTION',
     variables: ['customer_name', 'amount_paid', 'payment_mode', 'order_id', 'balance_remaining'],
-    content: "Receipt: We received ₹{{1}} via {{2}} for Order {{3}}. Thank you for visiting! Remaining Balance: ₹{{4}}.",
+    content: "Dear {{1}}, Receipt: We received ₹{{2}} via {{3}} for Order {{4}}. Thank you for visiting! Remaining Balance: ₹{{5}}.",
     examples: ["Priya", "20000", "Cash", "ORD-123", "5000"]
   },
   // 5) Stage Update
@@ -165,7 +165,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     category: 'UTILITY',
     appGroup: 'PAYMENT_COLLECTION',
     variables: ['customer_name', 'amount', 'method', 'order_id', 'balance_remaining'],
-    content: "Payment Confirmed! We received ₹{{1}} via {{2}} against Order {{3}}. Your new balance is ₹{{4}}.",
+    content: "Dear {{1}}, Payment Confirmed! We received ₹{{2}} via {{3}} against Order {{4}}. Your new balance is ₹{{5}}.",
     examples: ["Sneha", "5000", "UPI", "ORD-22", "10000"]
   },
   // 7) Market Adjustment (Surcharge)

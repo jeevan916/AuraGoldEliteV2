@@ -179,10 +179,31 @@ router.post('/send', ensureDb, async (req, res) => {
     const { to, message, templateName, language, components, customerName } = req.body;
     const phoneId = req.headers['x-phone-id'];
     const token = req.headers['x-auth-token'];
-    let payload = { messaging_product: "whatsapp", to: normalizePhone(to) };
-    if (templateName) payload.template = { name: templateName, language: { code: language || "en_US" }, components };
-    else payload.text = { body: message };
+
+    if (!phoneId || !token) {
+        return res.status(401).json({ success: false, error: "Missing WhatsApp Credentials on Server" });
+    }
+
+    let payload = { 
+        messaging_product: "whatsapp", 
+        recipient_type: "individual",
+        to: normalizePhone(to) 
+    };
+
+    if (templateName) {
+        payload.type = "template";
+        payload.template = { 
+            name: templateName, 
+            language: { code: language || "en_US" }, 
+            components: components || []
+        };
+    } else {
+        payload.type = "text";
+        payload.text = { body: message };
+    }
     
+    console.log(`[WhatsApp Backend] Sending to ${to} via ${phoneId}. Payload Type: ${payload.type}`);
+
     try {
         const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${phoneId}/messages`, {
             method: 'POST',
@@ -192,7 +213,7 @@ router.post('/send', ensureDb, async (req, res) => {
         const data = await r.json();
         
         if (!r.ok || data.error) {
-             // CRITICAL: Return full data object so Gemini can analyze specific error codes
+             console.error("[WhatsApp Backend] Meta Rejected Request:", data.error);
              return res.status(400).json({ success: false, error: data.error?.message || "Meta API Error", raw: data });
         }
 
@@ -205,7 +226,10 @@ router.post('/send', ensureDb, async (req, res) => {
             connection.release();
         }
         res.status(r.status).json({ success: r.ok, data });
-    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+    } catch (e) { 
+        console.error("[WhatsApp Backend] Internal Fetch Crash:", e);
+        res.status(500).json({ success: false, error: e.message }); 
+    }
 });
 
 export default router;

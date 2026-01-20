@@ -107,7 +107,6 @@ export const whatsappService = {
       }
   },
 
-  // Add missing deleteMetaTemplate method
   async deleteMetaTemplate(name: string): Promise<{ success: boolean; error?: any }> {
       const settings = this.getSettings();
       const token = settings.whatsappBusinessToken?.trim();
@@ -131,7 +130,7 @@ export const whatsappService = {
       }
   },
 
-  async sendTemplateMessage(to: string, templateName: string, languageCode: string = 'en_US', bodyVariables: string[] = [], customerName: string, buttonVariable?: string, retryCount = 0): Promise<WhatsAppResponse> {
+  async sendTemplateMessage(to: string, templateName: string, languageCode: string = 'en_US', bodyVariables: string[] = [], customerName: string, buttonVariable?: string): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
     if (!recipient) return { success: false, error: "Invalid Phone Number" };
 
@@ -141,11 +140,29 @@ export const whatsappService = {
 
     try {
         const components: any[] = [];
+        
+        // Body Parameters (Must be lowercase 'body')
         if (bodyVariables.length > 0) {
-            components.push({ type: "body", parameters: bodyVariables.map(v => ({ type: "text", text: v })) });
+            components.push({ 
+                type: "body", 
+                parameters: bodyVariables.map(v => ({ 
+                    type: "text", 
+                    text: (v || " ").toString() // Meta rejects empty strings, ensure at least a space
+                })) 
+            });
         }
+
+        // Button Parameters (Dynamic URLs)
         if (buttonVariable) {
-            components.push({ type: "button", sub_type: "url", index: 0, parameters: [{ type: "text", text: buttonVariable }] });
+            components.push({ 
+                type: "button", 
+                sub_type: "url", 
+                index: 0, 
+                parameters: [{ 
+                    type: "text", 
+                    text: buttonVariable.toString() 
+                }] 
+            });
         }
 
         const response = await fetch(`${API_BASE}/api/whatsapp/send`, {
@@ -155,23 +172,21 @@ export const whatsappService = {
                 'x-phone-id': settings.whatsappPhoneNumberId,
                 'x-auth-token': token
             },
-            body: JSON.stringify({ to: recipient, templateName, language: languageCode, components, customerName })
+            body: JSON.stringify({ 
+                to: recipient, 
+                templateName, 
+                language: languageCode, 
+                components, 
+                customerName 
+            })
         });
 
         const data = await response.json();
         
         if (!data.success) {
-            // Log the RAW data to ErrorService for AI Healing
-            errorService.logError('WhatsApp_Send', `Meta API Failure for ${templateName}`, 'HIGH', undefined, undefined, data);
-            
-            if (retryCount < 1) {
-                const errorMsg = JSON.stringify(data.error || "").toLowerCase();
-                if (errorMsg.includes("not found") || errorMsg.includes("exist") || errorMsg.includes("parameter")) {
-                    console.log("[WhatsApp] Triggering Auto-Heal Strategy...");
-                    // Logic handled in errorService
-                }
-            }
-            throw new Error(data.error || "Meta API Error");
+            console.error("[WhatsApp] API Error Response:", data);
+            errorService.logError('WhatsApp_Send', `Meta API Failure: ${data.error || 'Unknown Error'}`, 'HIGH', undefined, undefined, data);
+            return { success: false, error: data.error, raw: data };
         }
 
         return {
@@ -179,11 +194,17 @@ export const whatsappService = {
           messageId: data.data?.messages?.[0]?.id,
           logEntry: {
             id: data.data?.messages?.[0]?.id || `wamid.${Date.now()}`,
-            customerName, phoneNumber: recipient, message: `[Template: ${templateName}]`,
-            status: 'SENT', timestamp: new Date().toISOString(), type: 'TEMPLATE', direction: 'outbound'
+            customerName, 
+            phoneNumber: recipient, 
+            message: `[Template: ${templateName}]`,
+            status: 'SENT', 
+            timestamp: new Date().toISOString(), 
+            type: 'TEMPLATE', 
+            direction: 'outbound'
           }
         };
     } catch (error: any) {
+        console.error("[WhatsApp] Network Exception:", error);
         return { success: false, error: error.message };
     }
   },
