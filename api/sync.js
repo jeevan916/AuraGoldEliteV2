@@ -90,10 +90,16 @@ router.post('/settings', ensureDb, async (req, res) => {
             await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['setu', JSON.stringify(setuConfig)]);
         }
 
-        // 4. Persist Other Gateways
+        // 4. Persist Razorpay
         if (settings.razorpayKeyId) {
             const rzpConfig = { keyId: settings.razorpayKeyId, secret: settings.razorpayKeySecret };
             await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['razorpay', JSON.stringify(rzpConfig)]);
+        }
+
+        // 5. Persist Msg91 (Was Omitted)
+        if (settings.msg91AuthKey) {
+            const msgConfig = { authKey: settings.msg91AuthKey, senderId: settings.msg91SenderId };
+            await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['msg91', JSON.stringify(msgConfig)]);
         }
 
         connection.release();

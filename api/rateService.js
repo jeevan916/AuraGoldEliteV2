@@ -25,13 +25,15 @@ export async function fetchAndSaveRate() {
         const priceData = extData.data[0][0];
         const rate24k = Math.round(parseFloat(priceData.gSell));
         
-        // Attempt to get silver rate, usually sSell. If > 1000, assume per KG and normalize to per gram.
+        // Robust Silver Logic: 
+        // Some APIs return per KG (e.g. 92000), some per Gram (e.g. 92).
+        // Standardizing to per gram for Silver 999.
         let rateSilver = 0;
         if (priceData.sSell) {
             const rawSilver = parseFloat(priceData.sSell);
             rateSilver = rawSilver > 1000 ? Math.round(rawSilver / 1000) : Math.round(rawSilver);
         } else {
-            rateSilver = 90; // Fallback if missing
+            rateSilver = 90; // Hard fallback
         }
 
         if (!rate24k || rate24k <= 0) throw new Error("Invalid rate value received");
@@ -40,7 +42,7 @@ export async function fetchAndSaveRate() {
         const rate18k = Math.round(rate24k * 0.75);
 
         const pool = getPool();
-        if (!pool) return; // DB not ready yet
+        if (!pool) return; 
         
         const connection = await pool.getConnection();
         await connection.query(
@@ -48,7 +50,7 @@ export async function fetchAndSaveRate() {
             [rate24k, rate22k, rate18k, rateSilver]
         );
         
-        // Also update core_settings to reflect the latest "cached" rate for UI
+        // Also update core_settings so the frontend gets the latest "official" rate on bootstrap
         const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = 'core_settings'");
         if (rows.length > 0) {
             const config = JSON.parse(rows[0].config);
@@ -60,7 +62,6 @@ export async function fetchAndSaveRate() {
         }
 
         connection.release();
-        console.log(`[RateService] Rates successfully saved: 24K=₹${rate24k}, Silver=₹${rateSilver}`);
         return { success: true, rate24k, rateSilver };
     } catch (e) {
         console.error("[RateService] Automatic fetch failed:", e.message);
@@ -74,13 +75,13 @@ export async function fetchAndSaveRate() {
 export async function initRateService() {
     try {
         const pool = getPool();
-        if (!pool) return setTimeout(initRateService, 5000); // Wait for DB
+        if (!pool) return setTimeout(initRateService, 5000);
 
         const connection = await pool.getConnection();
         const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = 'core_settings'");
         connection.release();
 
-        let interval = 60; // Default
+        let interval = 60;
         if (rows.length > 0) {
             const config = JSON.parse(rows[0].config);
             interval = config.goldRateFetchIntervalMinutes || 60;
@@ -96,9 +97,7 @@ function startLoop(mins) {
     if (backgroundInterval) clearInterval(backgroundInterval);
     currentIntervalMins = mins;
     
-    // Immediate first fetch
     fetchAndSaveRate();
-
     backgroundInterval = setInterval(() => {
         fetchAndSaveRate();
     }, mins * 60 * 1000);
@@ -106,9 +105,6 @@ function startLoop(mins) {
     console.log(`[RateService] Background task started. Fetch interval: ${mins} minutes.`);
 }
 
-/**
- * Updates the fetching interval if changed in settings.
- */
 export function refreshInterval(newMins) {
     if (newMins === currentIntervalMins) return;
     console.log(`[RateService] Refreshing interval to ${newMins} mins`);

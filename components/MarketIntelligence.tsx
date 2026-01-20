@@ -29,7 +29,6 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
         const res = await fetch('/api/rates/history');
         const data = await res.json();
         if (data.success) {
-            // Re-order to chronological for Recharts
             setHistory(data.data.reverse());
         }
     } catch (e) {
@@ -77,12 +76,11 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
       return { change, pct };
   }, [chartData]);
 
-  // --- ONGOING ORDERS ANALYSIS ---
+  // --- EXPOSURE ANALYSIS ---
   const activeAnalytics = useMemo(() => {
       const activeOrders = orders.filter(o => 
           o.status !== OrderStatus.DELIVERED && 
           o.status !== OrderStatus.CANCELLED &&
-          // Filter logic for exposure based on metal type
           (metal === 'GOLD' 
               ? (!o.items.some(i => i.metalColor === 'Silver')) 
               : (o.items.some(i => i.metalColor === 'Silver'))
@@ -101,17 +99,13 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
           if (weight > 0) {
               const paid = o.payments.reduce((acc, p) => acc + p.amount, 0);
               const balance = o.totalAmount - paid;
-              totalUnpaidBalance += balance; // Simplified allocation for mixed orders
-              
-              // Use booking rate logic
+              totalUnpaidBalance += balance;
               totalBookedValue += weight * o.goldRateAtBooking; 
           }
       });
 
       const currentRate = metal === 'GOLD' ? settings.currentGoldRate22K : settings.currentSilverRate;
       const avgBookingRate = totalWeight > 0 ? (totalBookedValue / totalWeight) : currentRate;
-      
-      const unpaidWeight = totalWeight > 0 ? (totalUnpaidBalance / (totalBookedValue / totalWeight)) : 0;
       const currentCostOfUnpaid = totalUnpaidBalance > 0 ? (totalUnpaidBalance / avgBookingRate) * currentRate : 0;
       const exposurePL = totalUnpaidBalance - currentCostOfUnpaid;
 
@@ -129,7 +123,7 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
       return (
           <div className="h-full flex flex-col items-center justify-center space-y-4 py-20">
               <Loader2 className="animate-spin text-amber-500" size={48} />
-              <p className="text-slate-400 font-black uppercase tracking-widest text-sm">Synchronizing Market Data...</p>
+              <p className="text-slate-400 font-black uppercase tracking-widest text-sm">Synchronizing Bullion Data...</p>
           </div>
       );
   }
@@ -137,13 +131,13 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
   return (
     <div className="space-y-8 animate-fadeIn pb-32">
       
-      {/* 1. TOP FINANCIAL STRIP */}
+      {/* Financial Strip */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-slate-200 pb-6">
         <div>
            <h2 className="text-3xl font-black text-slate-800 flex items-center gap-3">
              <Globe className="text-blue-500" /> Market Intelligence
            </h2>
-           <p className="text-sm text-slate-500 font-medium">Internal Analytics & Bullion Volatility Monitor</p>
+           <p className="text-sm text-slate-500 font-medium">Volatality Monitor & Exposure Insights</p>
         </div>
         <div className="flex gap-4">
             <div className="flex bg-slate-100 p-1 rounded-2xl shadow-inner">
@@ -157,7 +151,7 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
                     onClick={() => setMetal('SILVER')}
                     className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${metal === 'SILVER' ? 'bg-slate-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
                 >
-                    SILVER
+                    SILVER 999
                 </button>
             </div>
             <div className="flex bg-slate-100 p-1 rounded-2xl w-full md:w-auto overflow-x-auto shadow-inner">
@@ -175,13 +169,13 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
-          {/* 2. GRANULAR CHART (COL-SPAN 8) */}
+          {/* Detailed Bullion Chart */}
           <div className="lg:col-span-8 space-y-6">
               <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl relative overflow-hidden">
                   <div className="flex justify-between items-start mb-8 relative z-10">
                       <div>
                           <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">
-                              {metal === 'GOLD' ? 'Standard 22K (Live History)' : 'Fine Silver (1g Live History)'}
+                              {metal === 'GOLD' ? 'Standard 22K (Live History)' : 'Fine Silver 999 (Live History)'}
                           </p>
                           <div className="flex items-center gap-4">
                               <h3 className="text-4xl font-black text-slate-900">
@@ -193,7 +187,7 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
                               </div>
                           </div>
                       </div>
-                      <button onClick={fetchHistory} disabled={refreshing} className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:text-amber-500 transition-all active:rotate-180">
+                      <button onClick={fetchHistory} disabled={refreshing} className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:text-amber-500 transition-all">
                          <RefreshCw size={20} className={refreshing ? 'animate-spin' : ''} />
                       </button>
                   </div>
@@ -216,7 +210,7 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
                                 minTickGap={30}
                             />
                             <YAxis 
-                                domain={['dataMin - 50', 'dataMax + 50']} 
+                                domain={['dataMin - 10', 'dataMax + 10']} 
                                 axisLine={false} 
                                 tickLine={false} 
                                 tick={{fontSize: 9, fontWeight: 'bold', fill: '#94a3b8'}}
@@ -241,47 +235,46 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
                   </div>
               </div>
 
-              {/* NEWS LINKS RE-STYLIZED */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <MarketLink url="https://www.moneycontrol.com/commodity/gold-price.html" title="MCX Futures" desc="Real-time Indian commodity exchange data." />
-                  <MarketLink url="https://ibjarates.com/" title="IBJA Official" desc="Official benchmark for Indian Jewelers." />
+                  <MarketLink url="https://ibjarates.com/" title="IBJA Benchmark" desc="Official Indian benchmark for 999 purity bullion." />
+                  <MarketLink url="https://www.moneycontrol.com/commodity/gold-price.html" title="MCX Spot Price" desc="Real-time futures and spot prices for Indian markets." />
               </div>
           </div>
 
-          {/* 3. BOOKING EXPOSURE (COL-SPAN 4) */}
+          {/* Booking Exposure Analysis */}
           <div className="lg:col-span-4 space-y-6">
-              <div className={`rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden border ${metal === 'GOLD' ? 'bg-slate-900 border-slate-800' : 'bg-slate-700 border-slate-600'}`}>
+              <div className={`rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden border ${metal === 'GOLD' ? 'bg-[#0f172a] border-slate-800' : 'bg-slate-700 border-slate-600'}`}>
                   <div className="relative z-10 space-y-8">
                       <div className="flex items-center gap-3">
-                          <div className={`p-3 rounded-2xl ${metal === 'GOLD' ? 'bg-amber-500/20 text-amber-500' : 'bg-white/20 text-white'}`}><Zap size={24} /></div>
+                          <div className={`p-3 rounded-2xl ${metal === 'GOLD' ? 'bg-amber-500/20 text-amber-500' : 'bg-white/20 text-white'}`}><ShieldAlert size={24} /></div>
                           <div>
-                              <h4 className="font-black text-lg">Active {metal} Exposure</h4>
-                              <p className="text-[10px] uppercase font-bold opacity-60 tracking-[0.2em]">Risk Analysis</p>
+                              <h4 className="font-black text-lg">Active {metal === 'SILVER' ? 'Silver 999' : 'Gold'} Exposure</h4>
+                              <p className="text-[10px] uppercase font-bold opacity-60 tracking-[0.2em]">Bullion Replacement Risk</p>
                           </div>
                       </div>
 
                       <div className="space-y-6">
                           <ExposureStat 
-                            label={`Total Booked ${metal}`} 
+                            label={`Unpaid ${metal === 'SILVER' ? 'Silver' : 'Gold'} Weight`} 
                             value={`${activeAnalytics.totalWeight.toFixed(3)} g`} 
-                            sub={`Across ${activeAnalytics.activeOrderCount} ongoing orders`}
+                            sub={`Volume at risk across ${activeAnalytics.activeOrderCount} orders`}
                           />
                           <ExposureStat 
-                            label="Avg. Booking Rate" 
+                            label="Contracted Avg. Rate" 
                             value={`₹${Math.round(activeAnalytics.avgBookingRate).toLocaleString()}`} 
-                            sub="Contractual standard"
+                            sub="Average of all active bookings"
                           />
                           <ExposureStat 
-                            label="Unpaid Balance Cost" 
+                            label="Current Replacement Cost" 
                             value={`₹${Math.round(activeAnalytics.currentCostOfUnpaid).toLocaleString()}`} 
-                            sub={`Replacement value at current rates`}
+                            sub={`Market value of unpaid bullion weight`}
                           />
                       </div>
 
                       <div className={`p-6 rounded-3xl border ${activeAnalytics.exposurePL >= 0 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-rose-500/10 border-rose-500/30 text-rose-400'}`}>
                           <div className="flex justify-between items-center">
                               <div>
-                                  <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Estimated P/L</p>
+                                  <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Estimated Bullion P/L</p>
                                   <p className="text-2xl font-black">₹{Math.round(activeAnalytics.exposurePL).toLocaleString()}</p>
                               </div>
                               {activeAnalytics.exposurePL >= 0 ? <TrendingUp size={32} /> : <ArrowDownRight size={32} />}
@@ -294,9 +287,9 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-start gap-4">
                   <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl"><Calculator size={20} /></div>
                   <div>
-                      <h4 className="font-bold text-slate-800 text-sm">Hedge Recommendation</h4>
+                      <h4 className="font-bold text-slate-800 text-sm">Hedging Insight</h4>
                       <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                          Based on {activeAnalytics.totalWeight.toFixed(1)}g total exposure, we recommend maintaining a 20% liquid bullion reserve.
+                          Your current exposure for {metal} is {activeAnalytics.totalWeight.toFixed(2)}g. Consider buying spot bullion to lock in gains if replacement cost rises.
                       </p>
                   </div>
               </div>
@@ -329,7 +322,7 @@ const MarketLink = ({ url, title, desc }: any) => (
                 <p className="text-[10px] text-slate-500 leading-tight">{desc}</p>
             </div>
         </div>
-        <ArrowRight className="text-slate-300 group-hover:text-amber-500 -rotate-45 group-hover:rotate-0 transition-all" size={20} />
+        <ArrowRight className="text-slate-300 group-hover:text-amber-500 transition-all" size={20} />
     </a>
 );
 
