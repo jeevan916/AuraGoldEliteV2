@@ -44,4 +44,17 @@ router.get('/gold-rate', ensureDb, async (req, res) => {
     }
 });
 
+router.get('/rates/history', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        // Retrieve last 5000 points for granular charting (frontend will filter)
+        const [rows] = await connection.query('SELECT rate24k, rate22k, rate18k, recorded_at FROM gold_rates ORDER BY recorded_at DESC LIMIT 5000');
+        connection.release();
+        res.json({ success: true, data: rows });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 export default router;

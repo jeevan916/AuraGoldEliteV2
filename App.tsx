@@ -302,7 +302,7 @@ const App = () => {
           
           case 'STRATEGY': return <NotificationCenter notifications={notificationTriggers} customers={derivedCustomers} onSend={async (id, ch) => { alert(`Sent via ${ch}`); }} onRefresh={() => {}} loading={false} />;
           
-          case 'MARKET': return <MarketIntelligence />;
+          case 'MARKET': return <MarketIntelligence orders={orders} settings={settings} />;
           
           case 'SYS_LOGS': return <ErrorLogPanel errors={systemErrors} activities={systemActivities} onClear={() => { errorService.clearErrors(); errorService.clearActivity(); }} />;
           
