@@ -2,6 +2,7 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from "@google/genai";
 
@@ -17,14 +18,12 @@ const getAI = () => {
     return new GoogleGenAI({ apiKey: key });
 };
 
-// Security Helper: Ensure path is within project root
 const safePath = (p) => {
     const resolved = path.resolve(rootDir, p);
     if (!resolved.startsWith(rootDir)) throw new Error("Access Denied: Path Escape Detected");
     return resolved;
 };
 
-// Recursively get all editable files
 const getFiles = (dir, fileList = []) => {
     const files = fs.readdirSync(dir);
     files.forEach(file => {
@@ -36,7 +35,7 @@ const getFiles = (dir, fileList = []) => {
             }
         } else {
             const ext = path.extname(file);
-            if (['.ts', '.tsx', '.js', '.json', '.css', '.html'].includes(ext)) {
+            if (['.ts', '.tsx', '.js', '.json', '.css', '.html', '.php', '.env', '.htaccess'].includes(ext)) {
                 fileList.push({
                     path: path.relative(rootDir, filePath),
                     lastModified: stats.mtime
@@ -71,20 +70,45 @@ router.post('/apply', (req, res) => {
     const { filePath, content, commitMessage } = req.body;
     try {
         const fullPath = safePath(filePath);
-        
-        // Backup before overwrite
+        const dir = path.dirname(fullPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
         if (fs.existsSync(fullPath)) {
             const backupPath = `${fullPath}.bak`;
             fs.copyFileSync(fullPath, backupPath);
         }
 
         fs.writeFileSync(fullPath, content, 'utf-8');
-        
-        console.log(`[Architect] Code Injection Applied to ${filePath}: ${commitMessage}`);
         res.json({ success: true, message: `Successfully updated ${filePath}` });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
+});
+
+/**
+ * DEVOPS ENDPOINTS
+ */
+
+router.get('/git-status', (req, res) => {
+    exec('git status -s && git branch --show-current', { cwd: rootDir }, (error, stdout) => {
+        if (error) return res.json({ success: false, error: "Not a git repository or git not installed" });
+        const lines = stdout.trim().split('\n');
+        const branch = lines.pop();
+        res.json({ success: true, branch, changes: lines });
+    });
+});
+
+router.post('/terminal', (req, res) => {
+    const { command } = req.body;
+    if (!command) return res.status(400).json({ error: "No command" });
+    
+    exec(command, { cwd: rootDir, timeout: 60000 }, (error, stdout, stderr) => {
+        res.json({
+            success: !error,
+            output: stdout,
+            error: stderr || (error ? error.message : null)
+        });
+    });
 });
 
 router.post('/generate', async (req, res) => {
@@ -94,21 +118,22 @@ router.post('/generate', async (req, res) => {
 
     try {
         let fileContent = "";
-        if (filePath) {
+        if (filePath && fs.existsSync(safePath(filePath))) {
             fileContent = fs.readFileSync(safePath(filePath), 'utf-8');
         }
 
         let contextData = "";
         if (contextFiles && Array.isArray(contextFiles)) {
             contextFiles.forEach(f => {
-                const content = fs.readFileSync(safePath(f), 'utf-8');
-                contextData += `\n--- FILE: ${f} ---\n${content}\n`;
+                if (fs.existsSync(safePath(f))) {
+                    const content = fs.readFileSync(safePath(f), 'utf-8');
+                    contextData += `\n--- FILE: ${f} ---\n${content}\n`;
+                }
             });
         }
 
-        const model = 'gemini-3-pro-preview';
         const response = await ai.models.generateContent({
-            model,
+            model: 'gemini-3-pro-preview',
             contents: `
             [SYSTEM ROLE]
             You are the "Architect God Mode" for the AuraGold Elite app.
@@ -125,13 +150,10 @@ router.post('/generate', async (req, res) => {
 
             [INSTRUCTIONS]
             - Return ONLY the full content of the updated file.
-            - Do not include markdown code blocks like \`\`\`tsx unless they are part of the actual file content.
+            - Do not include markdown code blocks.
             - Ensure high-quality, bug-free implementation.
-            - Use the types and patterns found in the context files.
             `,
-            config: {
-                thinkingConfig: { thinkingBudget: 4000 }
-            }
+            config: { thinkingConfig: { thinkingBudget: 4000 } }
         });
 
         res.json({ success: true, content: response.text });
