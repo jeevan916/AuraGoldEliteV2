@@ -130,7 +130,15 @@ export const whatsappService = {
       }
   },
 
-  async sendTemplateMessage(to: string, templateName: string, languageCode: string = 'en_US', bodyVariables: string[] = [], customerName: string, buttonVariable?: string): Promise<WhatsAppResponse> {
+  async sendTemplateMessage(
+    to: string, 
+    templateName: string, 
+    languageCode: string = 'en_US', 
+    bodyVariables: string[] = [], 
+    customerName: string, 
+    buttonVariable?: string,
+    headerImageUrl?: string
+  ): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
     if (!recipient) return { success: false, error: "Invalid Phone Number" };
 
@@ -141,18 +149,29 @@ export const whatsappService = {
     try {
         const components: any[] = [];
         
-        // Body Parameters (Must be lowercase 'body')
+        // 1. Header Parameter (Images)
+        if (headerImageUrl) {
+            components.push({
+                type: "header",
+                parameters: [{
+                    type: "image",
+                    image: { link: headerImageUrl }
+                }]
+            });
+        }
+
+        // 2. Body Parameters (Must be lowercase 'body')
         if (bodyVariables.length > 0) {
             components.push({ 
                 type: "body", 
                 parameters: bodyVariables.map(v => ({ 
                     type: "text", 
-                    text: (v || " ").toString() // Meta rejects empty strings, ensure at least a space
+                    text: (v || " ").toString() 
                 })) 
             });
         }
 
-        // Button Parameters (Dynamic URLs)
+        // 3. Button Parameters (Dynamic URLs)
         if (buttonVariable) {
             components.push({ 
                 type: "button", 
@@ -184,7 +203,6 @@ export const whatsappService = {
         const data = await response.json();
         
         if (!data.success) {
-            console.error("[WhatsApp] API Error Response:", data);
             errorService.logError('WhatsApp_Send', `Meta API Failure: ${data.error || 'Unknown Error'}`, 'HIGH', undefined, undefined, data);
             return { success: false, error: data.error, raw: data };
         }
@@ -204,7 +222,6 @@ export const whatsappService = {
           }
         };
     } catch (error: any) {
-        console.error("[WhatsApp] Network Exception:", error);
         return { success: false, error: error.message };
     }
   },

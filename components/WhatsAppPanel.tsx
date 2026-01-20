@@ -6,7 +6,7 @@ import {
   FileText, Plus, RefreshCw, Zap, Lock, Sparkles, BrainCircuit
 } from 'lucide-react';
 import { WhatsAppLogEntry, MessageStatus, WhatsAppTemplate, Customer, AiChatInsight } from '../types';
-import { INITIAL_TEMPLATES } from '../constants';
+import { INITIAL_TEMPLATES, REQUIRED_SYSTEM_TEMPLATES } from '../constants';
 import { whatsappService } from '../services/whatsappService';
 import { geminiService } from '../services/geminiService';
 
@@ -24,7 +24,6 @@ interface ActiveSession {
     name: string;
 }
 
-// Normalizer for grouping
 const normalize = (p: string) => p ? p.replace(/\D/g, '').slice(-10) : '';
 
 const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({ 
@@ -55,7 +54,6 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // --- CORE FIX: GROUPING BY NORMALIZED 10 DIGIT KEY ---
   const conversations = useMemo(() => {
       const grouped: Record<string, WhatsAppLogEntry[]> = {};
       
@@ -67,14 +65,12 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
       });
       
       const logConvos = Object.entries(grouped).map(([key, msgs]) => {
-          // Sort messages by time
           const sortedMsgs = msgs.sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-          // Find most descriptive name
           const name = msgs.find(m => m.customerName !== 'Customer' && m.customerName !== 'New Chat')?.customerName || msgs[0].customerName;
           
           return {
-              key, // Grouping key
-              phone: msgs[0].phoneNumber, // Display phone (likely 91...)
+              key,
+              phone: msgs[0].phoneNumber,
               name,
               lastMessage: sortedMsgs[sortedMsgs.length - 1],
               messages: sortedMsgs,
@@ -82,7 +78,6 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
           };
       });
 
-      // Inject ephemeral sessions that don't have logs yet
       activeSessions.forEach(session => {
           const key = normalize(session.phone);
           if (!grouped[key]) {
@@ -121,7 +116,6 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
     if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [activeConversation?.messages.length, selectedContact]);
   
-  // AI Analysis Logic
   useEffect(() => {
     const runAnalysis = async () => {
         if (!activeConversation || activeConversation.messages.length === 0) {
@@ -143,13 +137,11 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
     runAnalysis();
   }, [activeConversation?.messages.length, activeConversation?.name]);
 
-  // Fix for error in file components/WhatsAppPanel.tsx on line 388: Cannot find name 'handleStartNewChat'.
   const handleStartNewChat = () => {
     if (!newChatPhone) return;
     const formatted = whatsappService.formatPhoneNumber(newChatPhone);
     const key = normalize(formatted);
     
-    // Only add to activeSessions if it doesn't exist in conversations
     if (!conversations.some(c => c.key === key)) {
       setActiveSessions(prev => [...prev, { 
         phone: formatted, 
@@ -161,6 +153,26 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
     setShowNewChatModal(false);
     setNewChatPhone('');
     setNewChatName('');
+  };
+
+  const handleSelectTemplate = (tpl: WhatsAppTemplate) => {
+      setSelectedTemplate(tpl);
+      
+      // Dynamic detection of parameters in content
+      const varMatches = tpl.content.match(/{{[0-9]+}}/g) || [];
+      const varCount = varMatches.length;
+      
+      // Look up human-friendly names from core registry if it matches
+      const coreDef = REQUIRED_SYSTEM_TEMPLATES.find(r => r.name === tpl.name);
+      
+      const placeholders = [];
+      for (let i = 1; i <= varCount; i++) {
+          const coreVarName = coreDef?.variables?.[i-1];
+          placeholders.push(coreVarName ? coreVarName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : `Parameter {{${i}}}`);
+      }
+      
+      setParamPlaceholders(placeholders);
+      setTemplateParams(new Array(varCount).fill(''));
   };
 
   const handleSendMessage = async () => {
@@ -175,11 +187,34 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
   const handleSendTemplate = async () => {
       if (!selectedTemplate || !activeConversation) return;
       setIsSending(true);
-      const result = await whatsappService.sendTemplateMessage(activeConversation.phone, selectedTemplate.name, 'en_US', templateParams, activeConversation.name);
+
+      // Special handling for templates with dynamic buttons
+      const coreDef = REQUIRED_SYSTEM_TEMPLATES.find(r => r.name === selectedTemplate.name);
+      let buttonVar = undefined;
+      let bodyVars = [...templateParams];
+
+      // If the template has a dynamic URL button, the last variable is often meant for the button
+      if (coreDef?.name === 'setu_payment_button' || coreDef?.name === 'auragold_finished_item_showcase' || coreDef?.name === 'auragold_order_agreement') {
+          buttonVar = bodyVars.pop();
+      }
+
+      const result = await whatsappService.sendTemplateMessage(
+          activeConversation.phone, 
+          selectedTemplate.name, 
+          'en_US', 
+          bodyVars, 
+          activeConversation.name,
+          buttonVar
+      );
+
       if (result.success && result.logEntry && onAddLog) {
           onAddLog(result.logEntry);
           setShowTemplateModal(false);
           setSelectedTemplate(null);
+          setTemplateParams([]);
+          setParamPlaceholders([]);
+      } else {
+          alert(`Send Error: ${result.error}`);
       }
       setIsSending(false);
   };
@@ -195,7 +230,6 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
 
   return (
     <div className="flex h-[calc(100vh-140px)] bg-white rounded-3xl border shadow-xl overflow-hidden animate-fadeIn relative">
-      {/* Sidebar */}
       <div className="w-full md:w-80 bg-slate-50 border-r flex flex-col">
         <div className="p-4 border-b bg-white">
             <div className="flex justify-between items-center mb-4">
@@ -234,7 +268,6 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
         </div>
       </div>
 
-      {/* Main Chat Area */}
       <div className="flex-1 flex flex-col bg-[#f0f2f5] relative">
          {activeConversation ? (
             <>
@@ -295,7 +328,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
                         </div>
                     )}
                     <div className="flex items-center gap-2">
-                         <button onClick={() => setShowTemplateModal(true)} className="p-3 text-slate-500 hover:bg-slate-100 rounded-full relative z-30">
+                         <button onClick={() => { setSelectedTemplate(null); setShowTemplateModal(true); }} className="p-3 text-slate-500 hover:bg-slate-100 rounded-full relative z-30">
                             <Paperclip size={20} />
                          </button>
                          <input 
@@ -320,7 +353,6 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
          )}
       </div>
 
-      {/* Modals... */}
       {showTemplateModal && (
           <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
               <div className="bg-white w-full max-md:h-[80vh] max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-fadeIn">
@@ -332,7 +364,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
                     {!selectedTemplate ? (
                         <div className="space-y-2">
                             {templates.map(t => (
-                                <div key={t.id} onClick={() => setSelectedTemplate(t)} className="p-3 border rounded-xl hover:bg-emerald-50 hover:border-emerald-300 cursor-pointer">
+                                <div key={t.id} onClick={() => handleSelectTemplate(t)} className="p-3 border rounded-xl hover:bg-emerald-50 hover:border-emerald-300 cursor-pointer">
                                     <p className="font-bold text-sm text-slate-800">{t.name}</p>
                                     <p className="text-xs text-slate-500 truncate">{t.content}</p>
                                 </div>
@@ -340,31 +372,43 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            <button onClick={() => setSelectedTemplate(null)} className="text-xs text-emerald-600 font-bold mb-2">&larr; Change Template</button>
-                            <div className="bg-slate-50 p-3 rounded-xl text-sm italic border text-slate-600">"{selectedTemplate.content}"</div>
-                            {paramPlaceholders.map((ph, idx) => (
-                                <div key={idx}>
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">{ph}</label>
-                                    <input 
-                                        type="text" className="w-full border rounded-lg p-2 text-sm"
-                                        value={templateParams[idx] || ''}
-                                        onChange={e => {
-                                            const newP = [...templateParams];
-                                            newP[idx] = e.target.value;
-                                            setTemplateParams(newP);
-                                        }}
-                                    />
+                            <button onClick={() => setSelectedTemplate(null)} className="text-xs text-emerald-600 font-bold mb-2 flex items-center gap-1">
+                                <RefreshCw size={10} /> Change Template
+                            </button>
+                            <div className="bg-slate-50 p-4 rounded-xl text-sm italic border text-slate-600 leading-relaxed">
+                                "{selectedTemplate.content}"
+                            </div>
+                            
+                            {paramPlaceholders.length > 0 && (
+                                <div className="space-y-3 pt-2">
+                                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Required Variables</p>
+                                    {paramPlaceholders.map((ph, idx) => (
+                                        <div key={idx} className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">{ph}</label>
+                                            <input 
+                                                type="text" className="w-full border border-slate-200 rounded-xl p-3 text-sm font-medium focus:border-emerald-500 outline-none transition-colors"
+                                                placeholder={`Enter ${ph}...`}
+                                                value={templateParams[idx] || ''}
+                                                onChange={e => {
+                                                    const newP = [...templateParams];
+                                                    newP[idx] = e.target.value;
+                                                    setTemplateParams(newP);
+                                                }}
+                                            />
+                                        </div>
+                                    ))}
                                 </div>
-                            ))}
+                            )}
                         </div>
                     )}
                   </div>
-                  <div className="p-4 border-t">
+                  <div className="p-4 border-t bg-slate-50">
                       <button 
-                        onClick={handleSendTemplate} disabled={!selectedTemplate || isSending}
-                        className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-emerald-700 disabled:opacity-50"
+                        onClick={handleSendTemplate} 
+                        disabled={!selectedTemplate || isSending || templateParams.some(p => !p.trim())}
+                        className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 shadow-lg"
                       >
-                        {isSending ? 'Sending...' : 'Send Template'}
+                        {isSending ? 'Transmitting...' : 'Deliver Template'}
                       </button>
                   </div>
               </div>
