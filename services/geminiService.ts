@@ -1,196 +1,278 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { Order, CollectionTone, Customer, WhatsAppLogEntry, CreditworthinessReport, AiChatInsight, WhatsAppTemplate, AppResolutionPath, ActivityLogEntry, MetaCategory, AppTemplateGroup, PsychologicalTactic, PaymentPlanTemplate } from "../types";
 import { RECOVERY_TEMPLATES } from "../constants";
 
+// Models optimized for specific tasks
 const PRO_MODEL = 'gemini-3-pro-preview';
-// Corrected FAST_MODEL to follow naming guidelines
-const FAST_MODEL = 'gemini-flash-lite-latest';
+const FAST_MODEL = 'gemini-2.5-flash-lite-latest';
 const STANDARD_MODEL = 'gemini-3-flash-preview';
 
 const getAI = () => {
     const key = process.env.API_KEY;
-    if (!key || key.includes('API_KEY')) return null;
+    if (!key || key.includes('API_KEY')) {
+        console.warn("Gemini API Key missing or invalid.");
+        return null;
+    }
     return new GoogleGenAI({ apiKey: key });
 };
 
 export const geminiService = {
-  // Existing collection & analysis methods...
-  
-  async diagnoseError(message: string, source: string, stack?: string, rawContext?: any): Promise<{ 
-      explanation: string, 
-      fixType: 'AUTO' | 'MANUAL_CODE' | 'CONFIG', 
-      implementationPrompt?: string, 
-      action?: 'REPAIR_TEMPLATE' | 'RETRY_API', 
-      resolutionPath?: AppResolutionPath
-  }> {
+  async analyzeCollectionRisk(overdueOrders: Order[]): Promise<string> {
     const ai = getAI();
-    if (!ai) return { explanation: "AI Gateway Offline", fixType: 'MANUAL_CODE' };
+    if (!ai || overdueOrders.length === 0) return "No collection risks identified.";
 
-    // Meta Error #100 Specialization
-    const isMetaError100 = message.includes('(#100)') || (rawContext?.error?.code === 100);
+    const riskSummary = overdueOrders.map(o => {
+      const paid = o.payments.reduce((acc, p) => acc + p.amount, 0);
+      return `${o.customerName}: ₹${(o.totalAmount - paid).toLocaleString()} outstanding.`;
+    }).join('\n');
+
+    try {
+        const response = await ai.models.generateContent({
+        model: FAST_MODEL,
+        contents: `Analyze these overdue jewelry accounts: \n${riskSummary}\nProvide a 3-point executive recovery strategy for a high-end jewelry store.`,
+        });
+        return response.text || "Unable to analyze risk.";
+    } catch (e) {
+        return "AI Service Unavailable";
+    }
+  },
+
+  async generateStrategicNotification(
+    order: Order, 
+    type: 'UPCOMING' | 'OVERDUE',
+    currentGoldRate: number
+  ): Promise<{ message: string, tone: CollectionTone, reasoning: string, templateId?: string, variables?: string[] }> {
+    const ai = getAI();
+    const fallbackTemplate = RECOVERY_TEMPLATES[0];
+    const paid = order.payments.reduce((acc, p) => acc + p.amount, 0);
+    const balance = order.totalAmount - paid;
+    const fallbackVars = [order.customerName, `₹${balance}`, order.id, `https://order.auragold.com/?token=${order.shareToken}`];
+    
+    if (!ai) return { 
+        message: fallbackTemplate.text.replace('{{1}}', fallbackVars[0]).replace('{{2}}', fallbackVars[1]).replace('{{3}}', fallbackVars[2]).replace('{{4}}', fallbackVars[3]), 
+        tone: "POLITE", 
+        reasoning: "AI Offline",
+        templateId: fallbackTemplate.id,
+        variables: fallbackVars
+    };
+    
+    const dueDate = order.paymentPlan.milestones.find(m => m.status !== 'PAID')?.dueDate || 'Today';
+
+    try {
+        const response = await ai.models.generateContent({
+        model: STANDARD_MODEL,
+        contents: `
+        Context:
+        - Customer: ${order.customerName}
+        - Balance: ₹${balance}
+        - Status: ${type} (Due: ${dueDate})
+        - Current Gold Rate: ₹${currentGoldRate}
+        - Link: https://order.auragoldelite.com/?token=${order.shareToken}
+        - OrderID: ${order.id}
+
+        Task: Select the most appropriate template from the list below for a WhatsApp API message. Do NOT generate new text.
+        
+        Available Templates:
+        ${JSON.stringify(RECOVERY_TEMPLATES)}
+
+        Return JSON:
+        {
+            "selectedTemplateId": "string (must match one id from list)",
+            "mappedVariables": ["string", "string", ...],
+            "reasoning": "string",
+            "previewMessage": "string"
+        }
+        `,
+        config: { 
+            responseMimeType: "application/json",
+            systemInstruction: "You are a Compliance Officer for a Jewelry Brand. You must strictly select a pre-approved template ID. Do not hallucinate new templates."
+        }
+        });
+        
+        const data = JSON.parse(response.text || "{}");
+        
+        return {
+            message: data.previewMessage || "Message Preview Unavailable",
+            tone: data.selectedTemplateId?.includes('urgent') ? 'URGENT' : (data.selectedTemplateId?.includes('firm') ? 'FIRM' : 'POLITE'),
+            reasoning: data.reasoning || "AI Selection",
+            templateId: data.selectedTemplateId,
+            variables: data.mappedVariables
+        };
+
+    } catch(e) {
+        console.error("AI Generation Error", e);
+        return { 
+            message: fallbackTemplate.text, 
+            tone: "POLITE", 
+            reasoning: "Fallback Error", 
+            templateId: fallbackTemplate.id,
+            variables: fallbackVars
+        };
+    }
+  },
+
+  async generateDeepCustomerAnalysis(customer: Customer, orders: Order[], logs: WhatsAppLogEntry[]): Promise<CreditworthinessReport> {
+    const ai = getAI();
+    if (!ai) return {} as any;
 
     try {
         const response = await ai.models.generateContent({
         model: PRO_MODEL,
-        contents: `
-        [CORE DIAGNOSTIC REQUEST]
-        Source: ${source}
-        Error Message: ${message}
-        Context: ${rawContext ? JSON.stringify(rawContext) : 'None'}
-        Meta Code: ${isMetaError100 ? '100 (Policy/Validation/Missing)' : 'Generic'}
-
-        Task: Provide a high-precision fix. If it's a Meta Template #100 error, compare the variables in the request vs the known template schema.
-        `,
-        config: { 
+        contents: `Analyze this customer for a luxury jewelry boutique: 
+        Profile: ${JSON.stringify(customer)}
+        Purchase History: ${JSON.stringify(orders)}
+        Communication History: ${JSON.stringify(logs)}`,
+        config: {
             responseMimeType: "application/json",
-            systemInstruction: "Return JSON: explanation, fixType, implementationPrompt, resolutionPath. Be extremely surgical."
+            systemInstruction: "Perform a behavioral and financial analysis. Return JSON with keys: riskLevel (LOW, MODERATE, HIGH, CRITICAL), persona (a luxury-centric title), nextBestAction, communicationStrategy, negotiationLeverage."
         }
         });
-        
         return JSON.parse(response.text || "{}");
-    } catch (e) { return { explanation: "Diagnostic engine timeout.", fixType: 'MANUAL_CODE' }; }
+    } catch(e) { return {} as any; }
+  },
+
+  async analyzeChatContext(messages: WhatsAppLogEntry[], templates: WhatsAppTemplate[], customerName: string): Promise<AiChatInsight> {
+    const ai = getAI();
+    if (!ai) return {} as any;
+
+    try {
+        const response = await ai.models.generateContent({
+        model: FAST_MODEL,
+        contents: `Analyze the current chat with ${customerName}. 
+        Recent Messages: ${JSON.stringify(messages.slice(-5))}
+        Available Templates: ${JSON.stringify(templates.map(t => ({id: t.id, name: t.name, content: t.content})))}`,
+        config: {
+            responseMimeType: "application/json",
+            systemInstruction: "Determine customer intent. Suggest a high-quality reply and recommend a template if appropriate. Return JSON with keys: intent, tone, suggestedReply, recommendedTemplateId."
+        }
+        });
+        return JSON.parse(response.text || "{}");
+    } catch(e) { return {} as any; }
+  },
+
+  async generateTemplateFromPrompt(prompt: string): Promise<{ suggestedName: string, content: string, metaCategory: MetaCategory, appGroup: AppTemplateGroup, tactic: PsychologicalTactic, examples: string[] }> {
+    const ai = getAI();
+    if (!ai) throw new Error("AI Key Missing");
+
+    const response = await ai.models.generateContent({
+      model: PRO_MODEL,
+      contents: `Generate a Meta-compliant WhatsApp template based on: ${prompt}`,
+      config: {
+        responseMimeType: "application/json",
+        systemInstruction: "Design a template for a jewelry store. Suggested name must be snake_case. Return JSON with keys: suggestedName, content (use {{1}}, {{2}} for variables), metaCategory (UTILITY, MARKETING), appGroup (PAYMENT_COLLECTION, ORDER_STATUS, etc.), tactic, examples (array of matching strings for placeholders)."
+      }
+    });
+    return JSON.parse(response.text || "{}");
+  },
+
+  async fixRejectedTemplate(template: WhatsAppTemplate): Promise<{ diagnosis: string, fixedContent: string, category: MetaCategory, fixedName: string, variableExamples: string[] }> {
+    const ai = getAI();
+    if (!ai) throw new Error("AI Key Missing");
+
+    const response = await ai.models.generateContent({
+      model: PRO_MODEL,
+      contents: `
+      URGENT: This WhatsApp template was REJECTED by Meta. You must fix it.
+      
+      Current Name: "${template.name}"
+      Current Category: "${template.category}"
+      Current Content: "${template.content}"
+      REJECTION REASON (from Meta): "${template.rejectionReason || 'Generic Policy Violation'}"
+      
+      Return JSON:
+      {
+        "diagnosis": "Detailed reason why it was rejected and what was fixed.",
+        "fixedContent": "The rewritten compliant message string.",
+        "category": "UTILITY" or "MARKETING" or "AUTHENTICATION",
+        "fixedName": "same_name_as_input",
+        "variableExamples": ["example1", "example2"]
+      }
+      `,
+      config: {
+        responseMimeType: "application/json",
+        systemInstruction: "You are a Meta WhatsApp Policy Expert. Fix the template to ensure 100% approval probability."
+      }
+    });
+    return JSON.parse(response.text || "{}");
   },
 
   async validateAndFixTemplate(requiredContent: string, requiredName: string, category: string): Promise<{ isCompliant: boolean, optimizedContent: string, explanation: string }> {
     const ai = getAI();
-    if (!ai) return { isCompliant: true, optimizedContent: requiredContent, explanation: "Validation bypassed." };
+    if (!ai) return { isCompliant: true, optimizedContent: requiredContent, explanation: "AI Unavailable" };
 
     const response = await ai.models.generateContent({
         model: FAST_MODEL,
         contents: `
-        Meta Template Check:
+        Analyze this Core WhatsApp Template required by our App.
         Name: ${requiredName}
         Category: ${category}
         Content: "${requiredContent}"
         `,
         config: {
             responseMimeType: "application/json",
-            systemInstruction: "Analyze for promotional language, forbidden variables, or length issues. Return JSON: isCompliant, optimizedContent, explanation."
+            systemInstruction: "Return JSON: isCompliant (boolean), optimizedContent (string, same variables), explanation (string)."
         }
     });
     return JSON.parse(response.text || "{}");
   },
 
-  // Added generatePaymentPlan method to fix Property 'generatePaymentPlan' does not exist error in PlanManager.tsx
   async generatePaymentPlan(prompt: string): Promise<Partial<PaymentPlanTemplate>> {
     const ai = getAI();
-    if (!ai) return { name: "Manual Plan", months: 6, interestPercentage: 0, advancePercentage: 10 };
+    if (!ai) throw new Error("AI Key Missing");
 
     const response = await ai.models.generateContent({
         model: FAST_MODEL,
-        contents: `Generate a payment plan based on this requirement: ${prompt}`,
+        contents: `Create a jewelry gold purchase plan based on this strategy: "${prompt}"`,
         config: {
             responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    name: { type: Type.STRING },
-                    months: { type: Type.NUMBER },
-                    interestPercentage: { type: Type.NUMBER },
-                    advancePercentage: { type: Type.NUMBER }
-                },
-                required: ["name", "months", "interestPercentage", "advancePercentage"]
-            }
+            systemInstruction: "Return JSON with keys: name, months, interestPercentage, advancePercentage."
         }
     });
     return JSON.parse(response.text || "{}");
   },
 
-  // Added analyzeChatContext method to fix Property 'analyzeChatContext' does not exist error in WhatsAppPanel.tsx
-  async analyzeChatContext(messages: WhatsAppLogEntry[], templates: WhatsAppTemplate[], customerName: string): Promise<AiChatInsight> {
-    const ai = getAI();
-    if (!ai) return { intent: "unknown", tone: "neutral", suggestedReply: "Hello" };
-
-    const response = await ai.models.generateContent({
-        model: STANDARD_MODEL,
-        contents: `Analyze this chat history with ${customerName} and suggest a reply using available templates if relevant.
-        History: ${JSON.stringify(messages.slice(-5))}
-        Available Templates: ${JSON.stringify(templates.map(t => ({ id: t.id, name: t.name, content: t.content })))}`,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    intent: { type: Type.STRING },
-                    tone: { type: Type.STRING },
-                    suggestedReply: { type: Type.STRING },
-                    recommendedTemplateId: { type: Type.STRING }
-                },
-                required: ["intent", "tone", "suggestedReply"]
-            }
-        }
-    });
-    return JSON.parse(response.text || "{}");
-  },
-
-  // Added generateTemplateFromPrompt method to fix Property 'generateTemplateFromPrompt' does not exist error in WhatsAppTemplates.tsx
-  async generateTemplateFromPrompt(prompt: string): Promise<{ 
-      suggestedName: string, 
-      content: string, 
-      metaCategory: MetaCategory, 
-      appGroup: AppTemplateGroup, 
-      tactic: PsychologicalTactic, 
-      examples: string[] 
+  // --- ARCHITECT & DIAGNOSTIC INTELLIGENCE ---
+  async diagnoseError(message: string, source: string, stack?: string, rawContext?: any): Promise<{ 
+      explanation: string, 
+      fixType: 'AUTO' | 'MANUAL_CODE' | 'CONFIG', 
+      implementationPrompt?: string, 
+      action?: 'REPAIR_TEMPLATE' | 'RETRY_API', 
+      suggestedFixData?: any,
+      resolutionPath?: AppResolutionPath
   }> {
     const ai = getAI();
-    if (!ai) throw new Error("AI Offline");
+    if (!ai) return { explanation: "AI Unavailable", fixType: 'MANUAL_CODE', resolutionPath: 'none' };
 
-    const response = await ai.models.generateContent({
+    try {
+        const response = await ai.models.generateContent({
         model: PRO_MODEL,
-        contents: `Architect a Meta WhatsApp Template for: ${prompt}`,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    suggestedName: { type: Type.STRING },
-                    content: { type: Type.STRING },
-                    metaCategory: { type: Type.STRING },
-                    appGroup: { type: Type.STRING },
-                    tactic: { type: Type.STRING },
-                    examples: { type: Type.ARRAY, items: { type: Type.STRING } }
-                },
-                required: ["suggestedName", "content", "metaCategory", "appGroup", "tactic", "examples"]
-            }
-        }
-    });
-    return JSON.parse(response.text || "{}");
+        contents: `
+        [CORE ARCHITECT DIAGNOSTICS]
+        Source: ${source}
+        Error: ${message}
+        Stack: ${stack || 'N/A'}
+        Context: ${rawContext ? JSON.stringify(rawContext) : 'None'}
+
+        Task: Provide a high-precision implementation prompt for a coding AI (God Mode) to fix this.
+        `,
+        config: { responseMimeType: "application/json" }
+        });
+        
+        return JSON.parse(response.text || "{}");
+    } catch (e) {
+        return { explanation: "Deep diagnosis failed.", fixType: 'MANUAL_CODE' };
+    }
   },
 
-  // Added generateStrategicNotification method to fix Property 'generateStrategicNotification' does not exist error in PaymentCollections.tsx
-  async generateStrategicNotification(order: Order, type: 'UPCOMING' | 'OVERDUE', goldRate: number): Promise<{
-      tone: CollectionTone,
-      reasoning: string,
-      templateId: string,
-      variables: string[],
-      message: string
-  }> {
+  async analyzeSystemLogsForImprovements(activities: ActivityLogEntry[]): Promise<any> {
     const ai = getAI();
-    if (!ai) throw new Error("AI Offline");
+    if (!ai) return {};
 
     const response = await ai.models.generateContent({
-        model: PRO_MODEL,
-        contents: `Generate a strategic payment notification for ${order.customerName}. 
-        Order Status: ${order.status}. 
-        Type: ${type}. 
-        Current Gold Rate: ${goldRate}. 
-        Total Amount: ${order.totalAmount}.
-        Milestones: ${JSON.stringify(order.paymentPlan.milestones)}`,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    tone: { type: Type.STRING },
-                    reasoning: { type: Type.STRING },
-                    templateId: { type: Type.STRING },
-                    variables: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    message: { type: Type.STRING }
-                },
-                required: ["tone", "reasoning", "templateId", "variables", "message"]
-            }
-        }
+      model: FAST_MODEL,
+      contents: `Find patterns and optimization opportunities: ${JSON.stringify(activities.slice(0, 30))}`,
+      config: { responseMimeType: "application/json" }
     });
     return JSON.parse(response.text || "{}");
   }
