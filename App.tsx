@@ -3,7 +3,8 @@ import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { 
   Plus, Home, ReceiptIndianRupee, Users, MessageSquare, 
   Menu, ArrowLeft, Cloud, Loader2, HardDrive, Settings as SettingsIcon,
-  BrainCircuit, Calculator, FileText, ScrollText, Globe, Activity, ShoppingBag, BookOpen, X, RefreshCw, DownloadCloud, Zap
+  BrainCircuit, Calculator, FileText, ScrollText, Globe, Activity, ShoppingBag, BookOpen, X, RefreshCw, DownloadCloud, Zap,
+  History, Layout, PieChart, ShieldAlert
 } from 'lucide-react';
 
 import './index.css'; 
@@ -204,6 +205,7 @@ const App = () => {
           case 'TEMPLATES': return <WhatsAppTemplates templates={templates} onUpdate={setTemplates} />;
           case 'LOGS': return <WhatsAppLogs logs={logs} onViewChat={(phone) => { setSelectedChatPhone(phone); setView('WHATSAPP'); }} />;
           case 'PLANS': return <PlanManager templates={planTemplates} onUpdate={(tpls) => { setPlanTemplates(tpls); storageService.setPlanTemplates(tpls); }} />;
+          case 'STRATEGY': return <NotificationCenter notifications={[]} customers={derivedCustomers} onSend={() => {}} onRefresh={() => {}} loading={false} />;
           case 'MARKET': return <MarketIntelligence orders={orders} settings={settings} />;
           case 'SYS_LOGS': return <ErrorLogPanel errors={systemErrors} activities={systemActivities} onClear={() => { errorService.clearErrors(); errorService.clearActivity(); }} />;
           case 'SETTINGS': return <Settings settings={settings} onUpdate={handleUpdateSettings} />;
@@ -214,6 +216,10 @@ const App = () => {
                   <MenuItem onClick={() => setView('CUSTOMERS')} icon={<Users />} label="Client Directory" desc="View customer profiles" colorClass="bg-emerald-50 text-emerald-600" />
                   <MenuItem onClick={() => setView('COLLECTIONS')} icon={<ReceiptIndianRupee />} label="Payments" desc="Track cash flow" colorClass="bg-amber-50 text-amber-600" />
                   <MenuItem onClick={() => setView('WHATSAPP')} icon={<MessageSquare />} label="WhatsApp" desc="Connect with clients" colorClass="bg-teal-50 text-teal-600" />
+                  <MenuItem onClick={() => setView('TEMPLATES')} icon={<Layout />} label="AI Templates" desc="Meta Architect Console" colorClass="bg-indigo-50 text-indigo-600" />
+                  <MenuItem onClick={() => setView('LOGS')} icon={<History />} label="Chat Logs" desc="Communication history" colorClass="bg-slate-50 text-slate-600" />
+                  <MenuItem onClick={() => setView('PLANS')} icon={<FileText />} label="Financial Plans" desc="Configure installments" colorClass="bg-violet-50 text-violet-600" />
+                  <MenuItem onClick={() => setView('STRATEGY')} icon={<BrainCircuit />} label="Strategy Engine" desc="AI Debt Recovery" colorClass="bg-rose-50 text-rose-600" />
                   <MenuItem onClick={() => setView('ARCHITECT')} icon={<Zap />} label="Architect" desc="God Mode System Control" colorClass="bg-amber-100 text-amber-600" />
                   <MenuItem onClick={() => setView('MARKET')} icon={<Globe />} label="Market Intel" desc="Live rates & news" colorClass="bg-sky-50 text-sky-600" />
                   <MenuItem onClick={() => setView('SYS_LOGS')} icon={<HardDrive />} label="System Logs" desc="Debug & Audit" colorClass="bg-slate-100 text-slate-600" />
@@ -242,13 +248,22 @@ const App = () => {
                  <SidebarItem active={view === 'DASH'} onClick={() => setView('DASH')} icon={Home} label="Dashboard" />
                  <SidebarItem active={view === 'ORDER_BOOK'} onClick={() => setView('ORDER_BOOK')} icon={BookOpen} label="Order Book" />
                  <SidebarItem active={view === 'ORDER_NEW'} onClick={() => setView('ORDER_NEW')} icon={Plus} label="New Booking" highlight />
+                 
                  <div className="my-6 border-t border-slate-100"></div>
                  <p className="px-4 text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Operations</p>
                  <SidebarItem active={view === 'CUSTOMERS'} onClick={() => setView('CUSTOMERS')} icon={Users} label="Clients" />
                  <SidebarItem active={view === 'COLLECTIONS'} onClick={() => setView('COLLECTIONS')} icon={ReceiptIndianRupee} label="Payments" />
-                 <SidebarItem active={view === 'ARCHITECT'} onClick={() => setView('ARCHITECT')} icon={Zap} label="System Architect" highlight />
+                 <SidebarItem active={view === 'STRATEGY'} onClick={() => setView('STRATEGY')} icon={BrainCircuit} label="Strategy Hub" />
+                 <SidebarItem active={view === 'PLANS'} onClick={() => setView('PLANS')} icon={FileText} label="Plan Manager" />
+                 
                  <div className="my-6 border-t border-slate-100"></div>
+                 <p className="px-4 text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Communication</p>
                  <SidebarItem active={view === 'WHATSAPP'} onClick={() => setView('WHATSAPP')} icon={MessageSquare} label="WhatsApp" />
+                 <SidebarItem active={view === 'TEMPLATES'} onClick={() => setView('TEMPLATES')} icon={Layout} label="AI Templates" />
+                 <SidebarItem active={view === 'LOGS'} onClick={() => setView('LOGS')} icon={History} label="Audit Logs" />
+                 
+                 <div className="my-6 border-t border-slate-100"></div>
+                 <SidebarItem active={view === 'ARCHITECT'} onClick={() => setView('ARCHITECT')} icon={Zap} label="God Mode" highlight />
                  <SidebarItem active={view === 'MARKET'} onClick={() => setView('MARKET')} icon={Globe} label="Market Intel" />
              </div>
              <div className="mt-4 pt-4 border-t border-slate-100">
