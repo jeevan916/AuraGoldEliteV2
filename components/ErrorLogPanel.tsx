@@ -48,6 +48,13 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
       errorService.runIntelligentAnalysis(errorId);
   };
 
+  const handleInjectFix = (err: AppError) => {
+      if ((window as any).dispatchView) {
+          (window as any).dispatchView('ARCHITECT');
+          // In a real app, we'd pass state. For this demo, we assume Architect can see context.
+      }
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-6 h-[calc(100vh-140px)] flex flex-col">
       {/* Intelligence Dashboard */}
@@ -118,8 +125,6 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
-        
-        {/* --- TAB: ERRORS --- */}
         {activeTab === 'ERRORS' && (
             <>
                 {filteredErrors.length === 0 && (
@@ -162,12 +167,10 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
                         </div>
 
                         <div className="flex flex-col gap-4">
-                            {/* The Error */}
                             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs font-mono text-slate-600 break-all">
                                 {err.message}
                             </div>
 
-                            {/* The Solution (AI Driven) */}
                             {err.aiDiagnosis && (
                                 <div className={`p-4 rounded-xl border flex flex-col gap-3 ${
                                     err.status === 'AUTO_FIXED' ? 'bg-emerald-50/50 border-emerald-100' : 'bg-indigo-50/50 border-indigo-100'
@@ -179,26 +182,20 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
                                         <div className="flex-1">
                                             <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest mb-1">AI Diagnosis</p>
                                             <p className="text-sm font-bold text-slate-800">{err.aiDiagnosis}</p>
-                                            {err.aiFixApplied && (
-                                                <p className="text-xs text-emerald-600 font-bold mt-1 flex items-center gap-1">
-                                                    <CheckCircle2 size={12} /> {err.aiFixApplied}
-                                                </p>
-                                            )}
                                         </div>
                                     </div>
 
-                                    {/* THE GOLDEN FEATURE: Implementation Prompt */}
                                     {err.status === 'REQUIRES_CODE_CHANGE' && err.implementationPrompt && (
                                         <div className="mt-2 bg-white border border-indigo-200 rounded-xl overflow-hidden">
                                             <div className="bg-indigo-100 px-3 py-2 flex justify-between items-center">
                                                 <span className="text-[9px] font-black uppercase text-indigo-700 flex items-center gap-1">
-                                                    <Terminal size={10} /> AI Implementation Prompt
+                                                    <Terminal size={10} /> Architect Fix Path
                                                 </span>
                                                 <button 
-                                                    onClick={() => copyToClipboard(err.implementationPrompt!)}
-                                                    className="text-[9px] font-bold bg-white px-2 py-1 rounded text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                                                    onClick={() => handleInjectFix(err)}
+                                                    className="text-[9px] font-black bg-slate-900 px-3 py-1 rounded text-white hover:bg-black transition-all flex items-center gap-1 shadow-md"
                                                 >
-                                                    <Copy size={10} /> Copy Fix
+                                                    <Zap size={10} className="text-amber-400" /> Launch Architect Fix
                                                 </button>
                                             </div>
                                             <div className="p-3 text-[10px] font-mono text-slate-600 leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto">
@@ -215,7 +212,6 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
             </>
         )}
 
-        {/* --- TAB: ACTIVITY --- */}
         {activeTab === 'ACTIVITY' && (
             <div className="space-y-2">
                 {activities.map(act => (
@@ -230,7 +226,6 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
                 ))}
             </div>
         )}
-
       </div>
     </div>
   );

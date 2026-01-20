@@ -18,6 +18,7 @@ import paymentsRouter from './api/payments.js';
 import whatsappRouter from './api/whatsapp.js';
 import syncRouter from './api/sync.js';
 import coreRouter from './api/core.js';
+import architectRouter from './api/architect.js';
 
 // Background Services
 import { initRateService } from './api/rateService.js';
@@ -89,6 +90,7 @@ app.use('/api', paymentsRouter);
 app.use('/api/whatsapp', whatsappRouter);
 app.use('/api/sync', syncRouter);
 app.use('/api', coreRouter);
+app.use('/api/architect', architectRouter);
 
 app.use('/api/*', (req, res) => res.status(404).json({ error: `API route ${req.originalUrl} not found.` }));
 
