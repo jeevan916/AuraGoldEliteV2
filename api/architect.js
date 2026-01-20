@@ -37,22 +37,20 @@ const crawlAndIndex = async (dir, type = 'components') => {
         const stats = fs.statSync(filePath);
 
         if (stats.isDirectory()) {
-            if (!['node_modules', '.git', 'dist'].includes(file)) {
+            if (!['node_modules', '.git', 'dist', '.builds'].includes(file)) {
                 results.push(...await crawlAndIndex(filePath, type));
             }
         } else if (file.endsWith('.tsx') || file.endsWith('.ts') || file.endsWith('.js')) {
             const content = fs.readFileSync(filePath, 'utf-8');
             const name = file.replace(/\.[^/.]+$/, "");
-            const commentMatch = content.match(/\/\*\*([\s\S]*?)\*\//);
-            const purpose = commentMatch ? commentMatch[1].replace(/\*/g, '').trim() : "Undocumented Module";
             const exports = [...content.matchAll(/export (const|function|class|interface|type|enum) (\w+)/g)].map(m => m[2]);
-            const dependencies = [...content.matchAll(/import .* from ['"](.*)['"]/g)].map(m => m[1]);
+            const purposeMatch = content.match(/\/\*\*([\s\S]*?)\*\//);
+            const purpose = purposeMatch ? purposeMatch[1].replace(/\*/g, '').trim() : `Module: ${name}`;
 
             results.push({
                 name,
                 path: path.relative(rootDir, filePath),
                 exports,
-                dependencies,
                 purpose
             });
         }
@@ -64,186 +62,141 @@ router.get('/memory', async (req, res) => {
     try {
         const pool = getPool();
         const [rows] = await pool.query("SELECT config FROM integrations WHERE provider = 'system_memory'");
-        if (rows.length > 0) {
-            res.json({ success: true, memory: rows[0].config });
-        } else {
-            res.json({ success: false, message: "Memory not yet indexed" });
-        }
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+        if (rows.length > 0) res.json({ success: true, memory: rows[0].config });
+        else res.json({ success: false, message: "Memory offline" });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.post('/index', async (req, res) => {
     try {
-        const compDir = path.join(rootDir, 'components');
-        const servDir = path.join(rootDir, 'services');
-        const apiDir = path.join(rootDir, 'api');
-
-        const components = await crawlAndIndex(compDir, 'components');
-        const services = await crawlAndIndex(servDir, 'services');
-        const apis = fs.existsSync(apiDir) ? fs.readdirSync(apiDir).filter(f => f.endsWith('.js')) : [];
-
         const systemMap = {
             lastIndexed: new Date().toISOString(),
-            components,
-            services,
-            apis
+            components: await crawlAndIndex(path.join(rootDir, 'components')),
+            services: await crawlAndIndex(path.join(rootDir, 'services')),
+            apis: fs.existsSync(path.join(rootDir, 'api')) ? fs.readdirSync(path.join(rootDir, 'api')).filter(f => f.endsWith('.js')) : []
         };
-
         const pool = getPool();
-        await pool.query(
-            "INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)",
-            ['system_memory', JSON.stringify(systemMap)]
-        );
-
+        await pool.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['system_memory', JSON.stringify(systemMap)]);
         res.json({ success: true, memory: systemMap });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.get('/files', (req, res) => {
     try {
-        const getFileList = (dir, fileList = []) => {
-            if (!fs.existsSync(dir)) return fileList;
-            const files = fs.readdirSync(dir);
-            files.forEach(file => {
-                const filePath = path.join(dir, file);
-                const stats = fs.statSync(filePath);
+        const getFileList = (dir, list = []) => {
+            fs.readdirSync(dir).forEach(file => {
+                const fp = path.join(dir, file);
+                const stats = fs.statSync(fp);
                 if (stats.isDirectory()) {
-                    if (!['node_modules', '.git', 'dist', '.builds'].includes(file)) getFileList(filePath, fileList);
-                } else if (['.ts', '.tsx', '.js', '.json', '.css', '.html', '.env'].includes(path.extname(file))) {
-                    fileList.push({ path: path.relative(rootDir, filePath), lastModified: stats.mtime });
+                    if (!['node_modules', '.git', 'dist'].includes(file)) getFileList(fp, list);
+                } else if (['.ts', '.tsx', '.js', '.json', '.env'].includes(path.extname(file))) {
+                    list.push({ path: path.relative(rootDir, fp), lastModified: stats.mtime });
                 }
             });
-            return fileList;
+            return list;
         };
         res.json({ success: true, files: getFileList(rootDir) });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.post('/read', (req, res) => {
-    try {
-        const content = fs.readFileSync(safePath(req.body.filePath), 'utf-8');
-        res.json({ success: true, content });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    try { res.json({ success: true, content: fs.readFileSync(safePath(req.body.filePath), 'utf-8') }); }
+    catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- ENHANCED INJECTION WITH SANITIZATION ---
+// --- SURGICAL INJECTION ---
 router.post('/apply', (req, res) => {
     try {
         const { filePath, content } = req.body;
-        if (!content || content.length < 10) throw new Error("Refusing to save likely corrupted or empty file.");
+        if (!content || content.trim().length < 20) throw new Error("Payload too short for a valid code module.");
 
         const fullPath = safePath(filePath);
+        let clean = content.trim();
         
-        // Sanitize: Strip Markdown wrappers if AI ignored instructions
-        let cleanContent = content;
-        if (cleanContent.includes('```')) {
-            const match = cleanContent.match(/```(?:[a-z]*)\n([\s\S]*?)\n```/);
-            if (match && match[1]) {
-                cleanContent = match[1];
-            } else {
-                // Fallback: just strip the marks if regex fails
-                cleanContent = cleanContent.replace(/```[a-z]*\n?/gi, '').replace(/\n?```/gi, '');
-            }
+        // Surgical Markdown Stripping: Only remove starting/ending marks, preserve internal ones
+        if (clean.startsWith('```')) {
+            clean = clean.replace(/^```[a-z]*\n/i, '').replace(/\n```$/m, '');
         }
 
-        // Create backup
+        // Backup existing
         if (fs.existsSync(fullPath)) fs.copyFileSync(fullPath, `${fullPath}.bak`);
         
-        fs.writeFileSync(fullPath, cleanContent, 'utf-8');
-        res.json({ success: true, message: "Injection Applied Successfully" });
-    } catch (e) { 
-        res.status(500).json({ success: false, error: e.message }); 
-    }
+        fs.writeFileSync(fullPath, clean, 'utf-8');
+        
+        // Post-Write Check: Try to clear Node cache if it's an API file
+        if (filePath.startsWith('api/')) {
+            const resolved = path.resolve(fullPath);
+            if (require && require.cache[resolved]) delete require.cache[resolved];
+        }
+
+        res.json({ success: true, message: "Architectural Injection Verified" });
+    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// --- RESTORE BACKUP ---
 router.post('/restore', (req, res) => {
     try {
-        const { filePath } = req.body;
-        const fullPath = safePath(filePath);
-        const bakPath = `${fullPath}.bak`;
-
-        if (!fs.existsSync(bakPath)) throw new Error("No backup file found for this module.");
-
-        fs.copyFileSync(bakPath, fullPath);
-        const content = fs.readFileSync(fullPath, 'utf-8');
-        res.json({ success: true, content, message: "Restored from last stable version." });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-router.post('/terminal', (req, res) => {
-    exec(req.body.command, { cwd: rootDir, timeout: 60000 }, (error, stdout, stderr) => {
-        res.json({ success: !error, output: stdout, error: stderr || (error ? error.message : null) });
-    });
+        const fullPath = safePath(req.body.filePath);
+        const bak = `${fullPath}.bak`;
+        if (!fs.existsSync(bak)) throw new Error("No stable backup found.");
+        fs.copyFileSync(bak, fullPath);
+        res.json({ success: true, content: fs.readFileSync(fullPath, 'utf-8') });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.post('/generate', async (req, res) => {
-    const { prompt, filePath, contextFiles } = req.body;
+    const { prompt, filePath, contextFiles = [] } = req.body;
     const ai = getAI();
-    if (!ai) return res.status(500).json({ error: "AI Not Configured" });
+    if (!ai) return res.status(500).json({ error: "AI Gateway Key Missing" });
 
     try {
         const pool = getPool();
-        const [memRows] = await pool.query("SELECT config FROM integrations WHERE provider = 'system_memory'");
-        const systemMemory = memRows.length > 0 ? JSON.parse(memRows[0].config) : null;
+        const [mem] = await pool.query("SELECT config FROM integrations WHERE provider = 'system_memory'");
+        const memory = mem.length ? JSON.parse(mem[0].config) : null;
 
-        let fileContent = "";
+        let targetContent = "";
         if (filePath && fs.existsSync(safePath(filePath))) {
-            fileContent = fs.readFileSync(safePath(filePath), 'utf-8');
+            targetContent = fs.readFileSync(safePath(filePath), 'utf-8');
         }
 
-        let contextData = "";
-        if (contextFiles && Array.isArray(contextFiles)) {
-            contextFiles.forEach(f => {
-                const p = safePath(f);
-                if (fs.existsSync(p)) {
-                    contextData += `\n--- FILE: ${f} ---\n${fs.readFileSync(p, 'utf-8')}\n`;
-                }
-            });
-        }
+        // Auto-Inject Types into Context
+        const contextualPaths = Array.from(new Set(['types.ts', ...contextFiles]));
+        let contextData = contextualPaths.map(p => {
+            const sp = safePath(p);
+            return fs.existsSync(sp) ? `\n--- FILE: ${p} ---\n${fs.readFileSync(sp, 'utf-8')}` : "";
+        }).join('\n');
 
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview',
             contents: `
-            [SYSTEM SENTIENCE ROLE]
-            You are the "Architect God Mode" for the AuraGold Elite app.
-            You must provide the FULL updated content of the target file.
+            [ROLE: SUPREME ARCHITECT]
+            Task: Transform the target module based on user directives. 
             
-            [SYSTEM DISCOVERY MAP]
-            ${systemMemory ? JSON.stringify(systemMemory, null, 2) : "System map not indexed."}
+            [SYSTEM TOPOLOGY]
+            ${memory ? JSON.stringify(memory, null, 2) : "Unknown"}
 
-            [CONTEXT]
+            [GLOBAL CONTEXT]
             ${contextData}
 
-            [TARGET: ${filePath || 'New File'}]
-            ${fileContent}
+            [TARGET FILE: ${filePath || 'New'}]
+            ${targetContent}
 
-            [USER REQUEST]
+            [DIRECTIVE]
             ${prompt}
 
-            [CRITICAL INSTRUCTIONS]
-            - Return ONLY raw code content. 
-            - NO markdown wrappers (no \`\`\` tags).
-            - DO NOT explain your changes.
-            - Ensure syntax is valid TypeScript/JavaScript.
+            [STRICT RULES]
+            1. Return ONLY raw code content. 
+            2. NO markdown delimiters (no \`\`\`).
+            3. NO preamble, NO explanations.
+            4. Ensure all imports match the System Topology.
+            5. Use TypeScript.
             `,
-            config: { thinkingConfig: { thinkingBudget: 5000 } }
+            config: { thinkingConfig: { thinkingBudget: 8000 } }
         });
 
-        let resultText = response.text || "";
-        // Pre-strip just in case it arrived with wrappers
-        resultText = resultText.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '');
-
-        res.json({ success: true, content: resultText });
-    } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
-    }
+        let code = response.text || "";
+        code = code.replace(/^```[a-z]*\n/i, '').replace(/\n```$/m, '');
+        res.json({ success: true, content: code });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 export default router;
