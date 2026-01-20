@@ -275,3 +275,22 @@ export interface CodeInjectionResult {
   message: string;
   changesApplied?: string[];
 }
+
+/** 
+ * COGNITIVE MEMORY TYPES 
+ * These persist the system's understanding of itself
+ */
+export interface ComponentDiscovery {
+    name: string;
+    path: string;
+    exports: string[];
+    dependencies: string[];
+    purpose: string;
+}
+
+export interface SystemMap {
+    lastIndexed: string;
+    components: ComponentDiscovery[];
+    services: ComponentDiscovery[];
+    apis: string[];
+}

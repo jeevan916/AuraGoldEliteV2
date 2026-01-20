@@ -3,8 +3,10 @@ import { GoogleGenAI } from "@google/genai";
 import { Order, CollectionTone, Customer, WhatsAppLogEntry, CreditworthinessReport, AiChatInsight, WhatsAppTemplate, AppResolutionPath, ActivityLogEntry, MetaCategory, AppTemplateGroup, PsychologicalTactic, PaymentPlanTemplate } from "../types";
 import { RECOVERY_TEMPLATES } from "../constants";
 
-// Use gemini-2.5-flash-preview as the default engine for speed + intelligence
-const DEFAULT_MODEL = 'gemini-2.5-flash-preview';
+// Models optimized for specific tasks
+const PRO_MODEL = 'gemini-3-pro-preview';
+const FAST_MODEL = 'gemini-2.5-flash-lite-latest';
+const STANDARD_MODEL = 'gemini-3-flash-preview';
 
 const getAI = () => {
     const key = process.env.API_KEY;
@@ -27,7 +29,7 @@ export const geminiService = {
 
     try {
         const response = await ai.models.generateContent({
-        model: DEFAULT_MODEL,
+        model: FAST_MODEL,
         contents: `Analyze these overdue jewelry accounts: \n${riskSummary}\nProvide a 3-point executive recovery strategy for a high-end jewelry store.`,
         });
         return response.text || "Unable to analyze risk.";
@@ -59,7 +61,7 @@ export const geminiService = {
 
     try {
         const response = await ai.models.generateContent({
-        model: DEFAULT_MODEL,
+        model: STANDARD_MODEL,
         contents: `
         Context:
         - Customer: ${order.customerName}
@@ -116,7 +118,7 @@ export const geminiService = {
 
     try {
         const response = await ai.models.generateContent({
-        model: DEFAULT_MODEL,
+        model: PRO_MODEL,
         contents: `Analyze this customer for a luxury jewelry boutique: 
         Profile: ${JSON.stringify(customer)}
         Purchase History: ${JSON.stringify(orders)}
@@ -136,7 +138,7 @@ export const geminiService = {
 
     try {
         const response = await ai.models.generateContent({
-        model: DEFAULT_MODEL,
+        model: FAST_MODEL,
         contents: `Analyze the current chat with ${customerName}. 
         Recent Messages: ${JSON.stringify(messages.slice(-5))}
         Available Templates: ${JSON.stringify(templates.map(t => ({id: t.id, name: t.name, content: t.content})))}`,
@@ -154,7 +156,7 @@ export const geminiService = {
     if (!ai) throw new Error("AI Key Missing");
 
     const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
+      model: PRO_MODEL,
       contents: `Generate a Meta-compliant WhatsApp template based on: ${prompt}`,
       config: {
         responseMimeType: "application/json",
@@ -169,7 +171,7 @@ export const geminiService = {
     if (!ai) throw new Error("AI Key Missing");
 
     const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
+      model: PRO_MODEL,
       contents: `
       URGENT: This WhatsApp template was REJECTED by Meta. You must fix it.
       
@@ -177,14 +179,6 @@ export const geminiService = {
       Current Category: "${template.category}"
       Current Content: "${template.content}"
       REJECTION REASON (from Meta): "${template.rejectionReason || 'Generic Policy Violation'}"
-      
-      Your Role: Meta Policy Compliance Expert.
-      
-      RULES FOR FIXING:
-      1. UTILITY vs MARKETING: If the content contains ANY promotional words (offer, sale, discount, limited time, exclusive, happy to help), it MUST be categorized as 'MARKETING'.
-      2. If category is 'UTILITY', rewrite content to be strictly transactional, dry, and specific (e.g., "Your order #{{1}} is updated."). Remove all greetings and polite fluff.
-      3. FORMATTING: Ensure variables {{1}} are sequential. Ensure examples are provided.
-      4. DO NOT change the name if possible, unless the rejection was due to the name format.
       
       Return JSON:
       {
@@ -208,20 +202,12 @@ export const geminiService = {
     if (!ai) return { isCompliant: true, optimizedContent: requiredContent, explanation: "AI Unavailable" };
 
     const response = await ai.models.generateContent({
-        model: DEFAULT_MODEL,
+        model: FAST_MODEL,
         contents: `
         Analyze this Core WhatsApp Template required by our App.
         Name: ${requiredName}
         Category: ${category}
         Content: "${requiredContent}"
-
-        Task: Check if this content is likely to be rejected by Meta. 
-        Rules:
-        1. Variable count {{1}}, {{2}} MUST remain exactly the same as input.
-        2. If Category is UTILITY, tone must be transactional.
-        3. If Category is MARKETING, tone can be promotional.
-
-        If it violates rules, rewrite it to be compliant while KEEPING VARIABLES intact.
         `,
         config: {
             responseMimeType: "application/json",
@@ -236,17 +222,17 @@ export const geminiService = {
     if (!ai) throw new Error("AI Key Missing");
 
     const response = await ai.models.generateContent({
-        model: DEFAULT_MODEL,
+        model: FAST_MODEL,
         contents: `Create a jewelry gold purchase plan based on this strategy: "${prompt}"`,
         config: {
             responseMimeType: "application/json",
-            systemInstruction: "Return JSON with keys: name (short marketing name), months (number), interestPercentage (number 0-20), advancePercentage (number 0-100). optimize for cash flow."
+            systemInstruction: "Return JSON with keys: name, months, interestPercentage, advancePercentage."
         }
     });
     return JSON.parse(response.text || "{}");
   },
 
-  // --- SELF-HEALING INTELLIGENCE UPGRADE (V2.5) ---
+  // --- ARCHITECT & DIAGNOSTIC INTELLIGENCE ---
   async diagnoseError(message: string, source: string, stack?: string, rawContext?: any): Promise<{ 
       explanation: string, 
       fixType: 'AUTO' | 'MANUAL_CODE' | 'CONFIG', 
@@ -260,39 +246,17 @@ export const geminiService = {
 
     try {
         const response = await ai.models.generateContent({
-        model: DEFAULT_MODEL,
+        model: PRO_MODEL,
         contents: `
         [CORE ARCHITECT DIAGNOSTICS]
-        Source Component/Service: ${source}
-        Error Message: ${message}
-        Stack Trace: ${stack || 'N/A'}
-        
-        [RAW DATA PAYLOAD]
-        ${rawContext ? JSON.stringify(rawContext, null, 2) : 'No raw context available.'}
+        Source: ${source}
+        Error: ${message}
+        Stack: ${stack || 'N/A'}
+        Context: ${rawContext ? JSON.stringify(rawContext) : 'None'}
 
-        Your Role: Lead Systems Engineer for AuraGold Elite.
-
-        Goal: 
-        Analyze the raw payload to find hidden API errors (e.g. Meta code 100, Razorpay 400).
-        If it's a structural code error, provide a high-precision implementation prompt to change the app code.
-
-        Guidelines for Prompt Generation:
-        - Be EXTREMELY specific. Use file names and function names.
-        - E.g., "In services/whatsappService.ts, the sendTemplateMessage function expects 6 variables but only 4 are provided. Add the missing 'schedule' and 'token' variables."
-
-        Output JSON Format:
-        {
-            "explanation": "Summarize the failure from the raw data. E.g., 'Meta rejected variable 5 for being too long.'",
-            "fixType": "AUTO" | "MANUAL_CODE" | "CONFIG",
-            "implementationPrompt": "Strictly technical directive for a coding AI to fix the file. MUST use markdown style instructions.",
-            "action": "REPAIR_TEMPLATE" | "RETRY_API" | null,
-            "suggestedFixData": { ...context... },
-            "resolutionPath": "settings" | "templates" | "whatsapp" | "none"
-        }
+        Task: Provide a high-precision implementation prompt for a coding AI (God Mode) to fix this.
         `,
-        config: {
-            responseMimeType: "application/json"
-        }
+        config: { responseMimeType: "application/json" }
         });
         
         return JSON.parse(response.text || "{}");
@@ -306,12 +270,9 @@ export const geminiService = {
     if (!ai) return {};
 
     const response = await ai.models.generateContent({
-      model: DEFAULT_MODEL,
-      contents: `Analyze these system activities for performance or business bottlenecks: ${JSON.stringify(activities.slice(0, 30))}`,
-      config: {
-        responseMimeType: "application/json",
-        systemInstruction: "As a CTO advisor, find patterns and optimization opportunities. Return JSON with detailed insights and actionable advice."
-      }
+      model: FAST_MODEL,
+      contents: `Find patterns and optimization opportunities: ${JSON.stringify(activities.slice(0, 30))}`,
+      config: { responseMimeType: "application/json" }
     });
     return JSON.parse(response.text || "{}");
   }
