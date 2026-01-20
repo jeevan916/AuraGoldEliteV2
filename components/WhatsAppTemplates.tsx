@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   MessageSquare, BrainCircuit, Sparkles, Save, Edit, 
@@ -305,8 +304,8 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                 <div className="bg-slate-900 rounded-3xl p-6 text-emerald-400 font-mono text-[10px] flex flex-col h-full">
                     <div className="mb-4 text-slate-500 uppercase font-black text-[9px] border-b border-slate-800 pb-2">Terminal Logs</div>
                     <div className="flex-1 overflow-y-auto space-y-1">
-                        {/* Add comment above fix: explicitly cast repairLogs to string[] to satisfy TS compiler */}
-                        {(repairLogs as string[]).length === 0 ? <span className="opacity-30 italic">Ready for diagnostics...</span> : (repairLogs as string[]).map((l, i) => <div key={i}>{l}</div>)}
+                        {/* Add comment above fix: explicitly cast repairLogs to any to ensure properties 'length' and 'map' are accessible even if type inference fails */}
+                        {((repairLogs as any) || []).length === 0 ? <span className="opacity-30 italic">Ready for diagnostics...</span> : (repairLogs as any).map((l: any, i: number) => <div key={i}>{l}</div>)}
                         <div ref={logsEndRef} />
                     </div>
                 </div>
