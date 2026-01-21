@@ -22,7 +22,7 @@ router.get('/gold-rate', ensureDb, async (req, res) => {
                 k22: rate22k, 
                 k18: rate18k, 
                 silver: rateSilver,
-                source: 'Augmont Live (Manual Trigger)'
+                source: 'Sagar Jewellers (Live)'
             });
         } else {
             // Fallback to latest from DB if manual fetch failed

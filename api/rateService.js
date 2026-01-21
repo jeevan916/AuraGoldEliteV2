@@ -6,41 +6,71 @@ let currentIntervalMins = null;
 
 /**
  * Fetches gold rate from external API and saves to database.
+ * Source: Sagar Jewellers (VOTS Broadcast)
  */
 export async function fetchAndSaveRate() {
     console.log(`[RateService] Executing scheduled fetch: ${new Date().toISOString()}`);
     try {
-        const externalRes = await fetch('https://uat.batuk.in/augmont/gold', {
+        const timestamp = Date.now();
+        const apiUrl = `https://bcast.sagarjewellers.co.in:7768/VOTSBroadcastStreaming/Services/xml/GetLiveRateByTemplateID/sagar?_=${timestamp}`;
+        
+        // Fetch with timeout
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
+        const externalRes = await fetch(apiUrl, {
             method: 'GET',
-            headers: { 'Accept': 'application/json' }
+            headers: { 
+                'User-Agent': 'Mozilla/5.0 (Node.js)',
+                'Accept': 'text/xml, application/xml, text/plain' 
+            },
+            signal: controller.signal
         });
         
-        if (!externalRes.ok) throw new Error("External API unreachable");
+        clearTimeout(timeout);
         
-        const extData = await externalRes.json();
-        if (extData.error || !extData.data || !extData.data[0] || !extData.data[0][0]) {
-            throw new Error("Invalid API response format");
+        if (!externalRes.ok) throw new Error(`External API Error: ${externalRes.status}`);
+        
+        const xmlText = await externalRes.text();
+        
+        // --- PARSING LOGIC (Regex) ---
+        // Handles standard VOTS XML format: <Symbol>GOLD 995</Symbol>...<Ask>75000</Ask>
+        const extractRate = (symbolPattern) => {
+            const regex = new RegExp(`(?:<Symbol>|<Product>)\\s*(${symbolPattern})\\s*(?:<\\/Symbol>|<\\/Product>)[\\s\\S]*?(?:<Ask>|<Sell>)\\s*([0-9.]+)\\s*(?:<\\/Ask>|<\\/Sell>)`, 'i');
+            const match = xmlText.match(regex);
+            return match ? parseFloat(match[2]) : 0;
+        };
+
+        // 1. Gold Rate (Try GOLD 999, then 995, then generic)
+        let rate24k = extractRate('GOLD 999');
+        if (!rate24k) rate24k = extractRate('GOLD 995');
+        if (!rate24k) rate24k = extractRate('GOLD');
+
+        // 2. Silver Rate (Try SILVER 999, then generic)
+        let rateSilver = extractRate('SILVER 999');
+        if (!rateSilver) rateSilver = extractRate('SILVER');
+
+        // 3. Normalization
+        // Gold usually quoted per 10g
+        if (rate24k > 10000) rate24k = rate24k / 10;
+        
+        // Silver usually quoted per 1kg
+        if (rateSilver > 1000) rateSilver = rateSilver / 1000;
+
+        if (!rate24k || rate24k <= 0) {
+            // Log snippet for debug if needed
+            if (xmlText.length < 500) console.warn("Invalid XML Response:", xmlText);
+            throw new Error("Parsed gold rate is invalid or zero");
         }
 
-        const priceData = extData.data[0][0];
-        const rate24k = Math.round(parseFloat(priceData.gSell));
-        
-        // Attempt to get silver rate, usually sSell. If > 1000, assume per KG and normalize to per gram.
-        let rateSilver = 0;
-        if (priceData.sSell) {
-            const rawSilver = parseFloat(priceData.sSell);
-            rateSilver = rawSilver > 1000 ? Math.round(rawSilver / 1000) : Math.round(rawSilver);
-        } else {
-            rateSilver = 90; // Fallback if missing
-        }
-
-        if (!rate24k || rate24k <= 0) throw new Error("Invalid rate value received");
+        rate24k = Math.round(rate24k);
+        rateSilver = Math.round(rateSilver || 90); // Fallback to 90 if missing
 
         const rate22k = Math.round(rate24k * 0.916);
         const rate18k = Math.round(rate24k * 0.75);
 
         const pool = getPool();
-        if (!pool) return; // DB not ready yet
+        if (!pool) return { success: false, error: "Database not ready" };
         
         const connection = await pool.getConnection();
         await connection.query(
@@ -48,7 +78,7 @@ export async function fetchAndSaveRate() {
             [rate24k, rate22k, rate18k, rateSilver]
         );
         
-        // Also update core_settings to reflect the latest "cached" rate for UI
+        // Update Core Settings Cache
         const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = 'core_settings'");
         if (rows.length > 0) {
             const config = JSON.parse(rows[0].config);
@@ -60,7 +90,7 @@ export async function fetchAndSaveRate() {
         }
 
         connection.release();
-        console.log(`[RateService] Rates successfully saved: 24K=₹${rate24k}, Silver=₹${rateSilver}`);
+        console.log(`[RateService] Rates updated (Sagar): 24K=₹${rate24k}, Silver=₹${rateSilver}`);
         return { success: true, rate24k, rateSilver };
     } catch (e) {
         console.error("[RateService] Automatic fetch failed:", e.message);
