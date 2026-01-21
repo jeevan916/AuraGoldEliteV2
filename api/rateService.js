@@ -23,17 +23,16 @@ const fetchInsecure = (url, depth = 0) => {
             rejectUnauthorized: false, // Bypass SSL for legacy servers
             headers: { 
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/xml, application/xml, text/plain, */*',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 'Connection': 'keep-alive',
                 'Cache-Control': 'no-cache'
             },
             timeout: 20000 // 20s timeout
         }, (res) => {
-            // Handle Redirects (301, 302, 303, 307, 308)
+            // Handle Redirects
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                const newUrl = new URL(res.headers.location, url).href; // Resolve relative paths
-                console.log(`[RateService] Redirecting (${res.statusCode}) to: ${newUrl}`);
-                res.resume(); // Consume response to free memory
+                const newUrl = new URL(res.headers.location, url).href;
+                res.resume();
                 fetchInsecure(newUrl, depth + 1).then(resolve).catch(reject);
                 return;
             }
@@ -67,82 +66,78 @@ export async function fetchAndSaveRate() {
         const timestamp = Date.now();
         const apiUrl = `https://bcast.sagarjewellers.co.in:7768/VOTSBroadcastStreaming/Services/xml/GetLiveRateByTemplateID/sagar?_=${timestamp}`;
         
-        // Use custom insecure fetcher instead of global fetch
-        const xmlText = await fetchInsecure(apiUrl);
+        const rawText = await fetchInsecure(apiUrl);
         
-        // Debug snippet: Capture first 2000 chars
-        const snippet = xmlText.substring(0, 2000); 
+        // Parse Lines
+        const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        const snippet = lines.slice(0, 15).join('\n'); 
 
-        // --- PARSING LOGIC ---
         let matchDebug = "No match found";
-        
-        const extractRate = (symbolRegexStr) => {
-            // Refined Regex: Handles potential attributes in tags and flexible whitespace
-            // Look for Symbol -> ... -> Bid/Buy/Rate
-            const bidRegex = new RegExp(`(?:<Symbol>|<Product>)\\s*(${symbolRegexStr})[\\s\\S]*?(?:<Bid>|<Buy>|<Rate>)\\s*([0-9.,]+)\\s*(?:<\\/Bid>|<\\/Buy>|<\\/Rate>)`, 'i');
-            const match = xmlText.match(bidRegex);
-            
-            if (match) {
-                const rawVal = match[2];
-                matchDebug = `Target: ${symbolRegexStr} | Found: ${match[1]} | Raw Value: ${rawVal}`;
-                return parseFloat(rawVal.replace(/,/g, ''));
-            }
+        let rate24k = 0;
+        let rateSilver = 0;
 
-            // Fallback to Ask/Sell
-            const fallbackRegex = new RegExp(`(?:<Symbol>|<Product>)\\s*(${symbolRegexStr})[\\s\\S]*?(?:<Ask>|<Sell>)\\s*([0-9.,]+)\\s*(?:<\\/Ask>|<\\/Sell>)`, 'i');
-            const fallbackMatch = xmlText.match(fallbackRegex);
-            if (fallbackMatch) {
-                matchDebug = `Fallback Target: ${symbolRegexStr} | Found: ${fallbackMatch[1]} | Raw Ask: ${fallbackMatch[2]}`;
-                return parseFloat(fallbackMatch[2].replace(/,/g, ''));
-            }
+        // --- Extraction Helper ---
+        const extractMax = (line) => {
+            if (!line) return 0;
+            // Capture numbers > 1000 to avoid IDs
+            const nums = line.match(/(\d{4,}(\.\d+)?)/g);
+            if (!nums || nums.length === 0) return 0;
             
-            return 0;
+            const prices = nums.map(n => parseFloat(n)).filter(n => n > 1000); 
+            if (prices.length === 0) return 0;
+            
+            // Take the max value (usually Ask price)
+            return Math.max(...prices);
         };
 
-        // 1. Gold Rate (Target: GOLD NAGPUR 99.9 RTGS - Row 6040)
-        // STRICT SPECIFICITY: Only match "GOLD NAGPUR 99.9" to avoid 24K generic matches
-        let rate24k = extractRate('GOLD\\s*NAGPUR\\s*99\\.?9'); 
+        // 1. Extract Gold Rate (Priority: 99.5 RTGS)
+        const goldLine = lines.find(l => /GOLD\s*NAGPUR.*99\.?5.*RTGS/i.test(l)) 
+                      || lines.find(l => /GOLD\s*NAGPUR.*99\.?9/i.test(l));
         
-        // Fallback to generic 99.9 if specific Nagpur row missing
-        if (!rate24k) rate24k = extractRate('GOLD.*99\\.?9');
-        // Ultimate fallback
-        if (!rate24k) rate24k = extractRate('GOLD');
+        if (goldLine) {
+            rate24k = extractMax(goldLine);
+            matchDebug = `Gold Line: ${goldLine} | Raw: ${rate24k}`;
+        }
 
-        // 2. Silver Rate (Target: SILVER NAGPUR RTGS)
-        let rateSilver = extractRate('SILVER.*RTGS');
-        if (!rateSilver) rateSilver = extractRate('SILVER');
+        // 2. Extract Silver Rate
+        const silverLine = lines.find(l => /SILVER\s*NAGPUR.*RTGS/i.test(l));
+        if (silverLine) {
+            rateSilver = extractMax(silverLine);
+            matchDebug += ` || Silver Line: ${silverLine} | Raw: ${rateSilver}`;
+        }
 
-        // 3. Normalization Logic
-        
-        // GOLD: User confirmed ~153611 is the rate for 10gm.
-        // We calculate per gram by dividing by 10.
+        // 3. Normalization
+        // User confirmed: Raw value (e.g., 151314) is for 10 grams.
         if (rate24k > 10000) {
-            matchDebug += ` | Normalizing Gold: ${rate24k} / 10`;
-            rate24k = rate24k / 10; 
+            rate24k = rate24k / 10; // Convert 10g -> 1g
+            matchDebug += " (Normalized /10)";
         }
-        
-        // SILVER: Handle 1kg unit (Standard convention)
-        if (rateSilver > 1000) {
+
+        // Silver Normalization
+        // If > 10,000, assume it's 1kg and convert to 1g
+        if (rateSilver > 10000) {
             rateSilver = rateSilver / 1000;
+            matchDebug += " (Silver Normalized /1000)";
         }
 
+        // 4. Validation
         if (!rate24k || rate24k <= 0) {
-            if (xmlText.length < 500) console.warn("Invalid XML Response snippet:", xmlText);
-            throw new Error(`Parsed gold rate is invalid or zero. Debug: ${matchDebug}`);
+            console.warn(`[RateService] Failed to parse. Dump: \n${snippet}`);
+            throw new Error(`Parsed gold rate is invalid. Debug: ${matchDebug}`);
         }
 
+        // 5. Calculate Derived Rates (Rounded)
         rate24k = Math.round(rate24k);
         rateSilver = Math.round(rateSilver || 90); 
-
         const rate22k = Math.round(rate24k * 0.916);
         const rate18k = Math.round(rate24k * 0.75);
 
+        // 6. Database Save
         const pool = getPool();
         if (!pool) return { success: false, error: "Database not ready" };
         
         const connection = await pool.getConnection();
         
-        // Log to DB
         await connection.query(
             'INSERT INTO gold_rates (rate24k, rate22k, rate18k, rateSilver) VALUES (?, ?, ?, ?)', 
             [rate24k, rate22k, rate18k, rateSilver]
@@ -168,9 +163,8 @@ export async function fetchAndSaveRate() {
             matchDebug: matchDebug
         };
         
-        console.log(`[RateService] Rates updated: 24K=₹${rate24k}/g, Silver=₹${rateSilver}/g`);
+        console.log(`[RateService] Success: 1g 24K=₹${rate24k}, 1g Silver=₹${rateSilver}`);
         
-        // Emit real-time update
         if (io) {
             io.emit('rate_update', payload);
         }
