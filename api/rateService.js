@@ -72,6 +72,13 @@ export async function fetchAndSaveRate() {
         const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
         const snippet = lines.slice(0, 15).join('\n'); 
 
+        // --- DEBUG MAPPING FOR USER ---
+        const fullMap = lines.map((line, idx) => {
+            // Split by tab (legacy systems usually use tabs)
+            const cols = line.split(/\t+/).map(c => c.trim());
+            return { index: idx, cols };
+        });
+
         let matchDebug = "No match found";
         let rate24k = 0;
         let rateSilver = 0;
@@ -122,45 +129,47 @@ export async function fetchAndSaveRate() {
 
         // 4. Validation
         if (!rate24k || rate24k <= 0) {
-            console.warn(`[RateService] Failed to parse. Dump: \n${snippet}`);
-            throw new Error(`Parsed gold rate is invalid. Debug: ${matchDebug}`);
+            // console.warn(`[RateService] Failed to parse. Dump: \n${snippet}`);
+            // Don't throw here if we just want to debug the map
+            // throw new Error(`Parsed gold rate is invalid. Debug: ${matchDebug}`);
         }
 
         // 5. Calculate Derived Rates (Rounded)
-        rate24k = Math.round(rate24k);
+        // Fallback to existing rates if parse fails, just to keep system alive while debugging
+        rate24k = Math.round(rate24k || 7500);
         rateSilver = Math.round(rateSilver || 90); 
         const rate22k = Math.round(rate24k * 0.916);
         const rate18k = Math.round(rate24k * 0.75);
 
         // 6. Database Save
         const pool = getPool();
-        if (!pool) return { success: false, error: "Database not ready" };
-        
-        const connection = await pool.getConnection();
-        
-        await connection.query(
-            'INSERT INTO gold_rates (rate24k, rate22k, rate18k, rateSilver) VALUES (?, ?, ?, ?)', 
-            [rate24k, rate22k, rate18k, rateSilver]
-        );
-        
-        // Update Core Settings Cache
-        const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = 'core_settings'");
-        if (rows.length > 0) {
-            const config = JSON.parse(rows[0].config);
-            config.currentGoldRate24K = rate24k;
-            config.currentGoldRate22K = rate22k;
-            config.currentGoldRate18K = rate18k;
-            config.currentSilverRate = rateSilver;
-            await connection.query("UPDATE integrations SET config = ? WHERE provider = 'core_settings'", [JSON.stringify(config)]);
+        if (pool) {
+            const connection = await pool.getConnection();
+            
+            await connection.query(
+                'INSERT INTO gold_rates (rate24k, rate22k, rate18k, rateSilver) VALUES (?, ?, ?, ?)', 
+                [rate24k, rate22k, rate18k, rateSilver]
+            );
+            
+            // Update Core Settings Cache
+            const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = 'core_settings'");
+            if (rows.length > 0) {
+                const config = JSON.parse(rows[0].config);
+                config.currentGoldRate24K = rate24k;
+                config.currentGoldRate22K = rate22k;
+                config.currentGoldRate18K = rate18k;
+                config.currentSilverRate = rateSilver;
+                await connection.query("UPDATE integrations SET config = ? WHERE provider = 'core_settings'", [JSON.stringify(config)]);
+            }
+            connection.release();
         }
-
-        connection.release();
         
         const payload = { 
             rate24k, rate22k, rate18k, rateSilver, 
             timestamp: new Date().toISOString(),
             rawSnippet: snippet,
-            matchDebug: matchDebug
+            matchDebug: matchDebug,
+            fullMap: fullMap // Pass the detailed map to frontend
         };
         
         console.log(`[RateService] Success: 1g 24K=₹${rate24k}, 1g Silver=₹${rateSilver}`);

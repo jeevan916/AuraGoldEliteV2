@@ -171,7 +171,7 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                             <p className="text-[10px] font-black uppercase text-slate-400 mb-2 flex items-center gap-2">
                                 <Info size={12} /> Raw Rate Response (Diagnostic)
                             </p>
-                            <div className="font-mono text-[10px] text-slate-600 break-all bg-white p-2 rounded border border-slate-100 max-h-32 overflow-y-auto">
+                            <div className="font-mono text-[10px] text-slate-600 break-all bg-white p-2 rounded border border-slate-100 max-h-64 overflow-y-auto">
                                 <div className="mb-2 pb-2 border-b border-slate-100">
                                     <span className="font-bold text-amber-600">Source:</span> {rateSource}
                                 </div>
@@ -180,9 +180,41 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                                         <span className="font-bold text-blue-600">Extraction Logic:</span> {rawRateData.debug}
                                     </div>
                                 )}
-                                {rawRateData.snippet && (
-                                    <div><span className="font-bold text-slate-400">Raw XML Snippet:</span> {rawRateData.snippet}</div>
+                                
+                                {/* TABLE MAPPING START */}
+                                {rawRateData.fullMap ? (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-100 text-slate-500 border-b border-slate-200">
+                                                    <th className="p-2 whitespace-nowrap">Idx</th>
+                                                    <th className="p-2 w-full">Column Data (Tab Separated)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {rawRateData.fullMap.map((row: any) => (
+                                                    <tr key={row.index} className="hover:bg-slate-50">
+                                                        <td className="p-2 font-bold text-slate-400 border-r">{row.index}</td>
+                                                        <td className="p-2">
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {row.cols.map((col: string, cIdx: number) => (
+                                                                    <span key={cIdx} className="inline-block px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-slate-700" title={`Column ${cIdx}`}>
+                                                                        <span className="text-[8px] text-slate-400 mr-1 font-bold">{cIdx}:</span>
+                                                                        {col}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    rawRateData.snippet && <div><span className="font-bold text-slate-400">Raw Text:</span> <pre>{rawRateData.snippet}</pre></div>
                                 )}
+                                {/* TABLE MAPPING END */}
+
                                 {rawRateData.error && <span className="text-rose-600 font-bold block mt-2 border-t pt-2">Error: {rawRateData.error}</span>}
                             </div>
                         </div>
