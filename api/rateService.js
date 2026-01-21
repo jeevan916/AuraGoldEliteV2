@@ -38,41 +38,53 @@ export async function fetchAndSaveRate() {
         
         const xmlText = await externalRes.text();
         
-        // --- PARSING LOGIC (Regex) ---
-        // Handles standard VOTS XML format: <Symbol>GOLD 995</Symbol>...<Ask>75000</Ask>
-        // Updated to handle commas in numbers (e.g. 75,000)
-        const extractRate = (symbolPattern) => {
-            const regex = new RegExp(`(?:<Symbol>|<Product>)\\s*(${symbolPattern})\\s*(?:<\\/Symbol>|<\\/Product>)[\\s\\S]*?(?:<Ask>|<Sell>)\\s*([0-9.,]+)\\s*(?:<\\/Ask>|<\\/Sell>)`, 'i');
-            const match = xmlText.match(regex);
-            if (!match) return 0;
-            // Remove commas before parsing
-            const rawNum = match[2].replace(/,/g, '');
-            return parseFloat(rawNum);
+        // --- PARSING LOGIC ---
+        // Context: User confirmed 153611 is "Live Buy". "Sell" is not available (-).
+        // 157034 is High. 148882 is Low.
+        // We must ONLY capture the Bid/Buy field to get 153611.
+        
+        const extractRate = (symbolRegexStr) => {
+            // Regex looks for Symbol, then lazily scans for <Bid> or <Buy>.
+            // We do NOT look for <Ask> or <Sell> as those might be empty or misleading.
+            const bidRegex = new RegExp(`(?:<Symbol>|<Product>)\\s*(${symbolRegexStr})[\\s\\S]*?(?:<Bid>|<Buy>)\\s*([0-9.,]+)\\s*(?:<\\/Bid>|<\\/Buy>)`, 'i');
+            const match = xmlText.match(bidRegex);
+            
+            if (match) {
+                return parseFloat(match[2].replace(/,/g, ''));
+            }
+            return 0;
         };
 
-        // 1. Gold Rate (Try GOLD 999, then 995, then generic)
-        let rate24k = extractRate('GOLD 999');
-        if (!rate24k) rate24k = extractRate('GOLD 995');
+        // 1. Gold Rate (Target: GOLD NAGPUR 99.9 RTGS)
+        let rate24k = extractRate('GOLD.*99\\.?9'); 
+        if (!rate24k) rate24k = extractRate('GOLD.*99\\.?5');
         if (!rate24k) rate24k = extractRate('GOLD');
 
-        // 2. Silver Rate (Try SILVER 999, then generic)
-        let rateSilver = extractRate('SILVER 999');
+        // 2. Silver Rate (Target: SILVER NAGPUR RTGS)
+        // Silver often has Bid/Ask both, but we stick to Bid/Buy for consistency.
+        let rateSilver = extractRate('SILVER.*RTGS');
         if (!rateSilver) rateSilver = extractRate('SILVER');
 
-        // 3. Normalization
-        // Gold usually quoted per 10g
-        if (rate24k > 10000) rate24k = rate24k / 10;
+        // 3. Normalization Logic
         
-        // Silver usually quoted per 1kg
-        if (rateSilver > 1000) rateSilver = rateSilver / 1000;
+        // GOLD: User confirmed 153611 is the rate for 10gm.
+        // Logic: If rate is > 10,000, it is a 10g unit. Divide by 10 to get 1g.
+        if (rate24k > 10000) {
+            rate24k = rate24k / 10; 
+        }
+        
+        // SILVER: Handle 1kg unit (Standard convention: 1kg -> 1g)
+        if (rateSilver > 1000) {
+            rateSilver = rateSilver / 1000;
+        }
 
         if (!rate24k || rate24k <= 0) {
             if (xmlText.length < 500) console.warn("Invalid XML Response snippet:", xmlText);
-            throw new Error("Parsed gold rate is invalid or zero");
+            throw new Error("Parsed gold rate is invalid or zero (Market might be closed or Sell-only)");
         }
 
         rate24k = Math.round(rate24k);
-        rateSilver = Math.round(rateSilver || 90); // Fallback to 90 if missing
+        rateSilver = Math.round(rateSilver || 90); 
 
         const rate22k = Math.round(rate24k * 0.916);
         const rate18k = Math.round(rate24k * 0.75);
@@ -106,7 +118,7 @@ export async function fetchAndSaveRate() {
             timestamp: new Date().toISOString() 
         };
         
-        console.log(`[RateService] Rates updated (Sagar): 24K=₹${rate24k}, Silver=₹${rateSilver}`);
+        console.log(`[RateService] Rates updated: 24K=₹${rate24k}/g, Silver=₹${rateSilver}/g`);
         
         // Emit real-time update
         if (io) {

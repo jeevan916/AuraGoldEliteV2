@@ -17,7 +17,7 @@ interface MarketIntelligenceProps {
 type Timeframe = 'TODAY' | '3D' | '5D' | '1W' | '15D' | '1M';
 type MetalType = 'GOLD' | 'SILVER';
 
-const API_BASE = (import.meta as any).env.VITE_API_BASE_URL || '';
+const API_BASE = process.env.VITE_API_BASE_URL || '';
 
 const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, settings }) => {
   const [timeframe, setTimeframe] = useState<Timeframe>('1W');

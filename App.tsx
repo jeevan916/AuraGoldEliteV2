@@ -19,7 +19,7 @@ import { storageService } from './services/storageService';
 import { Order, GlobalSettings, NotificationTrigger, PaymentPlanTemplate, AppError, ActivityLogEntry, Customer } from './types';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-const API_BASE = (import.meta as any).env.VITE_API_BASE_URL || '';
+const API_BASE = process.env.VITE_API_BASE_URL || '';
 
 // --- STABLE LAZY LOADER ---
 const lazyRetry = (importFn: () => Promise<any>, moduleName: string) => {
