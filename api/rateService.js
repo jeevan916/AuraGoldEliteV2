@@ -1,6 +1,7 @@
 
 import { getPool } from './db.js';
 import https from 'https';
+import http from 'http';
 
 let backgroundInterval = null;
 let currentIntervalMins = null;
@@ -10,18 +11,33 @@ export const setRateServiceIo = (socketIo) => {
     io = socketIo;
 };
 
-// Helper for robust fetching from legacy servers (ignores SSL errors)
-const fetchInsecure = (url) => {
+// Helper for robust fetching from legacy servers (ignores SSL errors, follows redirects)
+const fetchInsecure = (url, depth = 0) => {
+    if (depth > 5) return Promise.reject(new Error("Too many redirects"));
+
     return new Promise((resolve, reject) => {
-        const request = https.get(url, {
-            rejectUnauthorized: false, // CRITICAL: Bypass SSL for legacy jewelry broadcast servers
+        const isHttps = url.startsWith('https');
+        const lib = isHttps ? https : http;
+        
+        const request = lib.get(url, {
+            rejectUnauthorized: false, // Bypass SSL for legacy servers
             headers: { 
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/xml, application/xml, text/plain, */*',
-                'Connection': 'keep-alive'
+                'Connection': 'keep-alive',
+                'Cache-Control': 'no-cache'
             },
-            timeout: 15000 // 15s timeout
+            timeout: 20000 // 20s timeout
         }, (res) => {
+            // Handle Redirects (301, 302, 303, 307, 308)
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                const newUrl = new URL(res.headers.location, url).href; // Resolve relative paths
+                console.log(`[RateService] Redirecting (${res.statusCode}) to: ${newUrl}`);
+                res.resume(); // Consume response to free memory
+                fetchInsecure(newUrl, depth + 1).then(resolve).catch(reject);
+                return;
+            }
+
             let data = '';
             res.on('data', (chunk) => data += chunk);
             res.on('end', () => {
@@ -36,7 +52,7 @@ const fetchInsecure = (url) => {
         request.on('error', (err) => reject(err));
         request.on('timeout', () => {
             request.destroy();
-            reject(new Error("Request Timeout (15s)"));
+            reject(new Error("Request Timeout (20s)"));
         });
     });
 };
@@ -54,14 +70,15 @@ export async function fetchAndSaveRate() {
         // Use custom insecure fetcher instead of global fetch
         const xmlText = await fetchInsecure(apiUrl);
         
-        // Debug snippet: Capture first 2000 chars to cover the target row
+        // Debug snippet: Capture first 2000 chars
         const snippet = xmlText.substring(0, 2000); 
 
         // --- PARSING LOGIC ---
         let matchDebug = "No match found";
         
         const extractRate = (symbolRegexStr) => {
-            // 1. Try to find Bid/Buy specific tags first
+            // Refined Regex: Handles potential attributes in tags and flexible whitespace
+            // Look for Symbol -> ... -> Bid/Buy/Rate
             const bidRegex = new RegExp(`(?:<Symbol>|<Product>)\\s*(${symbolRegexStr})[\\s\\S]*?(?:<Bid>|<Buy>|<Rate>)\\s*([0-9.,]+)\\s*(?:<\\/Bid>|<\\/Buy>|<\\/Rate>)`, 'i');
             const match = xmlText.match(bidRegex);
             
@@ -71,7 +88,7 @@ export async function fetchAndSaveRate() {
                 return parseFloat(rawVal.replace(/,/g, ''));
             }
 
-            // 2. Fallback to Ask/Sell if Bid is completely missing
+            // Fallback to Ask/Sell
             const fallbackRegex = new RegExp(`(?:<Symbol>|<Product>)\\s*(${symbolRegexStr})[\\s\\S]*?(?:<Ask>|<Sell>)\\s*([0-9.,]+)\\s*(?:<\\/Ask>|<\\/Sell>)`, 'i');
             const fallbackMatch = xmlText.match(fallbackRegex);
             if (fallbackMatch) {
