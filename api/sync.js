@@ -45,6 +45,22 @@ router.post('/templates', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+router.post('/catalog', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        for (const item of req.body.catalog) {
+            await connection.query(
+                `INSERT INTO catalog (id, category, data) VALUES (?, ?, ?) 
+                 ON DUPLICATE KEY UPDATE category=VALUES(category), data=VALUES(data)`,
+                [item.id, item.category, JSON.stringify(item)]
+            );
+        }
+        connection.release();
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.post('/settings', ensureDb, async (req, res) => {
     try {
         const pool = getPool();

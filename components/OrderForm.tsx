@@ -1,17 +1,13 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  Plus, ShoppingBag, Trash2, ShieldCheck, 
-  Calculator, User, ChevronRight, X, Loader2, Sparkles, Zap, Image as ImageIcon, Camera, Trash, 
-  IndianRupee, ArrowRight, Lock, Calendar, Scale, Tag, Ruler, Upload, Gem, LayoutGrid, BrainCircuit, CheckCircle2,
-  CalendarDays, AlignLeft
+  Plus, Trash2, ChevronRight, X, Loader2, Sparkles, Image as ImageIcon, Camera, Lock, Gem, CheckCircle2
 } from 'lucide-react';
 import { 
   Order, JewelryDetail, OrderStatus, GlobalSettings, 
-  ProductionStatus, Purity, ProtectionStatus, Milestone, PaymentPlan, PaymentPlanTemplate, CatalogItem
+  ProductionStatus, Purity, ProtectionStatus, Milestone, PaymentPlan, PaymentPlanTemplate
 } from '../types';
 import { compressImage } from '../services/imageOptimizer';
-import { storageService } from '../services/storageService';
 import { whatsappService } from '../services/whatsappService';
 
 interface OrderFormProps {
@@ -28,10 +24,6 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   const [orderRate, setOrderRate] = useState(settings.currentGoldRate22K);
   const [protectionRate, setProtectionRate] = useState(settings.currentGoldRate22K);
   const [creating, setCreating] = useState(false);
-  
-  // Catalog State
-  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
-  const [showCatalog, setShowCatalog] = useState(false);
   
   // Manual Milestones State
   const [planMode, setPlanMode] = useState<'AUTO' | 'MANUAL'>('AUTO');
@@ -62,10 +54,6 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
     goldRateProtection: true,
     type: 'MANUAL'
   });
-
-  useEffect(() => {
-    setCatalog(storageService.getCatalog());
-  }, []);
 
   // Sync protection rate with order rate initially, but allow deviation
   useEffect(() => {
@@ -110,19 +98,6 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   }, [currentItem, orderRate, settings]);
 
   const cartTotal = useMemo(() => cartItems.reduce((s, i) => s + i.finalAmount, 0), [cartItems]);
-
-  const handleSelectCatalogItem = (catItem: CatalogItem) => {
-      setCurrentItem({
-          ...currentItem,
-          category: catItem.category,
-          purity: catItem.purity,
-          metalColor: catItem.metalColor as any,
-          wastagePercentage: catItem.wastagePercentage,
-          makingChargesPerGram: catItem.makingChargesPerGram,
-          stoneCharges: catItem.stoneCharges || 0
-      });
-      setShowCatalog(false);
-  };
 
   const handleApplyTemplate = (t: PaymentPlanTemplate) => {
       setPlan({
@@ -387,31 +362,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                 <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2 uppercase tracking-wide">
                     <Gem size={16} className="text-amber-500" /> Item Specification
                 </h3>
-                <button 
-                    onClick={() => setShowCatalog(!showCatalog)}
-                    className="flex items-center gap-2 bg-amber-50 text-amber-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-amber-100 transition-colors"
-                >
-                    <LayoutGrid size={12} /> Select from Catalog
-                </button>
             </div>
-
-            {/* Catalog Popup */}
-            {showCatalog && (
-                <div className="absolute top-16 right-4 z-50 bg-white shadow-2xl rounded-2xl border border-slate-100 w-72 p-4 animate-slideUp">
-                    <div className="flex justify-between items-center mb-3">
-                        <span className="text-xs font-black uppercase text-slate-400">Quick Select</span>
-                        <button onClick={() => setShowCatalog(false)}><X size={16} /></button>
-                    </div>
-                    <div className="max-h-60 overflow-y-auto space-y-2">
-                        {catalog.length === 0 ? <p className="text-xs text-slate-400 italic">No items in catalog.</p> : catalog.map(c => (
-                            <div key={c.id} onClick={() => handleSelectCatalogItem(c)} className="p-3 bg-slate-50 hover:bg-amber-50 rounded-xl cursor-pointer border border-transparent hover:border-amber-200">
-                                <p className="font-bold text-slate-800 text-sm">{c.name}</p>
-                                <p className="text-[10px] text-slate-500">{c.category} • {c.purity} • {c.wastagePercentage}% VA</p>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <InputWrapper label="Category">
@@ -629,7 +580,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                 <>
                     <div>
                         <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                            <BrainCircuit size={16} /> Select Plan Template
+                            <Sparkles size={16} /> Select Plan Template
                         </h3>
                         <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
                             {planTemplates.map(t => (

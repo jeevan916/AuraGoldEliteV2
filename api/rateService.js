@@ -69,11 +69,11 @@ export async function fetchAndSaveRate() {
         };
 
         // 1. Gold Rate (Target: GOLD NAGPUR 99.9 RTGS - Row 6040)
-        // Regex looks for "GOLD" followed eventually by "99.9"
-        let rate24k = extractRate('GOLD.*99\\.?9'); 
+        // STRICT SPECIFICITY: Only match "GOLD NAGPUR 99.9" to avoid 24K generic matches
+        let rate24k = extractRate('GOLD\\s*NAGPUR\\s*99\\.?9'); 
         
-        // Fallback to 99.5 if 99.9 missing
-        if (!rate24k) rate24k = extractRate('GOLD.*99\\.?5');
+        // Fallback to generic 99.9 if specific Nagpur row missing
+        if (!rate24k) rate24k = extractRate('GOLD.*99\\.?9');
         // Ultimate fallback
         if (!rate24k) rate24k = extractRate('GOLD');
 

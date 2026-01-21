@@ -26,6 +26,7 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
         const [customers] = await connection.query('SELECT data FROM customers');
         const [logs] = await connection.query('SELECT data FROM whatsapp_logs LIMIT 100');
         const [templates] = await connection.query('SELECT data FROM templates');
+        const [catalog] = await connection.query('SELECT data FROM catalog');
         const [intRows] = await connection.query('SELECT * FROM integrations');
         connection.release();
         
@@ -39,6 +40,7 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
             customers: customers.map(r => JSON.parse(r.data)),
             logs: logs.map(r => JSON.parse(r.data)),
             templates: templates.map(r => JSON.parse(r.data)),
+            catalog: catalog.map(r => JSON.parse(r.data)),
             settings: { 
                 // Core Values
                 currentGoldRate24K: core.currentGoldRate24K || 7500,

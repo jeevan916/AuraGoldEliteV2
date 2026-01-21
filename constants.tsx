@@ -1,5 +1,5 @@
 
-import { GlobalSettings, PaymentPlanTemplate, WhatsAppTemplate, CatalogItem, SystemTrigger, MetaCategory, AppTemplateGroup } from './types';
+import { GlobalSettings, PaymentPlanTemplate, WhatsAppTemplate, SystemTrigger, MetaCategory, AppTemplateGroup } from './types';
 
 // Helper to safely access environment variables
 const getEnv = (key: string): string => {
@@ -31,13 +31,6 @@ export const INITIAL_SETTINGS: GlobalSettings = {
   setuSchemeId: '', // Maps to Product Instance ID
   setuSecret: ''
 };
-
-export const INITIAL_CATALOG: CatalogItem[] = [
-  { id: 'c1', category: 'Ring', name: 'Standard Wedding Band', metalColor: 'Yellow Gold', purity: '22K', wastagePercentage: 12, makingChargesPerGram: 450, stoneCharges: 0 },
-  { id: 'c2', category: 'Necklace', name: 'Antique Temple Haram', metalColor: 'Yellow Gold', purity: '22K', wastagePercentage: 18, makingChargesPerGram: 600, stoneCharges: 2500 },
-  { id: 'c3', category: 'Earrings', name: 'Diamond Studded Tops', metalColor: 'Rose Gold', purity: '18K', wastagePercentage: 15, makingChargesPerGram: 800, stoneCharges: 15000 },
-  { id: 'c4', category: 'Bangle', name: 'Daily Wear Kadas', metalColor: 'Yellow Gold', purity: '22K', wastagePercentage: 10, makingChargesPerGram: 400, stoneCharges: 0 },
-];
 
 export const JEWELRY_CATEGORIES = [
   'Ring', 'Necklace', 'Earrings', 'Bracelet', 'Bangle', 'Pendant', 'Chain', 'Mangalsutra', 'Set', 'Coins', 'Kada', 'Silverware'

@@ -266,7 +266,7 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
               {/* NEWS LINKS RE-STYLIZED */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <MarketLink url="https://www.moneycontrol.com/commodity/gold-price.html" title="MCX Futures" desc="Real-time Indian commodity exchange data." />
-                  <MarketLink url="https://ibjarates.com/" title="IBJA Official" desc="Official benchmark for Indian Jewelers." />
+                  <MarketLink url="http://www.sagarjewellers.co.in/" title="Sagar Jewellers" desc="Reference Spot Rate (Official Source)." />
               </div>
           </div>
 

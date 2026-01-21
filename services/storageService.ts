@@ -1,6 +1,6 @@
 
-import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate, CatalogItem, Customer } from '../types';
-import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES, INITIAL_TEMPLATES, INITIAL_CATALOG, REQUIRED_SYSTEM_TEMPLATES } from '../constants';
+import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate, Customer, CatalogItem } from '../types';
+import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES, INITIAL_TEMPLATES, REQUIRED_SYSTEM_TEMPLATES } from '../constants';
 import { io, Socket } from 'socket.io-client';
 
 export interface AppState {
@@ -8,9 +8,9 @@ export interface AppState {
   logs: WhatsAppLogEntry[];
   templates: WhatsAppTemplate[];
   planTemplates: PaymentPlanTemplate[];
-  catalog: CatalogItem[];
   settings: GlobalSettings;
   customers: Customer[];
+  catalog: CatalogItem[];
   lastUpdated: number;
 }
 
@@ -22,9 +22,9 @@ const DEFAULT_STATE: AppState = {
   logs: [],
   templates: INITIAL_TEMPLATES,
   planTemplates: INITIAL_PLAN_TEMPLATES,
-  catalog: INITIAL_CATALOG,
   settings: INITIAL_SETTINGS,
   customers: [],
+  catalog: [],
   lastUpdated: Date.now()
 };
 
@@ -44,8 +44,8 @@ class StorageService {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (!parsed.catalog) parsed.catalog = INITIAL_CATALOG;
         if (!parsed.customers) parsed.customers = [];
+        if (!parsed.catalog) parsed.catalog = [];
         this.state = parsed;
       }
     } catch (e) {
@@ -152,7 +152,7 @@ class StorageService {
               templates: fetchedTemplates,
               logs: dbData.logs || [],
               planTemplates: (dbData.planTemplates && dbData.planTemplates.length > 0) ? dbData.planTemplates : INITIAL_PLAN_TEMPLATES,
-              catalog: (dbData.catalog && dbData.catalog.length > 0) ? dbData.catalog : INITIAL_CATALOG,
+              catalog: dbData.catalog || [],
               lastUpdated: Date.now()
           } as any;
 
@@ -203,10 +203,10 @@ class StorageService {
     this.pushEntity('plan-templates', { planTemplates });
   }
 
-  public getCatalog() { return this.state.catalog; }
+  public getCatalog() { return this.state.catalog || []; }
   public setCatalog(catalog: CatalogItem[]) {
-    this.state.catalog = catalog;
-    this.pushEntity('catalog', { catalog });
+      this.state.catalog = catalog;
+      this.pushEntity('catalog', { catalog });
   }
 
   public getSettings() { return this.state.settings; }

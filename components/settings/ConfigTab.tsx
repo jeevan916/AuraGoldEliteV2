@@ -1,0 +1,271 @@
+
+import React, { useState } from 'react';
+import { 
+    Zap, Loader2, RefreshCw, Info, Server, MessageSquare, CreditCard, 
+    Save, CheckCircle2, Database, ServerCrash, ShieldCheck 
+} from 'lucide-react';
+import { GlobalSettings } from '../../types';
+import { goldRateService } from '../../services/goldRateService';
+import { storageService } from '../../services/storageService';
+import { PricingField, ConfigInput } from './Shared';
+
+interface ConfigTabProps {
+    settings: GlobalSettings;
+    onUpdate: (newSettings: GlobalSettings) => Promise<void>;
+}
+
+const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
+    const [localSettings, setLocalSettings] = useState(settings);
+    const [syncing, setSyncing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveSuccess, setSaveSuccess] = useState(false);
+    
+    // Diagnostic State
+    const [rawRateData, setRawRateData] = useState<any>(null);
+    const [rateSource, setRateSource] = useState<string>('');
+    const [dbStatus, setDbStatus] = useState<'IDLE' | 'TESTING' | 'SUCCESS' | 'ERROR'>('IDLE');
+    const [dbMessage, setDbMessage] = useState('');
+    const [debugInfo, setDebugInfo] = useState<any>(null);
+    const [dbConfig, setDbConfig] = useState({ host: '127.0.0.1', user: '', password: '', database: '' });
+    const [savingDb, setSavingDb] = useState(false);
+
+    const handleLiveSync = async () => {
+        setSyncing(true);
+        try {
+            const result = await goldRateService.fetchLiveRate();
+            if (result && result.success) {
+                const updated = {
+                    ...localSettings,
+                    currentGoldRate24K: result.rate24K,
+                    currentGoldRate22K: result.rate22K,
+                    currentGoldRate18K: result.rate18K,
+                    currentSilverRate: result.silver
+                };
+                setLocalSettings(updated);
+                setRawRateData(result.raw);
+                setRateSource(result.source || 'Unknown');
+            } else {
+                setRawRateData(result.raw || { error: result.error });
+                setRateSource("Fetch Failed");
+            }
+        } finally {
+            setSyncing(false);
+        }
+    };
+
+    const handleUpdateSettings = async () => {
+        setIsSaving(true);
+        try {
+            await onUpdate(localSettings);
+            setSaveSuccess(true);
+            setTimeout(() => setSaveSuccess(false), 2000);
+        } catch (e) {
+            alert("Failed to save settings: " + (e instanceof Error ? e.message : "Unknown error"));
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleTestDatabase = async () => {
+        setDbStatus('TESTING');
+        setDbMessage('Diagnosing connection...');
+        setDebugInfo(null);
+        try {
+            const result = await storageService.forceSync();
+            if (result.success) {
+                setDbStatus('SUCCESS');
+                setDbMessage(result.message);
+            } else {
+                setDbStatus('ERROR');
+                setDbMessage("Connection Failed. Fetching diagnostics...");
+                const debugRes = await fetch('/api/debug/db');
+                const debugData = await debugRes.json();
+                setDebugInfo(debugData);
+                if (debugData.error) {
+                    setDbMessage(`Error: ${debugData.error}`);
+                    if(debugData.config) {
+                        setDbConfig(prev => ({
+                            ...prev,
+                            host: debugData.config.host || '127.0.0.1',
+                            user: debugData.config.user || '',
+                            database: debugData.config.database || ''
+                        }));
+                    }
+                } else {
+                    setDbMessage("Unknown Connection Error");
+                }
+            }
+        } catch (e: any) {
+            setDbStatus('ERROR');
+            setDbMessage(`Network Error: ${e.message}`);
+        }
+    };
+
+    const handleSaveDbConfig = async () => {
+        if(!dbConfig.host || !dbConfig.user || !dbConfig.database) {
+            return alert("Please fill Host, User and Database fields.");
+        }
+        setSavingDb(true);
+        try {
+            const res = await fetch('/api/debug/configure', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(dbConfig)
+            });
+            const data = await res.json();
+            if(data.success) {
+                setDbStatus('SUCCESS');
+                setDbMessage('Credentials Saved & Connected!');
+                setDebugInfo(null);
+            } else {
+                setDbMessage("Failed: " + data.error);
+                setDbStatus('ERROR');
+            }
+        } catch(e: any) {
+            setDbMessage("Error: " + e.message);
+            setDbStatus('ERROR');
+        } finally {
+            setSavingDb(false);
+        }
+    };
+
+    return (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fadeIn">
+            <div className="lg:col-span-8 space-y-6">
+                
+                {/* PRICING ENGINE */}
+                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl relative overflow-hidden">
+                    <div className="flex justify-between items-center mb-8 relative z-10">
+                        <div>
+                            <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                                <Zap className="text-amber-500" /> Pricing Engine
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-1 font-medium">Auto-sync with Sagar Jewellers (Live) or override manually.</p>
+                        </div>
+                        <button 
+                            onClick={handleLiveSync} 
+                            disabled={syncing}
+                            className={`bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg hover:bg-slate-800 transition-all ${syncing ? 'opacity-80' : ''}`}
+                        >
+                            {syncing ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+                            Fetch Live
+                        </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+                        <PricingField label="24K Bullion (99.9)" value={localSettings.currentGoldRate24K} onChange={(v: number) => setLocalSettings({...localSettings, currentGoldRate24K: v})} />
+                        <PricingField label="22K Standard (916)" value={localSettings.currentGoldRate22K} onChange={(v: number) => setLocalSettings({...localSettings, currentGoldRate22K: v})} />
+                        <PricingField label="18K Studded (750)" value={localSettings.currentGoldRate18K} onChange={(v: number) => setLocalSettings({...localSettings, currentGoldRate18K: v})} />
+                        <PricingField label="Silver 999 (1g)" value={localSettings.currentSilverRate} onChange={(v: number) => setLocalSettings({...localSettings, currentSilverRate: v})} isSilver />
+                    </div>
+
+                    {rawRateData && (
+                        <div className="mt-6 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                            <p className="text-[10px] font-black uppercase text-slate-400 mb-2 flex items-center gap-2">
+                                <Info size={12} /> Raw Rate Response (Diagnostic)
+                            </p>
+                            <div className="font-mono text-[10px] text-slate-600 break-all bg-white p-2 rounded border border-slate-100 max-h-32 overflow-y-auto">
+                                <div className="mb-2 pb-2 border-b border-slate-100">
+                                    <span className="font-bold text-amber-600">Source:</span> {rateSource}
+                                </div>
+                                {rawRateData.debug && (
+                                    <div className="mb-2 pb-2 border-b border-slate-100">
+                                        <span className="font-bold text-blue-600">Extraction Logic:</span> {rawRateData.debug}
+                                    </div>
+                                )}
+                                {rawRateData.snippet && (
+                                    <div><span className="font-bold text-slate-400">Raw XML Snippet:</span> {rawRateData.snippet}</div>
+                                )}
+                                {rawRateData.error && <span className="text-rose-600 font-bold">{rawRateData.error}</span>}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* INTEGRATIONS */}
+                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                    <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2">
+                        <Server className="text-blue-500" /> API Gateway Configuration
+                    </h3>
+                    <div className="space-y-6">
+                        <div className="p-5 rounded-2xl border border-slate-100 bg-slate-50/50">
+                            <div className="flex items-center gap-3 mb-4"><MessageSquare className="text-emerald-600" /><h4 className="font-bold text-slate-700 text-sm">WhatsApp Business API</h4></div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <ConfigInput label="Phone Number ID" value={localSettings.whatsappPhoneNumberId} onChange={(v: string) => setLocalSettings({...localSettings, whatsappPhoneNumberId: v})} />
+                                <ConfigInput label="WABA ID" value={localSettings.whatsappBusinessAccountId} onChange={(v: string) => setLocalSettings({...localSettings, whatsappBusinessAccountId: v})} />
+                                <div className="md:col-span-2"><ConfigInput label="Permanent Access Token" value={localSettings.whatsappBusinessToken} onChange={(v: string) => setLocalSettings({...localSettings, whatsappBusinessToken: v})} type="password" /></div>
+                            </div>
+                        </div>
+                        <div className="p-5 rounded-2xl border border-slate-100 bg-slate-50/50">
+                            <div className="flex items-center gap-3 mb-4"><CreditCard className="text-indigo-600" /><h4 className="font-bold text-slate-700 text-sm">Payment Gateways</h4></div>
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <ConfigInput label="Razorpay Key ID" value={localSettings.razorpayKeyId} onChange={(v: string) => setLocalSettings({...localSettings, razorpayKeyId: v})} />
+                                    <ConfigInput label="Razorpay Secret" value={localSettings.razorpayKeySecret} onChange={(v: string) => setLocalSettings({...localSettings, razorpayKeySecret: v})} type="password" />
+                                </div>
+                                <div className="border-t border-slate-200 pt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <ConfigInput label="Setu Client ID" value={localSettings.setuClientId} onChange={(v: string) => setLocalSettings({...localSettings, setuClientId: v})} />
+                                    <ConfigInput label="Setu Secret" value={localSettings.setuSecret} onChange={(v: string) => setLocalSettings({...localSettings, setuSecret: v})} type="password" />
+                                    <ConfigInput label="Scheme ID" value={localSettings.setuSchemeId} onChange={(v: string) => setLocalSettings({...localSettings, setuSchemeId: v})} />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="lg:col-span-4 space-y-6">
+                <button 
+                    onClick={handleUpdateSettings} 
+                    disabled={isSaving}
+                    className={`w-full py-5 rounded-2xl font-black uppercase text-sm tracking-widest shadow-xl flex items-center justify-center gap-2 transition-all ${saveSuccess ? 'bg-emerald-500 text-white' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+                >
+                    {isSaving ? <Loader2 className="animate-spin" /> : saveSuccess ? <CheckCircle2 /> : <Save />}
+                    {saveSuccess ? 'Saved Successfully' : 'Save Changes'}
+                </button>
+
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                    <h3 className="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
+                        <Database size={16} className="text-slate-400" /> Database Connection
+                    </h3>
+                    <div className={`p-4 rounded-xl border mb-4 flex flex-col items-center justify-center text-center gap-2 ${dbStatus === 'SUCCESS' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : dbStatus === 'ERROR' ? 'bg-rose-50 border-rose-100 text-rose-700' : 'bg-slate-50 border-slate-100'}`}>
+                        {dbStatus === 'TESTING' ? <Loader2 className="animate-spin" /> : dbStatus === 'SUCCESS' ? <CheckCircle2 /> : dbStatus === 'ERROR' ? <ServerCrash /> : <Database />}
+                        <p className="text-xs font-bold">{dbMessage || "Status: Idle"}</p>
+                    </div>
+                    {dbStatus === 'ERROR' && debugInfo && (
+                        <div className="space-y-3 animate-fadeIn">
+                            <p className="text-[10px] font-black uppercase text-slate-400">Manual Configuration Override</p>
+                            <ConfigInput label="Host" value={dbConfig.host} onChange={(v: string) => setDbConfig({...dbConfig, host: v})} />
+                            <ConfigInput label="User" value={dbConfig.user} onChange={(v: string) => setDbConfig({...dbConfig, user: v})} />
+                            <ConfigInput label="Password" value={dbConfig.password} onChange={(v: string) => setDbConfig({...dbConfig, password: v})} type="password" />
+                            <ConfigInput label="Database Name" value={dbConfig.database} onChange={(v: string) => setDbConfig({...dbConfig, database: v})} />
+                            <button 
+                                onClick={handleSaveDbConfig}
+                                disabled={savingDb}
+                                className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-xs uppercase tracking-widest mt-2"
+                            >
+                                {savingDb ? 'Connecting...' : 'Update Connection'}
+                            </button>
+                        </div>
+                    )}
+                    <button onClick={handleTestDatabase} className="w-full bg-white border border-slate-200 text-slate-600 py-3 rounded-xl font-bold text-xs uppercase hover:bg-slate-50">
+                        Test Connection
+                    </button>
+                </div>
+
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                    <h3 className="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
+                        <ShieldCheck size={16} className="text-slate-400" /> Protection Rules
+                    </h3>
+                    <div className="space-y-4">
+                        <ConfigInput label="Max Liability Limit (₹/g)" value={localSettings.goldRateProtectionMax} onChange={(v: string) => setLocalSettings({...localSettings, goldRateProtectionMax: parseFloat(v)})} type="number" />
+                        <ConfigInput label="Grace Period (Hours)" value={localSettings.gracePeriodHours} onChange={(v: string) => setLocalSettings({...localSettings, gracePeriodHours: parseFloat(v)})} type="number" />
+                        <ConfigInput label="Follow-Up Interval (Days)" value={localSettings.followUpIntervalDays} onChange={(v: string) => setLocalSettings({...localSettings, followUpIntervalDays: parseFloat(v)})} type="number" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default ConfigTab;
