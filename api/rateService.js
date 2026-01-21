@@ -74,7 +74,6 @@ export async function fetchAndSaveRate() {
 
         // --- DEBUG MAPPING FOR USER ---
         const fullMap = lines.map((line, idx) => {
-            // Split by tab (legacy systems usually use tabs)
             const cols = line.split(/\t+/).map(c => c.trim());
             return { index: idx, cols };
         });
@@ -83,65 +82,67 @@ export async function fetchAndSaveRate() {
         let rate24k = 0;
         let rateSilver = 0;
 
-        // --- Extraction Helper ---
-        const extractMax = (line) => {
+        // --- Extraction Helper: Get First Number After Hyphen ---
+        const extractAfterHyphen = (line) => {
             if (!line) return 0;
-            // Capture numbers > 1000 to avoid IDs
-            const nums = line.match(/(\d{4,}(\.\d+)?)/g);
-            if (!nums || nums.length === 0) return 0;
+            // Split by hyphen to find the prices column
+            const parts = line.split('-');
+            if (parts.length < 2) return 0;
             
-            const prices = nums.map(n => parseFloat(n)).filter(n => n > 1000); 
-            if (prices.length === 0) return 0;
+            // The part after '-' is usually " 152551 156334 ... "
+            // We want the first number in this sequence (Highlighted Column)
+            const pricePart = parts[1].trim();
+            const tokens = pricePart.split(/\s+/);
+            const price = parseFloat(tokens[0]);
             
-            // Take the max value (usually Ask price)
-            return Math.max(...prices);
+            return isNaN(price) ? 0 : price;
         };
 
-        // 1. Extract Gold Rate (Priority: 99.5 RTGS)
-        const goldLine = lines.find(l => /GOLD\s*NAGPUR.*99\.?5.*RTGS/i.test(l)) 
-                      || lines.find(l => /GOLD\s*NAGPUR.*99\.?9/i.test(l));
+        // 1. Extract Gold Rate (Target: 6040 GOLD NAGPUR 99.9 RTGS)
+        const goldLine = lines.find(l => /GOLD.*99\.9.*RTGS/i.test(l) && !l.includes('3% GST'));
         
         if (goldLine) {
-            rate24k = extractMax(goldLine);
-            matchDebug = `Gold Line: ${goldLine} | Raw: ${rate24k}`;
+            rate24k = extractAfterHyphen(goldLine);
+            matchDebug = `Gold Line: ${goldLine} | Parsed (After Hyphen): ${rate24k}`;
+        } else {
+            // Fallback to any 99.9 if specific line missing
+            const fallbackLine = lines.find(l => /GOLD.*99\.9/i.test(l));
+            if (fallbackLine) {
+                rate24k = extractAfterHyphen(fallbackLine);
+                matchDebug = `Fallback Gold Line: ${fallbackLine} | Parsed: ${rate24k}`;
+            }
         }
 
-        // 2. Extract Silver Rate
-        const silverLine = lines.find(l => /SILVER\s*NAGPUR.*RTGS/i.test(l));
+        // 2. Extract Silver Rate (Target: 6199 SILVER NAGPUR RTGS)
+        const silverLine = lines.find(l => /SILVER.*RTGS/i.test(l) && !l.includes('3% GST'));
         if (silverLine) {
-            rateSilver = extractMax(silverLine);
-            matchDebug += ` || Silver Line: ${silverLine} | Raw: ${rateSilver}`;
+            rateSilver = extractAfterHyphen(silverLine);
+            matchDebug += ` || Silver Line: ${silverLine} | Parsed (After Hyphen): ${rateSilver}`;
         }
 
         // 3. Normalization
-        // User confirmed: Raw value (e.g., 151314) is for 10 grams.
-        if (rate24k > 10000) {
+        // User confirmed: Gold Raw value is for 10 grams.
+        if (rate24k > 0) {
             rate24k = rate24k / 10; // Convert 10g -> 1g
-            matchDebug += " (Normalized /10)";
+            matchDebug += " (Gold /10)";
         }
 
-        // Silver Normalization
-        // If > 10,000, assume it's 1kg and convert to 1g
+        // Silver Normalization: Usually per KG
+        // If raw is > 10,000 (e.g. 307768), assume it's kg and divide by 1000 for 1g
         if (rateSilver > 10000) {
             rateSilver = rateSilver / 1000;
-            matchDebug += " (Silver Normalized /1000)";
+            matchDebug += " (Silver /1000)";
         }
 
-        // 4. Validation
-        if (!rate24k || rate24k <= 0) {
-            // console.warn(`[RateService] Failed to parse. Dump: \n${snippet}`);
-            // Don't throw here if we just want to debug the map
-            // throw new Error(`Parsed gold rate is invalid. Debug: ${matchDebug}`);
-        }
-
-        // 5. Calculate Derived Rates (Rounded)
-        // Fallback to existing rates if parse fails, just to keep system alive while debugging
-        rate24k = Math.round(rate24k || 7500);
+        // 4. Validation & Rounding
+        rate24k = Math.round(rate24k);
         rateSilver = Math.round(rateSilver || 90); 
+        
+        // Derived Rates
         const rate22k = Math.round(rate24k * 0.916);
         const rate18k = Math.round(rate24k * 0.75);
 
-        // 6. Database Save
+        // 5. Database Save
         const pool = getPool();
         if (pool) {
             const connection = await pool.getConnection();
@@ -169,7 +170,7 @@ export async function fetchAndSaveRate() {
             timestamp: new Date().toISOString(),
             rawSnippet: snippet,
             matchDebug: matchDebug,
-            fullMap: fullMap // Pass the detailed map to frontend
+            fullMap: fullMap 
         };
         
         console.log(`[RateService] Success: 1g 24K=₹${rate24k}, 1g Silver=₹${rateSilver}`);
