@@ -42,7 +42,14 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                     currentSilverRate: result.silver
                 };
                 setLocalSettings(updated);
-                setRawRateData(result.raw);
+                
+                // Keep the error visible if we fell back to cache
+                const debugRaw = result.raw || {};
+                if (result.error) {
+                    debugRaw.error = result.error;
+                }
+                
+                setRawRateData(debugRaw);
                 setRateSource(result.source || 'Unknown');
             } else {
                 setRawRateData(result.raw || { error: result.error });
@@ -176,7 +183,7 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                                 {rawRateData.snippet && (
                                     <div><span className="font-bold text-slate-400">Raw XML Snippet:</span> {rawRateData.snippet}</div>
                                 )}
-                                {rawRateData.error && <span className="text-rose-600 font-bold">{rawRateData.error}</span>}
+                                {rawRateData.error && <span className="text-rose-600 font-bold block mt-2 border-t pt-2">Error: {rawRateData.error}</span>}
                             </div>
                         </div>
                     )}

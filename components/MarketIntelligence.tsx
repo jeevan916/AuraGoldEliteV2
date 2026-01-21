@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  TrendingUp, Globe, BarChart2, ExternalLink, ArrowRight, DollarSign, 
-  Newspaper, Loader2, RefreshCw, Scale, ShieldAlert, ArrowUpRight, ArrowDownRight,
-  Calculator, History, Clock, Zap
+  TrendingUp, Globe, ExternalLink, ArrowRight, 
+  Loader2, RefreshCw, ArrowUpRight, ArrowDownRight,
+  Calculator, Zap, Lock
 } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { io } from 'socket.io-client';
 import { Order, OrderStatus, GlobalSettings } from '../types';
 
@@ -151,7 +151,7 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
       return (
           <div className="h-full flex flex-col items-center justify-center space-y-4 py-20">
               <Loader2 className="animate-spin text-amber-500" size={48} />
-              <p className="text-slate-400 font-black uppercase tracking-widest text-sm">Synchronizing Market Data...</p>
+              <p className="text-slate-400 font-black uppercase tracking-widest text-sm">Connecting to Sagar Jewellers...</p>
           </div>
       );
   }
@@ -165,7 +165,7 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
            <h2 className="text-3xl font-black text-slate-800 flex items-center gap-3">
              <Globe className="text-blue-500" /> Market Intelligence
            </h2>
-           <p className="text-sm text-slate-500 font-medium">Internal Analytics & Bullion Volatility Monitor</p>
+           <p className="text-sm text-slate-500 font-medium">Internal Analytics & Sagar Jewellers Official Feed</p>
         </div>
         <div className="flex gap-4">
             <div className="flex bg-slate-100 p-1 rounded-2xl shadow-inner">
@@ -203,7 +203,7 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
                   <div className="flex justify-between items-start mb-8 relative z-10">
                       <div>
                           <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">
-                              {metal === 'GOLD' ? 'Standard 22K (Live History)' : 'Fine Silver 999 (Live History)'}
+                              {metal === 'GOLD' ? 'Standard 22K (Sagar Spot)' : 'Fine Silver 999 (Sagar Spot)'}
                           </p>
                           <div className="flex items-center gap-4">
                               <h3 className="text-4xl font-black text-slate-900">
@@ -263,10 +263,23 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
                   </div>
               </div>
 
-              {/* NEWS LINKS RE-STYLIZED */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <MarketLink url="https://www.moneycontrol.com/commodity/gold-price.html" title="MCX Futures" desc="Real-time Indian commodity exchange data." />
-                  <MarketLink url="http://www.sagarjewellers.co.in/" title="Sagar Jewellers" desc="Reference Spot Rate (Official Source)." />
+              {/* OFFICIAL SOURCE LINK ONLY */}
+              <div>
+                  <a 
+                      href="http://www.sagarjewellers.co.in/" target="_blank" rel="noreferrer"
+                      className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:border-amber-400 transition-all group flex items-center justify-between"
+                  >
+                      <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-amber-500 group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                              <Lock size={20} />
+                          </div>
+                          <div>
+                              <h4 className="font-black text-slate-800 text-sm">Sagar Jewellers</h4>
+                              <p className="text-[10px] text-slate-500 leading-tight">Official Spot Rate Source (Nagpur)</p>
+                          </div>
+                      </div>
+                      <ArrowRight className="text-slate-300 group-hover:text-amber-500 -rotate-45 group-hover:rotate-0 transition-all" size={20} />
+                  </a>
               </div>
           </div>
 
@@ -335,24 +348,6 @@ const ExposureStat = ({ label, value, sub }: any) => (
         <p className="text-xl font-black text-white">{value}</p>
         <p className="text-[10px] font-medium opacity-50">{sub}</p>
     </div>
-);
-
-const MarketLink = ({ url, title, desc }: any) => (
-    <a 
-        href={url} target="_blank" rel="noreferrer"
-        className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:border-amber-400 transition-all group flex items-center justify-between"
-    >
-        <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:text-amber-500 transition-colors">
-                <ExternalLink size={20} />
-            </div>
-            <div>
-                <h4 className="font-black text-slate-800 text-sm">{title}</h4>
-                <p className="text-[10px] text-slate-500 leading-tight">{desc}</p>
-            </div>
-        </div>
-        <ArrowRight className="text-slate-300 group-hover:text-amber-500 -rotate-45 group-hover:rotate-0 transition-all" size={20} />
-    </a>
 );
 
 export default MarketIntelligence;

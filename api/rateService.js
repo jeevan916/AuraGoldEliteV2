@@ -1,5 +1,6 @@
 
 import { getPool } from './db.js';
+import https from 'https';
 
 let backgroundInterval = null;
 let currentIntervalMins = null;
@@ -7,6 +8,37 @@ let io = null;
 
 export const setRateServiceIo = (socketIo) => {
     io = socketIo;
+};
+
+// Helper for robust fetching from legacy servers (ignores SSL errors)
+const fetchInsecure = (url) => {
+    return new Promise((resolve, reject) => {
+        const request = https.get(url, {
+            rejectUnauthorized: false, // CRITICAL: Bypass SSL for legacy jewelry broadcast servers
+            headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/xml, application/xml, text/plain, */*',
+                'Connection': 'keep-alive'
+            },
+            timeout: 15000 // 15s timeout
+        }, (res) => {
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                    resolve(data);
+                } else {
+                    reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+                }
+            });
+        });
+
+        request.on('error', (err) => reject(err));
+        request.on('timeout', () => {
+            request.destroy();
+            reject(new Error("Request Timeout (15s)"));
+        });
+    });
 };
 
 /**
@@ -19,24 +51,8 @@ export async function fetchAndSaveRate() {
         const timestamp = Date.now();
         const apiUrl = `https://bcast.sagarjewellers.co.in:7768/VOTSBroadcastStreaming/Services/xml/GetLiveRateByTemplateID/sagar?_=${timestamp}`;
         
-        // Fetch with timeout (Increased to 20s)
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 20000); 
-
-        const externalRes = await fetch(apiUrl, {
-            method: 'GET',
-            headers: { 
-                'User-Agent': 'Mozilla/5.0 (Node.js)',
-                'Accept': 'text/xml, application/xml, text/plain' 
-            },
-            signal: controller.signal
-        });
-        
-        clearTimeout(timeout);
-        
-        if (!externalRes.ok) throw new Error(`External API Error: ${externalRes.status} ${externalRes.statusText}`);
-        
-        const xmlText = await externalRes.text();
+        // Use custom insecure fetcher instead of global fetch
+        const xmlText = await fetchInsecure(apiUrl);
         
         // Debug snippet: Capture first 2000 chars to cover the target row
         const snippet = xmlText.substring(0, 2000); 
@@ -46,8 +62,6 @@ export async function fetchAndSaveRate() {
         
         const extractRate = (symbolRegexStr) => {
             // 1. Try to find Bid/Buy specific tags first
-            // Refined Regex: Handles potential attributes in tags and flexible whitespace
-            // Look for Symbol -> ... -> Bid/Buy/Rate
             const bidRegex = new RegExp(`(?:<Symbol>|<Product>)\\s*(${symbolRegexStr})[\\s\\S]*?(?:<Bid>|<Buy>|<Rate>)\\s*([0-9.,]+)\\s*(?:<\\/Bid>|<\\/Buy>|<\\/Rate>)`, 'i');
             const match = xmlText.match(bidRegex);
             
