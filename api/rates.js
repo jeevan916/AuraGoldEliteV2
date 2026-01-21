@@ -22,7 +22,8 @@ router.get('/gold-rate', ensureDb, async (req, res) => {
                 k22: rate22k, 
                 k18: rate18k, 
                 silver: rateSilver,
-                source: 'Sagar Jewellers (Live)'
+                source: 'Sagar Jewellers (Live)',
+                raw: { snippet: result.rawSnippet, debug: result.matchDebug }
             });
         } else {
             // Fallback to latest from DB if manual fetch failed
@@ -36,7 +37,9 @@ router.get('/gold-rate', ensureDb, async (req, res) => {
                     k22: parseFloat(rows[0].rate22k),
                     k18: parseFloat(rows[0].rate18k),
                     silver: parseFloat(rows[0].rateSilver || 90),
-                    source: 'Local Cache (API Error Fallback)'
+                    source: 'Local Cache (API Error Fallback)',
+                    error: result.error,
+                    raw: { debug: 'Using Cached Data due to API Error' }
                 });
             } else {
                 throw new Error(result.error || "No rates found");

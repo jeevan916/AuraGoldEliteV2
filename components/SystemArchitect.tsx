@@ -1,8 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  Folder, FileCode, ChevronRight, ChevronDown, Terminal, 
-  Play, Save, RefreshCw, Loader2, Cpu, Code, ArrowRight, ShieldAlert
+  FileCode, RefreshCw, Loader2, Cpu, Save, Terminal, ShieldAlert
 } from 'lucide-react';
 
 interface FileNode {
@@ -203,7 +202,7 @@ const SystemArchitect: React.FC = () => {
               <div className="flex-1 flex flex-col gap-2 min-h-0 border-t border-slate-800 pt-4 mt-2">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest flex items-center gap-2">
-                    <Code size={12} /> Output Ready
+                    <Terminal size={12} /> Output Ready
                   </span>
                   <button 
                     onClick={handleApply} 
