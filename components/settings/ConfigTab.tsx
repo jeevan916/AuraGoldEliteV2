@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { 
     Zap, Loader2, RefreshCw, Info, Server, MessageSquare, CreditCard, 
-    Save, CheckCircle2, Database, ServerCrash, ShieldCheck 
+    Save, CheckCircle2, Database, ServerCrash, ShieldCheck, Clock
 } from 'lucide-react';
 import { GlobalSettings } from '../../types';
 import { goldRateService } from '../../services/goldRateService';
@@ -159,11 +159,26 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                         </button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10 mb-6">
                         <PricingField label="24K Bullion (99.9)" value={localSettings.currentGoldRate24K} onChange={(v: number) => setLocalSettings({...localSettings, currentGoldRate24K: v})} />
                         <PricingField label="22K Standard (916)" value={localSettings.currentGoldRate22K} onChange={(v: number) => setLocalSettings({...localSettings, currentGoldRate22K: v})} />
                         <PricingField label="18K Studded (750)" value={localSettings.currentGoldRate18K} onChange={(v: number) => setLocalSettings({...localSettings, currentGoldRate18K: v})} />
                         <PricingField label="Silver 999 (1g)" value={localSettings.currentSilverRate} onChange={(v: number) => setLocalSettings({...localSettings, currentSilverRate: v})} isSilver />
+                    </div>
+
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 relative z-10">
+                        <div className="flex items-center gap-2 mb-2">
+                            <Clock size={14} className="text-slate-400" />
+                            <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Automation Frequency</h4>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <ConfigInput 
+                                label="Auto-Fetch Interval (Minutes)" 
+                                value={localSettings.goldRateFetchIntervalMinutes} 
+                                onChange={(v: string) => setLocalSettings({...localSettings, goldRateFetchIntervalMinutes: parseInt(v) || 60})} 
+                                type="number" 
+                            />
+                        </div>
                     </div>
 
                     {rawRateData && (
