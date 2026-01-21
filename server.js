@@ -21,7 +21,7 @@ import coreRouter from './api/core.js';
 import architectRouter from './api/architect.js';
 
 // Background Services
-import { initRateService } from './api/rateService.js';
+import { initRateService, setRateServiceIo } from './api/rateService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,6 +67,9 @@ const io = new Server(httpServer, {
 io.on('connection', (socket) => {
     console.log(`[Socket] Client connected: ${socket.id}`);
 });
+
+// Inject IO into services
+setRateServiceIo(io);
 
 app.set('trust proxy', 1); 
 app.use(compression());    

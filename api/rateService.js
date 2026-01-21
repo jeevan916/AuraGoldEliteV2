@@ -3,6 +3,11 @@ import { getPool } from './db.js';
 
 let backgroundInterval = null;
 let currentIntervalMins = null;
+let io = null;
+
+export const setRateServiceIo = (socketIo) => {
+    io = socketIo;
+};
 
 /**
  * Fetches gold rate from external API and saves to database.
@@ -35,10 +40,14 @@ export async function fetchAndSaveRate() {
         
         // --- PARSING LOGIC (Regex) ---
         // Handles standard VOTS XML format: <Symbol>GOLD 995</Symbol>...<Ask>75000</Ask>
+        // Updated to handle commas in numbers (e.g. 75,000)
         const extractRate = (symbolPattern) => {
-            const regex = new RegExp(`(?:<Symbol>|<Product>)\\s*(${symbolPattern})\\s*(?:<\\/Symbol>|<\\/Product>)[\\s\\S]*?(?:<Ask>|<Sell>)\\s*([0-9.]+)\\s*(?:<\\/Ask>|<\\/Sell>)`, 'i');
+            const regex = new RegExp(`(?:<Symbol>|<Product>)\\s*(${symbolPattern})\\s*(?:<\\/Symbol>|<\\/Product>)[\\s\\S]*?(?:<Ask>|<Sell>)\\s*([0-9.,]+)\\s*(?:<\\/Ask>|<\\/Sell>)`, 'i');
             const match = xmlText.match(regex);
-            return match ? parseFloat(match[2]) : 0;
+            if (!match) return 0;
+            // Remove commas before parsing
+            const rawNum = match[2].replace(/,/g, '');
+            return parseFloat(rawNum);
         };
 
         // 1. Gold Rate (Try GOLD 999, then 995, then generic)
@@ -58,8 +67,7 @@ export async function fetchAndSaveRate() {
         if (rateSilver > 1000) rateSilver = rateSilver / 1000;
 
         if (!rate24k || rate24k <= 0) {
-            // Log snippet for debug if needed
-            if (xmlText.length < 500) console.warn("Invalid XML Response:", xmlText);
+            if (xmlText.length < 500) console.warn("Invalid XML Response snippet:", xmlText);
             throw new Error("Parsed gold rate is invalid or zero");
         }
 
@@ -73,6 +81,8 @@ export async function fetchAndSaveRate() {
         if (!pool) return { success: false, error: "Database not ready" };
         
         const connection = await pool.getConnection();
+        
+        // Log to DB
         await connection.query(
             'INSERT INTO gold_rates (rate24k, rate22k, rate18k, rateSilver) VALUES (?, ?, ?, ?)', 
             [rate24k, rate22k, rate18k, rateSilver]
@@ -90,8 +100,20 @@ export async function fetchAndSaveRate() {
         }
 
         connection.release();
+        
+        const payload = { 
+            rate24k, rate22k, rate18k, rateSilver, 
+            timestamp: new Date().toISOString() 
+        };
+        
         console.log(`[RateService] Rates updated (Sagar): 24K=₹${rate24k}, Silver=₹${rateSilver}`);
-        return { success: true, rate24k, rateSilver };
+        
+        // Emit real-time update
+        if (io) {
+            io.emit('rate_update', payload);
+        }
+
+        return { success: true, ...payload };
     } catch (e) {
         console.error("[RateService] Automatic fetch failed:", e.message);
         return { success: false, error: e.message };

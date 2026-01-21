@@ -6,6 +6,7 @@ import {
   BrainCircuit, Calculator, FileText, ScrollText, Globe, Activity, ShoppingBag, BookOpen, X, RefreshCw, DownloadCloud, Zap,
   History, Layout, PieChart, ShieldAlert
 } from 'lucide-react';
+import { io } from 'socket.io-client';
 
 import './index.css'; 
 
@@ -17,6 +18,8 @@ import { goldRateService } from './services/goldRateService';
 import { storageService } from './services/storageService';
 import { Order, GlobalSettings, NotificationTrigger, PaymentPlanTemplate, AppError, ActivityLogEntry, Customer } from './types';
 import { ErrorBoundary } from './components/ErrorBoundary';
+
+const API_BASE = (import.meta as any).env.VITE_API_BASE_URL || '';
 
 // --- STABLE LAZY LOADER ---
 const lazyRetry = (importFn: () => Promise<any>, moduleName: string) => {
@@ -130,9 +133,28 @@ const App = () => {
         }
     });
 
+    // Global Rate Listener
+    const socket = io(API_BASE, {
+        path: '/socket.io',
+        transports: ['websocket', 'polling']
+    });
+
+    socket.on('rate_update', (data: any) => {
+        setSettings(prev => ({
+            ...prev,
+            currentGoldRate24K: data.rate24k,
+            currentGoldRate22K: data.rate22k,
+            currentGoldRate18K: data.rate18k,
+            currentSilverRate: data.rateSilver
+        }));
+    });
+
     (window as any).dispatchView = (v: MainView) => setView(v);
 
-    return () => unsubscribeErrors();
+    return () => {
+        unsubscribeErrors();
+        socket.disconnect();
+    };
   }, []);
 
   const derivedCustomers = useMemo(() => {

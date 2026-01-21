@@ -6,6 +6,7 @@ import {
   Calculator, History, Clock, Zap
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { io } from 'socket.io-client';
 import { Order, OrderStatus, GlobalSettings } from '../types';
 
 interface MarketIntelligenceProps {
@@ -15,6 +16,8 @@ interface MarketIntelligenceProps {
 
 type Timeframe = 'TODAY' | '3D' | '5D' | '1W' | '15D' | '1M';
 type MetalType = 'GOLD' | 'SILVER';
+
+const API_BASE = (import.meta as any).env.VITE_API_BASE_URL || '';
 
 const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, settings }) => {
   const [timeframe, setTimeframe] = useState<Timeframe>('1W');
@@ -42,6 +45,25 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
 
   useEffect(() => {
     fetchHistory();
+
+    // Real-time listener
+    const socket = io(API_BASE, {
+        path: '/socket.io',
+        transports: ['websocket', 'polling']
+    });
+
+    socket.on('connect', () => {
+        console.log("[MarketIntel] Socket Connected");
+    });
+
+    socket.on('rate_update', (data: any) => {
+        console.log("[MarketIntel] Real-time rate received:", data);
+        fetchHistory(); // Reload history to include the new point
+    });
+
+    return () => {
+        socket.disconnect();
+    };
   }, []);
 
   // --- CHART LOGIC ---
