@@ -39,19 +39,23 @@ export async function fetchAndSaveRate() {
         const xmlText = await externalRes.text();
         
         // --- PARSING LOGIC ---
-        // Context: User confirmed 153611 is "Live Buy". "Sell" is not available (-).
-        // 157034 is High. 148882 is Low.
-        // We must ONLY capture the Bid/Buy field to get 153611.
-        
+        // Prioritizes BID/BUY/LIVE rate.
         const extractRate = (symbolRegexStr) => {
-            // Regex looks for Symbol, then lazily scans for <Bid> or <Buy>.
-            // We do NOT look for <Ask> or <Sell> as those might be empty or misleading.
-            const bidRegex = new RegExp(`(?:<Symbol>|<Product>)\\s*(${symbolRegexStr})[\\s\\S]*?(?:<Bid>|<Buy>)\\s*([0-9.,]+)\\s*(?:<\\/Bid>|<\\/Buy>)`, 'i');
+            // 1. Try to find Bid/Buy specific tags first
+            const bidRegex = new RegExp(`(?:<Symbol>|<Product>)\\s*(${symbolRegexStr})[\\s\\S]*?(?:<Bid>|<Buy>|<Rate>)\\s*([0-9.,]+)\\s*(?:<\\/Bid>|<\\/Buy>|<\\/Rate>)`, 'i');
             const match = xmlText.match(bidRegex);
             
             if (match) {
                 return parseFloat(match[2].replace(/,/g, ''));
             }
+
+            // 2. Fallback to Ask/Sell if Bid is completely missing/empty, though user prefers Buy
+            const fallbackRegex = new RegExp(`(?:<Symbol>|<Product>)\\s*(${symbolRegexStr})[\\s\\S]*?(?:<Ask>|<Sell>)\\s*([0-9.,]+)\\s*(?:<\\/Ask>|<\\/Sell>)`, 'i');
+            const fallbackMatch = xmlText.match(fallbackRegex);
+            if (fallbackMatch) {
+                return parseFloat(fallbackMatch[2].replace(/,/g, ''));
+            }
+            
             return 0;
         };
 
@@ -61,26 +65,25 @@ export async function fetchAndSaveRate() {
         if (!rate24k) rate24k = extractRate('GOLD');
 
         // 2. Silver Rate (Target: SILVER NAGPUR RTGS)
-        // Silver often has Bid/Ask both, but we stick to Bid/Buy for consistency.
         let rateSilver = extractRate('SILVER.*RTGS');
         if (!rateSilver) rateSilver = extractRate('SILVER');
 
         // 3. Normalization Logic
         
         // GOLD: User confirmed 153611 is the rate for 10gm.
-        // Logic: If rate is > 10,000, it is a 10g unit. Divide by 10 to get 1g.
+        // We calculate per gram by dividing by 10.
         if (rate24k > 10000) {
             rate24k = rate24k / 10; 
         }
         
-        // SILVER: Handle 1kg unit (Standard convention: 1kg -> 1g)
+        // SILVER: Handle 1kg unit (Standard convention)
         if (rateSilver > 1000) {
             rateSilver = rateSilver / 1000;
         }
 
         if (!rate24k || rate24k <= 0) {
             if (xmlText.length < 500) console.warn("Invalid XML Response snippet:", xmlText);
-            throw new Error("Parsed gold rate is invalid or zero (Market might be closed or Sell-only)");
+            throw new Error("Parsed gold rate is invalid or zero");
         }
 
         rate24k = Math.round(rate24k);
