@@ -89,6 +89,21 @@ class StorageService {
       this.socket.on('whatsapp_update', (log: WhatsAppLogEntry) => {
           this.handleIncomingLog(log);
       });
+
+      // Listen for real-time Order updates (Generated from any device)
+      this.socket.on('orders_sync', (incomingOrders: Order[]) => {
+          console.log("[Storage] Received Real-Time Order Sync", incomingOrders.length);
+          this.handleIncomingOrders(incomingOrders);
+      });
+  }
+
+  public sendHeartbeat() {
+      if (this.socket && this.socket.connected) {
+          console.log("[Storage] Sending Keep-Alive Heartbeat");
+          this.socket.emit('client_heartbeat');
+      } else {
+          console.warn("[Storage] Cannot send heartbeat - Socket disconnected");
+      }
   }
 
   private handleIncomingLog(log: WhatsAppLogEntry) {
@@ -107,6 +122,34 @@ class StorageService {
       
       this.saveToLocal();
       this.notify();
+  }
+
+  private handleIncomingOrders(newOrders: Order[]) {
+      const currentOrders = [...this.state.orders];
+      let hasChanges = false;
+
+      newOrders.forEach(incoming => {
+          const index = currentOrders.findIndex(o => o.id === incoming.id);
+          if (index >= 0) {
+              // Only update if incoming is newer or different status
+              // For simplicity, we trust the server broadcast as "latest truth"
+              if (JSON.stringify(currentOrders[index]) !== JSON.stringify(incoming)) {
+                  currentOrders[index] = incoming;
+                  hasChanges = true;
+              }
+          } else {
+              // Add new order to top
+              currentOrders.unshift(incoming);
+              hasChanges = true;
+          }
+      });
+
+      if (hasChanges) {
+          // Re-sort by date just in case
+          this.state.orders = currentOrders.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          this.saveToLocal();
+          this.notify();
+      }
   }
 
   public async syncFromServer(): Promise<{ success: boolean; message: string }> {

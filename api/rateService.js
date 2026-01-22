@@ -211,24 +211,30 @@ export async function initRateService() {
 }
 
 function startLoop(mins) {
+    // Ensure mins is a valid positive number
+    const safeMins = parseInt(mins) || 60;
+    
     if (backgroundInterval) clearInterval(backgroundInterval);
-    currentIntervalMins = mins;
+    currentIntervalMins = safeMins;
     
     // Immediate first fetch
     fetchAndSaveRate();
 
     backgroundInterval = setInterval(() => {
         fetchAndSaveRate();
-    }, mins * 60 * 1000);
+    }, safeMins * 60 * 1000);
     
-    console.log(`[RateService] Background task started. Fetch interval: ${mins} minutes.`);
+    console.log(`[RateService] Background task started. Fetch interval: ${safeMins} minutes.`);
 }
 
 /**
  * Updates the fetching interval if changed in settings.
  */
 export function refreshInterval(newMins) {
-    if (newMins === currentIntervalMins) return;
-    console.log(`[RateService] Refreshing interval to ${newMins} mins`);
-    startLoop(newMins);
+    const mins = parseInt(newMins);
+    if (isNaN(mins) || mins < 1) return;
+    
+    if (mins === currentIntervalMins) return;
+    console.log(`[RateService] Refreshing interval to ${mins} mins`);
+    startLoop(mins);
 }

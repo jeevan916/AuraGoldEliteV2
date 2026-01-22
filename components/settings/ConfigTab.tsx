@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { 
     Zap, Loader2, RefreshCw, Info, Server, MessageSquare, CreditCard, 
-    Save, CheckCircle2, Database, ServerCrash, ShieldCheck, Clock
+    Save, CheckCircle2, Database, ServerCrash, ShieldCheck, Clock, HardDrive
 } from 'lucide-react';
 import { GlobalSettings } from '../../types';
 import { goldRateService } from '../../services/goldRateService';
@@ -169,15 +169,31 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 relative z-10">
                         <div className="flex items-center gap-2 mb-2">
                             <Clock size={14} className="text-slate-400" />
-                            <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Automation Frequency</h4>
+                            <h4 className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Background Automation</h4>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <ConfigInput 
-                                label="Auto-Fetch Interval (Minutes)" 
-                                value={localSettings.goldRateFetchIntervalMinutes} 
-                                onChange={(v: string) => setLocalSettings({...localSettings, goldRateFetchIntervalMinutes: parseInt(v) || 60})} 
-                                type="number" 
-                            />
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <ConfigInput 
+                                    label="Server Fetch Interval (Minutes)" 
+                                    value={localSettings.goldRateFetchIntervalMinutes} 
+                                    onChange={(v: string) => setLocalSettings({...localSettings, goldRateFetchIntervalMinutes: parseInt(v) || 60})} 
+                                    type="number" 
+                                />
+                            </div>
+                            
+                            {/* Server-Side Persistence Indicator */}
+                            <div className="bg-white border border-indigo-100 p-4 rounded-xl flex items-start gap-3 shadow-sm">
+                                <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+                                    <HardDrive size={18} />
+                                </div>
+                                <div>
+                                    <p className="text-xs font-bold text-indigo-900">Always-On Background Persistence</p>
+                                    <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                                        The Node.js server runs a background loop (every {localSettings.goldRateFetchIntervalMinutes || 60} mins) to fetch and save rates to the database, 
+                                        ensuring 24/7 history <strong>even when the app is closed</strong>.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 

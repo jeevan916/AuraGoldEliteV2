@@ -13,6 +13,13 @@ router.post('/orders', ensureDb, async (req, res) => {
             await connection.query('INSERT INTO orders (id, customer_contact, status, created_at, data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data), updated_at=VALUES(updated_at)', [order.id, order.customerContact, order.status, new Date(order.createdAt), JSON.stringify(order), Date.now()]);
         }
         connection.release();
+        
+        // SOCKET IO BROADCAST: Notify all clients about the new/updated orders immediately
+        if (req.io) {
+            console.log(`[Socket] Broadcasting ${req.body.orders.length} order updates`);
+            req.io.emit('orders_sync', req.body.orders);
+        }
+
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });

@@ -21,7 +21,7 @@ import coreRouter from './api/core.js';
 import architectRouter from './api/architect.js';
 
 // Background Services
-import { initRateService, setRateServiceIo } from './api/rateService.js';
+import { initRateService, setRateServiceIo, fetchAndSaveRate } from './api/rateService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,6 +66,16 @@ const io = new Server(httpServer, {
 
 io.on('connection', (socket) => {
     console.log(`[Socket] Client connected: ${socket.id}`);
+    
+    // Client-Side Heartbeat: Allows a browser to force-wake the server
+    socket.on('client_heartbeat', async () => {
+        console.log(`[Socket] Heartbeat received from ${socket.id}. Refreshing rates...`);
+        try {
+            await fetchAndSaveRate();
+        } catch (e) {
+            console.error("[Socket] Heartbeat update failed:", e.message);
+        }
+    });
 });
 
 // Inject IO into services
