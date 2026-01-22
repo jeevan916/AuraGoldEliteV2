@@ -56,19 +56,19 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           const allMilestones = order.paymentPlan.milestones;
           let scheduleString = '';
           
-          if (allMilestones.length > 5) {
-              const firstFew = allMilestones.slice(0, 4).map((m, i) => {
+          // Limit list to top 4 to prevent excessively long messages that Meta might reject
+          if (allMilestones.length > 0) {
+              const displayLimit = Math.min(allMilestones.length, 4);
+              scheduleString = allMilestones.slice(0, displayLimit).map((m, i) => {
                   const date = new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
                   return `${i+1}. ${date}: ₹${m.targetAmount.toLocaleString()}`;
               }).join('\n');
-              scheduleString = `${firstFew}\n...and ${allMilestones.length - 4} more installments.`;
-          } else if (allMilestones.length > 0) {
-              scheduleString = allMilestones.map((m, i) => {
-                  const date = new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-                  return `${i+1}. ${date}: ₹${m.targetAmount.toLocaleString()}`;
-              }).join('\n');
+              
+              if (allMilestones.length > displayLimit) {
+                  scheduleString += `\n...and ${allMilestones.length - displayLimit} more.`;
+              }
           } else {
-              scheduleString = "Visit portal for full details.";
+              scheduleString = "Details in link.";
           }
           
           // Final safety fallback
@@ -93,7 +93,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
               alert("Agreement Sent Successfully!");
               if (res.logEntry && onAddLog) onAddLog(res.logEntry);
           } else {
-              alert(`Send Failed: ${res.error}`);
+              alert(`Send Failed: ${res.error}. Check System Logs for details.`);
           }
       } catch (e: any) {
           alert("Network Error: " + e.message);

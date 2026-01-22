@@ -25,6 +25,7 @@ export const whatsappService = {
   },
 
   getSettings(): GlobalSettings {
+    // Ensure we get the latest settings from storage
     return storageService.getSettings();
   },
 
@@ -144,7 +145,10 @@ export const whatsappService = {
 
     const settings = this.getSettings();
     const token = settings.whatsappBusinessToken?.trim();
-    if (!settings.whatsappPhoneNumberId || !token) return { success: false, error: "API Credentials Missing" };
+    if (!settings.whatsappPhoneNumberId || !token) return { success: false, error: "WhatsApp API Credentials Missing in Settings" };
+
+    // Meta template names must be lowercase
+    const safeTemplateName = templateName.toLowerCase().trim();
 
     try {
         const components: any[] = [];
@@ -161,6 +165,8 @@ export const whatsappService = {
         }
 
         // 2. Body Parameters (Must be lowercase 'body')
+        // Even if empty, if the template expects params, we must send them. 
+        // If not empty, we map.
         if (bodyVariables.length > 0) {
             components.push({ 
                 type: "body", 
@@ -184,6 +190,14 @@ export const whatsappService = {
             });
         }
 
+        const payload = { 
+            to: recipient, 
+            templateName: safeTemplateName, 
+            language: languageCode, 
+            components, 
+            customerName 
+        };
+
         const response = await fetch(`${API_BASE}/api/whatsapp/send`, {
             method: 'POST',
             headers: { 
@@ -191,19 +205,16 @@ export const whatsappService = {
                 'x-phone-id': settings.whatsappPhoneNumberId,
                 'x-auth-token': token
             },
-            body: JSON.stringify({ 
-                to: recipient, 
-                templateName, 
-                language: languageCode, 
-                components, 
-                customerName 
-            })
+            body: JSON.stringify(payload)
         });
 
         const data = await response.json();
         
         if (!data.success) {
-            errorService.logError('WhatsApp_Send', `Meta API Failure: ${data.error || 'Unknown Error'}`, 'HIGH', undefined, undefined, data);
+            console.error(`[WhatsAppService] Send Failed for ${safeTemplateName}:`, data.error);
+            // Don't log HIGH severity for user errors like invalid number
+            const severity = data.error?.includes('Receiver is incapable') ? 'LOW' : 'HIGH';
+            errorService.logError('WhatsApp_Send', `Failed to send ${safeTemplateName}: ${data.error || 'Unknown Error'}`, severity, undefined, undefined, data);
             return { success: false, error: data.error, raw: data };
         }
 
@@ -214,7 +225,7 @@ export const whatsappService = {
             id: data.data?.messages?.[0]?.id || `wamid.${Date.now()}`,
             customerName, 
             phoneNumber: recipient, 
-            message: `[Template: ${templateName}]`,
+            message: `[Template: ${safeTemplateName}]`,
             status: 'SENT', 
             timestamp: new Date().toISOString(), 
             type: 'TEMPLATE', 
@@ -232,7 +243,7 @@ export const whatsappService = {
 
     const settings = this.getSettings();
     const token = settings.whatsappBusinessToken?.trim();
-    if (!settings.whatsappPhoneNumberId || !token) return { success: false, error: "API Credentials Missing" };
+    if (!settings.whatsappPhoneNumberId || !token) return { success: false, error: "WhatsApp API Credentials Missing in Settings" };
 
     try {
       const response = await fetch(`${API_BASE}/api/whatsapp/send`, {
