@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  Plus, Trash2, ChevronRight, X, Loader2, Sparkles, Image as ImageIcon, Camera, Lock, Gem, CheckCircle2
+  Plus, Trash2, ChevronRight, X, Loader2, Sparkles, Image as ImageIcon, Camera, Lock, Gem, CheckCircle2, Edit2
 } from 'lucide-react';
 import { 
   Order, JewelryDetail, OrderStatus, GlobalSettings, 
@@ -21,8 +21,12 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   const [step, setStep] = useState(1);
   const [customer, setCustomer] = useState({ name: '', contact: '' });
   const [cartItems, setCartItems] = useState<JewelryDetail[]>([]);
+  
+  // Rate Management
   const [orderRate, setOrderRate] = useState(settings.currentGoldRate22K);
+  const [isRateManuallySet, setIsRateManuallySet] = useState(false);
   const [protectionRate, setProtectionRate] = useState(settings.currentGoldRate22K);
+  
   const [creating, setCreating] = useState(false);
   
   // Manual Milestones State
@@ -38,7 +42,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
     stoneCharges: 0,
     stoneDetails: '',
     wastagePercentage: 12, 
-    makingChargesPerGram: 450, 
+    makingChargesPerGram: 0, 
     photoUrls: [], 
     huid: '', 
     size: ''
@@ -55,13 +59,21 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
     type: 'MANUAL'
   });
 
+  // AUTO-SYNC LIVE RATE LOGIC
+  useEffect(() => {
+      // If user hasn't manually edited the rate, keep syncing it with global settings (Live Socket)
+      if (!isRateManuallySet) {
+          setOrderRate(settings.currentGoldRate22K);
+      }
+  }, [settings.currentGoldRate22K, isRateManuallySet]);
+
   // Sync protection rate with order rate initially, but allow deviation
   useEffect(() => {
       // Only sync if step is 1 (during initial rate setting) to prevent overwriting manual edits in step 3
-      if (step === 1) {
+      if (step === 1 && !isRateManuallySet) {
           setProtectionRate(orderRate);
       }
-  }, [orderRate, step]);
+  }, [orderRate, step, isRateManuallySet]);
 
   // Update defaults when metal color changes (switch to Silver purities)
   useEffect(() => {
@@ -338,20 +350,32 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
 
       {step === 1 && (
         <div className="space-y-4 animate-fadeIn">
-          <div className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center text-white shadow-xl border border-slate-800">
-            <div>
-               <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">Locked 22K Rate (Ref)</p>
+          {/* Rate Card */}
+          <div className="bg-slate-900 p-6 rounded-[2rem] flex justify-between items-center text-white shadow-xl border border-slate-800 relative overflow-hidden">
+            <div className="relative z-10">
+               <div className="flex items-center gap-2 mb-1">
+                   <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Locked 22K Rate (Ref)</p>
+                   {!isRateManuallySet && <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" title="Live Auto-Sync Active"></span>}
+               </div>
                <div className="flex items-center gap-2">
                  <span className="text-amber-500 font-black">₹</span>
                  <input 
                    type="number" 
-                   className="bg-transparent text-3xl font-black outline-none w-36 border-b border-white/10" 
+                   className={`bg-transparent text-3xl font-black outline-none w-36 border-b ${isRateManuallySet ? 'border-amber-500 text-amber-100' : 'border-white/10'}`}
                    value={orderRate} 
-                   onChange={e => setOrderRate(parseFloat(e.target.value) || 0)} 
+                   onChange={e => {
+                       setOrderRate(parseFloat(e.target.value) || 0);
+                       setIsRateManuallySet(true);
+                   }} 
                  />
+                 {isRateManuallySet && (
+                     <button onClick={() => setIsRateManuallySet(false)} className="text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">
+                         Reset to Live
+                     </button>
+                 )}
                </div>
             </div>
-            <div className="text-right">
+            <div className="text-right relative z-10">
                 <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">Order Estimate</p>
                 <p className="text-3xl font-black text-amber-400">₹{cartTotal.toLocaleString()}</p>
             </div>
@@ -452,12 +476,9 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                 </InputWrapper>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-                <InputWrapper label="Wastage (VA %)">
+            <div className="grid grid-cols-1 gap-4">
+                <InputWrapper label="Making %">
                     <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.wastagePercentage || ''} onChange={e => setCurrentItem({...currentItem, wastagePercentage: parseFloat(e.target.value) || 0})} placeholder="12" />
-                </InputWrapper>
-                <InputWrapper label="Labor / g">
-                    <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.makingChargesPerGram || ''} onChange={e => setCurrentItem({...currentItem, makingChargesPerGram: parseFloat(e.target.value) || 0})} placeholder="450" />
                 </InputWrapper>
             </div>
 

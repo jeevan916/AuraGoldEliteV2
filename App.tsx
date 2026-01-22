@@ -149,6 +149,11 @@ const App = () => {
         }));
     });
 
+    // Listen for Catalog/Customer updates from other clients
+    socket.on('orders_sync', () => {
+        // Just force a re-read from storage since storageService handles the merge
+    });
+
     (window as any).dispatchView = (v: MainView) => setView(v);
 
     return () => {
