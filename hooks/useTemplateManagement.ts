@@ -149,6 +149,24 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       }
   };
 
+  // Helper to ensure example count matches variable count to prevent "Invalid parameter"
+  const alignExamples = (content: string, providedExamples: string[] = []): string[] => {
+      const varCount = (content.match(/{{[0-9]+}}/g) || []).length;
+      let finalExamples = [...providedExamples];
+      
+      // Pad if missing
+      while(finalExamples.length < varCount) {
+          finalExamples.push(`sample_${finalExamples.length + 1}`);
+      }
+      
+      // Trim if too many
+      if(finalExamples.length > varCount) {
+          finalExamples = finalExamples.slice(0, varCount);
+      }
+      
+      return finalExamples;
+  };
+
   const handleAutoHeal = async () => {
       setRepairing(true);
       addLog("Initializing Gemini 2.5 Structural Integrity Check...");
@@ -188,6 +206,9 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
 
   const deployHelper = async (req: any) => {
       const validation = await geminiService.validateAndFixTemplate(req.content, req.name, req.category);
+      
+      const safeExamples = alignExamples(validation.optimizedContent, req.examples);
+
       const payload: WhatsAppTemplate = {
           id: `heal-${Date.now()}`,
           name: req.name,
@@ -197,7 +218,7 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
           isAiGenerated: !validation.isCompliant,
           source: 'LOCAL',
           category: req.category as MetaCategory,
-          variableExamples: req.examples,
+          variableExamples: safeExamples,
           appGroup: req.appGroup as AppTemplateGroup
       };
       const result = await whatsappService.createMetaTemplate(payload);
@@ -207,12 +228,16 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
 
   const repairHelper = async (existingMetaTpl: WhatsAppTemplate, requiredDef: any) => {
       const fix = await geminiService.validateAndFixTemplate(requiredDef.content, requiredDef.name, requiredDef.category);
+      
+      const safeExamples = alignExamples(fix.optimizedContent, requiredDef.examples);
+
       const payload: WhatsAppTemplate = {
           ...existingMetaTpl,
           content: fix.optimizedContent,
-          variableExamples: requiredDef.examples, 
+          variableExamples: safeExamples, 
           structure: undefined 
       };
+      
       if (existingMetaTpl.id.startsWith('sys-') || existingMetaTpl.id.startsWith('local-')) {
           await deployHelper(requiredDef);
           return;
@@ -288,11 +313,13 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       setIsFixing(tpl.id);
       try {
           const result = await geminiService.fixRejectedTemplate(tpl);
+          const safeExamples = alignExamples(result.fixedContent, result.variableExamples);
+
           const fixedTemplate = {
               ...tpl,
               content: result.fixedContent,
               category: result.category,
-              variableExamples: result.variableExamples || []
+              variableExamples: safeExamples || []
           };
           const updateResult = await whatsappService.editMetaTemplate(tpl.id, fixedTemplate);
           if (updateResult.success) {
@@ -344,6 +371,8 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
   const handleSaveLocalOrDeploy = async (action: 'LOCAL' | 'META') => {
       if(!generatedContent || !templateName) return alert("Name and Content required");
       
+      const safeExamples = alignExamples(generatedContent, variableExamples);
+
       const newTpl: WhatsAppTemplate = {
           id: `local-${Date.now()}`,
           name: templateName,
@@ -355,7 +384,7 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
           category: selectedCategory,
           appGroup: selectedGroup,
           structure: editingStructure.length > 0 ? editingStructure : undefined,
-          variableExamples: variableExamples.length > 0 ? variableExamples : generatedContent.match(/{{[0-9]+}}/g)?.map((_, i) => `Sample${i+1}`) || []
+          variableExamples: safeExamples
       };
 
       if (action === 'LOCAL') {
