@@ -55,6 +55,7 @@ export interface PaymentPlan {
   protectionRateBooked: number;
   protectionDeadline: string;
   milestones: Milestone[];
+  originalMilestones?: Milestone[];
   protectionStatus: ProtectionStatus;
   gracePeriodEndAt?: string;
 }

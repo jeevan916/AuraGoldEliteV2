@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 // Added CheckCheck to imports from lucide-react
-import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send } from 'lucide-react';
+import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock } from 'lucide-react';
 import { Order, GlobalSettings, WhatsAppLogEntry, ProductionStatus, ProtectionStatus, OrderStatus } from '../types';
 import { generateOrderPDF } from '../services/pdfGenerator';
 import { whatsappService } from '../services/whatsappService';
@@ -30,6 +30,9 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
   const [isUpdatingWeight, setIsUpdatingWeight] = useState<string | null>(null); // Track item ID being edited
   const [newWeight, setNewWeight] = useState('');
   const [sendingAgreement, setSendingAgreement] = useState(false);
+  
+  // Schedule View State
+  const [showOriginalSchedule, setShowOriginalSchedule] = useState(false);
 
   const handlePaymentUpdate = (updatedOrder: Order) => {
     onOrderUpdate(updatedOrder);
@@ -170,6 +173,9 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           }];
       }
 
+      // Preserve original milestones if not already saved
+      const originalMilestones = order.paymentPlan.originalMilestones || JSON.parse(JSON.stringify(order.paymentPlan.milestones));
+
       const updatedOrder: Order = {
           ...order,
           items: updatedItems,
@@ -178,6 +184,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           paymentPlan: {
               ...order.paymentPlan,
               milestones: newMilestones as any[],
+              originalMilestones,
               protectionRateBooked: newEffectiveRate 
           }
       };
@@ -232,7 +239,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       const newTotal = updatedItems.reduce((s, i) => s + i.finalAmount, 0);
       const valueChange = newTotal - oldTotal;
 
-      const newMilestones = [...order.paymentPlan.milestones];
+      const newMilestones = JSON.parse(JSON.stringify(order.paymentPlan.milestones));
       const last = newMilestones[newMilestones.length - 1];
       if (last.status !== 'PAID') {
           last.targetAmount += valueChange;
@@ -249,7 +256,19 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           } as any);
       }
 
-      const updatedOrder = { ...order, items: updatedItems, totalAmount: newTotal, paymentPlan: { ...order.paymentPlan, milestones: newMilestones } };
+      // Preserve original milestones if not already saved
+      const originalMilestones = order.paymentPlan.originalMilestones || JSON.parse(JSON.stringify(order.paymentPlan.milestones));
+
+      const updatedOrder = { 
+          ...order, 
+          items: updatedItems, 
+          totalAmount: newTotal, 
+          paymentPlan: { 
+              ...order.paymentPlan, 
+              milestones: newMilestones,
+              originalMilestones 
+          } 
+      };
 
       try {
           await whatsappService.sendTemplateMessage(
@@ -350,7 +369,22 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           return { ...m, targetAmount: amount, cumulativeTarget: runningSum, status: 'PENDING' as const, warningCount: 0 };
       });
 
-      const updatedOrder: Order = { ...order, items: updatedItems, totalAmount: newTotal, goldRateAtBooking: currentRate, paymentPlan: { ...order.paymentPlan, milestones: [...paidMilestones, ...newPendingMilestones].sort((a,b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()), protectionStatus: ProtectionStatus.ACTIVE, protectionRateBooked: currentRate } };
+      // Preserve original milestones
+      const originalMilestones = order.paymentPlan.originalMilestones || JSON.parse(JSON.stringify(order.paymentPlan.milestones));
+
+      const updatedOrder: Order = { 
+          ...order, 
+          items: updatedItems, 
+          totalAmount: newTotal, 
+          goldRateAtBooking: currentRate, 
+          paymentPlan: { 
+              ...order.paymentPlan, 
+              milestones: [...paidMilestones, ...newPendingMilestones].sort((a,b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()), 
+              originalMilestones,
+              protectionStatus: ProtectionStatus.ACTIVE, 
+              protectionRateBooked: currentRate 
+          } 
+      };
 
       whatsappService.sendTemplateMessage(updatedOrder.customerContact, 'auragold_order_revised', 'en_US', [updatedOrder.customerName, updatedOrder.id, newTotal.toLocaleString(), 'Rate Repopulation', updatedOrder.shareToken], updatedOrder.customerName);
       onOrderUpdate(updatedOrder);
@@ -377,6 +411,10 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
 
   const isFullyPaid = order.payments.reduce((acc, p) => acc + p.amount, 0) >= order.totalAmount - 1;
   const isLapsed = order.paymentPlan.protectionStatus === ProtectionStatus.LAPSED;
+
+  const displayMilestones = showOriginalSchedule && order.paymentPlan.originalMilestones 
+      ? order.paymentPlan.originalMilestones 
+      : order.paymentPlan.milestones;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-20 animate-fadeIn">
@@ -440,7 +478,62 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                     {liabilityState.isLiability && <button onClick={handleApplySurcharge} className="w-full bg-amber-600 text-white py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-amber-700 shadow-md flex items-center justify-center gap-2"><TrendingUp size={16} /> Apply Market Adjustment</button>}
                 </div>
             )}
+            
             <PaymentWidget order={order} onPaymentRecorded={handlePaymentUpdate} onAddLog={onAddLog} variant="FULL" />
+            
+            {/* Payment Schedule Visualization */}
+            <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
+                <div className="flex justify-between items-center">
+                    <h3 className="font-black text-slate-800 text-sm uppercase tracking-wide flex items-center gap-2">
+                        <CalendarDays size={16} className="text-blue-500" /> Payment Schedule
+                    </h3>
+                    {order.paymentPlan.originalMilestones && (
+                        <div className="flex bg-slate-100 p-1 rounded-lg">
+                            <button 
+                                onClick={() => setShowOriginalSchedule(false)}
+                                className={`px-3 py-1 rounded-md text-[10px] font-black uppercase transition-all ${!showOriginalSchedule ? 'bg-white shadow text-blue-600' : 'text-slate-400'}`}
+                            >
+                                Current
+                            </button>
+                            <button 
+                                onClick={() => setShowOriginalSchedule(true)}
+                                className={`px-3 py-1 rounded-md text-[10px] font-black uppercase transition-all ${showOriginalSchedule ? 'bg-white shadow text-slate-600' : 'text-slate-400'}`}
+                            >
+                                Original
+                            </button>
+                        </div>
+                    )}
+                </div>
+                
+                <div className="space-y-3 relative before:absolute before:left-[19px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-100">
+                    {displayMilestones.map((m, i) => {
+                        const isPaid = m.status === 'PAID';
+                        const isOverdue = m.status !== 'PAID' && new Date(m.dueDate) < new Date();
+                        const isOriginalView = showOriginalSchedule;
+
+                        return (
+                            <div key={i} className={`flex gap-4 relative ${isOriginalView ? 'opacity-70 grayscale' : ''}`}>
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-4 border-white z-10 ${isPaid && !isOriginalView ? 'bg-emerald-100 text-emerald-600' : isOverdue && !isOriginalView ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'}`}>
+                                    {isPaid && !isOriginalView ? <CheckCircle2 size={16} /> : <Clock size={16} />}
+                                </div>
+                                <div className="flex-1 bg-slate-50/50 p-3 rounded-xl border border-slate-100 flex justify-between items-center">
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-700">{m.description || (i === 0 ? 'Advance' : `Installment ${i}`)}</p>
+                                        <p className="text-[10px] text-slate-400 font-medium">{new Date(m.dueDate).toLocaleDateString()}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className={`text-sm font-black ${isPaid && !isOriginalView ? 'text-emerald-600' : 'text-slate-800'}`}>₹{m.targetAmount.toLocaleString()}</p>
+                                        <span className={`text-[8px] font-black uppercase ${isPaid && !isOriginalView ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                            {isOriginalView ? 'Snapshot' : m.status}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
             {order.status !== OrderStatus.DELIVERED && (
                 <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
                     <h3 className="font-black text-slate-800 text-sm uppercase tracking-wide">Contract Controls</h3>

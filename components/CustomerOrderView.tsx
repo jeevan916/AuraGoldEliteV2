@@ -12,6 +12,8 @@ interface CustomerOrderViewProps {
 
 const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [showOriginal, setShowOriginal] = useState(false);
+
   const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
   const remaining = order.totalAmount - totalPaid;
   const nextPayment = order.paymentPlan.milestones.find(m => m.status !== 'PAID');
@@ -26,6 +28,10 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   }, [remaining, nextPayment, order.id]);
 
   const upiLink = `upi://pay?pa=auragold@upi&pn=AuraGold%20Jewellery&tr=${order.id}&am=${nextPayment ? nextPayment.targetAmount : remaining}&cu=INR&tn=Order%20${order.id}`;
+
+  const displayMilestones = showOriginal && order.paymentPlan.originalMilestones 
+      ? order.paymentPlan.originalMilestones 
+      : order.paymentPlan.milestones;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -68,16 +74,38 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
         )}
 
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-4">
-          <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><CalendarDays size={16} className="text-blue-500" /> Payment Schedule</h3>
+          <div className="flex justify-between items-center">
+              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                  <CalendarDays size={16} className="text-blue-500" /> Payment Schedule
+              </h3>
+              {order.paymentPlan.originalMilestones && (
+                  <div className="flex bg-slate-100 p-1 rounded-lg">
+                      <button 
+                          onClick={() => setShowOriginal(false)}
+                          className={`px-3 py-1 rounded-md text-[9px] font-black uppercase transition-all ${!showOriginal ? 'bg-white shadow text-blue-600' : 'text-slate-400'}`}
+                      >
+                          Current
+                      </button>
+                      <button 
+                          onClick={() => setShowOriginal(true)}
+                          className={`px-3 py-1 rounded-md text-[9px] font-black uppercase transition-all ${showOriginal ? 'bg-white shadow text-slate-600' : 'text-slate-400'}`}
+                      >
+                          Original
+                      </button>
+                  </div>
+              )}
+          </div>
+          
           <div className="space-y-4 relative before:absolute before:left-[19px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-100">
-             {order.paymentPlan.milestones.map((m, i) => {
+             {displayMilestones.map((m, i) => {
                const isPaid = m.status === 'PAID';
                const isOverdue = m.status !== 'PAID' && new Date(m.dueDate) < new Date();
+               const isOriginalView = showOriginal;
                
                return (
-                 <div key={i} className="flex gap-4 relative">
-                   <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-4 border-white z-10 ${isPaid ? 'bg-emerald-100 text-emerald-600' : isOverdue ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'}`}>
-                      {isPaid ? <CheckCircle2 size={16} /> : <Clock size={16} />}
+                 <div key={i} className={`flex gap-4 relative ${isOriginalView ? 'opacity-70 grayscale' : ''}`}>
+                   <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-4 border-white z-10 ${isPaid && !isOriginalView ? 'bg-emerald-100 text-emerald-600' : isOverdue && !isOriginalView ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'}`}>
+                      {isPaid && !isOriginalView ? <CheckCircle2 size={16} /> : <Clock size={16} />}
                    </div>
                    <div className="flex-1 bg-slate-50/50 p-3 rounded-xl border border-slate-100">
                      <div className="flex justify-between items-start mb-1">
@@ -86,11 +114,11 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                          <p className="text-[10px] text-slate-400 font-medium">{new Date(m.dueDate).toLocaleDateString()}</p>
                        </div>
                        <div className="text-right">
-                         <p className={`text-sm font-black ${isPaid ? 'text-emerald-600' : 'text-slate-800'}`}>₹{m.targetAmount.toLocaleString()}</p>
+                         <p className={`text-sm font-black ${isPaid && !isOriginalView ? 'text-emerald-600' : 'text-slate-800'}`}>₹{m.targetAmount.toLocaleString()}</p>
                        </div>
                      </div>
-                     <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full inline-block ${isPaid ? 'bg-emerald-100 text-emerald-700' : isOverdue ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600'}`}>
-                        {isPaid ? 'Paid Successfully' : isOverdue ? 'Overdue' : 'Scheduled'}
+                     <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full inline-block ${isPaid && !isOriginalView ? 'bg-emerald-100 text-emerald-700' : isOverdue && !isOriginalView ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600'}`}>
+                        {isOriginalView ? 'Snapshot' : (isPaid ? 'Paid Successfully' : isOverdue ? 'Overdue' : 'Scheduled')}
                      </span>
                    </div>
                  </div>
