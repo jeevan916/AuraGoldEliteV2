@@ -204,13 +204,14 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           const responseBody = await response.json();
 
           if (!response.ok || !responseBody.success) {
+              const errMsg = responseBody.error || "Gateway Error";
               errorService.logError(
                   'Setu_Gateway', 
-                  `HTTP ${response.status}: Failed to generate link`, 
+                  `HTTP ${response.status}: ${errMsg}`, 
                   'HIGH', 
                   JSON.stringify(responseBody)
               );
-              throw new Error(responseBody.error || "Gateway reported an error. See logs.");
+              throw new Error(errMsg);
           }
 
           const payload = responseBody.data?.data || responseBody.data;
@@ -226,10 +227,28 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
               throw new Error("Payment link was not returned by the gateway. This has been logged for engineering review.");
           }
 
-          const baseUrl = "https://setu.co/upi/s/";
-          const linkSuffix = shortLink.replace(baseUrl, '');
+          // ROBUST LINK SUFFIX EXTRACTION
+          // Supports: https://setu.co/upi/s/{ID} OR https://pay.setu.co/{ID} OR any domain structure
+          // We assume the last segment of the path is the ID required by the template.
+          let linkSuffix = '';
+          try {
+              const urlObj = new URL(shortLink);
+              const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+              if (pathSegments.length > 0) {
+                  linkSuffix = pathSegments[pathSegments.length - 1];
+              }
+          } catch(e) {
+              // Fallback simple split if URL parsing fails
+              const parts = shortLink.split('/');
+              linkSuffix = parts[parts.length - 1];
+          }
+
+          if (!linkSuffix) {
+              throw new Error("Could not extract Link ID from Gateway Response.");
+          }
 
           // SCENARIO 8: Setu UPI Button (Manual)
+          // Template expects just the suffix ID to append to base URL
           const result = await whatsappService.sendTemplateMessage(
               order.customerContact, 
               'setu_payment_button', 
@@ -244,7 +263,19 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
               if (result.logEntry && onAddLog) onAddLog(result.logEntry);
               setAmount('');
           } else {
-              throw new Error(result.error || "WhatsApp template delivery failed");
+              // Fallback: If template fails (e.g. variable mismatch), send as text message
+              console.warn("Template failed, falling back to text link.");
+              const fallbackRes = await whatsappService.sendMessage(
+                  order.customerContact,
+                  `Dear ${order.customerName}, please pay ₹${val.toLocaleString()} using this link: ${shortLink}`,
+                  order.customerName
+              );
+              if (fallbackRes.success) {
+                  alert("Template failed, but sent Text Link as fallback.");
+                  if (fallbackRes.logEntry && onAddLog) onAddLog(fallbackRes.logEntry);
+              } else {
+                  throw new Error(result.error || "WhatsApp delivery failed");
+              }
           }
 
       } catch (e: any) {
