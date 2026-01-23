@@ -5,6 +5,7 @@ import { getPool, ensureDb, normalizePhone, logDbActivity } from './db.js';
 const router = express.Router();
 const META_API_VERSION = "v20.0";
 
+// ... (Webhook verification and inbound handler remain same) ...
 // Webhook Verification
 router.get('/webhook', (req, res) => {
     const verify_token = process.env.WHATSAPP_VERIFY_TOKEN || "auragold_elite_secure_2025";
@@ -78,13 +79,7 @@ router.get('/templates', ensureDb, async (req, res) => {
         });
         const data = await r.json();
         if (data.error) {
-            const pool = getPool();
-            const connection = await pool.getConnection();
-            await connection.query(
-                'INSERT INTO system_errors (id, source, message, stack, severity, timestamp, context) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                [`WA-ERR-${Date.now()}`, 'Meta Template Fetch', data.error.message, '', 'HIGH', new Date(), JSON.stringify(data.error)]
-            );
-            connection.release();
+            console.error("Meta Fetch Error:", JSON.stringify(data.error));
             return res.status(400).json({ success: false, error: data.error, raw: data });
         }
 
@@ -115,7 +110,10 @@ router.post('/templates', ensureDb, async (req, res) => {
             body: JSON.stringify(payload)
         });
         const data = await r.json();
-        if (data.error) return res.status(400).json({ success: false, error: data.error, raw: data });
+        if (data.error) {
+            console.error("Meta Create Error:", JSON.stringify(data.error));
+            return res.status(400).json({ success: false, error: data.error, raw: data });
+        }
 
         const pool = getPool();
         const connection = await pool.getConnection();
@@ -139,13 +137,17 @@ router.post('/templates/:id', ensureDb, async (req, res) => {
     if (!token) return res.status(401).json({ success: false, error: "Missing Credentials" });
 
     try {
+        // Meta API for Editing: POST to /{template_id}
         const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${templateId}`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
         const data = await r.json();
-        if (data.error) return res.status(400).json({ success: false, error: data.error, raw: data });
+        if (data.error) {
+            console.error("Meta Edit Error:", JSON.stringify(data.error));
+            return res.status(400).json({ success: false, error: data.error, raw: data });
+        }
 
         const pool = getPool();
         const connection = await pool.getConnection();
@@ -180,7 +182,10 @@ router.delete('/templates', ensureDb, async (req, res) => {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await r.json();
-        if (data.error) return res.status(400).json({ success: false, error: data.error, raw: data });
+        if (data.error) {
+            console.error("Meta Delete Error:", JSON.stringify(data.error));
+            return res.status(400).json({ success: false, error: data.error, raw: data });
+        }
 
         const pool = getPool();
         const connection = await pool.getConnection();
@@ -250,6 +255,7 @@ router.post('/send', ensureDb, async (req, res) => {
                 ]
              );
              connection.release();
+             console.error("Meta Send Error:", JSON.stringify(data.error));
              return res.status(400).json({ success: false, error: data.error?.message || "Meta API Error", raw: data });
         }
 

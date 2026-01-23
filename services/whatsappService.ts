@@ -17,15 +17,48 @@ const API_BASE = process.env.VITE_API_BASE_URL || '';
 /**
  * Helper to sanitize text for Meta API.
  * Meta rejects payloads if parameters contain newlines (\n) or tabs (\t).
- * We replace them with a visual separator.
  */
 const sanitizeForMeta = (text: string | number | undefined | null): string => {
     if (text === null || text === undefined) return " ";
     return text.toString()
-        .replace(/[\r\n]+/g, ' | ') // Replace newlines with a pipe separator
+        .replace(/[\r\n]+/g, ' ')   // Replace newlines with space (Strict for variables)
         .replace(/\t/g, ' ')        // Replace tabs with space
         .replace(/\s{2,}/g, ' ')    // Collapse multiple spaces
         .trim();
+};
+
+/**
+ * Helper to construct the Meta Components array correctly.
+ * Crucial for templates with variables {{1}}, as they REQUIRE an 'example' field.
+ */
+const constructMetaComponents = (content: string, variableExamples: string[] = [], structure?: any[]) => {
+    // If a structure is provided (e.g. Buttons/Headers), we use it but update the BODY
+    const components = structure ? [...structure] : [];
+    
+    // Find or Create BODY component
+    const bodyIndex = components.findIndex(c => c.type === 'BODY');
+    const hasVariables = content.includes('{{1}}');
+
+    const bodyComponent: any = {
+        type: 'BODY',
+        text: content
+    };
+
+    if (hasVariables && variableExamples.length > 0) {
+        // Meta requires examples to be an array of arrays of strings
+        // e.g. { body_text: [ ["John", "100"] ] }
+        bodyComponent.example = {
+            body_text: [variableExamples]
+        };
+    }
+
+    if (bodyIndex >= 0) {
+        components[bodyIndex] = bodyComponent;
+    } else {
+        components.push(bodyComponent);
+    }
+
+    return components;
 };
 
 export const whatsappService = {
@@ -39,7 +72,6 @@ export const whatsappService = {
   },
 
   getSettings(): GlobalSettings {
-    // Ensure we get the latest settings from storage
     return storageService.getSettings();
   },
 
@@ -59,12 +91,12 @@ export const whatsappService = {
          });
          const data = await response.json();
          if (!data.success) {
-             console.error("❌ RAW META TEMPLATE ERROR:", JSON.stringify(data.raw || data.error, null, 2));
+             console.error("❌ META FETCH ERROR:", data);
              throw data;
          } 
          return data.data || [];
      } catch (e: any) {
-         errorService.logError('Meta_Fetch', e.error || e.message, 'MEDIUM', undefined, undefined, e);
+         errorService.logError('Meta_Fetch', e.error?.message || e.message || 'Fetch failed', 'MEDIUM', undefined, undefined, e);
          return [];
      }
   },
@@ -75,9 +107,16 @@ export const whatsappService = {
      if (!settings.whatsappBusinessAccountId || !token) return { success: false, error: { message: "Credentials missing" } };
 
      const finalName = template.name.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-     const components = template.structure || [{ type: "BODY", text: template.content }];
      
-     const payload = { name: finalName, category: template.category || "UTILITY", language: "en_US", components };
+     // Construct components ensuring examples are present for variables
+     const components = constructMetaComponents(template.content, template.variableExamples, template.structure);
+     
+     const payload = { 
+         name: finalName, 
+         category: template.category || "UTILITY", 
+         language: "en_US", 
+         components 
+     };
 
      try {
          const response = await fetch(`${API_BASE}/api/whatsapp/templates`, {
@@ -91,13 +130,13 @@ export const whatsappService = {
          });
          const data = await response.json();
          if (!data.success) {
-             console.error("❌ RAW META CREATE ERROR:", JSON.stringify(data.raw || data.error, null, 2));
-             throw data;
+             const errorMsg = data.error?.message || data.error || "Unknown Meta API Error";
+             console.error("❌ META CREATE ERROR:", errorMsg);
+             return { success: false, error: { message: errorMsg } };
          }
          return { success: true, finalName: data.data?.name || finalName };
      } catch (e: any) {
-         errorService.logError('Meta_Create', e.error || 'Failed to create template', 'MEDIUM', undefined, undefined, e);
-         return { success: false, error: e };
+         return { success: false, error: { message: e.message || "Network Error" } };
      }
   },
 
@@ -106,7 +145,8 @@ export const whatsappService = {
       const token = settings.whatsappBusinessToken?.trim();
       if (!settings.whatsappBusinessAccountId || !token) return { success: false, error: { message: "Credentials missing" } };
 
-      const components = template.structure || [{ type: "BODY", text: template.content }];
+      // Ensure examples are packed for the update
+      const components = constructMetaComponents(template.content, template.variableExamples, template.structure);
       const payload = { components };
 
       try {
@@ -120,14 +160,15 @@ export const whatsappService = {
               body: JSON.stringify(payload)
           });
           const data = await response.json();
+          
           if (!data.success) {
-              console.error("❌ RAW META EDIT ERROR:", JSON.stringify(data.raw || data.error, null, 2));
-              throw data;
+              const errorMsg = data.error?.message || (typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+              console.error("❌ META EDIT ERROR:", errorMsg);
+              return { success: false, error: { message: errorMsg } };
           }
           return { success: true };
       } catch (e: any) {
-          errorService.logError('Meta_Edit', e.error || 'Failed to edit template', 'MEDIUM', undefined, undefined, e);
-          return { success: false, error: e };
+          return { success: false, error: { message: e.message || "Network Error" } };
       }
   },
 
@@ -147,13 +188,11 @@ export const whatsappService = {
           });
           const data = await response.json();
           if (!data.success) {
-              console.error("❌ RAW META DELETE ERROR:", JSON.stringify(data.raw || data.error, null, 2));
-              throw data;
+              return { success: false, error: { message: data.error?.message || "Delete Failed" } };
           }
           return { success: true };
       } catch (e: any) {
-          errorService.logError('Meta_Delete', e.error || 'Failed to delete template', 'MEDIUM', undefined, undefined, e);
-          return { success: false, error: e };
+          return { success: false, error: { message: e.message } };
       }
   },
 
@@ -173,7 +212,6 @@ export const whatsappService = {
     const token = settings.whatsappBusinessToken?.trim();
     if (!settings.whatsappPhoneNumberId || !token) return { success: false, error: "WhatsApp API Credentials Missing in Settings" };
 
-    // Meta template names must be lowercase
     const safeTemplateName = templateName.toLowerCase().trim();
 
     try {
@@ -190,20 +228,18 @@ export const whatsappService = {
             });
         }
 
-        // 2. Body Parameters (Must be lowercase 'body')
-        // Even if empty, if the template expects params, we must send them. 
-        // If not empty, we map.
+        // 2. Body Parameters
         if (bodyVariables.length > 0) {
             components.push({ 
                 type: "body", 
                 parameters: bodyVariables.map(v => ({ 
                     type: "text", 
-                    text: sanitizeForMeta(v) // <--- SANITIZATION APPLIED HERE
+                    text: sanitizeForMeta(v) 
                 })) 
             });
         }
 
-        // 3. Button Parameters (Dynamic URLs)
+        // 3. Button Parameters
         if (buttonVariable) {
             components.push({ 
                 type: "button", 
@@ -237,13 +273,12 @@ export const whatsappService = {
         const data = await response.json();
         
         if (!data.success) {
-            console.error(`[WhatsAppService] Send Failed for ${safeTemplateName}:`, data.error);
-            console.error("❌ RAW META ERROR RESPONSE:", JSON.stringify(data.raw, null, 2));
+            const errDetail = data.error?.message || data.error || "Meta API Error";
+            console.error(`[WhatsAppService] Send Failed for ${safeTemplateName}:`, errDetail);
             
-            // Don't log HIGH severity for user errors like invalid number
-            const severity = data.error?.includes('Receiver is incapable') ? 'LOW' : 'HIGH';
-            errorService.logError('WhatsApp_Send', `Failed to send ${safeTemplateName}: ${data.error || 'Unknown Error'}`, severity, undefined, undefined, data);
-            return { success: false, error: data.error, raw: data.raw };
+            const severity = errDetail.includes('Receiver is incapable') ? 'LOW' : 'HIGH';
+            errorService.logError('WhatsApp_Send', `Failed to send ${safeTemplateName}: ${errDetail}`, severity, undefined, undefined, data);
+            return { success: false, error: errDetail, raw: data.raw };
         }
 
         return {
@@ -286,8 +321,9 @@ export const whatsappService = {
 
       const data = await response.json();
       if (!data.success) {
-          console.error("❌ RAW META MESSAGE ERROR:", JSON.stringify(data.raw || data.error, null, 2));
-          throw data;
+          const errDetail = data.error?.message || data.error || "Meta Message Error";
+          console.error("❌ RAW META MESSAGE ERROR:", errDetail);
+          throw { message: errDetail, raw: data.raw };
       }
 
       return {
@@ -300,7 +336,6 @@ export const whatsappService = {
         }
       };
     } catch (e: any) { 
-        errorService.logError('WhatsApp_Custom', e.error || e.message, 'MEDIUM', undefined, undefined, e);
         return { success: false, error: e.message || "Send Failed", raw: e.raw }; 
     }
   }
