@@ -6,6 +6,51 @@ const router = express.Router();
 
 router.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
+// --- NEW: FETCH ERROR LOGS ---
+router.get('/logs/errors', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query('SELECT * FROM system_errors ORDER BY timestamp DESC LIMIT 200');
+        connection.release();
+        
+        const errors = rows.map(row => ({
+            id: row.id,
+            source: row.source,
+            message: row.message,
+            stack: row.stack,
+            severity: row.severity,
+            timestamp: row.timestamp,
+            rawContext: row.context,
+            status: 'NEW' // Default status for viewing
+        }));
+        
+        res.json({ success: true, errors });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// --- NEW: SAVE ERROR LOG ---
+router.post('/logs/error', ensureDb, async (req, res) => {
+    try {
+        const { id, source, message, stack, severity, timestamp, rawContext } = req.body;
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        
+        await connection.query(
+            'INSERT INTO system_errors (id, source, message, stack, severity, timestamp, context) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [id, source, message, stack || '', severity || 'MEDIUM', new Date(timestamp), JSON.stringify(rawContext || {})]
+        );
+        
+        connection.release();
+        res.json({ success: true });
+    } catch (e) {
+        console.error("Failed to write error log to DB:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // --- NEW PUBLIC ENDPOINT ---
 router.get('/public/order/:token', ensureDb, async (req, res) => {
     try {

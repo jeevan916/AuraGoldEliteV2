@@ -16,15 +16,21 @@ class ErrorService {
   private lastErrorTime: number = 0;
 
   constructor() {
-    try {
-      const savedErrors = localStorage.getItem('aura_error_logs');
-      if (savedErrors) this.errors = JSON.parse(savedErrors);
-      
-      const savedActivity = localStorage.getItem('aura_activity_logs');
-      if (savedActivity) this.activities = JSON.parse(savedActivity);
-    } catch (e) {
-      console.warn("[ErrorService] Local storage corruption. Starting fresh.", e);
-    }
+    // Initial fetch from DB
+    this.fetchErrorsFromDb();
+  }
+
+  private async fetchErrorsFromDb() {
+      try {
+          const res = await fetch('/api/logs/errors');
+          const data = await res.json();
+          if (data.success && Array.isArray(data.errors)) {
+              this.errors = data.errors;
+              this.notify();
+          }
+      } catch (e) {
+          console.warn("[ErrorService] Failed to fetch historical errors", e);
+      }
   }
 
   public initGlobalListeners() {
@@ -56,16 +62,10 @@ class ErrorService {
       this.logError(source, msg, 'CRITICAL', reason?.stack, undefined, raw);
     });
 
-    this.logActivity('STATUS_UPDATE', 'Self-Healing Core V2.5 Ready (Gemini 3 Pro Integration)');
+    this.logActivity('STATUS_UPDATE', 'Self-Healing Core V5.1 Connected (DB Persisted Logs)');
   }
 
   private notify() {
-    try {
-      localStorage.setItem('aura_error_logs', JSON.stringify(this.errors));
-      localStorage.setItem('aura_activity_logs', JSON.stringify(this.activities));
-    } catch (e) {
-      console.error("[ErrorService] Failed to persist logs", e);
-    }
     this.listeners.forEach(l => l(this.errors, this.activities));
   }
 
@@ -106,7 +106,7 @@ class ErrorService {
     this.lastErrorTime = Date.now();
 
     const newError: AppError = {
-      id: `ERR-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: `ERR-${Date.now()}`,
       timestamp: new Date().toISOString(),
       source,
       message,
@@ -117,9 +117,22 @@ class ErrorService {
       rawContext 
     };
 
+    // 1. Update Local State Immediately
     this.errors = [newError, ...this.errors].slice(0, this.MAX_ERRORS);
     this.notify();
 
+    // 2. Persist to Database asynchronously
+    try {
+        await fetch('/api/logs/error', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newError)
+        });
+    } catch (e) {
+        console.error("Critical: Failed to save error to DB", e);
+    }
+
+    // 3. Trigger AI
     if (severity !== 'LOW') {
         this.runIntelligentAnalysis(newError.id);
     }

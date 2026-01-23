@@ -48,6 +48,11 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
       errorService.runIntelligentAnalysis(errorId);
   };
 
+  const handleReload = () => {
+      // Force reload page to trigger service fetch
+      window.location.reload();
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-6 h-[calc(100vh-140px)] flex flex-col">
       {/* Intelligence Dashboard */}
@@ -100,6 +105,9 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
 
         {activeTab === 'ERRORS' && (
             <div className="flex items-center gap-2">
+                <button onClick={handleReload} className="p-2 bg-slate-100 rounded-lg hover:bg-slate-200" title="Refresh Logs from DB">
+                    <RefreshCw size={14} />
+                </button>
                 <span className="text-[10px] font-bold text-slate-400 uppercase mr-2">Filter:</span>
                 <button 
                     onClick={() => setFilterMode('ACTION_REQUIRED')}
@@ -126,7 +134,7 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
                 <div className="h-full flex flex-col items-center justify-center text-slate-400 border-2 border-dashed rounded-3xl bg-slate-50/50 py-20">
                     <CheckCircle2 size={48} className="mb-4 text-emerald-200" />
                     <p className="font-black uppercase tracking-widest text-sm">System Healthy</p>
-                    <p className="text-xs text-slate-400 mt-2">No active issues requiring attention.</p>
+                    <p className="text-xs text-slate-400 mt-2">No active issues found in the database.</p>
                 </div>
                 )}
 

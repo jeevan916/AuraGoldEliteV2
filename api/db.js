@@ -28,7 +28,17 @@ export async function initDb() {
             `CREATE TABLE IF NOT EXISTS whatsapp_logs (id VARCHAR(100) PRIMARY KEY, phone VARCHAR(50), direction VARCHAR(20), timestamp DATETIME, data LONGTEXT)`,
             `CREATE TABLE IF NOT EXISTS templates (id VARCHAR(100) PRIMARY KEY, name VARCHAR(255), category VARCHAR(50), data LONGTEXT)`,
             `CREATE TABLE IF NOT EXISTS plan_templates (id VARCHAR(100) PRIMARY KEY, name VARCHAR(255), data LONGTEXT)`,
-            `CREATE TABLE IF NOT EXISTS catalog (id VARCHAR(100) PRIMARY KEY, category VARCHAR(100), data LONGTEXT)`
+            `CREATE TABLE IF NOT EXISTS catalog (id VARCHAR(100) PRIMARY KEY, category VARCHAR(100), data LONGTEXT)`,
+            // NEW TABLE FOR SYSTEM ERRORS
+            `CREATE TABLE IF NOT EXISTS system_errors (
+                id VARCHAR(100) PRIMARY KEY, 
+                source VARCHAR(100), 
+                message TEXT, 
+                stack TEXT, 
+                severity VARCHAR(20), 
+                timestamp DATETIME, 
+                context JSON
+            )`
         ];
         for (const sql of tables) await connection.query(sql);
         

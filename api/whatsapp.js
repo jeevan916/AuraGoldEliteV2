@@ -79,7 +79,15 @@ router.get('/templates', ensureDb, async (req, res) => {
         });
         const data = await r.json();
         if (data.error) {
-            console.error("Meta Template Fetch Error:", JSON.stringify(data.error, null, 2));
+            // Log to system_errors table for visibility
+            const pool = getPool();
+            const connection = await pool.getConnection();
+            await connection.query(
+                'INSERT INTO system_errors (id, source, message, stack, severity, timestamp, context) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [`WA-ERR-${Date.now()}`, 'Meta Template Fetch', data.error.message, '', 'HIGH', new Date(), JSON.stringify(data.error)]
+            );
+            connection.release();
+            
             return res.status(400).json({ success: false, error: data.error, raw: data });
         }
 
@@ -223,6 +231,24 @@ router.post('/send', ensureDb, async (req, res) => {
         
         if (!r.ok || data.error) {
              console.error("[WhatsApp Backend] Meta Rejected Request:", data.error);
+             
+             // --- CRITICAL FIX: LOG ERROR TO DB SO FRONTEND SEES IT ---
+             const pool = getPool();
+             const connection = await pool.getConnection();
+             await connection.query(
+                'INSERT INTO system_errors (id, source, message, stack, severity, timestamp, context) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [
+                    `WA-SEND-ERR-${Date.now()}`, 
+                    'WhatsApp Send API', 
+                    `Failed to send ${templateName || 'Message'}`, 
+                    data.error.message || 'Unknown Meta Error', 
+                    'HIGH', 
+                    new Date(), 
+                    JSON.stringify({ payload, error: data.error })
+                ]
+             );
+             connection.release();
+
              // Pass 'raw' data back to frontend
              return res.status(400).json({ success: false, error: data.error?.message || "Meta API Error", raw: data });
         }
