@@ -117,6 +117,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                   if (existingIndex >= 0) {
                       updatedList[existingIndex] = { 
                           ...updatedList[existingIndex], 
+                          id: mt.id, // CRITICAL: Update ID to Meta ID to prevent "Unsupported post request" errors on edit
                           status: mt.status, 
                           rejectionReason: mt.rejected_reason,
                           structure: mt.components, 
@@ -130,12 +131,23 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
               });
               
               const finalList = [...newTpls, ...updatedList];
-              onUpdate(finalList);
+              // Remove duplicates based on ID preference (Keep Meta IDs)
+              const uniqueMap = new Map();
+              finalList.forEach(item => {
+                  if(!uniqueMap.has(item.name)) uniqueMap.set(item.name, item);
+                  else if(item.id && !item.id.startsWith('sys-') && uniqueMap.get(item.name).id.startsWith('sys-')) {
+                      // Replace local placeholder with real Meta record
+                      uniqueMap.set(item.name, item);
+                  }
+              });
+              const uniqueList = Array.from(uniqueMap.values());
+
+              onUpdate(uniqueList);
               if (!silent) {
                   alert(`Synced ${newTpls.length} new templates from Meta!`);
-                  addLog(`Sync Complete. Total Templates: ${finalList.length}`);
+                  addLog(`Sync Complete. Total Templates: ${uniqueList.length}`);
               }
-              return finalList;
+              return uniqueList;
           }
       } catch (error: any) {
           if(!silent) alert(`Sync Failed: ${error.message}`);
@@ -151,10 +163,11 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       addLog("Initializing Gemini 2.5 Structural Integrity Check...");
       
       let restoredCount = 0;
+      // Force sync first to get latest IDs
       const remoteTemplates = await handleSyncFromMeta(true);
       
       for (const req of REQUIRED_SYSTEM_TEMPLATES) {
-          const match = remoteTemplates.find(t => t.name === req.name);
+          const match = remoteTemplates?.find(t => t.name === req.name);
           
           if (!match) {
               addLog(`MISSING: ${req.name}. Deploying fresh...`);
@@ -174,6 +187,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
 
               if (reqVars !== remoteVars || isDrasticallyDifferent) {
                   addLog(`MISMATCH: ${req.name}. App expects ${reqVars} vars, Meta has ${remoteVars}. Harmonizing...`);
+                  // Ensure we use the template object from the FRESH sync to get the correct Meta ID
                   await repairHelper(match, req); 
                   restoredCount++;
               } else {
@@ -222,8 +236,14 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           ...existingMetaTpl,
           content: fix.optimizedContent,
           variableExamples: requiredDef.examples, 
-          structure: undefined 
+          structure: undefined // Clear structure to force rebuild from content + examples
       };
+
+      if (existingMetaTpl.id.startsWith('sys-') || existingMetaTpl.id.startsWith('local-')) {
+          addLog(`ERROR: Cannot repair ${requiredDef.name} because we lack the Meta ID. Trying create instead.`);
+          await deployHelper(requiredDef);
+          return;
+      }
 
       const result = await whatsappService.editMetaTemplate(existingMetaTpl.id, payload);
       if (result.success) {

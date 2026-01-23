@@ -30,6 +30,7 @@ const sanitizeForMeta = (text: string | number | undefined | null): string => {
 /**
  * Helper to construct the Meta Components array correctly.
  * Crucial for templates with variables {{1}}, as they REQUIRE an 'example' field.
+ * FIX: Auto-pads examples if they are fewer than the variables in content.
  */
 const constructMetaComponents = (content: string, variableExamples: string[] = [], structure?: any[]) => {
     // If a structure is provided (e.g. Buttons/Headers), we use it but update the BODY
@@ -37,18 +38,25 @@ const constructMetaComponents = (content: string, variableExamples: string[] = [
     
     // Find or Create BODY component
     const bodyIndex = components.findIndex(c => c.type === 'BODY');
-    const hasVariables = content.includes('{{1}}');
+    const varMatches = content.match(/{{[0-9]+}}/g) || [];
+    const varCount = varMatches.length;
 
     const bodyComponent: any = {
         type: 'BODY',
         text: content
     };
 
-    if (hasVariables && variableExamples.length > 0) {
-        // Meta requires examples to be an array of arrays of strings
-        // e.g. { body_text: [ ["John", "100"] ] }
+    if (varCount > 0) {
+        // Safe padding: Ensure we have enough examples for all variables
+        const safeExamples = [...variableExamples];
+        while(safeExamples.length < varCount) {
+            safeExamples.push(`sample_${safeExamples.length + 1}`);
+        }
+        // Slice if too many (Meta is strict on exact count too sometimes)
+        const finalExamples = safeExamples.slice(0, varCount);
+
         bodyComponent.example = {
-            body_text: [variableExamples]
+            body_text: [finalExamples]
         };
     }
 
@@ -148,6 +156,11 @@ export const whatsappService = {
       // Ensure examples are packed for the update
       const components = constructMetaComponents(template.content, template.variableExamples, template.structure);
       const payload = { components };
+
+      // Safety check: Don't send sys- IDs to Graph API
+      if (templateId.startsWith('sys-') || templateId.startsWith('local-')) {
+          return { success: false, error: { message: `Cannot edit using local ID (${templateId}). Please sync first.` } };
+      }
 
       try {
           const response = await fetch(`${API_BASE}/api/whatsapp/templates/${templateId}`, {
