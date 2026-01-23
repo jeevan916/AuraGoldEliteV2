@@ -181,7 +181,11 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
       setInputText('');
       setAiInsight(null);
       const result = await whatsappService.sendMessage(activeConversation.phone, msg, activeConversation.name);
-      if (result.success && result.logEntry && onAddLog) onAddLog(result.logEntry);
+      if (result.success && result.logEntry && onAddLog) {
+          onAddLog(result.logEntry);
+      } else {
+          alert(`Message Failed: ${result.error}\n\nRAW DETAILS:\n${JSON.stringify(result.raw, null, 2)}`);
+      }
   };
 
   const handleSendTemplate = async () => {
@@ -214,7 +218,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
           setTemplateParams([]);
           setParamPlaceholders([]);
       } else {
-          alert(`Send Error: ${result.error}`);
+          alert(`Template Send Error: ${result.error}\n\nRAW META RESPONSE:\n${JSON.stringify(result.raw, null, 2)}`);
       }
       setIsSending(false);
   };

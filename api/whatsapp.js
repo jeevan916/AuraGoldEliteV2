@@ -3,7 +3,8 @@ import express from 'express';
 import { getPool, ensureDb, normalizePhone } from './db.js';
 
 const router = express.Router();
-const META_API_VERSION = "v22.0";
+// CHANGED: v22.0 -> v20.0 (Stable)
+const META_API_VERSION = "v20.0";
 
 // Webhook Verification
 router.get('/webhook', (req, res) => {
@@ -77,7 +78,10 @@ router.get('/templates', ensureDb, async (req, res) => {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await r.json();
-        if (data.error) return res.status(400).json({ success: false, error: data.error });
+        if (data.error) {
+            console.error("Meta Template Fetch Error:", JSON.stringify(data.error, null, 2));
+            return res.status(400).json({ success: false, error: data.error, raw: data });
+        }
 
         const pool = getPool();
         const connection = await pool.getConnection();
@@ -106,7 +110,7 @@ router.post('/templates', ensureDb, async (req, res) => {
             body: JSON.stringify(payload)
         });
         const data = await r.json();
-        if (data.error) return res.status(400).json({ success: false, error: data.error });
+        if (data.error) return res.status(400).json({ success: false, error: data.error, raw: data });
 
         const pool = getPool();
         const connection = await pool.getConnection();
@@ -133,7 +137,7 @@ router.post('/templates/:id', ensureDb, async (req, res) => {
             body: JSON.stringify(payload)
         });
         const data = await r.json();
-        if (data.error) return res.status(400).json({ success: false, error: data.error });
+        if (data.error) return res.status(400).json({ success: false, error: data.error, raw: data });
 
         const pool = getPool();
         const connection = await pool.getConnection();
@@ -163,7 +167,7 @@ router.delete('/templates', ensureDb, async (req, res) => {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await r.json();
-        if (data.error) return res.status(400).json({ success: false, error: data.error });
+        if (data.error) return res.status(400).json({ success: false, error: data.error, raw: data });
 
         const pool = getPool();
         const connection = await pool.getConnection();
@@ -202,7 +206,9 @@ router.post('/send', ensureDb, async (req, res) => {
         payload.text = { body: message };
     }
     
-    console.log(`[WhatsApp Backend] Sending to ${to} via ${phoneId}. Payload Type: ${payload.type}`);
+    // DEBUG: Log payload to help user see what we are sending
+    console.log(`[WhatsApp Backend] Sending to ${to} via ${phoneId}`);
+    console.log(`[WhatsApp Backend] Payload:`, JSON.stringify(payload, null, 2));
 
     try {
         const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${phoneId}/messages`, {
@@ -212,8 +218,12 @@ router.post('/send', ensureDb, async (req, res) => {
         });
         const data = await r.json();
         
+        // DEBUG: Log Raw Response from Meta
+        console.log(`[WhatsApp Backend] Raw Response:`, JSON.stringify(data, null, 2));
+        
         if (!r.ok || data.error) {
              console.error("[WhatsApp Backend] Meta Rejected Request:", data.error);
+             // Pass 'raw' data back to frontend
              return res.status(400).json({ success: false, error: data.error?.message || "Meta API Error", raw: data });
         }
 

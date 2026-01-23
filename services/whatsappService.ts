@@ -44,7 +44,10 @@ export const whatsappService = {
              }
          });
          const data = await response.json();
-         if (!data.success) throw data; 
+         if (!data.success) {
+             console.error("❌ RAW META TEMPLATE ERROR:", JSON.stringify(data.raw || data.error, null, 2));
+             throw data;
+         } 
          return data.data || [];
      } catch (e: any) {
          errorService.logError('Meta_Fetch', e.error || e.message, 'MEDIUM', undefined, undefined, e);
@@ -73,7 +76,10 @@ export const whatsappService = {
              body: JSON.stringify(payload)
          });
          const data = await response.json();
-         if (!data.success) throw data;
+         if (!data.success) {
+             console.error("❌ RAW META CREATE ERROR:", JSON.stringify(data.raw || data.error, null, 2));
+             throw data;
+         }
          return { success: true, finalName: data.data?.name || finalName };
      } catch (e: any) {
          errorService.logError('Meta_Create', e.error || 'Failed to create template', 'MEDIUM', undefined, undefined, e);
@@ -100,7 +106,10 @@ export const whatsappService = {
               body: JSON.stringify(payload)
           });
           const data = await response.json();
-          if (!data.success) throw data;
+          if (!data.success) {
+              console.error("❌ RAW META EDIT ERROR:", JSON.stringify(data.raw || data.error, null, 2));
+              throw data;
+          }
           return { success: true };
       } catch (e: any) {
           errorService.logError('Meta_Edit', e.error || 'Failed to edit template', 'MEDIUM', undefined, undefined, e);
@@ -123,7 +132,10 @@ export const whatsappService = {
               }
           });
           const data = await response.json();
-          if (!data.success) throw data;
+          if (!data.success) {
+              console.error("❌ RAW META DELETE ERROR:", JSON.stringify(data.raw || data.error, null, 2));
+              throw data;
+          }
           return { success: true };
       } catch (e: any) {
           errorService.logError('Meta_Delete', e.error || 'Failed to delete template', 'MEDIUM', undefined, undefined, e);
@@ -212,10 +224,12 @@ export const whatsappService = {
         
         if (!data.success) {
             console.error(`[WhatsAppService] Send Failed for ${safeTemplateName}:`, data.error);
+            console.error("❌ RAW META ERROR RESPONSE:", JSON.stringify(data.raw, null, 2));
+            
             // Don't log HIGH severity for user errors like invalid number
             const severity = data.error?.includes('Receiver is incapable') ? 'LOW' : 'HIGH';
             errorService.logError('WhatsApp_Send', `Failed to send ${safeTemplateName}: ${data.error || 'Unknown Error'}`, severity, undefined, undefined, data);
-            return { success: false, error: data.error, raw: data };
+            return { success: false, error: data.error, raw: data.raw };
         }
 
         return {
@@ -257,7 +271,10 @@ export const whatsappService = {
       });
 
       const data = await response.json();
-      if (!data.success) throw data;
+      if (!data.success) {
+          console.error("❌ RAW META MESSAGE ERROR:", JSON.stringify(data.raw || data.error, null, 2));
+          throw data;
+      }
 
       return {
         success: true,
@@ -270,7 +287,7 @@ export const whatsappService = {
       };
     } catch (e: any) { 
         errorService.logError('WhatsApp_Custom', e.error || e.message, 'MEDIUM', undefined, undefined, e);
-        return { success: false, error: e.message || "Send Failed" }; 
+        return { success: false, error: e.message || "Send Failed", raw: e.raw }; 
     }
   }
 };
