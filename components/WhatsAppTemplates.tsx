@@ -557,8 +557,9 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                 </button>
             </div>
 
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0 overflow-y-auto p-2">
-                <div className="space-y-3">
+            {/* Changed from overflow-y-auto to overflow-hidden on the grid container to allow columns to scroll independently */}
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0 overflow-hidden p-2">
+                <div className="space-y-3 overflow-y-auto custom-scrollbar pr-2 h-full">
                     {REQUIRED_SYSTEM_TEMPLATES.map(req => {
                         // Compare local template list (from Meta sync) with Required Definition
                         const match = templates.find(t => t.name === req.name || t.name.startsWith(req.name));
@@ -595,12 +596,12 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
                     })}
                 </div>
                 
-                {/* Console Log */}
-                <div className="bg-slate-900 rounded-3xl p-6 text-emerald-400 font-mono text-[10px] overflow-hidden flex flex-col">
-                    <div className="flex items-center gap-2 mb-4 text-slate-500 uppercase font-bold tracking-widest text-[9px] border-b border-slate-800 pb-2">
+                {/* Console Log - Added h-full to force it to take full height of the grid column */}
+                <div className="bg-slate-900 rounded-3xl p-6 text-emerald-400 font-mono text-[10px] overflow-hidden flex flex-col h-full shadow-inner border border-slate-800">
+                    <div className="flex items-center gap-2 mb-4 text-slate-500 uppercase font-bold tracking-widest text-[9px] border-b border-slate-800 pb-2 shrink-0">
                         <Terminal size={14} /> System Health Console
                     </div>
-                    <div className="flex-1 overflow-y-auto space-y-1">
+                    <div className="flex-1 overflow-y-auto space-y-1 custom-scrollbar">
                         {repairLogs.length === 0 ? <span className="opacity-30">System idle. Ready for diagnostics.</span> : repairLogs.map((l, i) => <div key={i}>{l}</div>)}
                         <div ref={logsEndRef} />
                     </div>

@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   AlertTriangle, CheckCircle2, XCircle, Activity, Zap, 
   Terminal, ShieldCheck, HeartPulse, Search, Copy, 
-  Wrench, Code, RefreshCw, Loader2, BrainCircuit
+  Wrench, Code, RefreshCw, Loader2, BrainCircuit, Sparkles
 } from 'lucide-react';
 import { AppError, ActivityLogEntry, AppResolutionPath } from '../types';
 import { errorService } from '../services/errorService';
@@ -40,10 +40,14 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
   }, [errors]);
 
   const copyToClipboard = (text: string) => {
-      // Clean up markdown block markers for clean copy
       const cleanText = text.replace(/```typescript|```js|```/g, '').trim();
       navigator.clipboard.writeText(cleanText);
-      alert("Code Snippet Copied! Paste this into your project.");
+      alert("Code Snippet Copied!");
+  };
+
+  const copyPrompt = (text: string) => {
+      navigator.clipboard.writeText(text);
+      alert("AI Prompt Copied! Paste this in AI Studio.");
   };
 
   const handleReanalyze = (errorId: string) => {
@@ -51,7 +55,6 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
   };
 
   const handleReload = () => {
-      // Force reload page to trigger service fetch
       window.location.reload();
   };
 
@@ -197,7 +200,7 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
                                         </div>
                                     </div>
 
-                                    {/* THE GOLDEN FEATURE: Implementation Prompt */}
+                                    {/* Implementation Prompt (Simple Fix) */}
                                     {err.status === 'REQUIRES_CODE_CHANGE' && err.implementationPrompt && (
                                         <div className="mt-2 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
                                             <div className="bg-slate-800 px-3 py-2 flex justify-between items-center border-b border-slate-700">
@@ -214,6 +217,26 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
                                             <div className="p-3 text-[10px] font-mono text-emerald-200 leading-relaxed whitespace-pre-wrap overflow-x-auto">
                                                 {err.implementationPrompt}
                                             </div>
+                                        </div>
+                                    )}
+
+                                    {/* Fixing Prompt (Complex Fix for AI Studio) */}
+                                    {(err as any).fixingPrompt && (
+                                        <div className="mt-2 bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-[9px] font-black uppercase text-indigo-700 flex items-center gap-1">
+                                                    <Sparkles size={12} /> Master Prompt for AI Studio
+                                                </span>
+                                                <button 
+                                                    onClick={() => copyPrompt((err as any).fixingPrompt)}
+                                                    className="text-[9px] font-bold bg-white text-indigo-600 px-3 py-1.5 rounded-lg border border-indigo-100 hover:border-indigo-300 shadow-sm transition-all"
+                                                >
+                                                    Copy Prompt
+                                                </button>
+                                            </div>
+                                            <p className="text-[10px] text-indigo-800/70 italic leading-relaxed">
+                                                Use this prompt in Google AI Studio to get a full file rewrite for complex errors.
+                                            </p>
                                         </div>
                                     )}
                                 </div>

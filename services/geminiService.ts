@@ -26,6 +26,7 @@ export const geminiService = {
       explanation: string, 
       fixType: 'AUTO' | 'MANUAL_CODE' | 'CONFIG', 
       implementationPrompt?: string, 
+      fixingPrompt?: string,
       action?: 'REPAIR_TEMPLATE' | 'RETRY_API', 
       resolutionPath?: AppResolutionPath
   }> {
@@ -45,15 +46,20 @@ export const geminiService = {
             DATA CONTEXT (Payload/State): 
             ${JSON.stringify(rawContext || {}, null, 2)}
             
+            CRITICAL KNOWLEDGE BASE:
+            1. Meta WhatsApp API strictly REJECTS parameters containing newline characters (\\n) or tabs (\\t). If found, the fix is to .replace(/[\\n\\t]/g, ' ') or use a special separator.
+            2. Template variable count in payload MUST match the template definition on Meta.
+            
             TASK:
             1. Analyze why the code failed. 
-            2. If it's a WhatsApp Meta API error (e.g., param count mismatch, invalid format), compare the 'payload' sent vs the 'error' received.
-            3. If the code logic is faulty (e.g., sending 3 params instead of 4), GENERATE THE CORRECT TYPESCRIPT CODE SNIPPET to fix it.
+            2. If it's a "Parameter Encoding" issue (newlines), suggest the specific sanitize function.
+            3. If the code logic is faulty, GENERATE THE CORRECT TYPESCRIPT CODE SNIPPET.
+            4. Generate a "fixingPrompt" that the user can paste into AI Studio to fix the file if the error is complex.
             
             OUTPUT RULES:
-            - If it requires a code change, set fixType to 'MANUAL_CODE'.
-            - In 'implementationPrompt', provide the EXACT code block to replace the faulty logic.
-            - If it's just a template sync issue, set fixType to 'AUTO' and action to 'REPAIR_TEMPLATE'.`,
+            - Set fixType to 'MANUAL_CODE' for logic errors.
+            - 'implementationPrompt' should be the direct code fix (e.g., the sanitize function).
+            - 'fixingPrompt' should be a context-rich prompt for an AI to rewrite the entire affected function.`,
             config: { 
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -61,7 +67,8 @@ export const geminiService = {
                     properties: {
                         explanation: { type: Type.STRING, description: "Concise technical root cause." },
                         fixType: { type: Type.STRING, enum: ['AUTO', 'MANUAL_CODE', 'CONFIG'] },
-                        implementationPrompt: { type: Type.STRING, description: "Markdown code block with the fix." },
+                        implementationPrompt: { type: Type.STRING, description: "Markdown code block with the exact fix snippet." },
+                        fixingPrompt: { type: Type.STRING, description: "A detailed prompt the user can paste into AI Studio to fix the entire module." },
                         action: { type: Type.STRING, enum: ['REPAIR_TEMPLATE', 'RETRY_API'] },
                         resolutionPath: { type: Type.STRING, enum: ['settings', 'templates', 'whatsapp', 'none'] }
                     },
@@ -281,8 +288,12 @@ export const geminiService = {
             model: FLASH_MODEL,
             contents: `Check compliance for Meta Template: ${requiredName} (${category}). Content: "${requiredContent}"
             
-            If category is UTILITY, content MUST NOT contain promotional words (sale, offer, discount, buy now).
-            If it violates, rewrite it to be neutral.`,
+            Rules:
+            1. If category is UTILITY, content MUST NOT contain promotional words.
+            2. Variables MUST be sequential {{1}}, {{2}}...
+            3. Variables MUST NOT touch each other (e.g. {{1}}{{2}} is invalid, {{1}} {{2}} is valid).
+            
+            If it violates, rewrite it to be neutral and correct.`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
