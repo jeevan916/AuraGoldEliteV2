@@ -138,7 +138,6 @@ export const geminiService = {
 
   /**
    * Advanced Strategic Nudge Generation (The "Brain" of Debt Recovery)
-   * Fix: Updated signature to accept 'SYSTEM' notification type to match NotificationTrigger.type
    */
   async generateStrategicNotification(order: Order, type: 'UPCOMING' | 'OVERDUE' | 'SYSTEM', goldRate: number, riskProfile: RiskProfile = 'REGULAR'): Promise<{ 
       tone: CollectionTone, 
@@ -185,6 +184,7 @@ export const geminiService = {
 
   /**
    * Auto-Fix Rejected Templates
+   * This is the "Compliance Officer" that takes action on Meta rejections.
    */
   async fixRejectedTemplate(template: WhatsAppTemplate): Promise<{ 
       fixedName: string, 
@@ -196,23 +196,34 @@ export const geminiService = {
     const ai = getAI();
     if (!ai) throw new Error("AI Offline");
 
+    const variableCount = (template.content.match(/{{[0-9]+}}/g) || []).length;
+
     const response = await ai.models.generateContent({
         model: PRO_MODEL,
-        contents: `Meta Rejected Template: ${template.name}
-        Content: "${template.content}"
-        Reason: ${template.rejectionReason || 'Unknown compliance violation'}
+        contents: `You are a Meta WhatsApp Template Compliance Officer.
         
-        Task: Rewrite to satisfy Meta's 'UTILITY' vs 'MARKETING' guidelines. Remove sales-speak from transaction templates.`,
+        Problem: A template was rejected by Meta.
+        Template Name: ${template.name}
+        Content: "${template.content}"
+        Rejection Reason: ${template.rejectionReason || 'Format/Policy Violation'}
+        Current Category: ${template.category}
+        Target Variable Count: ${variableCount} (Preserve this count if possible, unless it causes the issue).
+
+        TASKS:
+        1. If reason is "Promotional", REWRITE content to be purely transactional/informational. Remove words like "offer", "sale", "chance", "happy to".
+        2. If reason is "Format", ensure variables {{1}} are correctly placed.
+        3. If category is wrong, suggest the correct one (UTILITY vs MARKETING).
+        4. Keep the tone professional for a Jewelry brand.`,
         config: {
             responseMimeType: "application/json",
             responseSchema: {
                 type: Type.OBJECT,
                 properties: {
-                    fixedName: { type: Type.STRING },
+                    fixedName: { type: Type.STRING, description: "Keep strictly snake_case, lowercase" },
                     fixedContent: { type: Type.STRING },
                     category: { type: Type.STRING, enum: ['UTILITY', 'MARKETING', 'AUTHENTICATION'] },
                     variableExamples: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    diagnosis: { type: Type.STRING }
+                    diagnosis: { type: Type.STRING, description: "Explain what was fixed" }
                 },
                 required: ["fixedName", "fixedContent", "category", "diagnosis"]
             }
@@ -258,7 +269,10 @@ export const geminiService = {
     try {
         const response = await ai.models.generateContent({
             model: FLASH_MODEL,
-            contents: `Check compliance for Meta Template: ${requiredName} (${category}). Content: "${requiredContent}"`,
+            contents: `Check compliance for Meta Template: ${requiredName} (${category}). Content: "${requiredContent}"
+            
+            If category is UTILITY, content MUST NOT contain promotional words (sale, offer, discount, buy now).
+            If it violates, rewrite it to be neutral.`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {

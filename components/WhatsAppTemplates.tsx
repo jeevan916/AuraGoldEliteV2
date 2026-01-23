@@ -340,30 +340,42 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       }, 100);
   };
 
+  // --- NEW AI ACTION HANDLER ---
   const handleAiAutoFix = async (tpl: WhatsAppTemplate) => {
       setIsFixing(tpl.id);
       try {
+          // 1. Diagnose and Fix with Gemini
           const result = await geminiService.fixRejectedTemplate(tpl);
           
-          setTemplateName(result.fixedName);
-          setGeneratedContent(result.fixedContent);
-          setSelectedCategory(result.category);
-          setSelectedGroup(tpl.appGroup || 'UNCATEGORIZED');
-          setVariableExamples(result.variableExamples || []); 
-          setEditingStructure([]); 
-          setAiAnalysisReason(result.diagnosis);
-          
-          if (tpl.source === 'META' && tpl.id) {
-              setEditingMetaId(tpl.id);
+          // 2. Prepare Payload for Meta Update
+          const fixedTemplate = {
+              ...tpl,
+              content: result.fixedContent,
+              category: result.category,
+              variableExamples: result.variableExamples || []
+          };
+
+          // 3. EXECUTE ACTION: Call Meta API immediately
+          const updateResult = await whatsappService.editMetaTemplate(tpl.id, fixedTemplate);
+
+          if (updateResult.success) {
+              setAiAnalysisReason(`AUTO-FIX SUCCESS: ${result.diagnosis}`);
+              // Optimistic UI Update
+              onUpdate(templates.map(t => t.id === tpl.id ? { ...fixedTemplate, status: 'PENDING', rejectionReason: undefined } : t));
+              
+              // Load into Editor for review
+              setTemplateName(result.fixedName);
+              setGeneratedContent(result.fixedContent);
+              setSelectedCategory(result.category);
+              setVariableExamples(result.variableExamples || []);
+              
+              setActiveTab('BUILDER');
+              setHighlightEditor(true);
+              setTimeout(() => setHighlightEditor(false), 2000);
           } else {
-              setEditingMetaId(null);
+              setAiAnalysisReason(`AI FIX GENERATED BUT UPLOAD FAILED: ${updateResult.error?.message}`);
+              alert("AI fixed the content, but Meta rejected the update. Check console.");
           }
-          
-          setActiveTab('BUILDER');
-          setHighlightEditor(true);
-          setTimeout(() => setHighlightEditor(false), 2000);
-          
-          if (editorRef.current) editorRef.current.scrollIntoView({ behavior: 'smooth' });
       } catch (e: any) {
           alert(`Auto-fix failed: ${e.message}`);
       } finally {
