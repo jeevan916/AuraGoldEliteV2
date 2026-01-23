@@ -29,7 +29,6 @@ export async function initDb() {
             `CREATE TABLE IF NOT EXISTS templates (id VARCHAR(100) PRIMARY KEY, name VARCHAR(255), category VARCHAR(50), data LONGTEXT)`,
             `CREATE TABLE IF NOT EXISTS plan_templates (id VARCHAR(100) PRIMARY KEY, name VARCHAR(255), data LONGTEXT)`,
             `CREATE TABLE IF NOT EXISTS catalog (id VARCHAR(100) PRIMARY KEY, category VARCHAR(100), data LONGTEXT)`,
-            // NEW TABLE FOR SYSTEM ERRORS
             `CREATE TABLE IF NOT EXISTS system_errors (
                 id VARCHAR(100) PRIMARY KEY, 
                 source VARCHAR(100), 
@@ -38,16 +37,24 @@ export async function initDb() {
                 severity VARCHAR(20), 
                 timestamp DATETIME, 
                 context JSON
+            )`,
+            // NEW: Activity Audit Table
+            `CREATE TABLE IF NOT EXISTS system_activities (
+                id VARCHAR(100) PRIMARY KEY,
+                action_type VARCHAR(50),
+                details TEXT,
+                metadata JSON,
+                ip_address VARCHAR(45),
+                geo_location VARCHAR(255),
+                device_info VARCHAR(255),
+                timestamp DATETIME
             )`
         ];
         for (const sql of tables) await connection.query(sql);
         
-        // AUTO-MIGRATION: Attempt to add rateSilver column if missing
         try {
             await connection.query("ALTER TABLE gold_rates ADD COLUMN rateSilver DECIMAL(10, 2) DEFAULT 0");
-        } catch (e) {
-            // Ignore error if column already exists
-        }
+        } catch (e) { }
 
         connection.release();
         return { success: true };
@@ -68,3 +75,51 @@ export const ensureDb = async (req, res, next) => {
 };
 
 export const normalizePhone = (p) => p ? p.replace(/\D/g, '').slice(-12) : '';
+
+// --- NEW SERVER-SIDE LOGGING HELPER ---
+export const logDbActivity = async (actionType, details, metadata, req) => {
+    if (!pool) return;
+    try {
+        const ip = req ? (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim() : 'System';
+        const userAgent = req ? req.get('User-Agent') : 'Internal Process';
+        
+        // Resolve Geo Location (Async, don't block)
+        let location = 'Unknown';
+        if (ip && ip !== '::1' && ip !== '127.0.0.1' && !ip.startsWith('192.168')) {
+            try {
+                const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city,isp`);
+                const geoData = await geoRes.json();
+                if (geoData.status === 'success') {
+                    location = `${geoData.city}, ${geoData.regionName} (${geoData.isp})`;
+                }
+            } catch (e) {}
+        } else {
+            location = 'Local Network';
+        }
+
+        const enrichedMeta = {
+            ...metadata,
+            referer: req ? req.get('Referer') : undefined,
+            platform: userAgent.includes('Mobile') ? 'Mobile' : 'Desktop'
+        };
+
+        const connection = await pool.getConnection();
+        await connection.query(
+            `INSERT INTO system_activities (id, action_type, details, metadata, ip_address, geo_location, device_info, timestamp) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                `ACT-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                actionType,
+                details,
+                JSON.stringify(enrichedMeta),
+                ip,
+                location,
+                userAgent.substring(0, 250), // Truncate to fit
+                new Date()
+            ]
+        );
+        connection.release();
+    } catch (e) {
+        console.error("Failed to log activity:", e.message);
+    }
+};

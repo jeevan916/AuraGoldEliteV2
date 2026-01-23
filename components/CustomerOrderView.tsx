@@ -1,10 +1,11 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   CheckCircle2, Clock, MapPin, ShieldCheck, Box, CreditCard, 
-  Smartphone, Lock, AlertCircle, ArrowRight, QrCode, CalendarDays
+  Smartphone, Lock, AlertCircle, ArrowRight, QrCode, CalendarDays, LocateFixed
 } from 'lucide-react';
 import { Order, ProductionStatus } from '../types';
+import { errorService } from '../services/errorService';
 
 interface CustomerOrderViewProps {
   order: Order;
@@ -13,19 +14,52 @@ interface CustomerOrderViewProps {
 const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [showOriginal, setShowOriginal] = useState(false);
+  const [locationStatus, setLocationStatus] = useState<'PENDING' | 'GRANTED' | 'DENIED'>('PENDING');
+  const loggedRef = useRef(false);
 
   const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
   const remaining = order.totalAmount - totalPaid;
   const nextPayment = order.paymentPlan.milestones.find(m => m.status !== 'PAID');
 
   useEffect(() => {
+    // Basic View Logging on Mount (One time)
+    if (!loggedRef.current) {
+        loggedRef.current = true;
+        // Server already logs the basic access via middleware in api/core.js
+        // We add client-specific details here that server can't see (Screen size, etc)
+        errorService.logActivity('USER_ACTION', `Customer viewing order: ${order.id}`, {
+            orderId: order.id,
+            screen: `${window.innerWidth}x${window.innerHeight}`,
+            referrer: document.referrer
+        });
+    }
+
     if (remaining > 0) {
         const amount = nextPayment ? nextPayment.targetAmount : remaining;
         const upi = `upi://pay?pa=auragold@upi&pn=AuraGold%20Jewellers&tr=${order.id}&am=${amount}&cu=INR`;
-        // Use QuickChart API for reliable QR generation without build dependencies
         setQrUrl(`https://quickchart.io/qr?text=${encodeURIComponent(upi)}&margin=2&size=300`);
     }
   }, [remaining, nextPayment, order.id]);
+
+  const requestLocation = () => {
+      if (!navigator.geolocation) return;
+      
+      navigator.geolocation.getCurrentPosition(
+          (pos) => {
+              setLocationStatus('GRANTED');
+              errorService.logActivity('GPS_VERIFIED', `Customer Location: ${order.customerName}`, {
+                  lat: pos.coords.latitude,
+                  lng: pos.coords.longitude,
+                  accuracy: pos.coords.accuracy,
+                  orderId: order.id
+              });
+          },
+          (err) => {
+              setLocationStatus('DENIED');
+              console.warn("Geo denied", err);
+          }
+      );
+  };
 
   const upiLink = `upi://pay?pa=auragold@upi&pn=AuraGold%20Jewellery&tr=${order.id}&am=${nextPayment ? nextPayment.targetAmount : remaining}&cu=INR&tn=Order%20${order.id}`;
 
@@ -42,10 +76,17 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
               <h1 className="text-2xl font-black text-amber-500 tracking-tighter">AuraGold</h1>
               <p className="text-[10px] uppercase font-bold tracking-widest opacity-60">Customer Portal</p>
             </div>
-            <div className="bg-white/10 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
-               <span className="text-[10px] font-bold flex items-center gap-1">
-                 <Lock size={10} /> Secure View
-               </span>
+            <div className="flex flex-col gap-2 items-end">
+                <div className="bg-white/10 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
+                    <span className="text-[10px] font-bold flex items-center gap-1">
+                        <Lock size={10} /> Secure View
+                    </span>
+                </div>
+                {locationStatus === 'PENDING' && (
+                    <button onClick={requestLocation} className="text-[9px] bg-emerald-500/20 hover:bg-emerald-500/40 border border-emerald-500/50 text-emerald-300 px-2 py-1 rounded-full flex items-center gap-1 transition-colors">
+                        <LocateFixed size={10} /> Enable Location Security
+                    </button>
+                )}
             </div>
           </div>
           <div className="text-center">

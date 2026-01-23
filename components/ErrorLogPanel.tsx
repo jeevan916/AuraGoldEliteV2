@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   AlertTriangle, CheckCircle2, XCircle, Activity, Zap, 
   Terminal, ShieldCheck, HeartPulse, Search, Copy, 
-  Wrench, Code, RefreshCw, Loader2, BrainCircuit, Sparkles
+  Wrench, Code, RefreshCw, Loader2, BrainCircuit, Sparkles, MapPin, Globe, Monitor, Smartphone
 } from 'lucide-react';
 import { AppError, ActivityLogEntry, AppResolutionPath } from '../types';
 import { errorService } from '../services/errorService';
@@ -252,12 +252,32 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
         {activeTab === 'ACTIVITY' && (
             <div className="space-y-2">
                 {activities.map(act => (
-                    <div key={act.id} className="flex gap-4 items-center p-3 bg-white border border-slate-100 rounded-xl hover:border-slate-200 transition-all">
-                        <div className="text-[10px] font-mono text-slate-400 min-w-[60px]">{new Date(act.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
-                        <div className="w-px h-8 bg-slate-100"></div>
-                        <div>
-                            <p className="text-xs font-bold text-slate-700">{act.details}</p>
-                            <span className="text-[9px] font-black uppercase text-slate-300 tracking-widest">{act.actionType}</span>
+                    <div key={act.id} className="flex gap-4 items-start p-4 bg-white border border-slate-100 rounded-2xl hover:border-slate-200 transition-all">
+                        <div className="text-[10px] font-mono text-slate-400 min-w-[60px] pt-1">{new Date(act.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+                        <div className="w-px h-auto bg-slate-100 self-stretch"></div>
+                        <div className="flex-1">
+                            <p className="text-xs font-bold text-slate-800 leading-relaxed">{act.details}</p>
+                            <div className="flex items-center gap-3 mt-1.5">
+                                <span className="text-[9px] font-black uppercase text-slate-300 tracking-widest">{act.actionType}</span>
+                                
+                                {(act.metadata as any)?.location && (act.metadata as any)?.location !== 'Unknown' && (
+                                    <span className="flex items-center gap-1 text-[9px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                                        <MapPin size={10} /> {(act.metadata as any).location}
+                                    </span>
+                                )}
+                                
+                                {(act.metadata as any)?.ip && (
+                                    <span className="flex items-center gap-1 text-[9px] font-mono text-slate-400 bg-slate-50 px-2 py-0.5 rounded">
+                                        <Globe size={10} /> {(act.metadata as any).ip}
+                                    </span>
+                                )}
+
+                                {(act.metadata as any)?.platform && (
+                                    <span className="flex items-center gap-1 text-[9px] font-bold text-slate-500">
+                                        {(act.metadata as any).platform === 'Mobile' ? <Smartphone size={10}/> : <Monitor size={10}/>}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
                 ))}

@@ -1,9 +1,8 @@
 
 import express from 'express';
-import { getPool, ensureDb, normalizePhone } from './db.js';
+import { getPool, ensureDb, normalizePhone, logDbActivity } from './db.js';
 
 const router = express.Router();
-// CHANGED: v22.0 -> v20.0 (Stable)
 const META_API_VERSION = "v20.0";
 
 // Webhook Verification
@@ -79,7 +78,6 @@ router.get('/templates', ensureDb, async (req, res) => {
         });
         const data = await r.json();
         if (data.error) {
-            // Log to system_errors table for visibility
             const pool = getPool();
             const connection = await pool.getConnection();
             await connection.query(
@@ -87,7 +85,6 @@ router.get('/templates', ensureDb, async (req, res) => {
                 [`WA-ERR-${Date.now()}`, 'Meta Template Fetch', data.error.message, '', 'HIGH', new Date(), JSON.stringify(data.error)]
             );
             connection.release();
-            
             return res.status(400).json({ success: false, error: data.error, raw: data });
         }
 
@@ -126,6 +123,9 @@ router.post('/templates', ensureDb, async (req, res) => {
         const appTpl = { id: newId, name: payload.name, category: payload.category, content: payload.components?.find(c => c.type === 'BODY')?.text || '', status: 'PENDING', source: 'META', structure: payload.components };
         await connection.query(`INSERT INTO templates (id, name, category, data) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), data=VALUES(data)`, [newId, payload.name, payload.category, JSON.stringify(appTpl)]);
         connection.release();
+        
+        await logDbActivity('TEMPLATE_CREATED', `Created Template: ${payload.name}`, { template: payload.name }, req);
+        
         res.json({ success: true, data: data });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -150,13 +150,18 @@ router.post('/templates/:id', ensureDb, async (req, res) => {
         const pool = getPool();
         const connection = await pool.getConnection();
         const [rows] = await connection.query('SELECT data FROM templates WHERE id = ?', [templateId]);
+        let name = "Unknown";
         if (rows.length > 0) {
             const currentTpl = JSON.parse(rows[0].data);
+            name = currentTpl.name;
             currentTpl.structure = payload.components;
             currentTpl.content = payload.components?.find(c => c.type === 'BODY')?.text || currentTpl.content;
             await connection.query(`UPDATE templates SET data = ? WHERE id = ?`, [JSON.stringify(currentTpl), templateId]);
         }
         connection.release();
+        
+        await logDbActivity('TEMPLATE_EDITED', `Updated Template: ${name}`, { templateId, name }, req);
+        
         res.json({ success: true, data });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -181,6 +186,9 @@ router.delete('/templates', ensureDb, async (req, res) => {
         const connection = await pool.getConnection();
         await connection.query('DELETE FROM templates WHERE name = ?', [name]);
         connection.release();
+        
+        await logDbActivity('TEMPLATE_DELETED', `Deleted Template: ${name}`, { name }, req);
+        
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -214,9 +222,9 @@ router.post('/send', ensureDb, async (req, res) => {
         payload.text = { body: message };
     }
     
-    // DEBUG: Log payload to help user see what we are sending
-    console.log(`[WhatsApp Backend] Sending to ${to} via ${phoneId}`);
-    console.log(`[WhatsApp Backend] Payload:`, JSON.stringify(payload, null, 2));
+    // Log the Trigger Event (Who clicked "Send")
+    const actionDesc = templateName ? `Sent Template: ${templateName}` : 'Sent Manual Message';
+    await logDbActivity('WHATSAPP_SENT', actionDesc, { recipient: to, customer: customerName, template: templateName }, req);
 
     try {
         const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${phoneId}/messages`, {
@@ -226,13 +234,7 @@ router.post('/send', ensureDb, async (req, res) => {
         });
         const data = await r.json();
         
-        // DEBUG: Log Raw Response from Meta
-        console.log(`[WhatsApp Backend] Raw Response:`, JSON.stringify(data, null, 2));
-        
         if (!r.ok || data.error) {
-             console.error("[WhatsApp Backend] Meta Rejected Request:", data.error);
-             
-             // --- CRITICAL FIX: LOG ERROR TO DB SO FRONTEND SEES IT ---
              const pool = getPool();
              const connection = await pool.getConnection();
              await connection.query(
@@ -248,8 +250,6 @@ router.post('/send', ensureDb, async (req, res) => {
                 ]
              );
              connection.release();
-
-             // Pass 'raw' data back to frontend
              return res.status(400).json({ success: false, error: data.error?.message || "Meta API Error", raw: data });
         }
 
@@ -263,7 +263,6 @@ router.post('/send', ensureDb, async (req, res) => {
         }
         res.status(r.status).json({ success: r.ok, data });
     } catch (e) { 
-        console.error("[WhatsApp Backend] Internal Fetch Crash:", e);
         res.status(500).json({ success: false, error: e.message }); 
     }
 });

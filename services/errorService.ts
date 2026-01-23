@@ -16,8 +16,8 @@ class ErrorService {
   private lastErrorTime: number = 0;
 
   constructor() {
-    // Initial fetch from DB
     this.fetchErrorsFromDb();
+    this.fetchActivitiesFromDb();
   }
 
   private async fetchErrorsFromDb() {
@@ -30,6 +30,19 @@ class ErrorService {
           }
       } catch (e) {
           console.warn("[ErrorService] Failed to fetch historical errors", e);
+      }
+  }
+
+  private async fetchActivitiesFromDb() {
+      try {
+          const res = await fetch('/api/logs/activities');
+          const data = await res.json();
+          if (data.success && Array.isArray(data.activities)) {
+              this.activities = data.activities;
+              this.notify();
+          }
+      } catch (e) {
+          console.warn("[ErrorService] Failed to fetch activities", e);
       }
   }
 
@@ -62,7 +75,14 @@ class ErrorService {
       this.logError(source, msg, 'CRITICAL', reason?.stack, undefined, raw);
     });
 
-    this.logActivity('STATUS_UPDATE', 'Self-Healing Core V5.1 Connected (DB Persisted Logs)');
+    // We don't log this to DB to save noise, just local state for session
+    this.activities.unshift({
+        id: 'INIT',
+        actionType: 'STATUS_UPDATE',
+        details: 'Audit System Connected',
+        timestamp: new Date().toISOString()
+    });
+    this.notify();
   }
 
   private notify() {
@@ -77,7 +97,7 @@ class ErrorService {
     };
   }
 
-  public logActivity(
+  public async logActivity(
       actionType: ActivityLogEntry['actionType'],
       details: string,
       metadata?: any
@@ -89,8 +109,21 @@ class ErrorService {
           details,
           metadata
       };
+      
+      // Update UI Immediately
       this.activities = [newActivity, ...this.activities].slice(0, this.MAX_ACTIVITIES);
       this.notify();
+
+      // Persist to Server (which handles IP/Geo resolution)
+      try {
+          await fetch('/api/logs/activity', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newActivity)
+          });
+      } catch (e) {
+          console.warn("Failed to persist activity log", e);
+      }
   }
 
   public async logError(
@@ -117,11 +150,9 @@ class ErrorService {
       rawContext 
     };
 
-    // 1. Update Local State Immediately
     this.errors = [newError, ...this.errors].slice(0, this.MAX_ERRORS);
     this.notify();
 
-    // 2. Persist to Database asynchronously
     try {
         await fetch('/api/logs/error', {
             method: 'POST',
@@ -132,7 +163,6 @@ class ErrorService {
         console.error("Critical: Failed to save error to DB", e);
     }
 
-    // 3. Trigger AI
     if (severity !== 'LOW') {
         this.runIntelligentAnalysis(newError.id);
     }

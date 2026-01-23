@@ -1,12 +1,12 @@
 
 import express from 'express';
-import { getPool, ensureDb } from './db.js';
+import { getPool, ensureDb, logDbActivity } from './db.js';
 
 const router = express.Router();
 
 router.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
-// --- NEW: FETCH ERROR LOGS ---
+// --- SYSTEM LOGS (ERRORS) ---
 router.get('/logs/errors', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
@@ -22,7 +22,7 @@ router.get('/logs/errors', ensureDb, async (req, res) => {
             severity: row.severity,
             timestamp: row.timestamp,
             rawContext: row.context,
-            status: 'NEW' // Default status for viewing
+            status: 'NEW' 
         }));
         
         res.json({ success: true, errors });
@@ -31,27 +31,60 @@ router.get('/logs/errors', ensureDb, async (req, res) => {
     }
 });
 
-// --- NEW: SAVE ERROR LOG ---
 router.post('/logs/error', ensureDb, async (req, res) => {
     try {
         const { id, source, message, stack, severity, timestamp, rawContext } = req.body;
         const pool = getPool();
         const connection = await pool.getConnection();
-        
         await connection.query(
             'INSERT INTO system_errors (id, source, message, stack, severity, timestamp, context) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [id, source, message, stack || '', severity || 'MEDIUM', new Date(timestamp), JSON.stringify(rawContext || {})]
         );
-        
         connection.release();
         res.json({ success: true });
     } catch (e) {
-        console.error("Failed to write error log to DB:", e);
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-// --- NEW PUBLIC ENDPOINT ---
+// --- NEW: ACTIVITY LOGS ---
+router.get('/logs/activities', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query('SELECT * FROM system_activities ORDER BY timestamp DESC LIMIT 300');
+        connection.release();
+        
+        const activities = rows.map(row => ({
+            id: row.id,
+            actionType: row.action_type,
+            details: row.details,
+            timestamp: row.timestamp,
+            metadata: {
+                ...row.metadata,
+                ip: row.ip_address,
+                location: row.geo_location,
+                device: row.device_info
+            }
+        }));
+        res.json({ success: true, activities });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+router.post('/logs/activity', ensureDb, async (req, res) => {
+    try {
+        const { actionType, details, metadata } = req.body;
+        // Pass req to capture IP of the reporter (Client)
+        await logDbActivity(actionType, details, metadata, req);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// --- PUBLIC ORDER ACCESS ---
 router.get('/public/order/:token', ensureDb, async (req, res) => {
     try {
         const token = req.params.token;
@@ -59,18 +92,19 @@ router.get('/public/order/:token', ensureDb, async (req, res) => {
 
         const pool = getPool();
         const connection = await pool.getConnection();
-        
-        // Fetch raw data (Optimization: In production, add a generated column for shareToken to index it)
         const [rows] = await connection.query('SELECT data FROM orders');
         connection.release();
         
-        // Find matching order in JS (Safe for <10k active orders)
         const order = rows.map(r => JSON.parse(r.data)).find(o => o.shareToken === token);
         
         if (order) {
-            // Security: Strip internal notes or cost prices if necessary before sending
+            // Log this specific access event with enriched metadata
+            await logDbActivity('LINK_OPENED', `Customer viewed Order ${order.id}`, { orderId: order.id, customer: order.customerName }, req);
+            
             res.json({ success: true, order });
         } else {
+            // Log failed access attempt
+            await logDbActivity('SECURITY_ALERT', `Invalid Order Link Attempt: ${token}`, { token }, req);
             res.status(404).json({ success: false, error: "Invalid or Expired Order Link" });
         }
     } catch (e) {
@@ -114,7 +148,6 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
             templates: templates.map(r => JSON.parse(r.data)),
             catalog: catalog.map(r => JSON.parse(r.data)),
             settings: { 
-                // Core Values
                 currentGoldRate24K: core.currentGoldRate24K || 7500,
                 currentGoldRate22K: core.currentGoldRate22K || 6870,
                 currentGoldRate18K: core.currentGoldRate18K || 5625,
@@ -124,8 +157,6 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
                 gracePeriodHours: core.gracePeriodHours || 24,
                 followUpIntervalDays: core.followUpIntervalDays || 3,
                 goldRateFetchIntervalMinutes: core.goldRateFetchIntervalMinutes || 60,
-                
-                // Integration Mappings
                 whatsappPhoneNumberId: intMap.whatsapp?.phoneId, 
                 whatsappBusinessAccountId: intMap.whatsapp?.accountId, 
                 whatsappBusinessToken: intMap.whatsapp?.token,
