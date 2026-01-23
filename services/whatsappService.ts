@@ -30,30 +30,33 @@ const sanitizeForMeta = (text: string | number | undefined | null): string => {
 /**
  * Helper to construct the Meta Components array correctly.
  * Crucial for templates with variables {{1}}, as they REQUIRE an 'example' field.
- * FIX: Auto-pads examples if they are fewer than the variables in content.
+ * FIX: Uses MAX variable index (e.g. {{3}} means 3 examples needed) instead of match count.
  */
 const constructMetaComponents = (content: string, variableExamples: string[] = [], structure?: any[]) => {
     // If a structure is provided (e.g. Buttons/Headers), we use it but update the BODY
-    const components = structure ? [...structure] : [];
+    const components = structure ? JSON.parse(JSON.stringify(structure)) : [];
     
     // Find or Create BODY component
-    const bodyIndex = components.findIndex(c => c.type === 'BODY');
-    const varMatches = content.match(/{{[0-9]+}}/g) || [];
-    const varCount = varMatches.length;
+    let bodyIndex = components.findIndex((c: any) => c.type === 'BODY');
+    
+    // Calculate the highest variable index used (e.g. {{3}} -> 3)
+    const matches = content.match(/{{([0-9]+)}}/g) || [];
+    const indices = matches.map(m => parseInt(m.replace(/[^0-9]/g, ''), 10));
+    const maxIndex = indices.length > 0 ? Math.max(...indices) : 0;
 
     const bodyComponent: any = {
         type: 'BODY',
         text: content
     };
 
-    if (varCount > 0) {
-        // Safe padding: Ensure we have enough examples for all variables
+    if (maxIndex > 0) {
+        // Safe padding: Ensure we have enough examples for the highest index
         const safeExamples = [...variableExamples];
-        while(safeExamples.length < varCount) {
+        while(safeExamples.length < maxIndex) {
             safeExamples.push(`sample_${safeExamples.length + 1}`);
         }
-        // Slice if too many (Meta is strict on exact count too sometimes)
-        const finalExamples = safeExamples.slice(0, varCount);
+        // Slice to exact count required
+        const finalExamples = safeExamples.slice(0, maxIndex);
 
         bodyComponent.example = {
             body_text: [finalExamples]
@@ -61,7 +64,7 @@ const constructMetaComponents = (content: string, variableExamples: string[] = [
     }
 
     if (bodyIndex >= 0) {
-        components[bodyIndex] = bodyComponent;
+        components[bodyIndex] = { ...components[bodyIndex], ...bodyComponent };
     } else {
         components.push(bodyComponent);
     }

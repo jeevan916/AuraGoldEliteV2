@@ -149,19 +149,22 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       }
   };
 
-  // Helper to ensure example count matches variable count to prevent "Invalid parameter"
+  // Helper to ensure example count matches variable MAX index
   const alignExamples = (content: string, providedExamples: string[] = []): string[] => {
-      const varCount = (content.match(/{{[0-9]+}}/g) || []).length;
+      const matches = content.match(/{{([0-9]+)}}/g) || [];
+      const indices = matches.map(m => parseInt(m.replace(/[^0-9]/g, ''), 10));
+      const maxIndex = indices.length > 0 ? Math.max(...indices) : 0;
+      
       let finalExamples = [...providedExamples];
       
       // Pad if missing
-      while(finalExamples.length < varCount) {
+      while(finalExamples.length < maxIndex) {
           finalExamples.push(`sample_${finalExamples.length + 1}`);
       }
       
-      // Trim if too many
-      if(finalExamples.length > varCount) {
-          finalExamples = finalExamples.slice(0, varCount);
+      // Trim if too many (Meta checks exact count for the max index)
+      if(finalExamples.length > maxIndex) {
+          finalExamples = finalExamples.slice(0, maxIndex);
       }
       
       return finalExamples;
@@ -219,7 +222,8 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
           source: 'LOCAL',
           category: req.category as MetaCategory,
           variableExamples: safeExamples,
-          appGroup: req.appGroup as AppTemplateGroup
+          appGroup: req.appGroup as AppTemplateGroup,
+          structure: (req as any).structure // IMPORTANT: Pass original structure if defined (buttons etc)
       };
       const result = await whatsappService.createMetaTemplate(payload);
       if (result.success) addLog(`SUCCESS: ${req.name} deployed.`);
@@ -235,7 +239,8 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
           ...existingMetaTpl,
           content: fix.optimizedContent,
           variableExamples: safeExamples, 
-          structure: undefined 
+          // Preserve required structure if it exists, otherwise undefined
+          structure: (requiredDef as any).structure ? (requiredDef as any).structure : undefined
       };
       
       if (existingMetaTpl.id.startsWith('sys-') || existingMetaTpl.id.startsWith('local-')) {
@@ -260,7 +265,8 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
               source: 'LOCAL',
               category: def.category as MetaCategory,
               variableExamples: def.examples,
-              appGroup: def.appGroup as AppTemplateGroup
+              appGroup: def.appGroup as AppTemplateGroup,
+              structure: (def as any).structure
           };
           const result = await whatsappService.createMetaTemplate(payload);
           if (result.success) {
