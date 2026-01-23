@@ -108,9 +108,14 @@ const App = () => {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [selectedChatPhone, setSelectedChatPhone] = useState<string | null>(null);
+  
+  // Public View State
+  const [publicOrder, setPublicOrder] = useState<Order | null>(null);
+  const [isPublicMode, setIsPublicMode] = useState(false);
+
+  // Admin Data States
   const [settings, setSettings] = useState<GlobalSettings>(storageService.getSettings());
   const [planTemplates, setPlanTemplates] = useState<PaymentPlanTemplate[]>(storageService.getPlanTemplates());
-  
   const [systemErrors, setSystemErrors] = useState<AppError[]>([]);
   const [systemActivities, setSystemActivities] = useState<ActivityLogEntry[]>([]);
   const [manualCustomers, setManualCustomers] = useState<Customer[]>(storageService.getCustomers());
@@ -119,6 +124,31 @@ const App = () => {
   const { logs, addLog, templates, setTemplates } = useWhatsApp();
 
   useEffect(() => {
+    // 1. CHECK FOR PUBLIC LINK FIRST
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+
+    if (token) {
+        setIsPublicMode(true);
+        setView('CUSTOMER_VIEW');
+        
+        // Fetch single order from secure endpoint
+        fetch(`/api/public/order/${token}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.order) {
+                    setPublicOrder(data.order);
+                } else {
+                    alert("Invalid Link. Please check with AuraGold support.");
+                }
+            })
+            .catch(e => console.error("Link Error:", e));
+            
+        // STOP HERE: Do not load admin sockets or full database
+        return;
+    }
+
+    // 2. ADMIN INITIALIZATION (Only if not public)
     errorService.initGlobalListeners();
     const unsubscribeErrors = errorService.subscribe((errs, acts) => {
         setSystemErrors(errs);
@@ -149,7 +179,6 @@ const App = () => {
         }));
     });
 
-    // Listen for Catalog/Customer updates from other clients
     socket.on('orders_sync', () => {
         // Just force a re-read from storage since storageService handles the merge
     });
@@ -163,6 +192,9 @@ const App = () => {
   }, []);
 
   const derivedCustomers = useMemo(() => {
+      // Logic only runs if we have orders loaded (Admin Mode)
+      if (isPublicMode) return [];
+      
       const customerMap = new Map<string, Customer>();
       const normalize = (p: string) => p ? p.replace(/\D/g, '').slice(-10) : '';
       manualCustomers.forEach(c => {
@@ -193,7 +225,7 @@ const App = () => {
           }
       });
       return Array.from(customerMap.values()).sort((a, b) => b.totalSpent - a.totalSpent);
-  }, [orders, manualCustomers]);
+  }, [orders, manualCustomers, isPublicMode]);
 
   const handleUpdateSettings = async (newSettings: GlobalSettings) => {
       setSettings(newSettings);
@@ -205,6 +237,13 @@ const App = () => {
 
   const renderContent = () => {
       switch(view) {
+          // --- PUBLIC VIEW ---
+          case 'CUSTOMER_VIEW': 
+              return publicOrder 
+                ? <CustomerOrderView order={publicOrder} /> 
+                : <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-amber-500" /></div>;
+
+          // --- ADMIN VIEWS ---
           case 'DASH': return <Dashboard orders={orders} currentRates={{k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K, silver: settings.currentSilverRate}} onRefreshRates={async () => {
               const res = await goldRateService.fetchLiveRate();
               if (res.success) setSettings({...settings, currentGoldRate24K: res.rate24K, currentGoldRate22K: res.rate22K, currentSilverRate: res.silver});
@@ -244,6 +283,20 @@ const App = () => {
       }
   };
 
+  // IF PUBLIC MODE: Return CLEAN Layout (No Sidebar, No Headers)
+  if (isPublicMode) {
+      return (
+        <ErrorBoundary>
+            <div className="bg-slate-50 min-h-screen font-sans text-slate-900">
+               <Suspense fallback={<LoadingScreen />}>
+                  {renderContent()}
+               </Suspense>
+            </div>
+        </ErrorBoundary>
+      );
+  }
+
+  // STANDARD ADMIN LAYOUT
   return (
     <ErrorBoundary>
       <div className="flex h-screen bg-[#f8f9fa] font-sans text-slate-900 overflow-hidden">
