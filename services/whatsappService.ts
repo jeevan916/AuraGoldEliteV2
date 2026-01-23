@@ -14,6 +14,20 @@ export interface WhatsAppResponse {
 
 const API_BASE = process.env.VITE_API_BASE_URL || '';
 
+/**
+ * Helper to sanitize text for Meta API.
+ * Meta rejects payloads if parameters contain newlines (\n) or tabs (\t).
+ * We replace them with a visual separator.
+ */
+const sanitizeForMeta = (text: string | number | undefined | null): string => {
+    if (text === null || text === undefined) return " ";
+    return text.toString()
+        .replace(/[\r\n]+/g, ' | ') // Replace newlines with a pipe separator
+        .replace(/\t/g, ' ')        // Replace tabs with space
+        .replace(/\s{2,}/g, ' ')    // Collapse multiple spaces
+        .trim();
+};
+
 export const whatsappService = {
   formatPhoneNumber(phone: string): string {
     if (!phone) return '';
@@ -184,7 +198,7 @@ export const whatsappService = {
                 type: "body", 
                 parameters: bodyVariables.map(v => ({ 
                     type: "text", 
-                    text: (v || " ").toString() 
+                    text: sanitizeForMeta(v) // <--- SANITIZATION APPLIED HERE
                 })) 
             });
         }
@@ -197,7 +211,7 @@ export const whatsappService = {
                 index: 0, 
                 parameters: [{ 
                     type: "text", 
-                    text: buttonVariable.toString() 
+                    text: sanitizeForMeta(buttonVariable) 
                 }] 
             });
         }
