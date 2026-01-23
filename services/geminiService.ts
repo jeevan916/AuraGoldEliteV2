@@ -7,21 +7,20 @@ import {
   PaymentPlanTemplate, RiskProfile 
 } from "../types";
 
-// Latest Model Definitions as per instructions
+// Latest Model Definitions
 const PRO_MODEL = 'gemini-3-pro-preview';
 const FLASH_MODEL = 'gemini-3-flash-preview';
 
-// Use process.env.API_KEY directly for initialization as per guidelines
 const getAI = () => {
     const key = process.env.API_KEY;
     if (!key || key.includes('API_KEY')) return null;
-    // Always use the named parameter apiKey for GoogleGenAI initialization
     return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 export const geminiService = {
   /**
-   * Deep Error Diagnosis for System Self-Healing
+   * Deep Error Diagnosis & Code Patcher
+   * Acts as a Senior Engineer debugging your failed API calls.
    */
   async diagnoseError(message: string, source: string, stack?: string, rawContext?: any): Promise<{ 
       explanation: string, 
@@ -36,21 +35,33 @@ export const geminiService = {
     try {
         const response = await ai.models.generateContent({
             model: PRO_MODEL,
-            contents: `Analyze this system error for a luxury jewelry CRM.
+            contents: `You are a Senior TypeScript/React Engineer debugging a production error in a Jewelry CRM.
+            
+            ERROR DETAILS:
             Source: ${source}
             Message: ${message}
-            Stack: ${stack || 'N/A'}
-            Context: ${JSON.stringify(rawContext || {})}
+            Stack Trace: ${stack || 'N/A'}
             
-            Determine if this is a configuration error (API Key/Template) or a logic bug.`,
+            DATA CONTEXT (Payload/State): 
+            ${JSON.stringify(rawContext || {}, null, 2)}
+            
+            TASK:
+            1. Analyze why the code failed. 
+            2. If it's a WhatsApp Meta API error (e.g., param count mismatch, invalid format), compare the 'payload' sent vs the 'error' received.
+            3. If the code logic is faulty (e.g., sending 3 params instead of 4), GENERATE THE CORRECT TYPESCRIPT CODE SNIPPET to fix it.
+            
+            OUTPUT RULES:
+            - If it requires a code change, set fixType to 'MANUAL_CODE'.
+            - In 'implementationPrompt', provide the EXACT code block to replace the faulty logic.
+            - If it's just a template sync issue, set fixType to 'AUTO' and action to 'REPAIR_TEMPLATE'.`,
             config: { 
                 responseMimeType: "application/json",
                 responseSchema: {
                     type: Type.OBJECT,
                     properties: {
-                        explanation: { type: Type.STRING },
+                        explanation: { type: Type.STRING, description: "Concise technical root cause." },
                         fixType: { type: Type.STRING, enum: ['AUTO', 'MANUAL_CODE', 'CONFIG'] },
-                        implementationPrompt: { type: Type.STRING },
+                        implementationPrompt: { type: Type.STRING, description: "Markdown code block with the fix." },
                         action: { type: Type.STRING, enum: ['REPAIR_TEMPLATE', 'RETRY_API'] },
                         resolutionPath: { type: Type.STRING, enum: ['settings', 'templates', 'whatsapp', 'none'] }
                     },
@@ -184,7 +195,6 @@ export const geminiService = {
 
   /**
    * Auto-Fix Rejected Templates
-   * This is the "Compliance Officer" that takes action on Meta rejections.
    */
   async fixRejectedTemplate(template: WhatsAppTemplate): Promise<{ 
       fixedName: string, 

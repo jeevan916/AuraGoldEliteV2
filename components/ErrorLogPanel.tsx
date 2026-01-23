@@ -40,8 +40,10 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
   }, [errors]);
 
   const copyToClipboard = (text: string) => {
-      navigator.clipboard.writeText(text);
-      alert("Implementation Prompt Copied! Paste this into AI Studio to fix the bug.");
+      // Clean up markdown block markers for clean copy
+      const cleanText = text.replace(/```typescript|```js|```/g, '').trim();
+      navigator.clipboard.writeText(cleanText);
+      alert("Code Snippet Copied! Paste this into your project.");
   };
 
   const handleReanalyze = (errorId: string) => {
@@ -197,19 +199,19 @@ const ErrorLogPanel: React.FC<ErrorLogPanelProps> = ({ errors, onClear, onResolv
 
                                     {/* THE GOLDEN FEATURE: Implementation Prompt */}
                                     {err.status === 'REQUIRES_CODE_CHANGE' && err.implementationPrompt && (
-                                        <div className="mt-2 bg-white border border-indigo-200 rounded-xl overflow-hidden">
-                                            <div className="bg-indigo-100 px-3 py-2 flex justify-between items-center">
-                                                <span className="text-[9px] font-black uppercase text-indigo-700 flex items-center gap-1">
-                                                    <Terminal size={10} /> AI Implementation Prompt
+                                        <div className="mt-2 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
+                                            <div className="bg-slate-800 px-3 py-2 flex justify-between items-center border-b border-slate-700">
+                                                <span className="text-[9px] font-black uppercase text-emerald-400 flex items-center gap-1">
+                                                    <Terminal size={10} /> Suggested Code Patch
                                                 </span>
                                                 <button 
                                                     onClick={() => copyToClipboard(err.implementationPrompt!)}
-                                                    className="text-[9px] font-bold bg-white px-2 py-1 rounded text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                                                    className="text-[9px] font-bold bg-slate-700 text-slate-300 px-2 py-1 rounded hover:bg-slate-600 hover:text-white flex items-center gap-1 transition-colors"
                                                 >
                                                     <Copy size={10} /> Copy Fix
                                                 </button>
                                             </div>
-                                            <div className="p-3 text-[10px] font-mono text-slate-600 leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto">
+                                            <div className="p-3 text-[10px] font-mono text-emerald-200 leading-relaxed whitespace-pre-wrap overflow-x-auto">
                                                 {err.implementationPrompt}
                                             </div>
                                         </div>
