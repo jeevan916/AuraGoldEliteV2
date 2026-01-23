@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   MessageSquare, BrainCircuit, Sparkles, Save, Edit, 
@@ -452,13 +451,6 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
       return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   };
 
-  const QUICK_PROMPTS = [
-    { label: "Payment Reminder", prompt: "Create a polite but firm payment reminder for a jewelry installment that is 3 days overdue." },
-    { label: "Production Update", prompt: "Notify customer that their ring casting is done and moved to stone setting stage." },
-    { label: "Setu Payment Link", prompt: "Create a template for Setu UPI payment link with a 'Pay Now' action button." },
-    { label: "Delivery Ready", prompt: "Exciting news: The jewelry is ready for pickup at the store. Remind to bring ID." }
-  ];
-
   return (
     <div className="space-y-6 animate-fadeIn pb-32 flex flex-col">
       {/* Header & Separate Tabs */}
@@ -567,13 +559,61 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
         </div>
       )}
 
-      {/* ... (Other tabs remain unchanged in structure, just ensuring the logic above is used) ... */}
+      {/* --- TAB: AUTOMATION (Restored) --- */}
+      {activeTab === 'AUTOMATION' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {SYSTEM_TRIGGER_MAP.map(trigger => {
+                    const match = templates.find(t => t.name === trigger.defaultTemplateName);
+                    return (
+                        <div key={trigger.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-3">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                        <Workflow size={16} className="text-indigo-500" />
+                                        {trigger.label}
+                                    </h4>
+                                    <p className="text-[10px] text-slate-500 mt-1">{trigger.description}</p>
+                                </div>
+                                <div className={`px-2 py-1 rounded text-[9px] font-black uppercase ${match ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                    {match ? 'Active' : 'Inactive'}
+                                </div>
+                            </div>
+                            
+                            {match ? (
+                                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs text-slate-600 font-mono truncate">
+                                    {match.name}
+                                </div>
+                            ) : (
+                                <div className="p-3 rounded-xl border border-dashed border-slate-300 text-xs text-slate-400 text-center italic">
+                                    No template linked
+                                </div>
+                            )}
+
+                            <div className="flex gap-2 mt-auto">
+                                <button 
+                                    onClick={() => handleCreateVariant(trigger)}
+                                    className="flex-1 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-[10px] font-bold uppercase hover:bg-indigo-100 transition-colors"
+                                >
+                                    Create Variant
+                                </button>
+                                {!match && (
+                                    <button 
+                                        onClick={() => handleDeployStandard(trigger, REQUIRED_SYSTEM_TEMPLATES.find(t => t.name === trigger.defaultTemplateName))}
+                                        className="flex-1 py-2 bg-slate-900 text-white rounded-lg text-[10px] font-bold uppercase hover:bg-slate-800 transition-colors"
+                                    >
+                                        Deploy Standard
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+      )}
       
       {activeTab === 'BUILDER' && (
-          // ... (Existing Builder code, just verify handlers use new logic)
           <div className="flex flex-col lg:grid lg:grid-cols-12 gap-8">
               <div className="lg:col-span-4 space-y-6">
-                  {/* GENERATIVE PROMPT BOX - Keeping existing UI */}
                   <div className="bg-gradient-to-br from-indigo-50 to-white p-6 rounded-3xl border border-indigo-100 shadow-sm relative overflow-hidden">
                       <div className="flex items-center gap-3 mb-4 relative z-10">
                           <div className="p-3 bg-indigo-100 text-indigo-600 rounded-xl">
@@ -670,7 +710,110 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           </div>
       )}
 
-      {/* ... Keep AUTOMATION, LIBRARY, ISSUES tabs using the updated state logic ... */}
+      {/* --- TAB: LIBRARY (Restored) --- */}
+      {activeTab === 'LIBRARY' && (
+            <div className="space-y-8">
+                <div className="flex justify-between items-center bg-white p-4 rounded-2xl border shadow-sm">
+                    <div>
+                        <h3 className="font-bold text-slate-800">Template Registry</h3>
+                        <p className="text-xs text-slate-500">Local & Meta Synced Templates</p>
+                    </div>
+                    <button 
+                        onClick={() => handleSyncFromMeta(false)} 
+                        disabled={syncingMeta}
+                        className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-slate-50 flex items-center gap-2"
+                    >
+                        <RefreshCw size={14} className={syncingMeta ? 'animate-spin' : ''} />
+                        {syncingMeta ? 'Syncing...' : 'Sync from Meta'}
+                    </button>
+                </div>
+
+                {Object.entries(groupedTemplates).map(([group, rawList]) => {
+                    const groupTemplates = rawList as WhatsAppTemplate[];
+                    if (groupTemplates.length === 0) return null;
+                    return (
+                        <div key={group} className="space-y-3">
+                            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                                <FolderOpen size={12} /> {getGroupLabel(group)}
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {groupTemplates.map(tpl => (
+                                    <div key={tpl.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all group relative">
+                                        <div className="flex justify-between items-start mb-3">
+                                            <div className="flex items-center gap-2">
+                                                {tpl.source === 'META' ? <Cloud size={14} className="text-blue-400" /> : <Laptop size={14} className="text-slate-400" />}
+                                                <span className="font-bold text-sm text-slate-800 truncate max-w-[150px]" title={tpl.name}>{tpl.name}</span>
+                                            </div>
+                                            <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-full ${getStatusColor(tpl.status)}`}>
+                                                {tpl.status || 'DRAFT'}
+                                            </span>
+                                        </div>
+                                        
+                                        <p className="text-xs text-slate-500 line-clamp-3 mb-4 h-12 leading-relaxed">
+                                            {tpl.content}
+                                        </p>
+
+                                        <div className="flex gap-2 border-t pt-3">
+                                            <button onClick={() => handleEditTemplate(tpl)} className="flex-1 py-2 rounded-lg bg-slate-50 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-100 flex items-center justify-center gap-1">
+                                                <Edit size={12} /> Edit
+                                            </button>
+                                            <button onClick={() => handleDeleteTemplate(tpl)} className="py-2 px-3 rounded-lg bg-white border border-slate-200 text-rose-500 hover:bg-rose-50 hover:border-rose-200 transition-colors">
+                                                <Trash2 size={12} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )
+                })}
+            </div>
+      )}
+
+      {/* --- TAB: ISSUES (Restored) --- */}
+      {activeTab === 'ISSUES' && (
+            <div className="space-y-4">
+                {rejectedTemplates.length === 0 ? (
+                    <div className="text-center py-20 text-slate-400">
+                        <CheckCircle size={48} className="mx-auto mb-4 opacity-20" />
+                        <p className="font-bold uppercase tracking-widest text-sm">No Rejected Templates</p>
+                    </div>
+                ) : (
+                    rejectedTemplates.map(tpl => (
+                        <div key={tpl.id} className="bg-rose-50 border border-rose-100 p-6 rounded-2xl flex flex-col md:flex-row gap-6">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <AlertTriangle className="text-rose-600" size={20} />
+                                    <h3 className="font-bold text-rose-800">{tpl.name}</h3>
+                                </div>
+                                <p className="text-sm text-rose-700 mb-4 bg-white/50 p-3 rounded-xl border border-rose-100">
+                                    Reason: <span className="font-bold">{tpl.rejectionReason || 'Unknown Policy Violation'}</span>
+                                </p>
+                                <div className="text-xs text-slate-600 italic bg-white p-3 rounded-xl border border-slate-100">
+                                    "{tpl.content}"
+                                </div>
+                            </div>
+                            <div className="flex flex-col justify-center gap-3 min-w-[200px]">
+                                <button 
+                                    onClick={() => handleAiAutoFix(tpl)}
+                                    disabled={!!isFixing}
+                                    className="bg-rose-600 text-white py-3 rounded-xl font-bold text-xs uppercase shadow-lg hover:bg-rose-700 flex items-center justify-center gap-2"
+                                >
+                                    {isFixing === tpl.id ? <Loader2 className="animate-spin" /> : <Sparkles size={16} />}
+                                    AI Auto-Fix
+                                </button>
+                                <button 
+                                    onClick={() => handleDeleteTemplate(tpl)}
+                                    className="bg-white border border-rose-200 text-rose-600 py-3 rounded-xl font-bold text-xs uppercase hover:bg-rose-50"
+                                >
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+      )}
       
     </div>
   );
