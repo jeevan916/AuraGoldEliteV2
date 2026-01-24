@@ -73,9 +73,12 @@ router.get('/templates', ensureDb, async (req, res) => {
 
     try {
         let allTemplates = [];
+        // Pagination Logic: Start with the first page
         let nextUrl = `https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates?limit=100`;
 
-        // Pagination Loop
+        console.log("[Meta Sync] Starting fetch loop...");
+
+        // Loop until nextUrl is null
         while (nextUrl) {
             const r = await fetch(nextUrl, {
                 method: 'GET',
@@ -88,11 +91,12 @@ router.get('/templates', ensureDb, async (req, res) => {
                 return res.status(400).json({ success: false, error: data.error, raw: data });
             }
 
-            if (data.data) {
+            if (data.data && Array.isArray(data.data)) {
                 allTemplates = [...allTemplates, ...data.data];
+                console.log(`[Meta Sync] Fetched ${data.data.length} templates. Total so far: ${allTemplates.length}`);
             }
             
-            // Check for next page
+            // Update nextUrl for the next iteration, or set to null to stop
             nextUrl = data.paging?.next || null;
         }
 
@@ -117,6 +121,7 @@ router.get('/templates', ensureDb, async (req, res) => {
         
         res.json({ success: true, data: allTemplates });
     } catch (e) {
+        console.error("[Meta Sync] Fatal Error:", e);
         res.status(500).json({ success: false, error: e.message });
     }
 });
