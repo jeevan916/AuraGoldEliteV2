@@ -131,34 +131,34 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     content: "Dear {{1}}, your Order {{2}} has been revised. New Total: ₹{{3}}. Reason: {{4}}. View updated details here: https://order.auragoldelite.com/?token={{5}}",
     examples: ["Raj", "ORD-99", "55000", "Weight Adjustment", "XyZ789"]
   },
-  // 4) Payment Received (Store)
+  // 4) Payment Received (Store) - FIXED for Meta Ratio Policy
   {
     name: 'auragold_payment_receipt_store',
     description: 'Cash/Card/Old Gold receipt at store.',
     category: 'UTILITY',
     appGroup: 'PAYMENT_COLLECTION',
     variables: ['customer_name', 'amount_paid', 'payment_mode', 'order_id', 'balance_remaining'],
-    content: "Dear {{1}}, Receipt: We received ₹{{2}} via {{3}} for Order {{4}}. Thank you for visiting! Remaining Balance: ₹{{5}}.",
+    content: "Hello {{1}}, this is an official receipt from AuraGold. We acknowledge receiving a payment of ₹{{2}} via {{3}} towards your Order ID {{4}}. Thank you for visiting our store. Your remaining outstanding balance is ₹{{5}}.",
     examples: ["Priya", "20000", "Cash", "ORD-123", "5000"]
   },
-  // 5) Stage Update
+  // 5) Stage Update - FIXED for Meta Ratio Policy
   {
     name: 'auragold_production_update',
     description: 'Moved to next stage (Processing, Ready, etc).',
     category: 'UTILITY',
     appGroup: 'ORDER_STATUS',
     variables: ['customer_name', 'item_name', 'order_id', 'new_stage', 'token_link'],
-    content: "Status Update {{1}}: Your {{2}} (Order {{3}}) has moved to: {{4}}. Track progress: https://order.auragoldelite.com/?token={{5}}",
+    content: "Hello {{1}}, we have an update regarding your item {{2}} under Order ID {{3}}. The production status has now moved to the {{4}} stage. You can view the detailed progress tracking here: https://order.auragoldelite.com/?token={{5}}",
     examples: ["Amit", "Necklace", "ORD-55", "Hallmarking", "AbC999"]
   },
-  // 6) Remote Payment Success
+  // 6) Remote Payment Success - FIXED for Meta Ratio Policy
   {
     name: 'auragold_payment_success_remote',
     description: 'Success for Setu/Razorpay.',
     category: 'UTILITY',
     appGroup: 'PAYMENT_COLLECTION',
     variables: ['customer_name', 'amount', 'method', 'order_id', 'balance_remaining'],
-    content: "Dear {{1}}, Payment Confirmed! We received ₹{{2}} via {{3}} against Order {{4}}. Your new balance is ₹{{5}}.",
+    content: "Dear {{1}}, your secure payment has been successfully confirmed. We have received ₹{{2}} via {{3}} for your Order ID {{4}}. Your ledger has been updated. The new remaining balance is ₹{{5}}.",
     examples: ["Sneha", "5000", "UPI", "ORD-22", "10000"]
   },
   // 7) Market Adjustment (Surcharge)
