@@ -81,6 +81,11 @@ export interface JewelryDetail {
   photoUrls: string[];
   huid?: string;
   size?: string;
+  // --- KARIGAR TRACKING FIELDS ---
+  karigarName?: string;
+  promisedDate?: string; // Due from Karigar
+  backendNotes?: string; // Internal workshop notes
+  actualDeliveryDate?: string;
 }
 
 export interface Payment {

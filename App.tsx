@@ -4,7 +4,7 @@ import {
   Plus, Home, ReceiptIndianRupee, Users, MessageSquare, 
   Menu, ArrowLeft, Cloud, Loader2, HardDrive, Settings as SettingsIcon,
   BrainCircuit, Calculator, FileText, ScrollText, Globe, Activity, ShoppingBag, BookOpen, X, RefreshCw, DownloadCloud, Zap,
-  History, Layout, PieChart, ShieldAlert
+  History, Layout, PieChart, ShieldAlert, Hammer
 } from 'lucide-react';
 import { io } from 'socket.io-client';
 
@@ -68,8 +68,9 @@ const Settings = lazyRetry(() => import('./components/Settings'), 'Settings');
 const ErrorLogPanel = lazyRetry(() => import('./components/ErrorLogPanel'), 'SystemLogs');
 const CustomerOrderView = lazyRetry(() => import('./components/CustomerOrderView'), 'CustomerView');
 const SystemArchitect = lazyRetry(() => import('./components/SystemArchitect'), 'Architect');
+const KarigarManager = lazyRetry(() => import('./components/KarigarManager'), 'KarigarDesk');
 
-type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW' | 'ARCHITECT';
+type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW' | 'ARCHITECT' | 'KARIGAR_DESK';
 
 const LoadingScreen = () => (
   <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 space-y-4 min-h-[50vh]">
@@ -250,7 +251,7 @@ const App = () => {
           }} />;
           case 'ORDER_NEW': return <OrderForm settings={settings} planTemplates={planTemplates} onSubmit={(o) => { addOrder(o); setSelectedOrderId(o.id); setView('ORDER_DETAILS'); }} onCancel={() => setView('DASH')} />;
           case 'ORDER_BOOK': return <OrderBook orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onUpdateOrder={updateOrder} />;
-          case 'ORDER_DETAILS': return selectedOrder ? <OrderDetails order={selectedOrder} settings={settings} onBack={() => setView('ORDER_BOOK')} onUpdateStatus={updateItemStatus} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} logs={logs} onAddLog={addLog} /> : <div className="text-center p-10">Order Not Found</div>;
+          case 'ORDER_DETAILS': return selectedOrder ? <OrderDetails order={selectedOrder} settings={settings} onBack={() => setView('ORDER_BOOK')} onUpdateStatus={(itemId, status) => updateItemStatus(selectedOrder.id, itemId, { productionStatus: status })} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} logs={logs} onAddLog={addLog} /> : <div className="text-center p-10">Order Not Found</div>;
           case 'CUSTOMERS': return <CustomerList customers={derivedCustomers} orders={orders} onSelectCustomer={(id) => { setSelectedCustomerId(id); setView('CUSTOMER_PROFILE'); }} onAddCustomer={(c) => { setManualCustomers([...manualCustomers, c]); storageService.setCustomers([...manualCustomers, c]); }} />;
           case 'CUSTOMER_PROFILE': return selectedCustomer ? <CustomerProfile customer={selectedCustomer} orders={orders} onBack={() => setView('CUSTOMERS')} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onNewOrder={() => setView('ORDER_NEW')} /> : <div className="text-center p-10">Customer Not Found</div>;
           case 'COLLECTIONS': return <PaymentCollections orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onSendWhatsApp={() => {}} onAddLog={addLog} settings={settings} />;
@@ -263,9 +264,11 @@ const App = () => {
           case 'SYS_LOGS': return <ErrorLogPanel errors={systemErrors} activities={systemActivities} onClear={() => { errorService.clearErrors(); errorService.clearActivity(); }} />;
           case 'SETTINGS': return <Settings settings={settings} onUpdate={handleUpdateSettings} />;
           case 'ARCHITECT': return <SystemArchitect />;
+          case 'KARIGAR_DESK': return <KarigarManager orders={orders} onUpdateItem={updateItemStatus} onOrderUpdate={updateOrder} settings={settings} />;
           case 'MENU': return (
               <div className="grid grid-cols-2 gap-4 pb-24 animate-fadeIn">
                   <MenuItem onClick={() => setView('ORDER_BOOK')} icon={<BookOpen />} label="Order Registry" desc="Manage all bookings" colorClass="bg-blue-50 text-blue-600" />
+                  <MenuItem onClick={() => setView('KARIGAR_DESK')} icon={<Hammer />} label="Karigar Desk" desc="Production Tracking" colorClass="bg-slate-800 text-white" />
                   <MenuItem onClick={() => setView('CUSTOMERS')} icon={<Users />} label="Client Directory" desc="View customer profiles" colorClass="bg-emerald-50 text-emerald-600" />
                   <MenuItem onClick={() => setView('COLLECTIONS')} icon={<ReceiptIndianRupee />} label="Payments" desc="Track cash flow" colorClass="bg-amber-50 text-amber-600" />
                   <MenuItem onClick={() => setView('WHATSAPP')} icon={<MessageSquare />} label="WhatsApp" desc="Connect with clients" colorClass="bg-teal-50 text-teal-600" />
@@ -313,7 +316,8 @@ const App = () => {
              <div className="flex-1 space-y-1 overflow-y-auto custom-scrollbar pr-2">
                  <SidebarItem active={view === 'DASH'} onClick={() => setView('DASH')} icon={Home} label="Dashboard" />
                  <SidebarItem active={view === 'ORDER_BOOK'} onClick={() => setView('ORDER_BOOK')} icon={BookOpen} label="Order Book" />
-                 <SidebarItem active={view === 'ORDER_NEW'} onClick={() => setView('ORDER_NEW')} icon={Plus} label="New Booking" highlight />
+                 <SidebarItem active={view === 'KARIGAR_DESK'} onClick={() => setView('KARIGAR_DESK')} icon={Hammer} label="Karigar Desk" highlight />
+                 <SidebarItem active={view === 'ORDER_NEW'} onClick={() => setView('ORDER_NEW')} icon={Plus} label="New Booking" />
                  
                  <div className="my-6 border-t border-slate-100"></div>
                  <p className="px-4 text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Operations</p>
@@ -362,13 +366,13 @@ const App = () => {
 
         <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 h-[84px] pb-6 px-6 flex justify-between items-center z-50 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)]">
              <TabBarItem active={view === 'DASH'} onClick={() => setView('DASH')} icon={<Home />} label="Home" />
-             <TabBarItem active={view === 'ORDER_BOOK'} onClick={() => setView('ORDER_BOOK')} icon={<BookOpen />} label="Orders" />
+             <TabBarItem active={view === 'KARIGAR_DESK'} onClick={() => setView('KARIGAR_DESK')} icon={<Hammer />} label="Desk" />
              <div className="-mt-8">
                  <button onClick={() => setView(view === 'MENU' ? 'DASH' : 'MENU')} className="w-14 h-14 rounded-full flex items-center justify-center shadow-2xl bg-slate-900 text-white">
                     {view === 'MENU' ? <X size={24} /> : <Menu size={24} />}
                  </button>
              </div>
-             <TabBarItem active={view === 'COLLECTIONS'} onClick={() => setView('COLLECTIONS')} icon={<ReceiptIndianRupee />} label="Pay" />
+             <TabBarItem active={view === 'ORDER_BOOK'} onClick={() => setView('ORDER_BOOK')} icon={<BookOpen />} label="Orders" />
              <TabBarItem active={view === 'WHATSAPP'} onClick={() => setView('WHATSAPP')} icon={<MessageSquare />} label="Chat" />
         </div>
       </div>

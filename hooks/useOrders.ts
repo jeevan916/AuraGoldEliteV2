@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { Order, OrderStatus, ProductionStatus } from '../types';
+import { Order, OrderStatus, ProductionStatus, JewelryDetail } from '../types';
 import { errorService } from '../services/errorService';
 import { storageService } from '../services/storageService';
 
@@ -57,12 +57,12 @@ export function useOrders() {
     setOrders(updated);
   };
 
-  const updateItemStatus = (orderId: string, itemId: string, status: ProductionStatus) => {
+  const updateItemStatus = (orderId: string, itemId: string, updates: Partial<JewelryDetail>) => {
     const updated = orders.map(o => {
       if (o.id !== orderId) return o;
       return {
         ...o,
-        items: o.items.map(item => item.id === itemId ? { ...item, productionStatus: status } : item)
+        items: o.items.map(item => item.id === itemId ? { ...item, ...updates } : item)
       };
     });
     setOrders(updated);
