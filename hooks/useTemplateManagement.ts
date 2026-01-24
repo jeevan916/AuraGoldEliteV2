@@ -88,19 +88,20 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
               const metaTemplates = metaTemplatesRaw.filter((t: any) => t.name.toLowerCase().startsWith('auragold'));
 
               // 1. Create a quick lookup map of what actually exists on Meta right now
+              // KEY CHANGE: Use Lowercase Key for Case-Insensitive Matching
               const metaMap = new Map();
-              metaTemplates.forEach((mt: any) => metaMap.set(mt.name, mt));
+              metaTemplates.forEach((mt: any) => metaMap.set(mt.name.toLowerCase(), mt));
 
               // 2. Iterate through LOCAL templates to update status or flag missing ones.
               // PURGE POLICY: We explicitly FILTER existing templates. If it doesn't start with 'auragold', it's dropped from the new state.
               const processedLocal = templates
                   .filter(localTpl => localTpl.name.toLowerCase().startsWith('auragold'))
                   .map(localTpl => {
-                      const remote = metaMap.get(localTpl.name);
+                      const remote = metaMap.get(localTpl.name.toLowerCase());
 
                       if (remote) {
                           // MATCH FOUND: Update local with truth from Meta
-                          metaMap.delete(localTpl.name); // Remove from map so we know it's handled
+                          metaMap.delete(localTpl.name.toLowerCase()); // Remove from map so we know it's handled
                           
                           const bodyComp = remote.components?.find((c: any) => c.type === 'BODY');
                           

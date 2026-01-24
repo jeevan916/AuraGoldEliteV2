@@ -5,7 +5,6 @@ import { getPool, ensureDb, normalizePhone, logDbActivity } from './db.js';
 const router = express.Router();
 const META_API_VERSION = "v20.0";
 
-// ... (Webhook verification and inbound handler remain same) ...
 // Webhook Verification
 router.get('/webhook', (req, res) => {
     const verify_token = process.env.WHATSAPP_VERIFY_TOKEN || "auragold_elite_secure_2025";
@@ -73,25 +72,50 @@ router.get('/templates', ensureDb, async (req, res) => {
     if (!wabaId || !token) return res.status(401).json({ success: false, error: "Missing Credentials" });
 
     try {
-        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates`, {
-            method: 'GET',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await r.json();
-        if (data.error) {
-            console.error("Meta Fetch Error:", JSON.stringify(data.error));
-            return res.status(400).json({ success: false, error: data.error, raw: data });
+        let allTemplates = [];
+        let nextUrl = `https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates?limit=100`;
+
+        // Pagination Loop
+        while (nextUrl) {
+            const r = await fetch(nextUrl, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await r.json();
+            
+            if (data.error) {
+                console.error("Meta Fetch Error:", JSON.stringify(data.error));
+                return res.status(400).json({ success: false, error: data.error, raw: data });
+            }
+
+            if (data.data) {
+                allTemplates = [...allTemplates, ...data.data];
+            }
+            
+            // Check for next page
+            nextUrl = data.paging?.next || null;
         }
 
         const pool = getPool();
         const connection = await pool.getConnection();
-        const templates = data.data || [];
-        for (const tpl of templates) {
-            const appTpl = { id: tpl.id, name: tpl.name, category: tpl.category, content: tpl.components?.find(c => c.type === 'BODY')?.text || '', status: tpl.status, source: 'META', structure: tpl.components, rejectionReason: tpl.rejected_reason };
+        
+        // Sync to DB
+        for (const tpl of allTemplates) {
+            const appTpl = { 
+                id: tpl.id, 
+                name: tpl.name, 
+                category: tpl.category, 
+                content: tpl.components?.find(c => c.type === 'BODY')?.text || '', 
+                status: tpl.status, 
+                source: 'META', 
+                structure: tpl.components, 
+                rejectionReason: tpl.rejected_reason 
+            };
             await connection.query(`INSERT INTO templates (id, name, category, data) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), data=VALUES(data)`, [tpl.id, tpl.name, tpl.category, JSON.stringify(appTpl)]);
         }
         connection.release();
-        res.json({ success: true, data: data.data });
+        
+        res.json({ success: true, data: allTemplates });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
