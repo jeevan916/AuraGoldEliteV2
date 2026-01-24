@@ -149,24 +149,18 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       }
   };
 
-  // Helper to ensure example count matches variable MAX index
   const alignExamples = (content: string, providedExamples: string[] = []): string[] => {
       const matches = content.match(/{{([0-9]+)}}/g) || [];
       const indices = matches.map(m => parseInt(m.replace(/[^0-9]/g, ''), 10));
       const maxIndex = indices.length > 0 ? Math.max(...indices) : 0;
       
       let finalExamples = [...providedExamples];
-      
-      // Pad if missing
       while(finalExamples.length < maxIndex) {
           finalExamples.push(`sample_${finalExamples.length + 1}`);
       }
-      
-      // Trim if too many (Meta checks exact count for the max index)
       if(finalExamples.length > maxIndex) {
           finalExamples = finalExamples.slice(0, maxIndex);
       }
-      
       return finalExamples;
   };
 
@@ -209,7 +203,6 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
 
   const deployHelper = async (req: any) => {
       const validation = await geminiService.validateAndFixTemplate(req.content, req.name, req.category);
-      
       const safeExamples = alignExamples(validation.optimizedContent, req.examples);
 
       const payload: WhatsAppTemplate = {
@@ -223,23 +216,28 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
           category: req.category as MetaCategory,
           variableExamples: safeExamples,
           appGroup: req.appGroup as AppTemplateGroup,
-          structure: (req as any).structure // IMPORTANT: Pass original structure if defined (buttons etc)
+          structure: (req as any).structure 
       };
+      
       const result = await whatsappService.createMetaTemplate(payload);
-      if (result.success) addLog(`SUCCESS: ${req.name} deployed.`);
-      else addLog(`FAILED: ${req.name} - ${result.error?.message}`);
+      if (result.success) {
+          addLog(`SUCCESS: ${req.name} deployed.`);
+      } else {
+          addLog(`FAILED: ${req.name} - ${result.error?.message}`);
+          if (result.rawError) {
+              await runDeepDiagnostics(result.rawError, payload);
+          }
+      }
   };
 
   const repairHelper = async (existingMetaTpl: WhatsAppTemplate, requiredDef: any) => {
       const fix = await geminiService.validateAndFixTemplate(requiredDef.content, requiredDef.name, requiredDef.category);
-      
       const safeExamples = alignExamples(fix.optimizedContent, requiredDef.examples);
 
       const payload: WhatsAppTemplate = {
           ...existingMetaTpl,
           content: fix.optimizedContent,
           variableExamples: safeExamples, 
-          // Preserve required structure if it exists, otherwise undefined
           structure: (requiredDef as any).structure ? (requiredDef as any).structure : undefined
       };
       
@@ -247,9 +245,35 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
           await deployHelper(requiredDef);
           return;
       }
+      
       const result = await whatsappService.editMetaTemplate(existingMetaTpl.id, payload);
-      if (result.success) addLog(`FIXED: ${requiredDef.name} updated on Meta.`);
-      else addLog(`FIX FAILED: ${requiredDef.name} - ${result.error?.message}`);
+      if (result.success) {
+          addLog(`FIXED: ${requiredDef.name} updated on Meta.`);
+      } else {
+          addLog(`FIX FAILED: ${requiredDef.name} - ${result.error?.message}`);
+          if (result.rawError) {
+              await runDeepDiagnostics(result.rawError, payload);
+          }
+      }
+  };
+
+  // NEW: Deep Diagnostic Loop
+  const runDeepDiagnostics = async (rawError: any, payload: any) => {
+      addLog(`⚡ Invoking Gemini 3 Pro for Root Cause Analysis...`);
+      try {
+          const diagnosis = await geminiService.diagnoseError(
+              "Meta Template API Rejected Payload",
+              "WhatsAppTemplates",
+              JSON.stringify(rawError),
+              { payload }
+          );
+          addLog(`🤖 AI DIAGNOSIS: ${diagnosis.explanation}`);
+          if (diagnosis.implementationPrompt) {
+              addLog(`💡 SUGGESTION: ${diagnosis.implementationPrompt.substring(0, 100)}...`);
+          }
+      } catch (e) {
+          addLog(`Diagnosis failed.`);
+      }
   };
 
   const handleDeployStandard = async (trigger: SystemTrigger, def: any) => {
@@ -275,6 +299,7 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
               alert(`Deployed: ${result.finalName}`);
           } else {
               alert(`Failed: ${result.error?.message}`);
+              if (result.rawError) await runDeepDiagnostics(result.rawError, payload);
           }
       } catch (e: any) { alert(`Error: ${e.message}`); } 
       finally { setDeployingTriggerId(null); }
@@ -341,6 +366,7 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
           } else {
               setAiAnalysisReason(`AI FIX UPLOAD FAILED: ${updateResult.error?.message}`);
               alert(`Meta rejected the fix: ${updateResult.error?.message}`);
+              if (updateResult.rawError) await runDeepDiagnostics(updateResult.rawError, fixedTemplate);
           }
       } catch (e: any) { alert(`Auto-fix failed: ${e.message}`); } 
       finally { setIsFixing(null); }
@@ -418,6 +444,7 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
               setEditingMetaId(null);
           } else {
               alert(`Deployment Error: ${result.error?.message || JSON.stringify(result.error)}`);
+              if (result.rawError) await runDeepDiagnostics(result.rawError, newTpl);
           }
       }
       setGeneratedContent('');

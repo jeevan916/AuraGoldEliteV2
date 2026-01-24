@@ -16,50 +16,50 @@ const API_BASE = process.env.VITE_API_BASE_URL || '';
 
 /**
  * Helper to sanitize text for Meta API.
- * Meta rejects payloads if parameters contain newlines (\n) or tabs (\t).
  */
 const sanitizeForMeta = (text: string | number | undefined | null): string => {
     if (text === null || text === undefined) return " ";
     return text.toString()
-        .replace(/[\r\n]+/g, ' ')   // Replace newlines with space (Strict for variables)
-        .replace(/\t/g, ' ')        // Replace tabs with space
-        .replace(/\s{2,}/g, ' ')    // Collapse multiple spaces
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/\t/g, ' ')
+        .replace(/\s{2,}/g, ' ')
         .trim();
 };
 
 /**
  * Helper to construct the Meta Components array correctly.
- * Crucial for templates with variables {{1}}, as they REQUIRE an 'example' field.
- * FIX: Uses MAX variable index (e.g. {{3}} means 3 examples needed) instead of match count.
+ * HANDLES: Body variables AND Button URL variables.
  */
 const constructMetaComponents = (content: string, variableExamples: string[] = [], structure?: any[]) => {
-    // If a structure is provided (e.g. Buttons/Headers), we use it but update the BODY
-    const components = structure ? JSON.parse(JSON.stringify(structure)) : [];
+    // 1. Start with provided structure or empty array
+    let components = structure ? JSON.parse(JSON.stringify(structure)) : [];
     
-    // Find or Create BODY component
+    // 2. Locate or Create BODY
     let bodyIndex = components.findIndex((c: any) => c.type === 'BODY');
     
-    // Calculate the highest variable index used (e.g. {{3}} -> 3)
-    const matches = content.match(/{{([0-9]+)}}/g) || [];
-    const indices = matches.map(m => parseInt(m.replace(/[^0-9]/g, ''), 10));
-    const maxIndex = indices.length > 0 ? Math.max(...indices) : 0;
+    // Calculate body variables
+    const bodyMatches = content.match(/{{([0-9]+)}}/g) || [];
+    const bodyIndices = bodyMatches.map(m => parseInt(m.replace(/[^0-9]/g, ''), 10));
+    const maxBodyIndex = bodyIndices.length > 0 ? Math.max(...bodyIndices) : 0;
 
     const bodyComponent: any = {
         type: 'BODY',
         text: content
     };
 
-    if (maxIndex > 0) {
-        // Safe padding: Ensure we have enough examples for the highest index
+    // 3. Inject Body Examples
+    if (maxBodyIndex > 0) {
         const safeExamples = [...variableExamples];
-        while(safeExamples.length < maxIndex) {
+        while(safeExamples.length < maxBodyIndex) {
             safeExamples.push(`sample_${safeExamples.length + 1}`);
         }
-        // Slice to exact count required
-        const finalExamples = safeExamples.slice(0, maxIndex);
+        // Slice specifically for BODY (assuming body vars come first or are the main ones)
+        // Note: Complex splitting between body/button vars usually requires strict index mapping.
+        // For AuraGold, we assume provided examples cover body vars first.
+        const bodyEx = safeExamples.slice(0, maxBodyIndex);
 
         bodyComponent.example = {
-            body_text: [finalExamples]
+            body_text: [bodyEx]
         };
     }
 
@@ -67,6 +67,32 @@ const constructMetaComponents = (content: string, variableExamples: string[] = [
         components[bodyIndex] = { ...components[bodyIndex], ...bodyComponent };
     } else {
         components.push(bodyComponent);
+    }
+
+    // 4. Handle BUTTONS (URL Variables)
+    // Templates like 'setu_payment_button' have {{1}} in the URL. Meta requires an example for this too.
+    const buttonIndex = components.findIndex((c: any) => c.type === 'BUTTONS');
+    if (buttonIndex >= 0) {
+        const buttons = components[buttonIndex].buttons || [];
+        // Check for URL buttons with dynamic parts
+        const urlButtonIndex = buttons.findIndex((b: any) => b.type === 'URL' && b.url.includes('{{1}}'));
+        
+        if (urlButtonIndex >= 0) {
+            // We need a separate example for the URL variable
+            // Since we often pass a generic list of examples, let's grab the last one or a generic one
+            const urlExample = variableExamples.length > 0 ? variableExamples[variableExamples.length - 1] : "123456";
+            
+            // Meta requires the 'example' field on the root of the URL button object
+            // Format: "example": ["https://.../123456"] OR just the suffix depending on API version. 
+            // V20 usually takes the raw variable value array.
+            
+            // NOTE: For 'setu_payment_button', the variable is the suffix. 
+            // We inject it into the button definition.
+            if (!buttons[urlButtonIndex].example) {
+                 buttons[urlButtonIndex].example = [urlExample]; 
+            }
+        }
+        components[buttonIndex].buttons = buttons;
     }
 
     return components;
@@ -112,14 +138,12 @@ export const whatsappService = {
      }
   },
 
-  async createMetaTemplate(template: WhatsAppTemplate): Promise<{ success: boolean; finalName?: string; error?: any }> {
+  async createMetaTemplate(template: WhatsAppTemplate): Promise<{ success: boolean; finalName?: string; error?: any; rawError?: any }> {
      const settings = this.getSettings();
      const token = settings.whatsappBusinessToken?.trim();
      if (!settings.whatsappBusinessAccountId || !token) return { success: false, error: { message: "Credentials missing" } };
 
      const finalName = template.name.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-     
-     // Construct components ensuring examples are present for variables
      const components = constructMetaComponents(template.content, template.variableExamples, template.structure);
      
      const payload = { 
@@ -142,8 +166,7 @@ export const whatsappService = {
          const data = await response.json();
          if (!data.success) {
              const errorMsg = data.error?.message || data.error || "Unknown Meta API Error";
-             console.error("❌ META CREATE ERROR:", errorMsg);
-             return { success: false, error: { message: errorMsg } };
+             return { success: false, error: { message: errorMsg }, rawError: data.raw || data };
          }
          return { success: true, finalName: data.data?.name || finalName };
      } catch (e: any) {
@@ -151,16 +174,14 @@ export const whatsappService = {
      }
   },
 
-  async editMetaTemplate(templateId: string, template: WhatsAppTemplate): Promise<{ success: boolean; error?: any }> {
+  async editMetaTemplate(templateId: string, template: WhatsAppTemplate): Promise<{ success: boolean; error?: any; rawError?: any }> {
       const settings = this.getSettings();
       const token = settings.whatsappBusinessToken?.trim();
       if (!settings.whatsappBusinessAccountId || !token) return { success: false, error: { message: "Credentials missing" } };
 
-      // Ensure examples are packed for the update
       const components = constructMetaComponents(template.content, template.variableExamples, template.structure);
       const payload = { components };
 
-      // Safety check: Don't send sys- IDs to Graph API
       if (templateId.startsWith('sys-') || templateId.startsWith('local-')) {
           return { success: false, error: { message: `Cannot edit using local ID (${templateId}). Please sync first.` } };
       }
@@ -179,8 +200,7 @@ export const whatsappService = {
           
           if (!data.success) {
               const errorMsg = data.error?.message || (typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
-              console.error("❌ META EDIT ERROR:", errorMsg);
-              return { success: false, error: { message: errorMsg } };
+              return { success: false, error: { message: errorMsg }, rawError: data.raw || data };
           }
           return { success: true };
       } catch (e: any) {
@@ -233,7 +253,6 @@ export const whatsappService = {
     try {
         const components: any[] = [];
         
-        // 1. Header Parameter (Images)
         if (headerImageUrl) {
             components.push({
                 type: "header",
@@ -244,7 +263,6 @@ export const whatsappService = {
             });
         }
 
-        // 2. Body Parameters
         if (bodyVariables.length > 0) {
             components.push({ 
                 type: "body", 
@@ -255,7 +273,6 @@ export const whatsappService = {
             });
         }
 
-        // 3. Button Parameters
         if (buttonVariable) {
             components.push({ 
                 type: "button", 
@@ -290,10 +307,7 @@ export const whatsappService = {
         
         if (!data.success) {
             const errDetail = data.error?.message || data.error || "Meta API Error";
-            console.error(`[WhatsAppService] Send Failed for ${safeTemplateName}:`, errDetail);
-            
-            const severity = errDetail.includes('Receiver is incapable') ? 'LOW' : 'HIGH';
-            errorService.logError('WhatsApp_Send', `Failed to send ${safeTemplateName}: ${errDetail}`, severity, undefined, undefined, data);
+            errorService.logError('WhatsApp_Send', `Failed to send ${safeTemplateName}: ${errDetail}`, 'HIGH', undefined, undefined, data);
             return { success: false, error: errDetail, raw: data.raw };
         }
 
@@ -338,7 +352,6 @@ export const whatsappService = {
       const data = await response.json();
       if (!data.success) {
           const errDetail = data.error?.message || data.error || "Meta Message Error";
-          console.error("❌ RAW META MESSAGE ERROR:", errDetail);
           throw { message: errDetail, raw: data.raw };
       }
 
