@@ -198,7 +198,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
       let bodyVars = [...templateParams];
 
       // If the template has a dynamic URL button, the last variable is often meant for the button
-      if (coreDef?.name === 'setu_payment_button' || coreDef?.name === 'auragold_finished_item_showcase' || coreDef?.name === 'auragold_order_agreement') {
+      if (coreDef?.name === 'auragold_setu_payment' || coreDef?.name === 'auragold_finished_item_showcase' || coreDef?.name === 'auragold_order_agreement') {
           buttonVar = bodyVars.pop();
       }
 
@@ -367,7 +367,9 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
                   <div className="p-4 flex-1 overflow-y-auto space-y-4">
                     {!selectedTemplate ? (
                         <div className="space-y-2">
-                            {templates.map(t => (
+                            {templates
+                                .filter(t => t.name.startsWith('auragold'))
+                                .map(t => (
                                 <div key={t.id} onClick={() => handleSelectTemplate(t)} className="p-3 border rounded-xl hover:bg-emerald-50 hover:border-emerald-300 cursor-pointer">
                                     <p className="font-bold text-sm text-slate-800">{t.name}</p>
                                     <p className="text-xs text-slate-500 truncate">{t.content}</p>

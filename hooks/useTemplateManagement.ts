@@ -82,8 +82,11 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       setSyncingMeta(true);
       if(!silent) addLog("Syncing templates from Meta...");
       try {
-          const metaTemplates = await whatsappService.fetchMetaTemplates();
-          if (metaTemplates) {
+          const metaTemplatesRaw = await whatsappService.fetchMetaTemplates();
+          if (metaTemplatesRaw) {
+              // POLICY FILTER: Only process templates starting with 'auragold'
+              const metaTemplates = metaTemplatesRaw.filter((t: any) => t.name.toLowerCase().startsWith('auragold'));
+
               // 1. Create a quick lookup map of what actually exists on Meta right now
               const metaMap = new Map();
               metaTemplates.forEach((mt: any) => metaMap.set(mt.name, mt));
@@ -154,6 +157,7 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
                   let msg = `Sync Complete.`;
                   if (newFromMeta.length > 0) msg += ` Imported ${newFromMeta.length} new templates.`;
                   if (missingCount > 0) msg += ` Flagged ${missingCount} templates as MISSING on Meta.`;
+                  if (metaTemplatesRaw.length - metaTemplates.length > 0) msg += ` Ignored ${metaTemplatesRaw.length - metaTemplates.length} external templates (non-auragold).`;
                   alert(msg);
                   addLog(msg);
               }
@@ -490,9 +494,13 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       
       const safeExamples = alignExamples(generatedContent, variableExamples);
 
+      // ENFORCE NAMING CONVENTION IN BUILDER
+      let safeName = templateName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      if (!safeName.startsWith('auragold_')) safeName = `auragold_${safeName}`;
+
       const newTpl: WhatsAppTemplate = {
           id: `local-${Date.now()}`,
-          name: templateName,
+          name: safeName,
           content: generatedContent,
           tactic: selectedTactic,
           targetProfile: selectedProfile,
@@ -506,7 +514,7 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
 
       if (action === 'LOCAL') {
           onUpdate([newTpl, ...templates]);
-          alert("Saved to Local Library");
+          alert("Saved to Local Library with prefix 'auragold_'");
       } else {
           setPushingMeta(true);
           let result;
@@ -519,7 +527,7 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
           }
           setPushingMeta(false);
           if (result.success) {
-              const deployedTpl = { ...newTpl, name: result.finalName || templateName, source: 'META' as const, status: 'PENDING' as const };
+              const deployedTpl = { ...newTpl, name: result.finalName || safeName, source: 'META' as const, status: 'PENDING' as const };
               if (editingMetaId) {
                   onUpdate(templates.map(t => t.id === editingMetaId ? { ...deployedTpl, id: editingMetaId } : t));
               } else {

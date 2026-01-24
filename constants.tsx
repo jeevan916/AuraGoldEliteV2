@@ -95,7 +95,7 @@ export const SYSTEM_TRIGGER_MAP: SystemTrigger[] = [
     { id: 'TRIG_5', label: '5. Stage Update', description: 'Moved to Processing/Hallmarking/etc.', requiredVariables: ['Customer Name', 'Item', 'Order ID', 'New Stage', 'Link'], defaultTemplateName: 'auragold_production_update', appGroup: 'ORDER_STATUS' },
     { id: 'TRIG_6', label: '6. Remote Payment Success', description: 'Success for Payment Link/Gateway.', requiredVariables: ['Customer Name', 'Amount', 'Method', 'Order ID', 'Balance'], defaultTemplateName: 'auragold_payment_success_remote', appGroup: 'PAYMENT_COLLECTION' },
     { id: 'TRIG_7', label: '7. Market Adjustment', description: 'Surcharge applied (Limit Breached).', requiredVariables: ['Customer Name', 'Surcharge Amount', 'Order ID', 'New Base Rate', 'Link'], defaultTemplateName: 'auragold_rate_adjustment_alert', appGroup: 'SYSTEM_NOTIFICATIONS' },
-    { id: 'TRIG_8', label: '8. Setu UPI Button', description: 'Manual deep link trigger.', requiredVariables: ['Customer Name', 'Amount', 'LinkSuffix'], defaultTemplateName: 'setu_payment_button', appGroup: 'SETU_PAYMENT' },
+    { id: 'TRIG_8', label: '8. Setu UPI Button', description: 'Manual deep link trigger.', requiredVariables: ['Customer Name', 'Amount', 'LinkSuffix'], defaultTemplateName: 'auragold_setu_payment', appGroup: 'SETU_PAYMENT' },
     { id: 'TRIG_9', label: '9. Finished Photo', description: 'Header Image + Order Link.', requiredVariables: ['Customer Name', 'Order ID', 'Link'], defaultTemplateName: 'auragold_finished_item_showcase', appGroup: 'ORDER_STATUS' }
 ];
 
@@ -173,7 +173,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
   },
   // 8) Setu UPI Button (Manual)
   {
-    name: 'setu_payment_button',
+    name: 'auragold_setu_payment',
     description: 'Manual trigger for UPI Deep Link.',
     category: 'UTILITY',
     appGroup: 'SETU_PAYMENT',

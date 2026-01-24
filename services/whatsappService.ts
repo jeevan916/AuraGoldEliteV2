@@ -70,7 +70,7 @@ const constructMetaComponents = (content: string, variableExamples: string[] = [
     }
 
     // 4. Handle BUTTONS (URL Variables)
-    // Templates like 'setu_payment_button' have {{1}} in the URL. Meta requires an example for this too.
+    // Templates like 'auragold_setu_payment' have {{1}} in the URL. Meta requires an example for this too.
     const buttonIndex = components.findIndex((c: any) => c.type === 'BUTTONS');
     if (buttonIndex >= 0) {
         const buttons = components[buttonIndex].buttons || [];
@@ -83,11 +83,6 @@ const constructMetaComponents = (content: string, variableExamples: string[] = [
             const urlExample = variableExamples.length > 0 ? variableExamples[variableExamples.length - 1] : "123456";
             
             // Meta requires the 'example' field on the root of the URL button object
-            // Format: "example": ["https://.../123456"] OR just the suffix depending on API version. 
-            // V20 usually takes the raw variable value array.
-            
-            // NOTE: For 'setu_payment_button', the variable is the suffix. 
-            // We inject it into the button definition.
             if (!buttons[urlButtonIndex].example) {
                  buttons[urlButtonIndex].example = [urlExample]; 
             }
@@ -143,7 +138,12 @@ export const whatsappService = {
      const token = settings.whatsappBusinessToken?.trim();
      if (!settings.whatsappBusinessAccountId || !token) return { success: false, error: { message: "Credentials missing" } };
 
-     const finalName = template.name.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+     // STRICT POLICY: All AuraGold templates MUST start with 'auragold_'
+     let finalName = template.name.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+     if (!finalName.startsWith('auragold_')) {
+         finalName = `auragold_${finalName}`;
+     }
+
      const components = constructMetaComponents(template.content, template.variableExamples, template.structure);
      
      const payload = { 

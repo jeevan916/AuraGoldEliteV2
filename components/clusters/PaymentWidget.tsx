@@ -228,8 +228,6 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           }
 
           // ROBUST LINK SUFFIX EXTRACTION
-          // Supports: https://setu.co/upi/s/{ID} OR https://pay.setu.co/{ID} OR any domain structure
-          // We assume the last segment of the path is the ID required by the template.
           let linkSuffix = '';
           try {
               const urlObj = new URL(shortLink);
@@ -238,7 +236,6 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                   linkSuffix = pathSegments[pathSegments.length - 1];
               }
           } catch(e) {
-              // Fallback simple split if URL parsing fails
               const parts = shortLink.split('/');
               linkSuffix = parts[parts.length - 1];
           }
@@ -248,10 +245,10 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           }
 
           // SCENARIO 8: Setu UPI Button (Manual)
-          // Template expects just the suffix ID to append to base URL
+          // UPDATED TO NEW TEMPLATE NAME
           const result = await whatsappService.sendTemplateMessage(
               order.customerContact, 
-              'setu_payment_button', 
+              'auragold_setu_payment', 
               'en_US', 
               [order.customerName, val.toLocaleString()], 
               order.customerName,
@@ -263,7 +260,6 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
               if (result.logEntry && onAddLog) onAddLog(result.logEntry);
               setAmount('');
           } else {
-              // Fallback: If template fails (e.g. variable mismatch), send as text message
               console.warn("Template failed, falling back to text link.");
               const fallbackRes = await whatsappService.sendMessage(
                   order.customerContact,
@@ -287,7 +283,6 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
   };
 
   if (variant === 'COMPACT') {
-    // Find the actual milestone that is due or overdue
     const targetMilestone = nextMilestone;
     const dueDate = targetMilestone ? new Date(targetMilestone.dueDate) : null;
     const today = new Date();
