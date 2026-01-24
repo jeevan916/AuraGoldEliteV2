@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { RefreshCw, FolderOpen, Cloud, Laptop, Edit, Trash2 } from 'lucide-react';
+import { RefreshCw, FolderOpen, Cloud, Laptop, Edit, Trash2, AlertOctagon } from 'lucide-react';
 import { WhatsAppTemplate } from '../../types';
 
 interface LibraryTabProps {
@@ -19,6 +19,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
           case 'APPROVED': return 'bg-emerald-100 text-emerald-700';
           case 'REJECTED': return 'bg-rose-100 text-rose-700';
           case 'PENDING': return 'bg-amber-100 text-amber-700';
+          case 'MISSING': return 'bg-slate-800 text-white animate-pulse';
           default: return 'bg-slate-100 text-slate-500';
       }
   };
@@ -54,14 +55,14 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {groupTemplates.map(tpl => (
-                            <div key={tpl.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all group relative">
+                            <div key={tpl.id} className={`bg-white p-5 rounded-2xl border shadow-sm hover:shadow-md transition-all group relative ${tpl.status === 'MISSING' ? 'border-rose-300 bg-rose-50' : 'border-slate-100'}`}>
                                 <div className="flex justify-between items-start mb-3">
                                     <div className="flex items-center gap-2">
                                         {tpl.source === 'META' ? <Cloud size={14} className="text-blue-400" /> : <Laptop size={14} className="text-slate-400" />}
                                         <span className="font-bold text-sm text-slate-800 truncate max-w-[150px]" title={tpl.name}>{tpl.name}</span>
                                     </div>
                                     <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-full ${getStatusColor(tpl.status)}`}>
-                                        {tpl.status || 'DRAFT'}
+                                        {tpl.status === 'MISSING' ? 'MISSING ON META' : (tpl.status || 'DRAFT')}
                                     </span>
                                 </div>
                                 
@@ -69,9 +70,15 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
                                     {tpl.content}
                                 </p>
 
+                                {tpl.status === 'MISSING' && (
+                                    <div className="mb-2 text-[9px] text-rose-600 flex items-center gap-1 font-bold">
+                                        <AlertOctagon size={10} /> Disparity: Not found on Meta
+                                    </div>
+                                )}
+
                                 <div className="flex gap-2 border-t pt-3">
                                     <button onClick={() => handleEditTemplate(tpl)} className="flex-1 py-2 rounded-lg bg-slate-50 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-100 flex items-center justify-center gap-1">
-                                        <Edit size={12} /> Edit
+                                        <Edit size={12} /> {tpl.status === 'MISSING' ? 'Re-Deploy' : 'Edit'}
                                     </button>
                                     <button onClick={() => handleDeleteTemplate(tpl)} className="py-2 px-3 rounded-lg bg-white border border-slate-200 text-rose-500 hover:bg-rose-50 hover:border-rose-200 transition-colors">
                                         <Trash2 size={12} />

@@ -20,7 +20,6 @@ const getAI = () => {
 export const geminiService = {
   /**
    * Deep Error Diagnosis & Code Patcher
-   * Acts as a Senior Engineer debugging your failed API calls.
    */
   async diagnoseError(message: string, source: string, stack?: string, rawContext?: any): Promise<{ 
       explanation: string, 
@@ -43,32 +42,24 @@ export const geminiService = {
             Message: ${message}
             Stack Trace: ${stack || 'N/A'}
             
-            DATA CONTEXT (Payload/State): 
+            DATA CONTEXT: 
             ${JSON.stringify(rawContext || {}, null, 2)}
             
             CRITICAL KNOWLEDGE BASE:
-            1. Meta WhatsApp API strictly REJECTS parameters containing newline characters (\\n) or tabs (\\t). If found, the fix is to .replace(/[\\n\\t]/g, ' ') or use a special separator.
+            1. Meta WhatsApp API strictly REJECTS parameters containing newline characters (\\n) or tabs (\\t).
             2. Template variable count in payload MUST match the template definition on Meta.
             
             TASK:
-            1. Analyze why the code failed. 
-            2. If it's a "Parameter Encoding" issue (newlines), suggest the specific sanitize function.
-            3. If the code logic is faulty, GENERATE THE CORRECT TYPESCRIPT CODE SNIPPET.
-            4. Generate a "fixingPrompt" that the user can paste into AI Studio to fix the file if the error is complex.
-            
-            OUTPUT RULES:
-            - Set fixType to 'MANUAL_CODE' for logic errors.
-            - 'implementationPrompt' should be the direct code fix (e.g., the sanitize function).
-            - 'fixingPrompt' should be a context-rich prompt for an AI to rewrite the entire affected function.`,
+            Analyze why the code failed and provide a fix.`,
             config: { 
                 responseMimeType: "application/json",
                 responseSchema: {
                     type: Type.OBJECT,
                     properties: {
-                        explanation: { type: Type.STRING, description: "Concise technical root cause." },
+                        explanation: { type: Type.STRING },
                         fixType: { type: Type.STRING, enum: ['AUTO', 'MANUAL_CODE', 'CONFIG'] },
-                        implementationPrompt: { type: Type.STRING, description: "Markdown code block with the exact fix snippet." },
-                        fixingPrompt: { type: Type.STRING, description: "A detailed prompt the user can paste into AI Studio to fix the entire module." },
+                        implementationPrompt: { type: Type.STRING },
+                        fixingPrompt: { type: Type.STRING },
                         action: { type: Type.STRING, enum: ['REPAIR_TEMPLATE', 'RETRY_API'] },
                         resolutionPath: { type: Type.STRING, enum: ['settings', 'templates', 'whatsapp', 'none'] }
                     },
@@ -81,7 +72,7 @@ export const geminiService = {
   },
 
   /**
-   * Real-time Chat Intelligence for Sales & Recovery
+   * Real-time Chat Intelligence
    */
   async analyzeChatContext(messages: WhatsAppLogEntry[], templates: WhatsAppTemplate[], customerName: string): Promise<AiChatInsight> {
     const ai = getAI();
@@ -90,19 +81,16 @@ export const geminiService = {
     try {
         const response = await ai.models.generateContent({
             model: FLASH_MODEL,
-            contents: `Analyze jewelry customer chat. 
-            Customer: ${customerName}
-            History: ${JSON.stringify(messages.slice(-8))}
-            Available Action Templates: ${JSON.stringify(templates.map(t => ({ id: t.id, name: t.name, content: t.content })))}`,
+            contents: `Analyze jewelry customer chat history for ${customerName}. Suggest a reply.`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
                     type: Type.OBJECT,
                     properties: {
-                        intent: { type: Type.STRING, description: "Customer's goal (e.g., asking for price, complaining about delay, confirming payment)" },
-                        tone: { type: Type.STRING, description: "Sentiment (e.g., impatient, grateful, suspicious)" },
-                        suggestedReply: { type: Type.STRING, description: "A highly personal, luxury-standard response draft" },
-                        recommendedTemplateId: { type: Type.STRING, description: "The ID of the meta template most suitable for this context" }
+                        intent: { type: Type.STRING },
+                        tone: { type: Type.STRING },
+                        suggestedReply: { type: Type.STRING },
+                        recommendedTemplateId: { type: Type.STRING }
                     },
                     required: ["intent", "tone", "suggestedReply"]
                 }
@@ -113,7 +101,7 @@ export const geminiService = {
   },
 
   /**
-   * Generative Architect for Psychographic Templates
+   * Generative Architect
    */
   async generateTemplateFromPrompt(prompt: string): Promise<{ 
       suggestedName: string, 
@@ -128,13 +116,7 @@ export const geminiService = {
 
     const response = await ai.models.generateContent({
         model: PRO_MODEL,
-        contents: `Architect a high-converting WhatsApp template for a luxury jewelry business.
-        Context: ${prompt}
-        
-        Rules:
-        1. Use {{1}}, {{2}} for variables.
-        2. Tone must be professional and high-end.
-        3. Category must be Meta compliant.`,
+        contents: `Architect a high-converting WhatsApp template for a luxury jewelry business based on: ${prompt}`,
         config: {
             responseMimeType: "application/json",
             responseSchema: {
@@ -155,7 +137,7 @@ export const geminiService = {
   },
 
   /**
-   * Advanced Strategic Nudge Generation (The "Brain" of Debt Recovery)
+   * Strategic Nudge Generation
    */
   async generateStrategicNotification(order: Order, type: 'UPCOMING' | 'OVERDUE' | 'SYSTEM', goldRate: number, riskProfile: RiskProfile = 'REGULAR'): Promise<{ 
       tone: CollectionTone, 
@@ -169,19 +151,10 @@ export const geminiService = {
 
     const paid = order.payments.reduce((s, p) => s + p.amount, 0);
     const balance = order.totalAmount - paid;
-    const rateDiff = goldRate - order.goldRateAtBooking;
 
     const response = await ai.models.generateContent({
         model: PRO_MODEL,
-        contents: `Generate a payment collection strategy.
-        Customer: ${order.customerName}
-        Order ID: ${order.id}
-        Status: ${type}
-        Risk Profile: ${riskProfile}
-        Balance Due: ₹${balance}
-        Gold Price Change: ₹${rateDiff}/g since booking.
-        
-        Strategy Goal: Secure payment while maintaining relationship. Use 'LOSS_AVERSION' if gold rate is rising. Use 'EMPATHY' if regular customer.`,
+        contents: `Generate collection strategy. Customer: ${order.customerName}, Balance: ${balance}, Status: ${type}, Risk: ${riskProfile}`,
         config: {
             responseMimeType: "application/json",
             responseSchema: {
@@ -191,7 +164,7 @@ export const geminiService = {
                     reasoning: { type: Type.STRING },
                     templateId: { type: Type.STRING },
                     variables: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    message: { type: Type.STRING, description: "Raw message for SMS if template is not used" }
+                    message: { type: Type.STRING }
                 },
                 required: ["tone", "reasoning", "templateId", "variables", "message"]
             }
@@ -201,9 +174,9 @@ export const geminiService = {
   },
 
   /**
-   * Auto-Fix Rejected Templates
+   * Auto-Fix Rejected Templates (Enhanced for API Errors)
    */
-  async fixRejectedTemplate(template: WhatsAppTemplate): Promise<{ 
+  async fixRejectedTemplate(template: Partial<WhatsAppTemplate>): Promise<{ 
       fixedName: string, 
       fixedContent: string, 
       category: MetaCategory, 
@@ -213,34 +186,34 @@ export const geminiService = {
     const ai = getAI();
     if (!ai) throw new Error("AI Offline");
 
-    const variableCount = (template.content.match(/{{[0-9]+}}/g) || []).length;
+    const variableCount = (template.content?.match(/{{[0-9]+}}/g) || []).length;
 
     const response = await ai.models.generateContent({
         model: PRO_MODEL,
         contents: `You are a Meta WhatsApp Template Compliance Officer.
         
-        Problem: A template was rejected by Meta.
-        Template Name: ${template.name}
+        PROBLEM: A template failed submission to Meta.
         Content: "${template.content}"
-        Rejection Reason: ${template.rejectionReason || 'Format/Policy Violation'}
+        API Error / Rejection Reason: "${template.rejectionReason || 'Invalid Parameter / Structure'}"
         Current Category: ${template.category}
-        Target Variable Count: ${variableCount} (Preserve this count if possible, unless it causes the issue).
-
-        TASKS:
-        1. If reason is "Promotional", REWRITE content to be purely transactional/informational. Remove words like "offer", "sale", "chance", "happy to".
-        2. If reason is "Format", ensure variables {{1}} are correctly placed.
-        3. If category is wrong, suggest the correct one (UTILITY vs MARKETING).
-        4. Keep the tone professional for a Jewelry brand.`,
+        
+        CRITICAL RULES FOR FIXING:
+        1. "Invalid Parameter" or "Ratio" Error: The content is too short for the number of variables. You MUST add more static text (formal, professional sentences) to lower the variable-to-word ratio.
+        2. "Promotional" Error: Remove words like "offer", "sale", "free", "gift". Make it purely transactional.
+        3. "Formatting": Ensure variables are {{1}}, {{2}}... sequentially.
+        4. Do NOT change the NUMBER of variables if possible, just surround them with more text.
+        
+        TASK: Rewrite the content to be compliant while keeping the original intent.`,
         config: {
             responseMimeType: "application/json",
             responseSchema: {
                 type: Type.OBJECT,
                 properties: {
-                    fixedName: { type: Type.STRING, description: "Keep strictly snake_case, lowercase" },
+                    fixedName: { type: Type.STRING },
                     fixedContent: { type: Type.STRING },
                     category: { type: Type.STRING, enum: ['UTILITY', 'MARKETING', 'AUTHENTICATION'] },
                     variableExamples: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    diagnosis: { type: Type.STRING, description: "Explain what was fixed" }
+                    diagnosis: { type: Type.STRING, description: "Explain specifically what was changed to fix the error" }
                 },
                 required: ["fixedName", "fixedContent", "category", "diagnosis"]
             }
@@ -250,7 +223,7 @@ export const geminiService = {
   },
 
   /**
-   * Smart Payment Plan Generation
+   * Payment Plan Gen
    */
   async generatePaymentPlan(prompt: string): Promise<Partial<PaymentPlanTemplate>> {
     const ai = getAI();
@@ -258,7 +231,7 @@ export const geminiService = {
 
     const response = await ai.models.generateContent({
         model: FLASH_MODEL,
-        contents: `Create a jewelry payment installment scheme based on: ${prompt}`,
+        contents: `Create jewelry payment scheme: ${prompt}`,
         config: {
             responseMimeType: "application/json",
             responseSchema: {
@@ -277,7 +250,7 @@ export const geminiService = {
   },
 
   /**
-   * Template Structural Compliance Check (Internal)
+   * Pre-flight Check
    */
   async validateAndFixTemplate(requiredContent: string, requiredName: string, category: string): Promise<{ isCompliant: boolean, optimizedContent: string, explanation: string }> {
     const ai = getAI();
@@ -287,13 +260,8 @@ export const geminiService = {
         const response = await ai.models.generateContent({
             model: FLASH_MODEL,
             contents: `Check compliance for Meta Template: ${requiredName} (${category}). Content: "${requiredContent}"
-            
-            Rules:
-            1. If category is UTILITY, content MUST NOT contain promotional words.
-            2. Variables MUST be sequential {{1}}, {{2}}...
-            3. Variables MUST NOT touch each other (e.g. {{1}}{{2}} is invalid, {{1}} {{2}} is valid).
-            
-            If it violates, rewrite it to be neutral and correct.`,
+            If category is UTILITY, ensure no promotional words.
+            If valid, return true. If not, rewrite content to be compliant.`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {

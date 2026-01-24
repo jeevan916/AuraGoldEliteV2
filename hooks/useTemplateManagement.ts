@@ -35,7 +35,8 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
   const logsEndRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
 
-  const rejectedTemplates = useMemo(() => (templates || []).filter(t => t && t.status === 'REJECTED'), [templates]);
+  // Filter for both explicit REJECTED status and our new MISSING status (disparities)
+  const rejectedTemplates = useMemo(() => (templates || []).filter(t => t && (t.status === 'REJECTED' || t.status === 'MISSING')), [templates]);
 
   useEffect(() => {
     if (logsEndRef.current) logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -83,19 +84,54 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       try {
           const metaTemplates = await whatsappService.fetchMetaTemplates();
           if (metaTemplates) {
-              const newTpls: WhatsAppTemplate[] = [];
-              const updatedList = [...templates];
+              // 1. Create a quick lookup map of what actually exists on Meta right now
+              const metaMap = new Map();
+              metaTemplates.forEach((mt: any) => metaMap.set(mt.name, mt));
 
-              metaTemplates.forEach((mt: any) => {
-                  const existingIndex = updatedList.findIndex(t => t.name === mt.name);
+              // 2. Iterate through LOCAL templates to update status or flag missing ones
+              const processedLocal = templates.map(localTpl => {
+                  const remote = metaMap.get(localTpl.name);
+
+                  if (remote) {
+                      // MATCH FOUND: Update local with truth from Meta
+                      metaMap.delete(localTpl.name); // Remove from map so we know it's handled
+                      
+                      const bodyComp = remote.components?.find((c: any) => c.type === 'BODY');
+                      
+                      return {
+                          ...localTpl,
+                          id: remote.id, // Ensure ID matches Meta
+                          status: remote.status,
+                          category: remote.category,
+                          structure: remote.components,
+                          content: bodyComp?.text || localTpl.content, 
+                          rejectionReason: remote.rejected_reason || undefined,
+                          source: 'META' as const
+                      };
+                  } else {
+                      // MATCH NOT FOUND: Check if it *should* be on Meta
+                      if (localTpl.source === 'META' || localTpl.id.startsWith('sys-')) {
+                          // It was marked as META but Meta doesn't have it.
+                          // This means it was deleted on Meta or never successfully created.
+                          return {
+                              ...localTpl,
+                              status: 'MISSING', 
+                              rejectionReason: 'Template not found in Meta response. Likely deleted or failed creation.',
+                          };
+                      }
+                      // If it's a local draft, leave it alone
+                      return localTpl;
+                  }
+              });
+
+              // 3. Add any NEW templates found on Meta that weren't in local
+              const newFromMeta: WhatsAppTemplate[] = [];
+              metaMap.forEach((mt: any) => {
                   const bodyComp = mt.components?.find((c: any) => c.type === 'BODY');
-                  const text = bodyComp?.text || "No Content";
-                  const existingGroup = existingIndex >= 0 ? updatedList[existingIndex].appGroup : undefined;
-
                   const tplObj: WhatsAppTemplate = {
-                      id: mt.id || `meta-${Math.random()}`,
+                      id: mt.id,
                       name: mt.name,
-                      content: text,
+                      content: bodyComp?.text || "No Content",
                       tactic: 'AUTHORITY',
                       targetProfile: 'REGULAR',
                       isAiGenerated: false,
@@ -104,41 +140,24 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
                       status: mt.status,
                       rejectionReason: mt.rejected_reason,
                       category: mt.category,
-                      appGroup: existingGroup
+                      appGroup: inferGroup({ name: mt.name, content: bodyComp?.text } as any)
                   };
-
-                  if (existingIndex >= 0) {
-                      updatedList[existingIndex] = { 
-                          ...updatedList[existingIndex], 
-                          id: mt.id,
-                          status: mt.status, 
-                          rejectionReason: mt.rejected_reason,
-                          structure: mt.components, 
-                          category: mt.category,
-                          content: text
-                      };
-                  } else {
-                      tplObj.appGroup = inferGroup(tplObj);
-                      newTpls.push(tplObj);
-                  }
+                  newFromMeta.push(tplObj);
               });
+
+              const finalList = [...processedLocal, ...newFromMeta];
+              const missingCount = finalList.filter(t => t.status === 'MISSING').length;
+
+              onUpdate(finalList);
               
-              const finalList = [...newTpls, ...updatedList];
-              const uniqueMap = new Map();
-              finalList.forEach(item => {
-                  if(!uniqueMap.has(item.name)) uniqueMap.set(item.name, item);
-                  else if(item.id && !item.id.startsWith('sys-') && uniqueMap.get(item.name).id.startsWith('sys-')) {
-                      uniqueMap.set(item.name, item);
-                  }
-              });
-              const uniqueList = Array.from(uniqueMap.values()) as WhatsAppTemplate[];
-
-              onUpdate(uniqueList);
               if (!silent) {
-                  alert(`Synced ${newTpls.length} new templates from Meta!`);
-                  addLog(`Sync Complete. Total Templates: ${uniqueList.length}`);
+                  let msg = `Sync Complete.`;
+                  if (newFromMeta.length > 0) msg += ` Imported ${newFromMeta.length} new templates.`;
+                  if (missingCount > 0) msg += ` Flagged ${missingCount} templates as MISSING on Meta.`;
+                  alert(msg);
+                  addLog(msg);
               }
-              return uniqueList;
+              return finalList;
           }
       } catch (error: any) {
           if(!silent) alert(`Sync Failed: ${error.message}`);
@@ -177,8 +196,8 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
               await deployHelper(req);
               restoredCount++;
           } else {
-              if (match.status === 'REJECTED') {
-                  addLog(`REJECTED: ${req.name}. Fixing...`);
+              if (match.status === 'REJECTED' || match.status === 'MISSING') {
+                  addLog(`${match.status}: ${req.name}. Fixing...`);
                   await repairHelper(match, req);
                   restoredCount++;
                   continue;
@@ -219,14 +238,38 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
           structure: (req as any).structure 
       };
       
-      const result = await whatsappService.createMetaTemplate(payload);
+      let result = await whatsappService.createMetaTemplate(payload);
+      
+      // --- AI AUTO-RETRY LOOP ---
+      if (!result.success && result.rawError) {
+          addLog(`FAILED: ${req.name} - ${result.error?.message}. Triggering AI Auto-Fix Loop...`);
+          try {
+              const aiFix = await geminiService.fixRejectedTemplate({
+                  ...payload,
+                  rejectionReason: typeof result.error === 'string' ? result.error : JSON.stringify(result.rawError)
+              });
+              
+              if(aiFix.fixedContent) {
+                  addLog(`🤖 AI Rewrote Payload: ${aiFix.diagnosis}`);
+                  const newExamples = alignExamples(aiFix.fixedContent, req.examples);
+                  const retryPayload = { ...payload, content: aiFix.fixedContent, variableExamples: newExamples };
+                  
+                  result = await whatsappService.createMetaTemplate(retryPayload);
+                  if (result.success) {
+                      addLog(`✅ RETRY SUCCESS: ${req.name} deployed.`);
+                  }
+              }
+          } catch(e: any) {
+              addLog(`❌ AI Retry Failed: ${e.message}`);
+          }
+      }
+      // --------------------------
+
       if (result.success) {
           addLog(`SUCCESS: ${req.name} deployed.`);
       } else {
-          addLog(`FAILED: ${req.name} - ${result.error?.message}`);
-          if (result.rawError) {
-              await runDeepDiagnostics(result.rawError, payload);
-          }
+          addLog(`FINAL FAIL: ${req.name} - ${result.error?.message}`);
+          if (result.rawError) await runDeepDiagnostics(result.rawError, payload);
       }
   };
 
@@ -246,14 +289,38 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
           return;
       }
       
-      const result = await whatsappService.editMetaTemplate(existingMetaTpl.id, payload);
+      let result = await whatsappService.editMetaTemplate(existingMetaTpl.id, payload);
+
+      // --- AI AUTO-RETRY LOOP ---
+      if (!result.success && result.rawError) {
+          addLog(`EDIT FAILED: ${requiredDef.name} - ${result.error?.message}. Triggering AI Auto-Fix Loop...`);
+          try {
+              const aiFix = await geminiService.fixRejectedTemplate({
+                  ...payload,
+                  rejectionReason: typeof result.error === 'string' ? result.error : JSON.stringify(result.rawError)
+              });
+              
+              if(aiFix.fixedContent) {
+                  addLog(`🤖 AI Rewrote Payload: ${aiFix.diagnosis}`);
+                  const newExamples = alignExamples(aiFix.fixedContent, requiredDef.examples);
+                  const retryPayload = { ...payload, content: aiFix.fixedContent, variableExamples: newExamples };
+                  
+                  result = await whatsappService.editMetaTemplate(existingMetaTpl.id, retryPayload);
+                  if (result.success) {
+                      addLog(`✅ RETRY SUCCESS: ${requiredDef.name} edited.`);
+                  }
+              }
+          } catch(e: any) {
+              addLog(`❌ AI Retry Failed: ${e.message}`);
+          }
+      }
+      // --------------------------
+
       if (result.success) {
           addLog(`FIXED: ${requiredDef.name} updated on Meta.`);
       } else {
           addLog(`FIX FAILED: ${requiredDef.name} - ${result.error?.message}`);
-          if (result.rawError) {
-              await runDeepDiagnostics(result.rawError, payload);
-          }
+          if (result.rawError) await runDeepDiagnostics(result.rawError, payload);
       }
   };
 
@@ -352,10 +419,25 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
               category: result.category,
               variableExamples: safeExamples || []
           };
-          const updateResult = await whatsappService.editMetaTemplate(tpl.id, fixedTemplate);
+          
+          let updateResult;
+          // If status is MISSING, we must create it fresh, not edit
+          if (tpl.status === 'MISSING') {
+              updateResult = await whatsappService.createMetaTemplate(fixedTemplate);
+          } else {
+              updateResult = await whatsappService.editMetaTemplate(tpl.id, fixedTemplate);
+          }
+
           if (updateResult.success) {
               setAiAnalysisReason(`AUTO-FIX SUCCESS: ${result.diagnosis}`);
-              onUpdate(templates.map(t => t.id === tpl.id ? { ...fixedTemplate, status: 'PENDING', rejectionReason: undefined } : t));
+              // Update local state to pending
+              onUpdate(templates.map(t => t.id === tpl.id ? { 
+                  ...fixedTemplate, 
+                  status: 'PENDING', 
+                  rejectionReason: undefined,
+                  id: updateResult.finalName ? tpl.id : tpl.id // keep ID if edit, might change if create
+              } : t));
+              
               setTemplateName(result.fixedName);
               setGeneratedContent(result.fixedContent);
               setSelectedCategory(result.category);
@@ -374,10 +456,13 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
 
   const handleDeleteTemplate = async (tpl: WhatsAppTemplate) => {
       const isMeta = tpl.source === 'META';
-      if (!confirm(isMeta ? `WARNING: Permanently DELETE "${tpl.name}" from Meta?` : `Delete "${tpl.name}" locally?`)) return;
+      // If it's missing on Meta, we just delete locally without calling API
+      const isMissing = tpl.status === 'MISSING';
+
+      if (!confirm(isMeta && !isMissing ? `WARNING: Permanently DELETE "${tpl.name}" from Meta?` : `Delete "${tpl.name}" locally?`)) return;
       setDeletingId(tpl.id);
       try {
-          if (isMeta) {
+          if (isMeta && !isMissing) {
               const res = await whatsappService.deleteMetaTemplate(tpl.name);
               if (!res.success) throw new Error(res.error?.message || "Delete Failed");
           }
