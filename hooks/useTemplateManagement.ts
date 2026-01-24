@@ -84,48 +84,50 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       try {
           const metaTemplatesRaw = await whatsappService.fetchMetaTemplates();
           if (metaTemplatesRaw) {
-              // POLICY FILTER: Only process templates starting with 'auragold'
+              // POLICY FILTER: Only process INCOMING templates starting with 'auragold'
               const metaTemplates = metaTemplatesRaw.filter((t: any) => t.name.toLowerCase().startsWith('auragold'));
 
               // 1. Create a quick lookup map of what actually exists on Meta right now
               const metaMap = new Map();
               metaTemplates.forEach((mt: any) => metaMap.set(mt.name, mt));
 
-              // 2. Iterate through LOCAL templates to update status or flag missing ones
-              const processedLocal = templates.map(localTpl => {
-                  const remote = metaMap.get(localTpl.name);
+              // 2. Iterate through LOCAL templates to update status or flag missing ones.
+              // PURGE POLICY: We explicitly FILTER existing templates. If it doesn't start with 'auragold', it's dropped from the new state.
+              const processedLocal = templates
+                  .filter(localTpl => localTpl.name.toLowerCase().startsWith('auragold'))
+                  .map(localTpl => {
+                      const remote = metaMap.get(localTpl.name);
 
-                  if (remote) {
-                      // MATCH FOUND: Update local with truth from Meta
-                      metaMap.delete(localTpl.name); // Remove from map so we know it's handled
-                      
-                      const bodyComp = remote.components?.find((c: any) => c.type === 'BODY');
-                      
-                      return {
-                          ...localTpl,
-                          id: remote.id, // Ensure ID matches Meta
-                          status: remote.status,
-                          category: remote.category,
-                          structure: remote.components,
-                          content: bodyComp?.text || localTpl.content, 
-                          rejectionReason: remote.rejected_reason || undefined,
-                          source: 'META' as const
-                      };
-                  } else {
-                      // MATCH NOT FOUND: Check if it *should* be on Meta
-                      if (localTpl.source === 'META' || localTpl.id.startsWith('sys-')) {
-                          // It was marked as META but Meta doesn't have it.
-                          // This means it was deleted on Meta or never successfully created.
+                      if (remote) {
+                          // MATCH FOUND: Update local with truth from Meta
+                          metaMap.delete(localTpl.name); // Remove from map so we know it's handled
+                          
+                          const bodyComp = remote.components?.find((c: any) => c.type === 'BODY');
+                          
                           return {
                               ...localTpl,
-                              status: 'MISSING', 
-                              rejectionReason: 'Template not found in Meta response. Likely deleted or failed creation.',
+                              id: remote.id, // Ensure ID matches Meta
+                              status: remote.status,
+                              category: remote.category,
+                              structure: remote.components,
+                              content: bodyComp?.text || localTpl.content, 
+                              rejectionReason: remote.rejected_reason || undefined,
+                              source: 'META' as const
                           };
+                      } else {
+                          // MATCH NOT FOUND: Check if it *should* be on Meta
+                          if (localTpl.source === 'META' || localTpl.id.startsWith('sys-')) {
+                              // It was marked as META but Meta doesn't have it.
+                              return {
+                                  ...localTpl,
+                                  status: 'MISSING', 
+                                  rejectionReason: 'Template not found in Meta response. Likely deleted or failed creation.',
+                              };
+                          }
+                          // If it's a local draft, leave it alone
+                          return localTpl;
                       }
-                      // If it's a local draft, leave it alone
-                      return localTpl;
-                  }
-              });
+                  });
 
               // 3. Add any NEW templates found on Meta that weren't in local
               const newFromMeta: WhatsAppTemplate[] = [];
@@ -150,6 +152,7 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
 
               const finalList = [...processedLocal, ...newFromMeta];
               const missingCount = finalList.filter(t => t.status === 'MISSING').length;
+              const purgedCount = templates.length - processedLocal.length; // Approximate count of purged items
 
               onUpdate(finalList);
               
@@ -157,7 +160,11 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
                   let msg = `Sync Complete.`;
                   if (newFromMeta.length > 0) msg += ` Imported ${newFromMeta.length} new templates.`;
                   if (missingCount > 0) msg += ` Flagged ${missingCount} templates as MISSING on Meta.`;
-                  if (metaTemplatesRaw.length - metaTemplates.length > 0) msg += ` Ignored ${metaTemplatesRaw.length - metaTemplates.length} external templates (non-auragold).`;
+                  if (purgedCount > 0) msg += ` Purged ${purgedCount} non-Auragold templates from local library.`;
+                  
+                  const ignoredExternal = metaTemplatesRaw.length - metaTemplates.length;
+                  if (ignoredExternal > 0) msg += ` Ignored ${ignoredExternal} external templates.`;
+                  
                   alert(msg);
                   addLog(msg);
               }

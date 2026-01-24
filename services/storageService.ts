@@ -164,10 +164,13 @@ class StorageService {
       if (response.success && response.data) {
           const dbData = response.data;
           
-          let fetchedTemplates = dbData.templates || [];
+          // POLICY FILTER: Only load templates starting with 'auragold' from database/server
+          // This effectively "drops" non-compliant templates from the app memory on boot
+          let fetchedTemplates = (dbData.templates || [])
+                .filter((t: any) => t.name.toLowerCase().startsWith('auragold'));
           
           // CRITICAL FIX: Ensure all REQUIRED templates are present in memory.
-          // If DB misses them, we inject the local definition.
+          // If DB misses them (or they were filtered out because they weren't auragold yet), we inject the local definition.
           REQUIRED_SYSTEM_TEMPLATES.forEach(req => {
               const exists = fetchedTemplates.find((t: any) => t.name === req.name);
               if (!exists) {
