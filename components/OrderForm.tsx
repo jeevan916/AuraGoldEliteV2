@@ -67,13 +67,14 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
       }
   }, [settings.currentGoldRate22K, isRateManuallySet]);
 
-  // Sync protection rate with order rate initially, but allow deviation
+  // Sync protection rate with order rate initially
   useEffect(() => {
-      // Only sync if step is 1 (during initial rate setting) to prevent overwriting manual edits in step 3
-      if (step === 1 && !isRateManuallySet) {
+      // Always sync in Step 1, even if manually set. 
+      // The "Booking Rate" defined in Step 1 acts as the base for Protection.
+      if (step === 1) {
           setProtectionRate(orderRate);
       }
-  }, [orderRate, step, isRateManuallySet]);
+  }, [orderRate, step]);
 
   // Update defaults when metal color changes (switch to Silver purities)
   useEffect(() => {
@@ -391,6 +392,11 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                      </button>
                  )}
                </div>
+               {isRateManuallySet && (
+                   <p className="text-[9px] text-amber-500 font-bold mt-1 tracking-wider uppercase">
+                       Protection Locked @ ₹{protectionRate}
+                   </p>
+               )}
             </div>
             <div className="text-right relative z-10">
                 <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">Order Estimate</p>

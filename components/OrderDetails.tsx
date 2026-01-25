@@ -562,7 +562,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                     <div className="flex justify-between items-start">
                         <div>
                             <h3 className="font-bold text-slate-800">{item.category}</h3>
-                            <p className="text-xs text-slate-500">{item.purity} • {item.netWeight}g</p>
+                            <p className="text-xs text-slate-500">{item.purity} • {item.netWeight}g <span className="text-emerald-600 font-bold ml-1">@ ₹{appliedRate.toLocaleString()}/g</span></p>
                         </div>
                         <div className="text-right">
                             <p className="text-sm font-black text-slate-900">₹{item.finalAmount.toLocaleString()}</p>
