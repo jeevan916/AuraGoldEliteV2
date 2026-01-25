@@ -2,10 +2,10 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Search, Filter, ReceiptIndianRupee, Calendar, CheckCircle2, 
-  Clock, AlertCircle, Smartphone, ChevronRight, Download,
-  TrendingUp, ArrowDownLeft, ArrowUpRight, BrainCircuit, Zap, Loader2, Link, Share2
+  Clock, AlertCircle, ChevronRight, Download,
+  ArrowDownLeft, BrainCircuit, Loader2, Share2, X
 } from 'lucide-react';
-import { Order, OrderStatus, Milestone, CollectionTone, GlobalSettings, WhatsAppLogEntry } from '../types';
+import { Order, WhatsAppLogEntry, GlobalSettings } from '../types';
 import { geminiService } from '../services/geminiService';
 import { whatsappService } from '../services/whatsappService';
 
@@ -17,72 +17,92 @@ interface PaymentCollectionsProps {
   settings: GlobalSettings;
 }
 
-type CollectionTab = 'PLANNED' | 'RECEIVED' | 'UPCOMING' | 'OVERDUE';
+type CollectionTab = 'OVERDUE' | 'UPCOMING' | 'RECEIVED' | 'PLANNED';
 
 const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewOrder, onSendWhatsApp, onAddLog, settings }) => {
   const [activeTab, setActiveTab] = useState<CollectionTab>('OVERDUE');
   const [search, setSearch] = useState('');
+  const [dateRange, setDateRange] = useState<{start: string, end: string}>({ start: '', end: '' });
   const [generatingStrategy, setGeneratingStrategy] = useState<string | null>(null);
 
-  // 1. Flatten all milestones across all orders
+  // 1. Flatten all milestones (For Planned, Overdue, Upcoming)
   const allMilestones = useMemo(() => {
     return orders.flatMap(o => o.paymentPlan.milestones.map(m => ({
       ...m,
+      type: 'MILESTONE',
       orderId: o.id,
       customerName: o.customerName,
       customerContact: o.customerContact,
-      orderStatus: o.status,
       order: o
     })));
   }, [orders]);
 
-  // 2. Flatten all payment records
+  // 2. Flatten all payment records (For Received only)
   const allPayments = useMemo(() => {
     return orders.flatMap(o => o.payments.map(p => ({
       ...p,
+      type: 'TRANSACTION',
+      dueDate: p.date, // Alias for sorting
+      targetAmount: p.amount, // Alias for sorting
+      status: 'SUCCESS',
       orderId: o.id,
       customerName: o.customerName,
+      customerContact: o.customerContact,
       order: o
     })));
   }, [orders]);
 
   const todayStr = new Date().toISOString().split('T')[0];
-  const threeDaysLater = new Date();
-  threeDaysLater.setDate(new Date().getDate() + 3);
-  const threeDaysLaterStr = threeDaysLater.toISOString().split('T')[0];
 
   const filteredData = useMemo(() => {
     let base: any[] = [];
     
+    // 1. STRICT TAB FILTERING
     switch(activeTab) {
-      case 'PLANNED':
-        base = allMilestones.sort((a,b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-        break;
       case 'RECEIVED':
-        base = allPayments.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        break;
-      case 'UPCOMING':
-        base = allMilestones.filter(m => 
-          m.status !== 'PAID' && 
-          m.dueDate >= todayStr && 
-          m.dueDate <= threeDaysLaterStr
-        ).sort((a,b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+        // ONLY actual money received
+        base = allPayments; 
         break;
       case 'OVERDUE':
-        base = allMilestones.filter(m => 
-          m.status !== 'PAID' && 
-          m.dueDate < todayStr
-        ).sort((a,b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+        // ONLY unpaid milestones in the past
+        base = allMilestones.filter(m => m.status !== 'PAID' && m.dueDate < todayStr);
+        break;
+      case 'UPCOMING':
+        // ONLY unpaid milestones today or future
+        base = allMilestones.filter(m => m.status !== 'PAID' && m.dueDate >= todayStr);
+        break;
+      case 'PLANNED':
+        // MASTER SCHEDULE: Everything
+        base = allMilestones;
         break;
     }
 
-    if (!search) return base;
-    const lowerSearch = search.toLowerCase();
-    return base.filter(item => 
-      item.customerName.toLowerCase().includes(lowerSearch) || 
-      (item.orderId && item.orderId.toLowerCase().includes(lowerSearch))
-    );
-  }, [activeTab, allMilestones, allPayments, search, todayStr, threeDaysLaterStr]);
+    // 2. DATE RANGE FILTERING
+    if (dateRange.start) {
+        base = base.filter(item => (item.dueDate || item.date).split('T')[0] >= dateRange.start);
+    }
+    if (dateRange.end) {
+        base = base.filter(item => (item.dueDate || item.date).split('T')[0] <= dateRange.end);
+    }
+
+    // 3. TEXT SEARCH FILTERING
+    if (search) {
+        const lowerSearch = search.toLowerCase();
+        base = base.filter(item => 
+          item.customerName.toLowerCase().includes(lowerSearch) || 
+          (item.orderId && item.orderId.toLowerCase().includes(lowerSearch))
+        );
+    }
+
+    // 4. SORTING
+    // Received: Newest first. Others: Oldest due date first (Urgency)
+    return base.sort((a,b) => {
+        const dateA = new Date(a.dueDate || a.date).getTime();
+        const dateB = new Date(b.dueDate || b.date).getTime();
+        return activeTab === 'RECEIVED' ? dateB - dateA : dateA - dateB;
+    });
+
+  }, [activeTab, allMilestones, allPayments, search, dateRange, todayStr]);
 
   const handleTriggerStrategy = async (item: any) => {
       setGeneratingStrategy(item.id);
@@ -136,57 +156,42 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
       alert("Link Sent Successfully");
   };
 
+  const getDaysDiff = (dateStr: string) => {
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const target = new Date(dateStr);
+      target.setHours(0,0,0,0);
+      const diffTime = target.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays;
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+    <div className="space-y-6 animate-fadeIn pb-24">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6">
         <div>
           <h2 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
             <ReceiptIndianRupee className="text-amber-600" /> Payment & Collection Center
           </h2>
-          <p className="text-sm text-slate-500 font-medium">Global view of all planned milestones and received capital.</p>
+          <p className="text-sm text-slate-500 font-medium">Global ledger for tracking dues, receipts, and forecasting.</p>
         </div>
         
-        <div className="flex bg-white p-1 rounded-2xl shadow-sm border w-full md:w-auto overflow-x-auto">
+        <div className="flex bg-white p-1 rounded-2xl shadow-sm border w-full lg:w-auto overflow-x-auto">
           {(['OVERDUE', 'UPCOMING', 'RECEIVED', 'PLANNED'] as CollectionTab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`whitespace-nowrap px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-amber-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
+              className={`whitespace-nowrap px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-amber-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
             >
-              {tab.replace('_', ' ')}
+              {tab}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Summary Banner */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-rose-50 border border-rose-100 p-6 rounded-3xl flex items-center gap-4">
-           <div className="p-3 bg-white rounded-2xl shadow-sm text-rose-600"><AlertCircle /></div>
-           <div>
-              <p className="text-[10px] font-black uppercase text-rose-400 tracking-widest leading-none mb-1">Total Overdue</p>
-              <p className="text-2xl font-black text-rose-700">₹{allMilestones.filter(m => m.status !== 'PAID' && m.dueDate < todayStr).reduce((acc, m) => acc + m.targetAmount, 0).toLocaleString()}</p>
-           </div>
-        </div>
-        <div className="bg-blue-50 border border-blue-100 p-6 rounded-3xl flex items-center gap-4">
-           <div className="p-3 bg-white rounded-2xl shadow-sm text-blue-600"><Clock /></div>
-           <div>
-              <p className="text-[10px] font-black uppercase text-blue-400 tracking-widest leading-none mb-1">Expected (7 Days)</p>
-              <p className="text-2xl font-black text-blue-700">₹{allMilestones.filter(m => m.status !== 'PAID' && m.dueDate >= todayStr && m.dueDate <= threeDaysLaterStr).reduce((acc, m) => acc + m.targetAmount, 0).toLocaleString()}</p>
-           </div>
-        </div>
-        <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-3xl flex items-center gap-4">
-           <div className="p-3 bg-white rounded-2xl shadow-sm text-emerald-600"><CheckCircle2 /></div>
-           <div>
-              <p className="text-[10px] font-black uppercase text-emerald-400 tracking-widest leading-none mb-1">Lifetime Collected</p>
-              <p className="text-2xl font-black text-emerald-700">₹{allPayments.reduce((acc, p) => acc + p.amount, 0).toLocaleString()}</p>
-           </div>
-        </div>
-      </div>
-
       {/* Main Filter & List */}
       <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden">
-        <div className="p-6 border-b bg-slate-50/50 flex flex-col md:flex-row gap-4">
+        <div className="p-6 border-b bg-slate-50/50 flex flex-col xl:flex-row gap-4">
           <div className="relative flex-1">
              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
              <input 
@@ -197,9 +202,31 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
               onChange={e => setSearch(e.target.value)}
              />
           </div>
-          <button className="bg-white border p-3 rounded-2xl text-slate-400 hover:text-slate-600 transition-colors shadow-sm">
-             <Filter size={20} />
-          </button>
+          
+          <div className="flex items-center gap-2 bg-white border border-slate-200 p-1 rounded-2xl shadow-sm">
+              <div className="flex items-center gap-2 px-3 border-r border-slate-100">
+                  <Filter size={16} className="text-slate-400" />
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Date Range</span>
+              </div>
+              <input 
+                  type="date" 
+                  className="bg-transparent text-xs font-bold text-slate-600 outline-none p-2"
+                  value={dateRange.start}
+                  onChange={e => setDateRange({...dateRange, start: e.target.value})}
+              />
+              <span className="text-slate-300">-</span>
+              <input 
+                  type="date" 
+                  className="bg-transparent text-xs font-bold text-slate-600 outline-none p-2"
+                  value={dateRange.end}
+                  onChange={e => setDateRange({...dateRange, end: e.target.value})}
+              />
+              {(dateRange.start || dateRange.end) && (
+                  <button onClick={() => setDateRange({start: '', end: ''})} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg">
+                      <X size={14} />
+                  </button>
+              )}
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -207,14 +234,18 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
             <thead className="bg-slate-50/80 text-[10px] font-black uppercase text-slate-400 tracking-[0.1em] border-b">
               <tr>
                 <th className="px-8 py-5">Customer / Order</th>
-                <th className="px-8 py-5">Date</th>
+                <th className="px-8 py-5">{activeTab === 'RECEIVED' ? 'Received Date' : 'Due Date'}</th>
                 <th className="px-8 py-5">Amount</th>
-                <th className="px-8 py-5">Status / Method</th>
+                <th className="px-8 py-5">{activeTab === 'RECEIVED' ? 'Method' : 'Status'}</th>
                 <th className="px-8 py-5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredData.map((item: any) => (
+              {filteredData.map((item: any) => {
+                const daysDiff = getDaysDiff(item.dueDate || item.date);
+                const isLate = daysDiff < 0;
+                
+                return (
                 <tr key={item.id} className="hover:bg-slate-50/50 transition-colors group">
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-4">
@@ -228,50 +259,65 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
                     </div>
                   </td>
                   <td className="px-8 py-6">
-                     <p className="text-sm font-bold text-slate-700">
-                       {new Date(item.dueDate || item.date).toLocaleDateString()}
-                     </p>
-                     <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mt-1">
-                       {item.dueDate ? 'Milestone Due' : 'Collection Date'}
-                     </p>
+                     <div className="flex flex-col">
+                         <div className="flex items-center gap-2">
+                             <Calendar size={14} className="text-slate-400" />
+                             <span className="text-sm font-bold text-slate-700">
+                                {new Date(item.dueDate || item.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                             </span>
+                         </div>
+                         
+                         {/* Dynamic Day Counter based on Tab */}
+                         {activeTab === 'OVERDUE' && (
+                             <span className="text-[10px] font-black text-rose-500 uppercase tracking-wide mt-1">
+                                {Math.abs(daysDiff)} Days Late
+                             </span>
+                         )}
+                         {activeTab === 'UPCOMING' && (
+                             <span className="text-[10px] font-black text-blue-500 uppercase tracking-wide mt-1">
+                                {daysDiff === 0 ? 'Due Today' : `In ${daysDiff} Days`}
+                             </span>
+                         )}
+                     </div>
                   </td>
                   <td className="px-8 py-6">
-                     <p className={`text-lg font-black ${item.status === 'PAID' || !item.status ? 'text-emerald-600' : 'text-slate-900'}`}>
+                     <p className={`text-lg font-black ${item.type === 'TRANSACTION' ? 'text-emerald-600' : 'text-slate-900'}`}>
                        ₹{(item.targetAmount || item.amount).toLocaleString()}
                      </p>
                   </td>
                   <td className="px-8 py-6">
-                     {item.status ? (
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
-                          item.status === 'PAID' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 
-                          item.dueDate < todayStr ? 'bg-rose-50 text-rose-700 border-rose-100 shadow-sm animate-pulse' : 
-                          'bg-amber-50 text-amber-700 border-amber-100'
-                        }`}>
-                          {item.status}
-                        </span>
-                     ) : (
+                     {item.type === 'TRANSACTION' ? (
                         <div className="flex items-center gap-2">
-                           <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase">{item.method}</span>
+                           <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase border border-slate-200">{item.method}</span>
                            <ArrowDownLeft size={14} className="text-emerald-500" />
                         </div>
+                     ) : (
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
+                          item.status === 'PAID' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 
+                          isLate ? 'bg-rose-50 text-rose-700 border-rose-100 shadow-sm animate-pulse' : 
+                          'bg-amber-50 text-amber-700 border-amber-100'
+                        }`}>
+                          {isLate && item.status !== 'PAID' ? 'OVERDUE' : item.status}
+                        </span>
                      )}
                   </td>
                   <td className="px-8 py-6 text-right">
                     <div className="flex justify-end gap-2">
-                       {item.status && item.status !== 'PAID' && (
+                       {/* Strategy Buttons ONLY for Unpaid Milestones */}
+                       {item.type === 'MILESTONE' && item.status !== 'PAID' && (
                           <>
                               <button 
                                 onClick={() => handleTriggerStrategy(item)}
                                 disabled={generatingStrategy === item.id}
                                 className={`p-2 rounded-xl transition-all shadow-sm flex items-center gap-2 px-4 ${
-                                  item.dueDate < todayStr
+                                  isLate
                                   ? 'bg-rose-600 text-white hover:bg-rose-700' 
                                   : 'bg-emerald-500 text-white hover:bg-emerald-600'
                                 }`}
                               >
                                  {generatingStrategy === item.id ? <Loader2 size={16} className="animate-spin" /> : <BrainCircuit size={16} />}
                                  <span className="text-[10px] font-black uppercase tracking-widest">
-                                    {item.dueDate < todayStr ? 'Recover' : 'Nudge'}
+                                    {isLate ? 'Recover' : 'Nudge'}
                                  </span>
                               </button>
                               <button 
@@ -283,27 +329,31 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
                               </button>
                           </>
                        )}
-                       {!item.status && (
-                          <button className="p-2 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-200 transition-colors">
+                       {item.type === 'TRANSACTION' && (
+                          <button className="p-2 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-200 transition-colors" title="Download Receipt">
                              <Download size={16} />
                           </button>
                        )}
                        <button 
                         onClick={() => onViewOrder(item.orderId)}
                         className="p-2 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-amber-600 hover:border-amber-200 transition-all shadow-sm"
+                        title="View Order Details"
                        >
                          <ChevronRight size={18} />
                        </button>
                     </div>
                   </td>
                 </tr>
-              ))}
+              )})}
               {filteredData.length === 0 && (
                  <tr>
-                    <td colSpan={5} className="py-20 text-center">
-                       <div className="max-w-xs mx-auto space-y-3">
-                          <ReceiptIndianRupee className="w-12 h-12 text-slate-100 mx-auto" />
-                          <p className="font-bold text-slate-400 uppercase tracking-widest text-xs">No records found for this view</p>
+                    <td colSpan={5} className="py-24 text-center">
+                       <div className="max-w-xs mx-auto space-y-3 opacity-50">
+                          {activeTab === 'OVERDUE' ? <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" /> : <ReceiptIndianRupee className="w-12 h-12 text-slate-400 mx-auto" />}
+                          <p className="font-bold text-slate-500 uppercase tracking-widest text-xs">
+                              {activeTab === 'OVERDUE' ? 'No overdue payments!' : `No ${activeTab.toLowerCase()} records found`}
+                          </p>
+                          {(dateRange.start || dateRange.end) && <p className="text-[10px] text-slate-400">Try adjusting the date filter.</p>}
                        </div>
                     </td>
                  </tr>
