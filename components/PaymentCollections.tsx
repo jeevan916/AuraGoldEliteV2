@@ -52,7 +52,18 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
     })));
   }, [orders]);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  // Helper: Normalize date string to midnight timestamp for accurate comparison
+  const getMidnightTimestamp = (dateStr: string) => {
+      const d = new Date(dateStr);
+      d.setHours(0, 0, 0, 0);
+      return d.getTime();
+  };
+
+  const todayTimestamp = useMemo(() => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      return d.getTime();
+  }, []);
 
   const filteredData = useMemo(() => {
     let base: any[] = [];
@@ -60,29 +71,37 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
     // 1. STRICT TAB FILTERING
     switch(activeTab) {
       case 'RECEIVED':
-        // ONLY actual money received
+        // ONLY actual money received (Transactions)
         base = allPayments; 
         break;
       case 'OVERDUE':
-        // ONLY unpaid milestones in the past
-        base = allMilestones.filter(m => m.status !== 'PAID' && m.dueDate < todayStr);
+        // ONLY unpaid milestones strictly in the past
+        base = allMilestones.filter(m => {
+            const dueTime = getMidnightTimestamp(m.dueDate);
+            return m.status !== 'PAID' && dueTime < todayTimestamp;
+        });
         break;
       case 'UPCOMING':
-        // ONLY unpaid milestones today or future
-        base = allMilestones.filter(m => m.status !== 'PAID' && m.dueDate >= todayStr);
+        // ONLY unpaid milestones today or in future
+        base = allMilestones.filter(m => {
+            const dueTime = getMidnightTimestamp(m.dueDate);
+            return m.status !== 'PAID' && dueTime >= todayTimestamp;
+        });
         break;
       case 'PLANNED':
-        // MASTER SCHEDULE: Everything
+        // MASTER SCHEDULE: Everything (Milestones only)
         base = allMilestones;
         break;
     }
 
     // 2. DATE RANGE FILTERING
     if (dateRange.start) {
-        base = base.filter(item => (item.dueDate || item.date).split('T')[0] >= dateRange.start);
+        const startTime = getMidnightTimestamp(dateRange.start);
+        base = base.filter(item => getMidnightTimestamp(item.dueDate || item.date) >= startTime);
     }
     if (dateRange.end) {
-        base = base.filter(item => (item.dueDate || item.date).split('T')[0] <= dateRange.end);
+        const endTime = getMidnightTimestamp(dateRange.end);
+        base = base.filter(item => getMidnightTimestamp(item.dueDate || item.date) <= endTime);
     }
 
     // 3. TEXT SEARCH FILTERING
@@ -95,14 +114,14 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
     }
 
     // 4. SORTING
-    // Received: Newest first. Others: Oldest due date first (Urgency)
     return base.sort((a,b) => {
         const dateA = new Date(a.dueDate || a.date).getTime();
         const dateB = new Date(b.dueDate || b.date).getTime();
+        // For Received, show newest first. For Dues, show oldest (most urgent) first.
         return activeTab === 'RECEIVED' ? dateB - dateA : dateA - dateB;
     });
 
-  }, [activeTab, allMilestones, allPayments, search, dateRange, todayStr]);
+  }, [activeTab, allMilestones, allPayments, search, dateRange, todayTimestamp]);
 
   const handleTriggerStrategy = async (item: any) => {
       setGeneratingStrategy(item.id);
@@ -157,11 +176,8 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
   };
 
   const getDaysDiff = (dateStr: string) => {
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      const target = new Date(dateStr);
-      target.setHours(0,0,0,0);
-      const diffTime = target.getTime() - today.getTime();
+      const targetTime = getMidnightTimestamp(dateStr);
+      const diffTime = targetTime - todayTimestamp;
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       return diffDays;
   };
