@@ -74,7 +74,23 @@ export const ensureDb = async (req, res, next) => {
     next();
 };
 
-export const normalizePhone = (p) => p ? p.replace(/\D/g, '').slice(-12) : '';
+export const normalizePhone = (p) => {
+    if (!p) return '';
+    // Strip all non-numeric characters
+    let clean = p.replace(/\D/g, '');
+    
+    // Logic for India (+91)
+    // 10 digits -> Add 91
+    if (clean.length === 10) return '91' + clean;
+    // 11 digits starting with 0 -> Replace 0 with 91
+    if (clean.length === 11 && clean.startsWith('0')) return '91' + clean.substring(1);
+    // 12 digits starting with 91 -> Keep as is
+    if (clean.length === 12 && clean.startsWith('91')) return clean;
+    
+    // For other cases (e.g. international), just return the cleaned numbers
+    // This prevents the previous slice(-12) bug which could corrupt longer international numbers
+    return clean;
+};
 
 // --- NEW SERVER-SIDE LOGGING HELPER ---
 export const logDbActivity = async (actionType, details, metadata, req) => {

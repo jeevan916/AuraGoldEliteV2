@@ -97,8 +97,17 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
         rate = currentItem.purity === '925' ? Math.round(baseSilver * 0.925) : baseSilver;
     } else {
         // Gold Logic
-        rate = currentItem.purity === '24K' ? settings.currentGoldRate24K : 
-               currentItem.purity === '18K' ? settings.currentGoldRate18K : orderRate;
+        // If manual override is active, orderRate is the "Locked 22K Rate".
+        // We must scale other purities relative to this locked 22K rate to maintain the booking contract logic.
+        if (isRateManuallySet) {
+             if (currentItem.purity === '24K') rate = Math.round(orderRate * (99.9 / 91.6));
+             else if (currentItem.purity === '18K') rate = Math.round(orderRate * (75.0 / 91.6));
+             else rate = orderRate; // 22K
+        } else {
+             // If live, use specific live rates for each purity
+             rate = currentItem.purity === '24K' ? settings.currentGoldRate24K : 
+                    currentItem.purity === '18K' ? settings.currentGoldRate18K : orderRate;
+        }
     }
 
     const metalValue = (currentItem.netWeight || 0) * rate;
@@ -106,8 +115,16 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
     const laborValue = (currentItem.makingChargesPerGram || 0) * (currentItem.netWeight || 0);
     const subTotal = metalValue + wastageValue + laborValue + (currentItem.stoneCharges || 0);
     const tax = subTotal * (settings.defaultTaxRate / 100);
-    return { metalValue, wastageValue, laborValue, tax, total: subTotal + tax };
-  }, [currentItem, orderRate, settings]);
+    
+    return { 
+        rateUsed: rate,
+        metalValue, 
+        wastageValue, 
+        laborValue, 
+        tax, 
+        total: subTotal + tax 
+    };
+  }, [currentItem, orderRate, settings, isRateManuallySet]);
 
   const cartTotal = useMemo(() => cartItems.reduce((s, i) => s + i.finalAmount, 0), [cartItems]);
 
@@ -281,7 +298,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
       items: cartItems,
       payments: [],
       totalAmount: cartTotal,
-      goldRateAtBooking: orderRate, // Note: This stores base gold rate. Silver orders handle internally.
+      goldRateAtBooking: orderRate, // This is the Base 22K Rate Reference
       status: OrderStatus.ACTIVE,
       createdAt: new Date().toISOString(),
       paymentPlan: { 
@@ -506,14 +523,20 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                 </div>
             </div>
 
-            <div className="bg-amber-50 p-5 rounded-2xl border border-amber-200 flex justify-between items-center shadow-inner">
-                <div>
-                    <p className="text-[9px] font-black uppercase text-amber-600 mb-1 tracking-wider">Estimated Value</p>
-                    <p className="text-2xl font-black text-slate-900">₹{Math.round(pricing.total).toLocaleString()}</p>
+            <div className="bg-amber-50 p-5 rounded-2xl border border-amber-200 shadow-inner">
+                <div className="flex justify-between items-center mb-2">
+                    <div>
+                        <p className="text-[9px] font-black uppercase text-amber-600 mb-1 tracking-wider">Applied Rate ({currentItem.purity})</p>
+                        <p className="text-lg font-black text-amber-800">₹{pricing.rateUsed.toLocaleString()}/g</p>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-[9px] font-black uppercase text-amber-600 mb-1 tracking-wider">Item Total</p>
+                        <p className="text-2xl font-black text-slate-900">₹{Math.round(pricing.total).toLocaleString()}</p>
+                    </div>
                 </div>
                 <button 
                   onClick={handleAddItem} 
-                  className="bg-slate-900 text-white px-8 py-3.5 rounded-xl font-black text-xs uppercase flex items-center gap-2 active:scale-95 shadow-lg"
+                  className="w-full bg-slate-900 text-white px-8 py-3.5 rounded-xl font-black text-xs uppercase flex items-center justify-center gap-2 active:scale-95 shadow-lg"
                 >
                     <Plus size={18} /> Add to Order
                 </button>

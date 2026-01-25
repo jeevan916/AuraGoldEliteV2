@@ -96,10 +96,22 @@ const constructMetaComponents = (content: string, variableExamples: string[] = [
 export const whatsappService = {
   formatPhoneNumber(phone: string): string {
     if (!phone) return '';
+    // Strip non-digits
     let cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length === 11 && cleaned.startsWith('0')) cleaned = cleaned.substring(1);
+    
+    // Handle India specific logic (AuraGold Primary Market)
+    // 10 digits -> Add 91
     if (cleaned.length === 10) return `91${cleaned}`;
+    
+    // 11 digits starting with 0 -> Replace 0 with 91
+    if (cleaned.length === 11 && cleaned.startsWith('0')) return `91${cleaned.substring(1)}`;
+    
+    // 12 digits starting with 91 -> Valid
     if (cleaned.length === 12 && cleaned.startsWith('91')) return cleaned;
+
+    // For other lengths (e.g. international), just return digits.
+    // The previous logic cleaned.length === 12 && startsWith('91') was exclusive.
+    // Now we allow others to pass through for international compatibility.
     return cleaned;
   },
 

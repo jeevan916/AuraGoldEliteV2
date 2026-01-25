@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
 // Added CheckCheck to imports from lucide-react
-import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock } from 'lucide-react';
-import { Order, GlobalSettings, WhatsAppLogEntry, ProductionStatus, ProtectionStatus, OrderStatus } from '../types';
+import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { Order, GlobalSettings, WhatsAppLogEntry, ProductionStatus, ProtectionStatus, OrderStatus, JewelryDetail } from '../types';
 import { generateOrderPDF } from '../services/pdfGenerator';
 import { whatsappService } from '../services/whatsappService';
 import { Button } from './shared/BaseUI';
@@ -30,6 +30,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
   const [isUpdatingWeight, setIsUpdatingWeight] = useState<string | null>(null); // Track item ID being edited
   const [newWeight, setNewWeight] = useState('');
   const [sendingAgreement, setSendingAgreement] = useState(false);
+  const [expandedItem, setExpandedItem] = useState<string | null>(null);
   
   // Schedule View State
   const [showOriginalSchedule, setShowOriginalSchedule] = useState(false);
@@ -212,14 +213,10 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
 
       const oldWeight = targetItem.netWeight;
       const oldTotal = order.totalAmount;
-      const rate = order.goldRateAtBooking; 
+      // We calculate the effective rate used per gram from existing data to preserve the booking lock
+      const effectiveRate = targetItem.netWeight > 0 ? (targetItem.baseMetalValue / targetItem.netWeight) : order.goldRateAtBooking;
       
-      let scaling = 1;
-      if (targetItem.purity === '24K') scaling = 24/22;
-      if (targetItem.purity === '18K') scaling = 18/22;
-      
-      const usedRate = rate * scaling;
-      const metalValue = w * usedRate;
+      const metalValue = w * effectiveRate;
       const wastageValue = metalValue * (targetItem.wastagePercentage / 100);
       const laborValue = targetItem.makingChargesPerGram * w;
       const subTotal = metalValue + wastageValue + laborValue + targetItem.stoneCharges;
@@ -550,22 +547,69 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
 
         {activeTab === 'ITEMS' && (
           <div className="space-y-4 animate-fadeIn">
-             {order.items.map((item, idx) => (
-               <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 flex flex-col md:flex-row gap-4 relative">
+             {order.items.map((item, idx) => {
+               // Calculate display rate for this item
+               const appliedRate = item.netWeight > 0 ? Math.round(item.baseMetalValue / item.netWeight) : 0;
+               const isExpanded = expandedItem === item.id;
+
+               return (
+               <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 flex flex-col md:flex-row gap-4 relative transition-all">
                   <div className="w-20 h-20 bg-slate-100 rounded-xl overflow-hidden shrink-0 relative group">
                     <img src={item.photoUrls[0]} className="w-full h-full object-cover" />
                     <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"><Camera size={16} className="text-white" /><input type="file" accept="image/*" className="hidden" onChange={(e) => handlePhotoUpload(e, item.id)} /></label>
                   </div>
                   <div className="flex-1">
                     <div className="flex justify-between items-start">
-                        <div><h3 className="font-bold text-slate-800">{item.category}</h3><p className="text-xs text-slate-500">{item.purity} • {item.netWeight}g</p></div>
-                        <div className="text-right"><p className="text-sm font-black text-slate-900">₹{item.finalAmount.toLocaleString()}</p><button onClick={() => setIsUpdatingWeight(item.id)} className="text-[9px] font-bold text-blue-600 flex items-center gap-1 mt-1 justify-end"><Scale size={10} /> Update Weight</button></div>
+                        <div>
+                            <h3 className="font-bold text-slate-800">{item.category}</h3>
+                            <p className="text-xs text-slate-500">{item.purity} • {item.netWeight}g</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-sm font-black text-slate-900">₹{item.finalAmount.toLocaleString()}</p>
+                            <div className="flex items-center gap-3 justify-end mt-1">
+                                <button onClick={() => setIsUpdatingWeight(item.id)} className="text-[9px] font-bold text-blue-600 flex items-center gap-1"><Scale size={10} /> Update Weight</button>
+                                <button onClick={() => setExpandedItem(isExpanded ? null : item.id)} className="text-[9px] font-bold text-slate-400 flex items-center gap-1">
+                                    {isExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />} Breakdown
+                                </button>
+                            </div>
+                        </div>
                     </div>
+                    
+                    {/* Bill Breakdown Section */}
+                    {isExpanded && (
+                        <div className="mt-3 pt-3 border-t border-slate-100 text-[10px] grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-slate-500 bg-slate-50/50 p-3 rounded-xl animate-slideDown">
+                            <div>
+                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Booking Rate</span>
+                                <span className="font-mono text-emerald-700 font-bold">₹{appliedRate.toLocaleString()}/g</span>
+                            </div>
+                            <div>
+                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Metal Value</span>
+                                <span className="font-mono text-slate-700">₹{Math.round(item.baseMetalValue).toLocaleString()}</span>
+                            </div>
+                            <div>
+                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Wastage (VA)</span>
+                                <span className="font-mono text-slate-700">₹{Math.round(item.wastageValue).toLocaleString()}</span>
+                            </div>
+                            <div>
+                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Making (MC)</span>
+                                <span className="font-mono text-slate-700">₹{Math.round(item.totalLaborValue).toLocaleString()}</span>
+                            </div>
+                            <div>
+                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Stone</span>
+                                <span className="font-mono text-slate-700">₹{item.stoneCharges.toLocaleString()}</span>
+                            </div>
+                            <div>
+                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Tax (GST)</span>
+                                <span className="font-mono text-slate-700">₹{Math.round(item.taxAmount).toLocaleString()}</span>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="mt-3 flex gap-2 overflow-x-auto pb-1">{Object.values(ProductionStatus).map(s => <button key={s} onClick={() => handleStatusChange(item.id, s)} className={`text-[8px] font-black uppercase px-2 py-1 rounded border ${item.productionStatus === s ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-400'}`}>{s.replace('_', ' ')}</button>)}</div>
                     {isUpdatingWeight === item.id && <div className="mt-3 bg-blue-50 p-3 rounded-xl flex gap-2 items-center animate-slideDown"><input type="number" className="flex-1 bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none" placeholder="New Weight (g)" value={newWeight} onChange={e => setNewWeight(e.target.value)} /><button onClick={() => handleUpdateItemWeight(item.id)} className="bg-blue-600 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase">Save</button><button onClick={() => setIsUpdatingWeight(null)} className="text-slate-400"><XCircle size={16}/></button></div>}
                   </div>
                </div>
-             ))}
+             )})}
           </div>
         )}
 
