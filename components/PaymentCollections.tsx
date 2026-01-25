@@ -2,8 +2,8 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Search, Filter, ReceiptIndianRupee, Calendar, CheckCircle2, 
-  Clock, AlertCircle, ChevronRight, Download,
-  ArrowDownLeft, BrainCircuit, Loader2, Share2, X
+  Clock, ChevronRight, Download,
+  ArrowDownLeft, BrainCircuit, Loader2, Share2, X, AlertOctagon
 } from 'lucide-react';
 import { Order, WhatsAppLogEntry, GlobalSettings, OrderStatus } from '../types';
 import { geminiService } from '../services/geminiService';
@@ -25,112 +25,116 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
   const [dateRange, setDateRange] = useState<{start: string, end: string}>({ start: '', end: '' });
   const [generatingStrategy, setGeneratingStrategy] = useState<string | null>(null);
 
-  // --- 1. CORE DATA PREPARATION ---
-  
-  // A. Get active orders for Dues (Ignore Cancelled/Delivered)
-  const activeOrders = useMemo(() => orders.filter(o => 
-    o.status !== OrderStatus.CANCELLED && o.status !== OrderStatus.DELIVERED
-  ), [orders]);
-
-  // B. Milestones (Only from Active Orders for Overdue/Upcoming/Planned)
-  // We use ALL orders for Planned if you want historical record, but usually for collections we want active.
-  // Let's stick to activeOrders for actionable tabs.
-  const actionableMilestones = useMemo(() => {
-    return activeOrders.flatMap(o => o.paymentPlan.milestones.map(m => ({
-      ...m,
-      type: 'MILESTONE',
-      orderId: o.id,
-      customerName: o.customerName,
-      customerContact: o.customerContact,
-      order: o,
-      // Helper for sorting/filtering
-      sortDate: new Date(m.dueDate).getTime()
-    })));
-  }, [activeOrders]);
-
-  // C. Transactions (From ALL orders, history is history)
-  const allTransactions = useMemo(() => {
-    return orders.flatMap(o => o.payments.map(p => ({
-      ...p,
-      type: 'TRANSACTION',
-      orderId: o.id,
-      customerName: o.customerName,
-      customerContact: o.customerContact,
-      order: o,
-      // Map properties to match list view structure
-      status: 'PAID', 
-      targetAmount: p.amount,
-      // Helper for sorting/filtering
-      sortDate: new Date(p.date).getTime()
-    })));
-  }, [orders]);
-
-  // --- 2. FILTERING HELPERS ---
-
-  const getStartOfDay = (timestamp: number) => {
-      const d = new Date(timestamp);
-      d.setHours(0, 0, 0, 0);
-      return d.getTime();
+  // --- 1. ROBUST DATE PARSING ---
+  const parseDateLocal = (dateStr: string) => {
+      if(!dateStr) return new Date();
+      // Handle ISO strings (Transactions) vs YYYY-MM-DD (Milestones)
+      if (dateStr.includes('T')) {
+          return new Date(dateStr);
+      }
+      // Force local midnight for YYYY-MM-DD
+      const [y, m, d] = dateStr.split('-').map(Number);
+      return new Date(y, m - 1, d);
   };
 
-  const todayStart = useMemo(() => getStartOfDay(Date.now()), []);
+  const getStartOfToday = () => {
+      const d = new Date();
+      d.setHours(0,0,0,0);
+      return d;
+  };
 
-  // Filter Functions
-  const isOverdue = (m: any) => m.status !== 'PAID' && getStartOfDay(m.sortDate) < todayStart;
-  const isUpcoming = (m: any) => m.status !== 'PAID' && getStartOfDay(m.sortDate) >= todayStart;
-  
-  // --- 3. DERIVED LISTS ---
+  // --- 2. DATA PREPARATION ---
+  const { allMilestones, allTransactions } = useMemo(() => {
+      const ms: any[] = [];
+      const tx: any[] = [];
+      
+      orders.forEach(o => {
+          // Ignore cancelled/delivered for Collections (except Received history)
+          const isArchived = o.status === OrderStatus.CANCELLED || o.status === OrderStatus.DELIVERED;
 
-  const overdueList = useMemo(() => actionableMilestones.filter(isOverdue), [actionableMilestones, todayStart]);
-  const upcomingList = useMemo(() => actionableMilestones.filter(isUpcoming), [actionableMilestones, todayStart]);
-  const plannedList = useMemo(() => actionableMilestones, [actionableMilestones]); // All milestones
-  const receivedList = useMemo(() => allTransactions, [allTransactions]); // All transactions
+          // Milestones (Only active orders)
+          if (!isArchived) {
+              o.paymentPlan.milestones.forEach(m => {
+                  ms.push({
+                      ...m,
+                      _type: 'MILESTONE',
+                      orderId: o.id,
+                      customerName: o.customerName,
+                      customerContact: o.customerContact,
+                      order: o,
+                      dateObj: parseDateLocal(m.dueDate),
+                      displayDate: parseDateLocal(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                  });
+              });
+          }
 
-  // --- 4. FINAL VIEW CALCULATION ---
-
-  const currentList = useMemo(() => {
-      switch(activeTab) {
-          case 'OVERDUE': return overdueList;
-          case 'UPCOMING': return upcomingList;
-          case 'RECEIVED': return receivedList;
-          case 'PLANNED': return plannedList;
-          default: return [];
-      }
-  }, [activeTab, overdueList, upcomingList, plannedList, receivedList]);
-
-  const filteredAndSortedList = useMemo(() => {
-      let data = currentList;
-
-      // Filter: Search
-      if (search) {
-          const lower = search.toLowerCase();
-          data = data.filter(item => 
-              item.customerName.toLowerCase().includes(lower) || 
-              item.orderId.toLowerCase().includes(lower)
-          );
-      }
-
-      // Filter: Date Range
-      if (dateRange.start) {
-          const startTs = getStartOfDay(new Date(dateRange.start).getTime());
-          data = data.filter(item => getStartOfDay(item.sortDate) >= startTs);
-      }
-      if (dateRange.end) {
-          const endTs = getStartOfDay(new Date(dateRange.end).getTime());
-          data = data.filter(item => getStartOfDay(item.sortDate) <= endTs);
-      }
-
-      // Sort
-      return data.sort((a, b) => {
-          // Received: Newest First. Others: Oldest First (Urgency)
-          return activeTab === 'RECEIVED' 
-              ? b.sortDate - a.sortDate 
-              : a.sortDate - b.sortDate;
+          // Transactions (All history, even if archived)
+          o.payments.forEach(p => {
+              tx.push({
+                  ...p,
+                  _type: 'TRANSACTION',
+                  orderId: o.id,
+                  customerName: o.customerName,
+                  customerContact: o.customerContact,
+                  order: o,
+                  dateObj: new Date(p.date),
+                  displayDate: new Date(p.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+                  // Normalize fields
+                  targetAmount: p.amount,
+                  status: 'PAID'
+              });
+          });
       });
-  }, [currentList, search, dateRange, activeTab]);
+      
+      return { allMilestones: ms, allTransactions: tx };
+  }, [orders]);
+
+  // --- 3. BUCKETING ---
+  const today = getStartOfToday();
+  const todayTime = today.getTime();
+
+  const overdueList = useMemo(() => allMilestones.filter(m => m.status !== 'PAID' && m.dateObj.getTime() < todayTime), [allMilestones, todayTime]);
+  const upcomingList = useMemo(() => allMilestones.filter(m => m.status !== 'PAID' && m.dateObj.getTime() >= todayTime), [allMilestones, todayTime]);
+  const receivedList = useMemo(() => allTransactions, [allTransactions]);
+  const plannedList = useMemo(() => allMilestones, [allMilestones]);
+
+  // --- 4. SELECTION & FILTERING ---
+  const displayData = useMemo(() => {
+      let base: any[] = [];
+      switch(activeTab) {
+          case 'OVERDUE': base = overdueList; break;
+          case 'UPCOMING': base = upcomingList; break;
+          case 'RECEIVED': base = receivedList; break;
+          case 'PLANNED': base = plannedList; break;
+      }
+
+      return base.filter(item => {
+          // Search
+          if (search) {
+              const s = search.toLowerCase();
+              if (!item.customerName.toLowerCase().includes(s) && !item.orderId.toLowerCase().includes(s)) return false;
+          }
+          
+          // Date Range
+          if (dateRange.start) {
+              const start = parseDateLocal(dateRange.start);
+              if (item.dateObj < start) return false;
+          }
+          if (dateRange.end) {
+              const end = parseDateLocal(dateRange.end);
+              end.setHours(23,59,59,999);
+              if (item.dateObj > end) return false;
+          }
+          return true;
+      }).sort((a,b) => {
+          // Received: Newest First
+          if (activeTab === 'RECEIVED') return b.dateObj.getTime() - a.dateObj.getTime();
+          // Milestones: Oldest First (Urgency)
+          return a.dateObj.getTime() - b.dateObj.getTime();
+      });
+  }, [activeTab, overdueList, upcomingList, receivedList, plannedList, search, dateRange]);
 
   // --- 5. ACTIONS ---
-
   const handleTriggerStrategy = async (item: any) => {
       setGeneratingStrategy(item.id);
       try {
@@ -157,8 +161,8 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
       }
   };
 
-  const getDaysDiff = (targetTime: number) => {
-      const diffTime = targetTime - todayStart;
+  const getDaysDiff = (itemDate: Date) => {
+      const diffTime = itemDate.getTime() - todayTime;
       return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
@@ -200,9 +204,9 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
       </div>
 
       {/* Main Panel */}
-      <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden">
+      <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden flex flex-col min-h-[500px]">
         {/* Filters */}
-        <div className="p-6 border-b bg-slate-50/50 flex flex-col xl:flex-row gap-4">
+        <div className="p-6 border-b bg-slate-50/50 flex flex-col xl:flex-row gap-4 shrink-0">
           <div className="relative flex-1">
              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
              <input 
@@ -241,9 +245,9 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
         </div>
 
         {/* Data Table */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto flex-1">
           <table className="w-full text-left">
-            <thead className="bg-slate-50/80 text-[10px] font-black uppercase text-slate-400 tracking-[0.1em] border-b">
+            <thead className="bg-slate-50/80 text-[10px] font-black uppercase text-slate-400 tracking-[0.1em] border-b sticky top-0 z-10 backdrop-blur-md">
               <tr>
                 <th className="px-8 py-5">Customer / Order</th>
                 <th className="px-8 py-5">{activeTab === 'RECEIVED' ? 'Received Date' : 'Due Date'}</th>
@@ -253,13 +257,15 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredAndSortedList.map((item: any) => {
-                const daysDiff = getDaysDiff(item.sortDate);
-                const displayDate = new Date(item.sortDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-                const isTransaction = item.type === 'TRANSACTION';
+              {displayData.map((item: any, idx: number) => {
+                const isTransaction = item._type === 'TRANSACTION';
+                const daysDiff = getDaysDiff(item.dateObj);
+                
+                // Extra check: If we are in Received tab, allow any date. If in Overdue/Upcoming, calculate lag.
+                const isLate = !isTransaction && daysDiff < 0;
 
                 return (
-                <tr key={item.id} className="hover:bg-slate-50/50 transition-colors group">
+                <tr key={`${item.id}-${idx}`} className="hover:bg-slate-50/50 transition-colors group">
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-4">
                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-slate-400 ${isTransaction ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100'}`}>
@@ -275,7 +281,7 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
                      <div className="flex flex-col">
                          <div className="flex items-center gap-2">
                              <Calendar size={14} className="text-slate-400" />
-                             <span className="text-sm font-bold text-slate-700">{displayDate}</span>
+                             <span className="text-sm font-bold text-slate-700">{item.displayDate}</span>
                          </div>
                          {/* Dynamic Labels */}
                          {!isTransaction && activeTab === 'OVERDUE' && (
@@ -303,10 +309,10 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
                      ) : (
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
                           item.status === 'PAID' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 
-                          (daysDiff < 0) ? 'bg-rose-50 text-rose-700 border-rose-100 shadow-sm animate-pulse' : 
+                          isLate ? 'bg-rose-50 text-rose-700 border-rose-100 shadow-sm animate-pulse' : 
                           'bg-amber-50 text-amber-700 border-amber-100'
                         }`}>
-                          {item.status === 'PAID' ? 'PAID' : (daysDiff < 0 ? 'OVERDUE' : item.status)}
+                          {item.status === 'PAID' ? 'PAID' : (isLate ? 'OVERDUE' : item.status)}
                         </span>
                      )}
                   </td>
@@ -318,11 +324,11 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
                               <button 
                                 onClick={() => handleTriggerStrategy(item)}
                                 disabled={generatingStrategy === item.id}
-                                className={`p-2 rounded-xl transition-all shadow-sm flex items-center gap-2 px-4 ${daysDiff < 0 ? 'bg-rose-600 text-white hover:bg-rose-700' : 'bg-emerald-500 text-white hover:bg-emerald-600'}`}
+                                className={`p-2 rounded-xl transition-all shadow-sm flex items-center gap-2 px-4 ${isLate ? 'bg-rose-600 text-white hover:bg-rose-700' : 'bg-emerald-500 text-white hover:bg-emerald-600'}`}
                               >
                                  {generatingStrategy === item.id ? <Loader2 size={16} className="animate-spin" /> : <BrainCircuit size={16} />}
                                  <span className="text-[10px] font-black uppercase tracking-widest">
-                                    {daysDiff < 0 ? 'Recover' : 'Nudge'}
+                                    {isLate ? 'Recover' : 'Nudge'}
                                  </span>
                               </button>
                               <button className="p-2 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-xl hover:bg-indigo-100"><Share2 size={16} /></button>
@@ -339,7 +345,7 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
                 </tr>
               )})}
               
-              {filteredAndSortedList.length === 0 && (
+              {displayData.length === 0 && (
                  <tr>
                     <td colSpan={5} className="py-24 text-center">
                        <div className="max-w-xs mx-auto space-y-3 opacity-50">
