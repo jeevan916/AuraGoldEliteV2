@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   Search, Filter, ReceiptIndianRupee, Calendar, CheckCircle2, 
   Clock, ChevronRight, Download,
-  ArrowDownLeft, BrainCircuit, Loader2, Share2, X, AlertOctagon
+  ArrowDownLeft, BrainCircuit, Loader2, Share2, X, RefreshCw
 } from 'lucide-react';
 import { Order, WhatsAppLogEntry, GlobalSettings, OrderStatus } from '../types';
 import { geminiService } from '../services/geminiService';
@@ -25,23 +25,18 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
   const [dateRange, setDateRange] = useState<{start: string, end: string}>({ start: '', end: '' });
   const [generatingStrategy, setGeneratingStrategy] = useState<string | null>(null);
 
-  // --- 1. ROBUST DATE PARSING ---
-  const parseDateLocal = (dateStr: string) => {
-      if(!dateStr) return new Date();
-      // Handle ISO strings (Transactions) vs YYYY-MM-DD (Milestones)
-      if (dateStr.includes('T')) {
-          return new Date(dateStr);
-      }
-      // Force local midnight for YYYY-MM-DD
-      const [y, m, d] = dateStr.split('-').map(Number);
-      return new Date(y, m - 1, d);
+  // --- 1. PRECISE DATE UTILS ---
+  const toDateStr = (date: Date | string) => {
+      if (!date) return '';
+      const d = new Date(date);
+      // Format to YYYY-MM-DD manually to avoid timezone shifts
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
   };
 
-  const getStartOfToday = () => {
-      const d = new Date();
-      d.setHours(0,0,0,0);
-      return d;
-  };
+  const todayStr = toDateStr(new Date());
 
   // --- 2. DATA PREPARATION ---
   const { allMilestones, allTransactions } = useMemo(() => {
@@ -62,8 +57,9 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
                       customerName: o.customerName,
                       customerContact: o.customerContact,
                       order: o,
-                      dateObj: parseDateLocal(m.dueDate),
-                      displayDate: parseDateLocal(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                      // Clean YYYY-MM-DD for comparison
+                      cleanDate: toDateStr(m.dueDate), 
+                      displayDate: new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
                   });
               });
           }
@@ -77,9 +73,8 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
                   customerName: o.customerName,
                   customerContact: o.customerContact,
                   order: o,
-                  dateObj: new Date(p.date),
+                  cleanDate: toDateStr(p.date),
                   displayDate: new Date(p.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-                  // Normalize fields
                   targetAmount: p.amount,
                   status: 'PAID'
               });
@@ -89,50 +84,42 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
       return { allMilestones: ms, allTransactions: tx };
   }, [orders]);
 
-  // --- 3. BUCKETING ---
-  const today = getStartOfToday();
-  const todayTime = today.getTime();
-
-  const overdueList = useMemo(() => allMilestones.filter(m => m.status !== 'PAID' && m.dateObj.getTime() < todayTime), [allMilestones, todayTime]);
-  const upcomingList = useMemo(() => allMilestones.filter(m => m.status !== 'PAID' && m.dateObj.getTime() >= todayTime), [allMilestones, todayTime]);
+  // --- 3. BUCKETING (Using String Comparison for Stability) ---
+  const overdueList = useMemo(() => allMilestones.filter(m => m.status !== 'PAID' && m.cleanDate < todayStr), [allMilestones, todayStr]);
+  const upcomingList = useMemo(() => allMilestones.filter(m => m.status !== 'PAID' && m.cleanDate >= todayStr), [allMilestones, todayStr]);
   const receivedList = useMemo(() => allTransactions, [allTransactions]);
   const plannedList = useMemo(() => allMilestones, [allMilestones]);
 
   // --- 4. SELECTION & FILTERING ---
-  const displayData = useMemo(() => {
-      let base: any[] = [];
+  const rawList = useMemo(() => {
       switch(activeTab) {
-          case 'OVERDUE': base = overdueList; break;
-          case 'UPCOMING': base = upcomingList; break;
-          case 'RECEIVED': base = receivedList; break;
-          case 'PLANNED': base = plannedList; break;
+          case 'OVERDUE': return overdueList;
+          case 'UPCOMING': return upcomingList;
+          case 'RECEIVED': return receivedList;
+          case 'PLANNED': return plannedList;
       }
+  }, [activeTab, overdueList, upcomingList, receivedList, plannedList]);
 
-      return base.filter(item => {
+  const displayData = useMemo(() => {
+      return rawList.filter(item => {
           // Search
           if (search) {
               const s = search.toLowerCase();
               if (!item.customerName.toLowerCase().includes(s) && !item.orderId.toLowerCase().includes(s)) return false;
           }
           
-          // Date Range
-          if (dateRange.start) {
-              const start = parseDateLocal(dateRange.start);
-              if (item.dateObj < start) return false;
-          }
-          if (dateRange.end) {
-              const end = parseDateLocal(dateRange.end);
-              end.setHours(23,59,59,999);
-              if (item.dateObj > end) return false;
-          }
+          // Date Range (String Comparison YYYY-MM-DD works perfectly)
+          if (dateRange.start && item.cleanDate < dateRange.start) return false;
+          if (dateRange.end && item.cleanDate > dateRange.end) return false;
+          
           return true;
       }).sort((a,b) => {
           // Received: Newest First
-          if (activeTab === 'RECEIVED') return b.dateObj.getTime() - a.dateObj.getTime();
+          if (activeTab === 'RECEIVED') return b.cleanDate.localeCompare(a.cleanDate);
           // Milestones: Oldest First (Urgency)
-          return a.dateObj.getTime() - b.dateObj.getTime();
+          return a.cleanDate.localeCompare(b.cleanDate);
       });
-  }, [activeTab, overdueList, upcomingList, receivedList, plannedList, search, dateRange]);
+  }, [rawList, search, dateRange, activeTab]);
 
   // --- 5. ACTIONS ---
   const handleTriggerStrategy = async (item: any) => {
@@ -161,10 +148,7 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
       }
   };
 
-  const getDaysDiff = (itemDate: Date) => {
-      const diffTime = itemDate.getTime() - todayTime;
-      return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  };
+  const hasFilters = search || dateRange.start || dateRange.end;
 
   return (
     <div className="space-y-6 animate-fadeIn pb-24">
@@ -259,10 +243,7 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
             <tbody className="divide-y divide-slate-50">
               {displayData.map((item: any, idx: number) => {
                 const isTransaction = item._type === 'TRANSACTION';
-                const daysDiff = getDaysDiff(item.dateObj);
-                
-                // Extra check: If we are in Received tab, allow any date. If in Overdue/Upcoming, calculate lag.
-                const isLate = !isTransaction && daysDiff < 0;
+                const isLate = !isTransaction && item.cleanDate < todayStr;
 
                 return (
                 <tr key={`${item.id}-${idx}`} className="hover:bg-slate-50/50 transition-colors group">
@@ -286,12 +267,12 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
                          {/* Dynamic Labels */}
                          {!isTransaction && activeTab === 'OVERDUE' && (
                              <span className="text-[10px] font-black text-rose-500 uppercase tracking-wide mt-1">
-                                {Math.abs(daysDiff)} Days Late
+                                Overdue
                              </span>
                          )}
-                         {!isTransaction && activeTab === 'UPCOMING' && (
+                         {!isTransaction && activeTab === 'UPCOMING' && item.cleanDate === todayStr && (
                              <span className="text-[10px] font-black text-blue-500 uppercase tracking-wide mt-1">
-                                {daysDiff === 0 ? 'Due Today' : `In ${daysDiff} Days`}
+                                Due Today
                              </span>
                          )}
                      </div>
@@ -351,9 +332,18 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
                        <div className="max-w-xs mx-auto space-y-3 opacity-50">
                           {activeTab === 'RECEIVED' ? <ReceiptIndianRupee className="w-12 h-12 text-emerald-500 mx-auto" /> : <CheckCircle2 className="w-12 h-12 text-slate-400 mx-auto" />}
                           <p className="font-bold text-slate-500 uppercase tracking-widest text-xs">
-                              {activeTab === 'OVERDUE' ? 'No overdue payments!' : `No records in ${activeTab}`}
+                              {rawList.length > 0 && hasFilters 
+                                  ? `No results match your filters.` 
+                                  : activeTab === 'OVERDUE' ? 'No overdue payments!' : `No records in ${activeTab}`}
                           </p>
-                          {(dateRange.start || dateRange.end) && <p className="text-[10px] text-slate-400">Clear date filter to see all.</p>}
+                          {(rawList.length > 0 && hasFilters) && (
+                              <button 
+                                onClick={() => { setSearch(''); setDateRange({start: '', end: ''}); }}
+                                className="text-[10px] font-bold text-rose-500 hover:text-rose-700 flex items-center gap-1 mx-auto"
+                              >
+                                  <RefreshCw size={10} /> Clear Filters
+                              </button>
+                          )}
                        </div>
                     </td>
                  </tr>

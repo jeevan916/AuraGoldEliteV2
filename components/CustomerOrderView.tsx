@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   CheckCircle2, Clock, MapPin, ShieldCheck, Box, CreditCard, 
-  Smartphone, Lock, AlertCircle, ArrowRight, QrCode, CalendarDays, LocateFixed
+  Smartphone, Lock, AlertCircle, ArrowRight, QrCode, CalendarDays, LocateFixed, ReceiptIndianRupee
 } from 'lucide-react';
 import { Order, ProductionStatus } from '../types';
 import { errorService } from '../services/errorService';
@@ -167,6 +167,25 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
              })}
           </div>
         </div>
+
+        {order.payments.length > 0 && (
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-4">
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                    <ReceiptIndianRupee size={16} className="text-emerald-500" /> Payment History
+                </h3>
+                <div className="space-y-3">
+                    {[...order.payments].reverse().map(p => (
+                        <div key={p.id} className="flex justify-between items-center border-b border-slate-50 last:border-0 pb-3 last:pb-0">
+                            <div>
+                                <p className="text-xs font-bold text-slate-700">Payment Received</p>
+                                <p className="text-[10px] text-slate-400">{new Date(p.date).toLocaleDateString()} via {p.method}</p>
+                            </div>
+                            <span className="font-black text-emerald-600 text-sm">+₹{p.amount.toLocaleString()}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
 
         <div className="space-y-4">
           <h3 className="text-sm font-black uppercase text-slate-400 tracking-widest ml-1">Order Details</h3>

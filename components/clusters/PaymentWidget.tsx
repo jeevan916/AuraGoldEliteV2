@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2, AlertCircle, RefreshCw, Calendar, Clock } from 'lucide-react';
+import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2, AlertCircle, RefreshCw, Calendar, Clock, CheckCircle2, History } from 'lucide-react';
 import { Card, Button } from '../shared/BaseUI';
 import { Order, OrderStatus, WhatsAppLogEntry, Milestone } from '../../types';
 import { whatsappService } from '../../services/whatsappService';
@@ -477,6 +477,36 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
             </div>
         )}
       </Card>
+
+      <div className="space-y-3">
+        <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest ml-1 flex items-center gap-2">
+            <History size={12} /> Transaction History
+        </h4>
+        {order.payments.length === 0 ? (
+            <div className="p-6 rounded-2xl border border-dashed border-slate-300 text-center text-xs text-slate-400 bg-slate-50/50">
+                No payments recorded yet.
+            </div>
+        ) : (
+            <div className="space-y-2">
+                {[...order.payments].reverse().map(p => (
+                    <div key={p.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center shadow-sm">
+                        <div>
+                            <p className="text-sm font-bold text-slate-800">₹{p.amount.toLocaleString()}</p>
+                            <p className="text-[10px] text-slate-500 font-medium flex items-center gap-2">
+                                <span>{new Date(p.date).toLocaleDateString()}</span>
+                                <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                                <span className="uppercase font-bold tracking-wider">{p.method}</span>
+                            </p>
+                            {p.note && <p className="text-[10px] text-slate-400 mt-1 italic leading-relaxed">{p.note}</p>}
+                        </div>
+                        <div className="bg-emerald-50 text-emerald-600 p-2 rounded-xl">
+                            <CheckCircle2 size={16} />
+                        </div>
+                    </div>
+                ))}
+            </div>
+        )}
+      </div>
     </div>
   );
 };
