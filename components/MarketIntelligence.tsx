@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   TrendingUp, Globe, ExternalLink, ArrowRight, 
   Loader2, RefreshCw, ArrowUpRight, ArrowDownRight,
-  Calculator, Zap, Lock
+  Calculator, Zap, Lock, Calendar, Target, AlertTriangle, Wallet
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { io } from 'socket.io-client';
@@ -147,6 +146,77 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
       };
   }, [orders, settings, metal]);
 
+  // --- PREDICTIVE CASH FLOW ENGINE (Deterministic AI) ---
+  const cashFlowForecast = useMemo(() => {
+      const today = new Date();
+      today.setHours(0,0,0,0);
+
+      const buckets = {
+          d3: { raw: 0, projected: 0, label: '3 Days' },
+          d7: { raw: 0, projected: 0, label: '7 Days' },
+          d15: { raw: 0, projected: 0, label: '15 Days' },
+          nextWeek: { raw: 0, projected: 0, label: 'Next Week' }, // Day 8-14
+          longTerm: { raw: 0, projected: 0, label: 'After 30 Days' }
+      };
+
+      orders.forEach(order => {
+          if (order.status === OrderStatus.CANCELLED || order.status === OrderStatus.DELIVERED) return;
+
+          // Risk Heuristic Calculation
+          let riskScore = 0.95; // Start with 95% confidence
+          
+          // 1. History Penalty: Does this order have OTHER overdue milestones?
+          const hasOverdue = order.paymentPlan.milestones.some(m => 
+              m.status !== 'PAID' && new Date(m.dueDate) < today
+          );
+          if (hasOverdue) riskScore -= 0.15; // 15% penalty for existing delinquency
+
+          // 2. High Value Penalty
+          if (order.totalAmount > 100000) riskScore -= 0.05; // 5% volatility for large sums
+
+          // 3. New Customer Penalty (No history)
+          const isNew = order.payments.length === 0;
+          if (isNew) riskScore -= 0.05;
+
+          order.paymentPlan.milestones.forEach(m => {
+              if (m.status === 'PAID') return;
+
+              const dueDate = new Date(m.dueDate);
+              const diffTime = dueDate.getTime() - today.getTime();
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              
+              // Only count future or today
+              if (diffDays < 0) return; 
+
+              const amt = m.targetAmount;
+              const wAmt = amt * Math.max(0.1, riskScore); // Floor at 10% confidence
+
+              if (diffDays <= 3) {
+                  buckets.d3.raw += amt;
+                  buckets.d3.projected += wAmt;
+              }
+              if (diffDays <= 7) {
+                  buckets.d7.raw += amt;
+                  buckets.d7.projected += wAmt;
+              }
+              if (diffDays <= 15) {
+                  buckets.d15.raw += amt;
+                  buckets.d15.projected += wAmt;
+              }
+              if (diffDays > 7 && diffDays <= 14) {
+                  buckets.nextWeek.raw += amt;
+                  buckets.nextWeek.projected += wAmt;
+              }
+              if (diffDays > 30) {
+                  buckets.longTerm.raw += amt;
+                  buckets.longTerm.projected += wAmt;
+              }
+          });
+      });
+
+      return buckets;
+  }, [orders]);
+
   if (loading) {
       return (
           <div className="h-full flex flex-col items-center justify-center space-y-4 py-20">
@@ -193,6 +263,59 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
                 ))}
             </div>
         </div>
+      </div>
+
+      {/* NEW: PREDICTIVE CASH FLOW (FULL WIDTH) */}
+      <div className="bg-gradient-to-r from-indigo-50 via-white to-indigo-50 p-6 rounded-[2rem] border border-indigo-100 shadow-sm relative overflow-hidden">
+          <div className="flex items-center gap-3 mb-6 relative z-10">
+              <div className="p-3 bg-indigo-100 text-indigo-600 rounded-2xl"><Wallet size={24} /></div>
+              <div>
+                  <h3 className="font-black text-slate-800 text-lg">Predictive Cash Flow Matrix</h3>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                      Probability-Weighted Inflow • Heuristic Engine Active
+                  </p>
+              </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 relative z-10">
+              {Object.values(cashFlowForecast).map((bucket: { raw: number; projected: number; label: string }, idx) => {
+                  const confidence = bucket.raw > 0 ? (bucket.projected / bucket.raw) * 100 : 100;
+                  const isLowConfidence = confidence < 80;
+
+                  return (
+                      <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between hover:border-indigo-200 transition-all group">
+                          <div>
+                              <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-2 flex justify-between">
+                                  {bucket.label}
+                                  {bucket.raw > 0 && (
+                                      <span className={`text-[8px] px-1.5 rounded ${isLowConfidence ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
+                                          {Math.round(confidence)}% Prob.
+                                      </span>
+                                  )}
+                              </p>
+                              <p className="text-xl font-black text-slate-800">₹{Math.round(bucket.projected).toLocaleString()}</p>
+                              {bucket.raw > 0 && (
+                                  <p className="text-[9px] text-slate-400 mt-1 line-through decoration-rose-300">
+                                      Demand: ₹{bucket.raw.toLocaleString()}
+                                  </p>
+                              )}
+                          </div>
+                          {bucket.raw > 0 && (
+                              <div className="w-full bg-slate-100 h-1.5 rounded-full mt-3 overflow-hidden">
+                                  <div 
+                                      className={`h-full rounded-full transition-all duration-1000 ${isLowConfidence ? 'bg-amber-400' : 'bg-indigo-500'}`} 
+                                      style={{ width: `${confidence}%` }}
+                                  ></div>
+                              </div>
+                          )}
+                      </div>
+                  );
+              })}
+          </div>
+          
+          <div className="absolute top-0 right-0 opacity-5 pointer-events-none">
+              <Target size={200} />
+          </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
