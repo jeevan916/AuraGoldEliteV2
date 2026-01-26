@@ -144,18 +144,38 @@ export async function fetchAndSaveRate(forcedProviderId = null) {
                     isJson = true;
                     matchDebug += "Format: JSON | ";
 
-                    // Gold Search (Prioritize "sell" rates if explicit, else general)
-                    let gRaw = findJsonValue(json, /gold/i) || findJsonValue(json, /24k/i);
-                    // Silver Search
-                    let sRaw = findJsonValue(json, /silver/i);
-
-                    if (gRaw) {
-                        rate24k = parseFloat(gRaw);
-                        matchDebug += `Gold Found: ${rate24k} `;
+                    // 1. SPECIFIC BATUK STRUCTURE (Nested Arrays)
+                    // Expecting: { data: [ [ { gSell: "...", sSell: "..." } ] ] }
+                    if (json.data && Array.isArray(json.data) && json.data[0] && Array.isArray(json.data[0])) {
+                        const item = json.data[0][0]; // First item in nested array
+                        
+                        if (item) {
+                            if (item.gSell) {
+                                rate24k = parseFloat(item.gSell);
+                                matchDebug += `Batuk Targeted gSell: ${rate24k} `;
+                            }
+                            if (item.sSell) {
+                                rateSilver = parseFloat(item.sSell);
+                                matchDebug += `Batuk Targeted sSell: ${rateSilver} `;
+                            }
+                        }
                     }
-                    if (sRaw) {
-                        rateSilver = parseFloat(sRaw);
-                        matchDebug += `Silver Found: ${rateSilver} `;
+
+                    // 2. FALLBACK HEURISTIC (If specific structure not found or rate is 0)
+                    if (rate24k === 0) {
+                        // Gold Search (Prioritize "sell" rates if explicit, else general)
+                        let gRaw = findJsonValue(json, /gold/i) || findJsonValue(json, /24k/i);
+                        // Silver Search
+                        let sRaw = findJsonValue(json, /silver/i);
+
+                        if (gRaw) {
+                            rate24k = parseFloat(gRaw);
+                            matchDebug += `Heuristic Gold Found: ${rate24k} `;
+                        }
+                        if (sRaw) {
+                            rateSilver = parseFloat(sRaw);
+                            matchDebug += `Heuristic Silver Found: ${rateSilver} `;
+                        }
                     }
                 }
             } catch (e) {
@@ -194,7 +214,7 @@ export async function fetchAndSaveRate(forcedProviderId = null) {
             }
 
             // 3. Normalization (Handle 10g vs 1g and KG vs 1g)
-            // Gold: If > 10,000, assume it's for 10g or oz, convert to 1g
+            // Gold: If > 20,000, assume it's for 10g or oz, convert to 1g
             // Typical 1g rate ~7000. Typical 10g rate ~70000.
             if (rate24k > 20000) {
                 rate24k = rate24k / 10; 
