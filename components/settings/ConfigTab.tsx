@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { 
     Zap, Loader2, RefreshCw, Info, Server, MessageSquare, CreditCard, 
-    Save, CheckCircle2, Database, ServerCrash, ShieldCheck, Clock, HardDrive
+    Save, CheckCircle2, Database, ServerCrash, ShieldCheck, Clock, HardDrive, Share2
 } from 'lucide-react';
 import { GlobalSettings } from '../../types';
 import { goldRateService } from '../../services/goldRateService';
@@ -29,32 +29,52 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
     const [dbConfig, setDbConfig] = useState({ host: '127.0.0.1', user: '', password: '', database: '' });
     const [savingDb, setSavingDb] = useState(false);
 
+    const updateLocalStateFromFetch = (result: any) => {
+        if (result && result.success) {
+            const updated = {
+                ...localSettings,
+                currentGoldRate24K: result.rate24k || result.rate24K,
+                currentGoldRate22K: result.rate22k || result.rate22K,
+                currentGoldRate18K: result.rate18k || result.rate18K,
+                currentSilverRate: result.silver || result.rateSilver
+            };
+            setLocalSettings(updated);
+            
+            const debugRaw = result.raw || {};
+            if (result.error) {
+                debugRaw.error = result.error;
+            }
+            
+            setRawRateData(debugRaw);
+            setRateSource(result.source || 'Unknown');
+        } else {
+            setRawRateData(result.raw || { error: result.error });
+            setRateSource("Fetch Failed");
+        }
+    };
+
     const handleLiveSync = async () => {
         setSyncing(true);
         try {
             const result = await goldRateService.fetchLiveRate();
-            if (result && result.success) {
-                const updated = {
-                    ...localSettings,
-                    currentGoldRate24K: result.rate24K,
-                    currentGoldRate22K: result.rate22K,
-                    currentGoldRate18K: result.rate18K,
-                    currentSilverRate: result.silver
-                };
-                setLocalSettings(updated);
-                
-                // Keep the error visible if we fell back to cache
-                const debugRaw = result.raw || {};
-                if (result.error) {
-                    debugRaw.error = result.error;
-                }
-                
-                setRawRateData(debugRaw);
-                setRateSource(result.source || 'Unknown');
-            } else {
-                setRawRateData(result.raw || { error: result.error });
-                setRateSource("Fetch Failed");
-            }
+            updateLocalStateFromFetch(result);
+        } finally {
+            setSyncing(false);
+        }
+    };
+
+    const handleForceFetch = async (providerId: string) => {
+        setSyncing(true);
+        try {
+            const res = await fetch('/api/rates/force-update', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ providerId })
+            });
+            const result = await res.json();
+            updateLocalStateFromFetch(result);
+        } catch (e: any) {
+            alert("Force update failed: " + e.message);
         } finally {
             setSyncing(false);
         }
@@ -166,6 +186,30 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                         <PricingField label="Silver 999 (1g)" value={localSettings.currentSilverRate} onChange={(v: number) => setLocalSettings({...localSettings, currentSilverRate: v})} isSilver />
                     </div>
 
+                    {/* SOURCE SWITCHING PANEL */}
+                    <div className="mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-200 relative z-10">
+                        <div className="flex items-center gap-2 mb-3">
+                            <Share2 size={14} className="text-blue-500" />
+                            <h4 className="text-[10px] font-black uppercase text-slate-600 tracking-widest">Source Diagnostics & Switching</h4>
+                        </div>
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => handleForceFetch('sagar')}
+                                disabled={syncing}
+                                className="flex-1 bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:border-amber-400 hover:text-amber-600 transition-all flex items-center justify-center gap-2"
+                            >
+                                Force Sagar
+                            </button>
+                            <button 
+                                onClick={() => handleForceFetch('batuk')}
+                                disabled={syncing}
+                                className="flex-1 bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:border-blue-400 hover:text-blue-600 transition-all flex items-center justify-center gap-2"
+                            >
+                                Force Batuk
+                            </button>
+                        </div>
+                    </div>
+
                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 relative z-10">
                         <div className="flex items-center gap-2 mb-2">
                             <Clock size={14} className="text-slate-400" />
@@ -206,9 +250,9 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                                 <div className="mb-2 pb-2 border-b border-slate-100">
                                     <span className="font-bold text-amber-600">Source:</span> {rateSource}
                                 </div>
-                                {rawRateData.debug && (
+                                {rawRateData.matchDebug && (
                                     <div className="mb-2 pb-2 border-b border-slate-100">
-                                        <span className="font-bold text-blue-600">Extraction Logic:</span> {rawRateData.debug}
+                                        <span className="font-bold text-blue-600">Parser Logic:</span> {rawRateData.matchDebug}
                                     </div>
                                 )}
                                 
@@ -242,7 +286,7 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                                         </table>
                                     </div>
                                 ) : (
-                                    rawRateData.snippet && <div><span className="font-bold text-slate-400">Raw Text:</span> <pre>{rawRateData.snippet}</pre></div>
+                                    rawRateData.rawSnippet && <div><span className="font-bold text-slate-400">Snippet:</span> <pre>{rawRateData.rawSnippet}</pre></div>
                                 )}
                                 {/* TABLE MAPPING END */}
 

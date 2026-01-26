@@ -10,87 +10,93 @@ router.get('/gold-rate', ensureDb, async (req, res) => {
         const pool = getPool();
         const connection = await pool.getConnection();
 
-        // 1. Get Configuration (to know what "Stale" means)
+        // 1. Get Configuration (for interval and fallback)
         const [configRows] = await connection.query("SELECT config FROM integrations WHERE provider = 'core_settings'");
-        let intervalMins = 60; // Default to 60 minutes
+        let intervalMins = 60; 
+        let manualConfig = null;
+        
         if (configRows.length > 0) {
             try {
-                intervalMins = JSON.parse(configRows[0].config).goldRateFetchIntervalMinutes || 60;
+                manualConfig = JSON.parse(configRows[0].config);
+                intervalMins = manualConfig.goldRateFetchIntervalMinutes || 60;
             } catch (e) {}
         }
 
-        // 2. Check Last Recorded Rate
+        // 2. Check Last Recorded Rate (DB Cache)
         const [rows] = await connection.query('SELECT rate24k, rate22k, rate18k, rateSilver, recorded_at FROM gold_rates ORDER BY recorded_at DESC LIMIT 1');
-        connection.release(); // Release early to prevent blocking
-
-        let shouldUseCache = false;
-        let cachedData = null;
-
-        if (rows.length > 0) {
-            const lastRecord = rows[0];
-            const lastTime = new Date(lastRecord.recorded_at).getTime();
-            const now = Date.now();
-            const diffMins = (now - lastTime) / (1000 * 60);
-
-            // If data is fresh (younger than the interval), use it.
-            if (diffMins < intervalMins) {
-                shouldUseCache = true;
-                cachedData = lastRecord;
-            } else {
-                console.log(`[SmartFetch] Data is stale (${Math.round(diffMins)} mins old). Fetching fresh rates...`);
-            }
-        }
-
-        // 3. Logic Branch
-        if (!shouldUseCache) {
-            // Data is Stale or Missing -> Fetch New
-            const result = await fetchAndSaveRate();
-            
-            if (result.success) {
-                // Return FRESH data
-                const rate24k = result.rate24k;
-                const rate22k = Math.round(rate24k * 0.916);
-                const rate18k = Math.round(rate24k * 0.75);
-                const rateSilver = result.rateSilver || 90;
-                
-                return res.json({ 
-                    success: true, 
-                    k24: rate24k, 
-                    k22: rate22k, 
-                    k18: rate18k, 
-                    silver: rateSilver,
-                    source: 'Sagar Jewellers (Live Refresh)',
-                    raw: { snippet: result.rawSnippet, debug: result.matchDebug }
-                });
-            } else {
-                // Fetch failed, force fallback to cache if available
-                if (rows.length > 0) {
-                    shouldUseCache = true;
-                    cachedData = rows[0];
-                    // Append error info to response so user knows it's cached due to error
-                    cachedData.error = result.error; 
-                } else {
-                    throw new Error(result.error || "No rates found and fetch failed");
-                }
-            }
-        }
-
-        // 4. Return Cached Data (if fresh or fallback)
-        if (shouldUseCache && cachedData) {
+        
+        // Helper to format response
+        const sendResponse = (data, source, error = null) => {
             res.json({
                 success: true,
-                k24: parseFloat(cachedData.rate24k),
-                k22: parseFloat(cachedData.rate22k),
-                k18: parseFloat(cachedData.rate18k),
-                silver: parseFloat(cachedData.rateSilver || 90),
-                source: 'Local Database (Cached)',
-                error: cachedData.error,
-                raw: { debug: 'SmartFetch: Data within interval range' }
+                k24: parseFloat(data.rate24k || data.currentGoldRate24K || 0),
+                k22: parseFloat(data.rate22k || data.currentGoldRate22K || 0),
+                k18: parseFloat(data.rate18k || data.currentGoldRate18K || 0),
+                silver: parseFloat(data.rateSilver || data.currentSilverRate || 0),
+                source,
+                error,
+                raw: data.raw || {}
             });
+        };
+
+        // 3. Determine if we need to fetch
+        let shouldUseCache = false;
+        let cachedRecord = null;
+
+        if (rows.length > 0) {
+            cachedRecord = rows[0];
+            const lastTime = new Date(cachedRecord.recorded_at).getTime();
+            const diffMins = (Date.now() - lastTime) / (1000 * 60);
+            
+            if (diffMins < intervalMins) {
+                shouldUseCache = true;
+            }
         }
 
+        if (shouldUseCache) {
+            connection.release();
+            return sendResponse(cachedRecord, 'Local Database (Cached)');
+        }
+
+        // 4. Attempt Live Fetch
+        // Release connection before long-running network call to avoid blocking pool
+        connection.release(); 
+        
+        const result = await fetchAndSaveRate();
+
+        if (result.success) {
+            // Use the source returned by the multi-provider service
+            return sendResponse(result, result.source || 'Live Feed');
+        }
+
+        // 5. Fallback Strategy
+        // Level 1: Stale DB Data
+        if (rows.length > 0) {
+            return sendResponse(rows[0], 'Local Database (Stale Fallback)', result.error);
+        }
+
+        // Level 2: Manual Settings (if DB is empty, e.g., first run or cleared DB)
+        if (manualConfig && manualConfig.currentGoldRate24K) {
+            return sendResponse(manualConfig, 'Manual Settings (Emergency Fallback)', result.error);
+        }
+
+        // Level 3: Hard Fail
+        throw new Error(result.error || "Rates unavailable: API failed, DB empty, Settings missing.");
+
     } catch (e) { 
-        res.status(500).json({ success: false, error: e.message }); 
+        res.status(503).json({ success: false, error: e.message }); 
+    }
+});
+
+// FORCE FETCH ENDPOINT (Manual Source Switch)
+router.post('/rates/force-update', ensureDb, async (req, res) => {
+    try {
+        const { providerId } = req.body;
+        // Calls service with explicit provider to bypass priority order
+        const result = await fetchAndSaveRate(providerId);
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
@@ -98,7 +104,6 @@ router.get('/rates/history', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
-        // Retrieve last 5000 points for granular charting (frontend will filter)
         const [rows] = await connection.query('SELECT rate24k, rate22k, rate18k, rateSilver, recorded_at FROM gold_rates ORDER BY recorded_at DESC LIMIT 5000');
         connection.release();
         res.json({ success: true, data: rows });
@@ -107,9 +112,8 @@ router.get('/rates/history', ensureDb, async (req, res) => {
     }
 });
 
-// CRON ENDPOINT: Kept for optional usage, but not required with SmartFetch
+// CRON ENDPOINT
 router.get('/cron/update', async (req, res) => {
-    console.log("[Cron] External rate update triggered");
     try {
         const result = await fetchAndSaveRate();
         res.json(result);
