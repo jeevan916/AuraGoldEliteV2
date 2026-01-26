@@ -8,16 +8,17 @@ let currentIntervalMins = null;
 let io = null;
 
 // Configuration for Rate Providers (Priority Order)
+// Updated: Batuk (Augmont) is now the primary source.
 const PROVIDERS = [
+    { 
+        id: 'batuk', 
+        name: 'Batuk (Augmont)', 
+        url: 'https://uat.batuk.in/augmont/gold' 
+    },
     { 
         id: 'sagar', 
         name: 'Sagar Jewellers', 
         url: 'https://bcast.sagarjewellers.co.in:7768/VOTSBroadcastStreaming/Services/xml/GetLiveRateByTemplateID/sagar' 
-    },
-    { 
-        id: 'batuk', 
-        name: 'Batukbhai Jewellers', 
-        url: 'https://uat.batuk.in/augmont/gold' 
     }
 ];
 

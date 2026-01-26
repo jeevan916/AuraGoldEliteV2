@@ -167,7 +167,7 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                             <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
                                 <Zap className="text-amber-500" /> Pricing Engine
                             </h3>
-                            <p className="text-xs text-slate-500 mt-1 font-medium">Auto-sync with Sagar Jewellers (Live) or override manually.</p>
+                            <p className="text-xs text-slate-500 mt-1 font-medium">Auto-sync with Batuk (Augmont) Live or override manually.</p>
                         </div>
                         <button 
                             onClick={handleLiveSync} 
@@ -194,18 +194,18 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                         </div>
                         <div className="flex gap-3">
                             <button 
+                                onClick={() => handleForceFetch('batuk')}
+                                disabled={syncing}
+                                className="flex-1 bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:border-blue-400 hover:text-blue-600 transition-all flex items-center justify-center gap-2"
+                            >
+                                Force Batuk (Augmont)
+                            </button>
+                            <button 
                                 onClick={() => handleForceFetch('sagar')}
                                 disabled={syncing}
                                 className="flex-1 bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:border-amber-400 hover:text-amber-600 transition-all flex items-center justify-center gap-2"
                             >
                                 Force Sagar
-                            </button>
-                            <button 
-                                onClick={() => handleForceFetch('batuk')}
-                                disabled={syncing}
-                                className="flex-1 bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:border-blue-400 hover:text-blue-600 transition-all flex items-center justify-center gap-2"
-                            >
-                                Force Batuk
                             </button>
                         </div>
                     </div>
