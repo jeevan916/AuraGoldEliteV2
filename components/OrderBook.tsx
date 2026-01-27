@@ -77,18 +77,18 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
   };
 
   return (
-    <div className="space-y-6 animate-fadeIn pb-24 h-full flex flex-col">
+    <div className="space-y-6 animate-fadeIn pb-24 h-auto lg:h-full flex flex-col">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 shrink-0">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4 shrink-0">
         <div>
            <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
              <BookOpen className="text-amber-600" /> Order Book
            </h2>
-           <p className="text-sm text-slate-500 font-medium">Master registry of all bookings, deliveries, and archives.</p>
+           <p className="text-sm text-slate-500 font-medium">Master registry of all bookings.</p>
         </div>
         
-        <div className="flex gap-2 w-full md:w-auto">
-            <div className="flex bg-white p-1 rounded-2xl shadow-sm border flex-1 md:flex-none overflow-x-auto">
+        <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+            <div className="flex bg-white p-1 rounded-2xl shadow-sm border overflow-x-auto w-full">
               <TabButton 
                 active={activeTab === 'ACTIVE'} 
                 onClick={() => setActiveTab('ACTIVE')} 
@@ -110,16 +110,16 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
             </div>
             <button 
                 onClick={() => (window as any).dispatchView('ORDER_NEW')}
-                className="bg-slate-900 text-white px-4 py-2 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-lg"
+                className="bg-slate-900 text-white px-4 py-3 sm:py-2 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-lg w-full sm:w-auto"
             >
-                <Plus size={16} /> <span className="hidden sm:inline">New</span>
+                <Plus size={16} /> <span className="inline">New Booking</span>
             </button>
         </div>
       </div>
 
       {/* Search & List */}
-      <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden flex-1 flex flex-col min-h-0">
-        <div className="p-6 border-b bg-slate-50/50 flex flex-col md:flex-row gap-4 shrink-0">
+      <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden flex-1 flex flex-col min-h-0 h-auto lg:h-full">
+        <div className="p-4 lg:p-6 border-b bg-slate-50/50 flex flex-col md:flex-row gap-4 shrink-0">
           <div className="relative flex-1">
              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
              <input 
@@ -132,19 +132,15 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        {/* 
+            On Mobile: removed `flex-1 overflow-y-auto` to allow page scroll (fixes "frame in frame"). 
+            On Desktop: maintained `lg:overflow-y-auto` for fixed sidebar layout.
+        */}
+        <div className="lg:flex-1 lg:overflow-y-auto custom-scrollbar h-auto">
           {filteredOrders.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4 py-20">
+            <div className="h-40 lg:h-full flex flex-col items-center justify-center text-slate-400 space-y-4 py-20">
                <Package size={48} className="opacity-20" />
-               <p className="font-bold text-sm uppercase tracking-widest">No orders found in {activeTab.toLowerCase()}</p>
-               {activeTab === 'ACTIVE' && (
-                   <button 
-                    onClick={() => (window as any).dispatchView('ORDER_NEW')}
-                    className="bg-amber-50 text-amber-700 px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-amber-100 transition-colors flex items-center gap-2"
-                   >
-                       <Plus size={14} /> Create Booking
-                   </button>
-               )}
+               <p className="font-bold text-sm uppercase tracking-widest">No orders found</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
@@ -157,25 +153,25 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
                     <div 
                         key={order.id} 
                         onClick={() => onViewOrder(order.id)}
-                        className="p-6 hover:bg-slate-50 transition-colors cursor-pointer group relative"
+                        className="p-5 lg:p-6 hover:bg-slate-50 transition-colors cursor-pointer group relative"
                     >
-                        <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
-                            <div className="flex items-center gap-4">
-                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg shadow-sm ${
+                        <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center">
+                            <div className="flex items-start gap-4 w-full lg:w-auto">
+                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg shadow-sm shrink-0 ${
                                     order.status === OrderStatus.OVERDUE ? 'bg-rose-100 text-rose-600' : 
                                     order.status === OrderStatus.COMPLETED ? 'bg-emerald-100 text-emerald-600' :
                                     'bg-slate-100 text-slate-500'
                                 }`}>
                                     {order.customerName.charAt(0)}
                                 </div>
-                                <div>
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <h3 className="font-bold text-slate-800">{order.customerName}</h3>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                                        <h3 className="font-bold text-slate-800 truncate max-w-[200px]">{order.customerName}</h3>
                                         <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${getStatusColor(order.status)}`}>
                                             {order.status}
                                         </span>
                                     </div>
-                                    <p className="text-xs text-slate-500 font-medium flex items-center gap-2">
+                                    <p className="text-xs text-slate-500 font-medium flex items-center gap-2 truncate">
                                         <span className="font-mono">{order.id}</span>
                                         <span>•</span>
                                         <span>{order.items.length} Items</span>
@@ -183,34 +179,36 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-8 w-full md:w-auto justify-between md:justify-end">
-                                <div className="text-right">
-                                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Order Value</p>
-                                    <p className="font-bold text-slate-800">₹{order.totalAmount.toLocaleString()}</p>
+                            <div className="flex items-center gap-6 w-full lg:w-auto justify-between lg:justify-end border-t lg:border-t-0 pt-4 lg:pt-0 border-slate-50">
+                                <div>
+                                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 lg:text-right">Order Value</p>
+                                    <p className="font-bold text-slate-800 lg:text-right">₹{order.totalAmount.toLocaleString()}</p>
                                 </div>
-                                <div className="text-right">
-                                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Balance</p>
-                                    <p className={`font-bold ${balance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                <div>
+                                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 lg:text-right">Balance</p>
+                                    <p className={`font-bold lg:text-right ${balance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                                         {balance > 0 ? `₹${balance.toLocaleString()}` : 'Paid'}
                                     </p>
                                 </div>
                                 
-                                {activeTab === 'READY' && onUpdateOrder ? (
-                                    <button 
-                                        onClick={(e) => handleQuickDeliver(e, order)}
-                                        className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 transition-all flex items-center gap-2 shadow-md z-10"
-                                    >
-                                        <CheckCheck size={14} /> Deliver
-                                    </button>
-                                ) : (
-                                    <ChevronRight className="text-slate-300 group-hover:text-amber-500 transition-colors" />
-                                )}
+                                <div className="hidden lg:block">
+                                    {activeTab === 'READY' && onUpdateOrder ? (
+                                        <button 
+                                            onClick={(e) => handleQuickDeliver(e, order)}
+                                            className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 transition-all flex items-center gap-2 shadow-md z-10"
+                                        >
+                                            <CheckCheck size={14} /> Deliver
+                                        </button>
+                                    ) : (
+                                        <ChevronRight className="text-slate-300 group-hover:text-amber-500 transition-colors" />
+                                    )}
+                                </div>
                             </div>
                         </div>
                         
                         {/* Progress Bar for Active Orders */}
                         {activeTab === 'ACTIVE' && (
-                            <div className="mt-4 bg-slate-100 h-1.5 rounded-full overflow-hidden w-full max-w-md ml-16">
+                            <div className="mt-4 bg-slate-100 h-1.5 rounded-full overflow-hidden w-full max-w-md lg:ml-16">
                                 <div 
                                     className={`h-full rounded-full ${progress >= 100 ? 'bg-emerald-500' : 'bg-amber-500'}`} 
                                     style={{ width: `${progress}%` }}
@@ -231,12 +229,12 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
 const TabButton = ({ active, onClick, icon: Icon, label }: any) => (
   <button
     onClick={onClick}
-    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
         active ? 'bg-amber-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
     }`}
   >
     <Icon size={14} />
-    <span className="hidden sm:inline">{label}</span>
+    <span className="inline">{label}</span>
   </button>
 );
 

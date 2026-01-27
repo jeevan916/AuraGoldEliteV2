@@ -32,12 +32,12 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
   };
 
   return (
-    <div className="space-y-8 pb-24 animate-fadeIn">
+    <div className="space-y-6 lg:space-y-8 pb-24 animate-fadeIn">
       
       {/* 1. AI CASH FLOW ENGINE */}
       <div className="bg-slate-900 bg-gradient-to-r from-emerald-900 to-slate-900 rounded-[2rem] p-6 text-white relative overflow-hidden shadow-xl border border-emerald-500/30">
-        <div className="relative z-10">
-            <div className="flex justify-between items-start">
+        <div className="relative z-10 flex flex-col md:block">
+            <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-6 md:mb-0">
                 <div>
                     <h3 className="font-black text-lg flex items-center gap-2 text-emerald-300">
                         <BrainCircuit className="text-amber-400" /> AI Cash Flow Engine
@@ -48,17 +48,17 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
                 </div>
                 <button 
                     onClick={() => (window as any).dispatchView('STRATEGY')} 
-                    className="bg-white text-emerald-900 px-4 py-2 rounded-xl font-black text-xs uppercase tracking-widest shadow-md hover:bg-emerald-50 transition-colors flex items-center gap-2"
+                    className="bg-white text-emerald-900 px-4 py-2 rounded-xl font-black text-xs uppercase tracking-widest shadow-md hover:bg-emerald-50 transition-colors flex items-center gap-2 w-full md:w-auto justify-center"
                 >
                     Launch Console <ArrowRight size={12} />
                 </button>
             </div>
-            <div className="mt-6 flex gap-3 overflow-x-auto pb-1">
-                 <div className="bg-white/5 p-3 rounded-xl backdrop-blur-md border border-white/10 min-w-[100px]">
+            <div className="mt-2 md:mt-6 flex gap-3 overflow-x-auto pb-1 no-scrollbar">
+                 <div className="bg-white/5 p-3 rounded-xl backdrop-blur-md border border-white/10 min-w-[100px] flex-1 md:flex-none">
                      <p className="text-[9px] uppercase font-bold text-emerald-300 tracking-wider">Collections Due</p>
                      <p className="text-2xl font-black text-white">{criticalOrders.length}</p>
                  </div>
-                 <div className="bg-white/5 p-3 rounded-xl backdrop-blur-md border border-white/10 min-w-[100px]">
+                 <div className="bg-white/5 p-3 rounded-xl backdrop-blur-md border border-white/10 min-w-[100px] flex-1 md:flex-none">
                      <p className="text-[9px] uppercase font-bold text-amber-300 tracking-wider">Active Contracts</p>
                      <p className="text-2xl font-black text-white">{liveOrders.length}</p>
                  </div>

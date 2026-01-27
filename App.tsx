@@ -302,8 +302,8 @@ const App = () => {
   // STANDARD ADMIN LAYOUT
   return (
     <ErrorBoundary>
-      <div className="flex h-screen bg-[#f8f9fa] font-sans text-slate-900 overflow-hidden">
-        <div className="hidden lg:flex flex-col w-72 bg-white border-r border-slate-200 h-full p-6 shadow-sm z-20">
+      <div className="flex h-[100dvh] bg-[#f8f9fa] font-sans text-slate-900 overflow-hidden">
+        <div className="hidden lg:flex flex-col w-72 bg-white border-r border-slate-200 h-full p-6 shadow-sm z-20 shrink-0">
              <div className="mb-10 flex items-center gap-3 px-2">
                  <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/20">
                     <span className="font-serif font-black text-white text-xl">A</span>
@@ -342,7 +342,7 @@ const App = () => {
              </div>
         </div>
 
-        <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-md border-b z-40 flex items-center justify-between px-4 shadow-sm">
+        <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white/90 backdrop-blur-md border-b z-40 flex items-center justify-between px-4 shadow-sm safe-top">
              <div className="flex items-center gap-2">
                  <div className="w-8 h-8 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center">
                     <span className="font-serif font-black text-white text-lg">A</span>
@@ -364,7 +364,7 @@ const App = () => {
             </main>
         </div>
 
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 h-[84px] pb-6 px-6 flex justify-between items-center z-50 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)]">
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 h-[84px] pb-6 px-6 flex justify-between items-center z-50 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] safe-bottom">
              <TabBarItem active={view === 'DASH'} onClick={() => setView('DASH')} icon={<Home />} label="Home" />
              <TabBarItem active={view === 'KARIGAR_DESK'} onClick={() => setView('KARIGAR_DESK')} icon={<Hammer />} label="Desk" />
              <div className="-mt-8">
