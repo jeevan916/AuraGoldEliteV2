@@ -2,19 +2,20 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Search, Package, CheckCircle2, Archive, Clock, ChevronRight, 
-  BookOpen, CheckCheck, Plus, AlertCircle 
+  BookOpen, CheckCheck, Plus, AlertCircle, ShieldAlert, ShieldCheck, Calendar
 } from 'lucide-react';
-import { Order, OrderStatus, ProductionStatus } from '../types';
+import { Order, OrderStatus, ProductionStatus, GlobalSettings, ProtectionStatus } from '../types';
 
 interface OrderBookProps {
   orders: Order[];
+  settings: GlobalSettings;
   onViewOrder: (id: string) => void;
   onUpdateOrder?: (order: Order) => void;
 }
 
 type BookTab = 'ACTIVE' | 'READY' | 'ARCHIVE';
 
-const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrder }) => {
+const OrderBook: React.FC<OrderBookProps> = ({ orders, settings, onViewOrder, onUpdateOrder }) => {
   const [activeTab, setActiveTab] = useState<BookTab>('ACTIVE');
   const [search, setSearch] = useState('');
 
@@ -149,11 +150,29 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
                   const balance = order.totalAmount - paid;
                   const progress = order.totalAmount > 0 ? Math.min(100, Math.round((paid / order.totalAmount) * 100)) : 0;
 
+                  // --- PROTECTION LOGIC ---
+                  const isLapsed = order.paymentPlan.protectionStatus === ProtectionStatus.LAPSED;
+                  const currentRate = settings.currentGoldRate22K;
+                  const bookedRate = order.paymentPlan.protectionRateBooked || order.goldRateAtBooking;
+                  const limit = order.paymentPlan.protectionLimit || 0;
+                  const isLimitHit = !isLapsed && activeTab === 'ACTIVE' && (currentRate - bookedRate > limit);
+
+                  let rowClass = "p-5 lg:p-6 hover:bg-slate-50 transition-colors cursor-pointer group relative border-l-4";
+                  
+                  // Visual Indicators
+                  if (isLapsed) {
+                      rowClass += " border-l-rose-500 bg-rose-50/30";
+                  } else if (isLimitHit) {
+                      rowClass += " border-l-amber-500 bg-amber-50/30";
+                  } else {
+                      rowClass += " border-l-transparent";
+                  }
+
                   return (
                     <div 
                         key={order.id} 
                         onClick={() => onViewOrder(order.id)}
-                        className="p-5 lg:p-6 hover:bg-slate-50 transition-colors cursor-pointer group relative"
+                        className={rowClass}
                     >
                         <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center">
                             <div className="flex items-start gap-4 w-full lg:w-auto">
@@ -170,12 +189,27 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, onViewOrder, onUpdateOrde
                                         <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${getStatusColor(order.status)}`}>
                                             {order.status}
                                         </span>
+                                        {/* PROTECTION BADGES */}
+                                        {isLapsed && (
+                                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-600 text-white flex items-center gap-1">
+                                                <ShieldAlert size={10} /> REVOKED
+                                            </span>
+                                        )}
+                                        {isLimitHit && (
+                                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-500 text-white flex items-center gap-1 animate-pulse">
+                                                <AlertCircle size={10} /> LIMIT HIT
+                                            </span>
+                                        )}
                                     </div>
-                                    <p className="text-xs text-slate-500 font-medium flex items-center gap-2 truncate">
+                                    <div className="flex flex-wrap gap-3 text-xs text-slate-500 font-medium items-center">
                                         <span className="font-mono">{order.id}</span>
                                         <span>•</span>
                                         <span>{order.items.length} Items</span>
-                                    </p>
+                                        {/* BOOKING DATE */}
+                                        <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-600 uppercase">
+                                            <Calendar size={10} /> {new Date(order.createdAt).toLocaleDateString()}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
 
