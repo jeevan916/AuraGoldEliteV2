@@ -13,6 +13,7 @@ import { Server } from 'socket.io';
 import { initDb } from './api/db.js';
 
 // Route Modules
+import authRouter from './api/auth.js';
 import ratesRouter from './api/rates.js';
 import paymentsRouter from './api/payments.js';
 import whatsappRouter from './api/whatsapp.js';
@@ -91,6 +92,8 @@ app.use((req, res, next) => {
     next();
 });
 
+// Routes
+app.use('/api', authRouter); // Auth Routes
 app.use('/api', ratesRouter);
 app.use('/api', paymentsRouter);
 app.use('/api/whatsapp', whatsappRouter);

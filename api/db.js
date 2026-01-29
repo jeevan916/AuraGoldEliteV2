@@ -1,5 +1,6 @@
 
 import mysql from 'mysql2/promise';
+import bcrypt from 'bcryptjs';
 
 let pool = null;
 
@@ -38,7 +39,6 @@ export async function initDb() {
                 timestamp DATETIME, 
                 context JSON
             )`,
-            // NEW: Activity Audit Table
             `CREATE TABLE IF NOT EXISTS system_activities (
                 id VARCHAR(100) PRIMARY KEY,
                 action_type VARCHAR(50),
@@ -48,6 +48,14 @@ export async function initDb() {
                 geo_location VARCHAR(255),
                 device_info VARCHAR(255),
                 timestamp DATETIME
+            )`,
+            // NEW: Users Table for Staff/Admin Login
+            `CREATE TABLE IF NOT EXISTS app_users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                role VARCHAR(20) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`
         ];
         for (const sql of tables) await connection.query(sql);
@@ -55,6 +63,17 @@ export async function initDb() {
         try {
             await connection.query("ALTER TABLE gold_rates ADD COLUMN rateSilver DECIMAL(10, 2) DEFAULT 0");
         } catch (e) { }
+
+        // --- SEED DEFAULT ADMIN ---
+        const [users] = await connection.query("SELECT * FROM app_users WHERE username = 'admin'");
+        if (users.length === 0) {
+            console.log("[DB] Seeding default admin user...");
+            const hash = await bcrypt.hash('admin123', 10);
+            await connection.query(
+                "INSERT INTO app_users (username, password_hash, role) VALUES (?, ?, ?)",
+                ['admin', hash, 'ADMIN']
+            );
+        }
 
         connection.release();
         return { success: true };
@@ -87,12 +106,9 @@ export const normalizePhone = (p) => {
     // 12 digits starting with 91 -> Keep as is
     if (clean.length === 12 && clean.startsWith('91')) return clean;
     
-    // For other cases (e.g. international), just return the cleaned numbers
-    // This prevents the previous slice(-12) bug which could corrupt longer international numbers
     return clean;
 };
 
-// --- NEW SERVER-SIDE LOGGING HELPER ---
 export const logDbActivity = async (actionType, details, metadata, req) => {
     if (!pool) return;
     try {

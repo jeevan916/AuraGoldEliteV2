@@ -23,6 +23,15 @@ export enum ProtectionStatus {
   LAPSED = 'LAPSED'
 }
 
+export type UserRole = 'ADMIN' | 'MANAGER' | 'SALES' | 'KARIGAR';
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  role: UserRole;
+  token?: string;
+}
+
 export interface CatalogItem {
   id: string;
   category: string;
@@ -205,7 +214,7 @@ export interface AppError {
 export interface ActivityLogEntry {
   id: string;
   timestamp: string;
-  actionType: 'ORDER_CREATED' | 'STATUS_UPDATE' | 'TEMPLATE_SENT' | 'MANUAL_MESSAGE_SENT' | 'PAYMENT_RECORDED' | 'PROTECTION_LAPSED' | 'AUTO_HEAL' | 'NAVIGATION' | 'API_CALL' | 'API_SUCCESS' | 'USER_ACTION' | 'GPS_VERIFIED' | 'LINK_OPENED' | 'SECURITY_ALERT' | 'WHATSAPP_SENT' | 'TEMPLATE_CREATED' | 'TEMPLATE_EDITED' | 'TEMPLATE_DELETED';
+  actionType: 'ORDER_CREATED' | 'STATUS_UPDATE' | 'TEMPLATE_SENT' | 'MANUAL_MESSAGE_SENT' | 'PAYMENT_RECORDED' | 'PROTECTION_LAPSED' | 'AUTO_HEAL' | 'NAVIGATION' | 'API_CALL' | 'API_SUCCESS' | 'USER_ACTION' | 'GPS_VERIFIED' | 'LINK_OPENED' | 'SECURITY_ALERT' | 'WHATSAPP_SENT' | 'TEMPLATE_CREATED' | 'TEMPLATE_EDITED' | 'TEMPLATE_DELETED' | 'LOGIN_SUCCESS' | 'LOGIN_FAILED';
   details: string;
   metadata?: any;
 }

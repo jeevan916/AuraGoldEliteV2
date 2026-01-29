@@ -4,7 +4,7 @@ import {
   Plus, Home, ReceiptIndianRupee, Users, MessageSquare, 
   Menu, ArrowLeft, Cloud, Loader2, HardDrive, Settings as SettingsIcon,
   BrainCircuit, Calculator, FileText, ScrollText, Globe, Activity, ShoppingBag, BookOpen, X, RefreshCw, DownloadCloud, Zap,
-  History, Layout, PieChart, ShieldAlert, Hammer
+  History, Layout, PieChart, ShieldAlert, Hammer, LogOut, User
 } from 'lucide-react';
 import { io } from 'socket.io-client';
 
@@ -16,8 +16,9 @@ import { useWhatsApp } from './hooks/useWhatsApp';
 import { errorService } from './services/errorService';
 import { goldRateService } from './services/goldRateService';
 import { storageService } from './services/storageService';
-import { Order, GlobalSettings, NotificationTrigger, PaymentPlanTemplate, AppError, ActivityLogEntry, Customer } from './types';
+import { Order, GlobalSettings, NotificationTrigger, PaymentPlanTemplate, AppError, ActivityLogEntry, Customer, AuthUser, UserRole } from './types';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import Login from './components/Login';
 
 const API_BASE = process.env.VITE_API_BASE_URL || '';
 
@@ -72,6 +73,14 @@ const KarigarManager = lazyRetry(() => import('./components/KarigarManager'), 'K
 
 type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW' | 'ARCHITECT' | 'KARIGAR_DESK';
 
+// --- ACCESS CONTROL LIST ---
+const ROLE_PERMISSIONS: Record<UserRole, MainView[]> = {
+    ADMIN: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'SYS_LOGS', 'SETTINGS', 'MENU', 'CUSTOMER_VIEW', 'ARCHITECT', 'KARIGAR_DESK'],
+    MANAGER: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'MENU', 'KARIGAR_DESK'],
+    SALES: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'MENU'],
+    KARIGAR: ['KARIGAR_DESK']
+};
+
 const LoadingScreen = () => (
   <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 space-y-4 min-h-[50vh]">
     <Loader2 className="animate-spin text-amber-500" size={32} />
@@ -79,17 +88,20 @@ const LoadingScreen = () => (
   </div>
 );
 
-const TabBarItem = ({ icon, label, active, onClick }: any) => (
-  <button 
-    onClick={onClick}
-    className={`flex flex-col items-center gap-1 w-14 transition-all ${active ? 'text-amber-600' : 'text-slate-400 opacity-60'}`}
-  >
-    <div className={`p-1.5 rounded-xl ${active ? 'bg-amber-50' : ''}`}>
-        {React.cloneElement(icon, { size: 22 })}
-    </div>
-    <span className={`text-[9px] font-black uppercase tracking-tighter ${active ? 'opacity-100' : 'opacity-80'}`}>{label}</span>
-  </button>
-);
+const TabBarItem = ({ icon, label, active, onClick, visible = true }: any) => {
+  if (!visible) return null;
+  return (
+    <button 
+        onClick={onClick}
+        className={`flex flex-col items-center gap-1 w-14 transition-all ${active ? 'text-amber-600' : 'text-slate-400 opacity-60'}`}
+    >
+        <div className={`p-1.5 rounded-xl ${active ? 'bg-amber-50' : ''}`}>
+            {React.cloneElement(icon, { size: 22 })}
+        </div>
+        <span className={`text-[9px] font-black uppercase tracking-tighter ${active ? 'opacity-100' : 'opacity-80'}`}>{label}</span>
+    </button>
+  );
+};
 
 const MenuItem = ({ icon, label, desc, onClick, colorClass }: any) => (
   <button 
@@ -110,9 +122,10 @@ const App = () => {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [selectedChatPhone, setSelectedChatPhone] = useState<string | null>(null);
   
-  // Public View State
+  // Public & Auth State
   const [publicOrder, setPublicOrder] = useState<Order | null>(null);
   const [isPublicMode, setIsPublicMode] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
 
   // Admin Data States
   const [settings, setSettings] = useState<GlobalSettings>(storageService.getSettings());
@@ -149,7 +162,20 @@ const App = () => {
         return;
     }
 
-    // 2. ADMIN INITIALIZATION (Only if not public)
+    // 2. CHECK LOCAL AUTH
+    const storedUser = localStorage.getItem('aura_auth');
+    if (storedUser) {
+        try {
+            const parsedUser = JSON.parse(storedUser);
+            setUser(parsedUser);
+            // If user is Karigar, force to desk immediately
+            if (parsedUser.role === 'KARIGAR') {
+                setView('KARIGAR_DESK');
+            }
+        } catch(e) { localStorage.removeItem('aura_auth'); }
+    }
+
+    // 3. ADMIN INITIALIZATION (Only runs if we pass the login check later)
     errorService.initGlobalListeners();
     const unsubscribeErrors = errorService.subscribe((errs, acts) => {
         setSystemErrors(errs);
@@ -192,9 +218,14 @@ const App = () => {
     };
   }, []);
 
+  const handleLogout = () => {
+      localStorage.removeItem('aura_auth');
+      setUser(null);
+      window.location.reload();
+  };
+
   const derivedCustomers = useMemo(() => {
-      // Logic only runs if we have orders loaded (Admin Mode)
-      if (isPublicMode) return [];
+      if (isPublicMode || !user) return [];
       
       const customerMap = new Map<string, Customer>();
       const normalize = (p: string) => p ? p.replace(/\D/g, '').slice(-10) : '';
@@ -226,7 +257,7 @@ const App = () => {
           }
       });
       return Array.from(customerMap.values()).sort((a, b) => b.totalSpent - a.totalSpent);
-  }, [orders, manualCustomers, isPublicMode]);
+  }, [orders, manualCustomers, isPublicMode, user]);
 
   const handleUpdateSettings = async (newSettings: GlobalSettings) => {
       setSettings(newSettings);
@@ -236,7 +267,25 @@ const App = () => {
   const selectedOrder = useMemo(() => orders.find(o => o.id === selectedOrderId), [orders, selectedOrderId]);
   const selectedCustomer = useMemo(() => derivedCustomers.find(c => c.id === selectedCustomerId), [derivedCustomers, selectedCustomerId]);
 
+  // --- ACCESS CONTROL HELPER ---
+  const canAccess = (v: MainView): boolean => {
+      if (!user) return false;
+      const allowed = ROLE_PERMISSIONS[user.role];
+      return allowed.includes(v);
+  };
+
   const renderContent = () => {
+      // Gatekeeping
+      if (!isPublicMode && !user) return <Login onLogin={setUser} />;
+      if (!isPublicMode && !canAccess(view)) return (
+          <div className="flex flex-col items-center justify-center h-full text-slate-400">
+              <ShieldAlert size={48} className="mb-4" />
+              <h2 className="text-xl font-bold text-slate-800">Access Denied</h2>
+              <p className="text-sm">Your role ({user?.role}) does not have permission to view this module.</p>
+              <button onClick={() => setView(user?.role === 'KARIGAR' ? 'KARIGAR_DESK' : 'DASH')} className="mt-4 text-amber-600 font-bold text-xs uppercase">Go Home</button>
+          </div>
+      );
+
       switch(view) {
           // --- PUBLIC VIEW ---
           case 'CUSTOMER_VIEW': 
@@ -267,19 +316,19 @@ const App = () => {
           case 'KARIGAR_DESK': return <KarigarManager orders={orders} onUpdateItem={updateItemStatus} onOrderUpdate={updateOrder} settings={settings} />;
           case 'MENU': return (
               <div className="grid grid-cols-2 gap-4 pb-24 animate-fadeIn">
-                  <MenuItem onClick={() => setView('ORDER_BOOK')} icon={<BookOpen />} label="Order Registry" desc="Manage all bookings" colorClass="bg-blue-50 text-blue-600" />
-                  <MenuItem onClick={() => setView('KARIGAR_DESK')} icon={<Hammer />} label="Karigar Desk" desc="Production Tracking" colorClass="bg-slate-800 text-white" />
-                  <MenuItem onClick={() => setView('CUSTOMERS')} icon={<Users />} label="Client Directory" desc="View customer profiles" colorClass="bg-emerald-50 text-emerald-600" />
-                  <MenuItem onClick={() => setView('COLLECTIONS')} icon={<ReceiptIndianRupee />} label="Payments" desc="Track cash flow" colorClass="bg-amber-50 text-amber-600" />
-                  <MenuItem onClick={() => setView('WHATSAPP')} icon={<MessageSquare />} label="WhatsApp" desc="Connect with clients" colorClass="bg-teal-50 text-teal-600" />
-                  <MenuItem onClick={() => setView('TEMPLATES')} icon={<Layout />} label="AI Templates" desc="Meta Architect Console" colorClass="bg-indigo-50 text-indigo-600" />
-                  <MenuItem onClick={() => setView('LOGS')} icon={<History />} label="Chat Logs" desc="Communication history" colorClass="bg-slate-50 text-slate-600" />
-                  <MenuItem onClick={() => setView('PLANS')} icon={<FileText />} label="Financial Plans" desc="Configure installments" colorClass="bg-violet-50 text-violet-600" />
-                  <MenuItem onClick={() => setView('STRATEGY')} icon={<BrainCircuit />} label="Strategy Engine" desc="AI Debt Recovery" colorClass="bg-rose-50 text-rose-600" />
-                  <MenuItem onClick={() => setView('ARCHITECT')} icon={<Zap />} label="Architect" desc="God Mode System Control" colorClass="bg-amber-100 text-amber-600" />
-                  <MenuItem onClick={() => setView('MARKET')} icon={<Globe />} label="Market Intel" desc="Live rates & news" colorClass="bg-sky-50 text-sky-600" />
-                  <MenuItem onClick={() => setView('SYS_LOGS')} icon={<HardDrive />} label="System Logs" desc="Debug & Audit" colorClass="bg-slate-100 text-slate-600" />
-                  <MenuItem onClick={() => setView('SETTINGS')} icon={<SettingsIcon />} label="Configuration" desc="Database & Rates" colorClass="bg-slate-800 text-white" />
+                  {canAccess('ORDER_BOOK') && <MenuItem onClick={() => setView('ORDER_BOOK')} icon={<BookOpen />} label="Order Registry" desc="Manage all bookings" colorClass="bg-blue-50 text-blue-600" />}
+                  {canAccess('KARIGAR_DESK') && <MenuItem onClick={() => setView('KARIGAR_DESK')} icon={<Hammer />} label="Karigar Desk" desc="Production Tracking" colorClass="bg-slate-800 text-white" />}
+                  {canAccess('CUSTOMERS') && <MenuItem onClick={() => setView('CUSTOMERS')} icon={<Users />} label="Client Directory" desc="View customer profiles" colorClass="bg-emerald-50 text-emerald-600" />}
+                  {canAccess('COLLECTIONS') && <MenuItem onClick={() => setView('COLLECTIONS')} icon={<ReceiptIndianRupee />} label="Payments" desc="Track cash flow" colorClass="bg-amber-50 text-amber-600" />}
+                  {canAccess('WHATSAPP') && <MenuItem onClick={() => setView('WHATSAPP')} icon={<MessageSquare />} label="WhatsApp" desc="Connect with clients" colorClass="bg-teal-50 text-teal-600" />}
+                  {canAccess('TEMPLATES') && <MenuItem onClick={() => setView('TEMPLATES')} icon={<Layout />} label="AI Templates" desc="Meta Architect Console" colorClass="bg-indigo-50 text-indigo-600" />}
+                  {canAccess('LOGS') && <MenuItem onClick={() => setView('LOGS')} icon={<History />} label="Chat Logs" desc="Communication history" colorClass="bg-slate-50 text-slate-600" />}
+                  {canAccess('PLANS') && <MenuItem onClick={() => setView('PLANS')} icon={<FileText />} label="Financial Plans" desc="Configure installments" colorClass="bg-violet-50 text-violet-600" />}
+                  {canAccess('STRATEGY') && <MenuItem onClick={() => setView('STRATEGY')} icon={<BrainCircuit />} label="Strategy Engine" desc="AI Debt Recovery" colorClass="bg-rose-50 text-rose-600" />}
+                  {canAccess('ARCHITECT') && <MenuItem onClick={() => setView('ARCHITECT')} icon={<Zap />} label="Architect" desc="God Mode System Control" colorClass="bg-amber-100 text-amber-600" />}
+                  {canAccess('MARKET') && <MenuItem onClick={() => setView('MARKET')} icon={<Globe />} label="Market Intel" desc="Live rates & news" colorClass="bg-sky-50 text-sky-600" />}
+                  {canAccess('SYS_LOGS') && <MenuItem onClick={() => setView('SYS_LOGS')} icon={<HardDrive />} label="System Logs" desc="Debug & Audit" colorClass="bg-slate-100 text-slate-600" />}
+                  {canAccess('SETTINGS') && <MenuItem onClick={() => setView('SETTINGS')} icon={<SettingsIcon />} label="Configuration" desc="Database & Rates" colorClass="bg-slate-800 text-white" />}
               </div>
           );
           default: return <Dashboard orders={orders} currentRates={{k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K, silver: settings.currentSilverRate}} />;
@@ -299,6 +348,11 @@ const App = () => {
       );
   }
 
+  // LOGIN SCREEN WRAPPER
+  if (!user) {
+      return <Login onLogin={setUser} />;
+  }
+
   // STANDARD ADMIN LAYOUT
   return (
     <ErrorBoundary>
@@ -310,35 +364,42 @@ const App = () => {
                  </div>
                  <div>
                     <h1 className="font-serif font-black text-xl tracking-tight text-slate-900">AuraGold</h1>
-                    <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Enterprise OS</p>
+                    <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">{user.role} Portal</p>
                  </div>
              </div>
              <div className="flex-1 space-y-1 overflow-y-auto custom-scrollbar pr-2">
-                 <SidebarItem active={view === 'DASH'} onClick={() => setView('DASH')} icon={Home} label="Dashboard" />
-                 <SidebarItem active={view === 'ORDER_BOOK'} onClick={() => setView('ORDER_BOOK')} icon={BookOpen} label="Order Book" />
-                 <SidebarItem active={view === 'KARIGAR_DESK'} onClick={() => setView('KARIGAR_DESK')} icon={Hammer} label="Karigar Desk" highlight />
-                 <SidebarItem active={view === 'ORDER_NEW'} onClick={() => setView('ORDER_NEW')} icon={Plus} label="New Booking" />
+                 {canAccess('DASH') && <SidebarItem active={view === 'DASH'} onClick={() => setView('DASH')} icon={Home} label="Dashboard" />}
+                 {canAccess('ORDER_BOOK') && <SidebarItem active={view === 'ORDER_BOOK'} onClick={() => setView('ORDER_BOOK')} icon={BookOpen} label="Order Book" />}
+                 {canAccess('KARIGAR_DESK') && <SidebarItem active={view === 'KARIGAR_DESK'} onClick={() => setView('KARIGAR_DESK')} icon={Hammer} label="Karigar Desk" highlight />}
+                 {canAccess('ORDER_NEW') && <SidebarItem active={view === 'ORDER_NEW'} onClick={() => setView('ORDER_NEW')} icon={Plus} label="New Booking" />}
                  
-                 <div className="my-6 border-t border-slate-100"></div>
-                 <p className="px-4 text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Operations</p>
-                 <SidebarItem active={view === 'CUSTOMERS'} onClick={() => setView('CUSTOMERS')} icon={Users} label="Clients" />
-                 <SidebarItem active={view === 'COLLECTIONS'} onClick={() => setView('COLLECTIONS')} icon={ReceiptIndianRupee} label="Payments" />
-                 <SidebarItem active={view === 'STRATEGY'} onClick={() => setView('STRATEGY')} icon={BrainCircuit} label="Strategy Hub" />
-                 <SidebarItem active={view === 'PLANS'} onClick={() => setView('PLANS')} icon={FileText} label="Plan Manager" />
+                 {(canAccess('CUSTOMERS') || canAccess('COLLECTIONS')) && <div className="my-6 border-t border-slate-100"></div>}
+                 {(canAccess('CUSTOMERS') || canAccess('COLLECTIONS')) && <p className="px-4 text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Operations</p>}
+                 {canAccess('CUSTOMERS') && <SidebarItem active={view === 'CUSTOMERS'} onClick={() => setView('CUSTOMERS')} icon={Users} label="Clients" />}
+                 {canAccess('COLLECTIONS') && <SidebarItem active={view === 'COLLECTIONS'} onClick={() => setView('COLLECTIONS')} icon={ReceiptIndianRupee} label="Payments" />}
+                 {canAccess('STRATEGY') && <SidebarItem active={view === 'STRATEGY'} onClick={() => setView('STRATEGY')} icon={BrainCircuit} label="Strategy Hub" />}
+                 {canAccess('PLANS') && <SidebarItem active={view === 'PLANS'} onClick={() => setView('PLANS')} icon={FileText} label="Plan Manager" />}
                  
-                 <div className="my-6 border-t border-slate-100"></div>
-                 <p className="px-4 text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Communication</p>
-                 <SidebarItem active={view === 'WHATSAPP'} onClick={() => setView('WHATSAPP')} icon={MessageSquare} label="WhatsApp" />
-                 <SidebarItem active={view === 'TEMPLATES'} onClick={() => setView('TEMPLATES')} icon={Layout} label="AI Templates" />
-                 <SidebarItem active={view === 'LOGS'} onClick={() => setView('LOGS')} icon={History} label="Audit Logs" />
+                 {canAccess('WHATSAPP') && <div className="my-6 border-t border-slate-100"></div>}
+                 {canAccess('WHATSAPP') && <p className="px-4 text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Communication</p>}
+                 {canAccess('WHATSAPP') && <SidebarItem active={view === 'WHATSAPP'} onClick={() => setView('WHATSAPP')} icon={MessageSquare} label="WhatsApp" />}
+                 {canAccess('TEMPLATES') && <SidebarItem active={view === 'TEMPLATES'} onClick={() => setView('TEMPLATES')} icon={Layout} label="AI Templates" />}
+                 {canAccess('LOGS') && <SidebarItem active={view === 'LOGS'} onClick={() => setView('LOGS')} icon={History} label="Audit Logs" />}
                  
-                 <div className="my-6 border-t border-slate-100"></div>
-                 <SidebarItem active={view === 'ARCHITECT'} onClick={() => setView('ARCHITECT')} icon={Zap} label="God Mode" highlight />
-                 <SidebarItem active={view === 'MARKET'} onClick={() => setView('MARKET')} icon={Globe} label="Market Intel" />
+                 {(canAccess('ARCHITECT') || canAccess('MARKET')) && <div className="my-6 border-t border-slate-100"></div>}
+                 {canAccess('ARCHITECT') && <SidebarItem active={view === 'ARCHITECT'} onClick={() => setView('ARCHITECT')} icon={Zap} label="God Mode" highlight />}
+                 {canAccess('MARKET') && <SidebarItem active={view === 'MARKET'} onClick={() => setView('MARKET')} icon={Globe} label="Market Intel" />}
              </div>
-             <div className="mt-4 pt-4 border-t border-slate-100">
-                 <SidebarItem active={view === 'SYS_LOGS'} onClick={() => setView('SYS_LOGS')} icon={HardDrive} label="System Logs" />
-                 <SidebarItem active={view === 'SETTINGS'} onClick={() => setView('SETTINGS')} icon={SettingsIcon} label="Settings" />
+             
+             <div className="mt-4 pt-4 border-t border-slate-100 space-y-1">
+                 {canAccess('SYS_LOGS') && <SidebarItem active={view === 'SYS_LOGS'} onClick={() => setView('SYS_LOGS')} icon={HardDrive} label="System Logs" />}
+                 {canAccess('SETTINGS') && <SidebarItem active={view === 'SETTINGS'} onClick={() => setView('SETTINGS')} icon={SettingsIcon} label="Settings" />}
+                 <button 
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-xs font-bold text-rose-500 hover:bg-rose-50 transition-all"
+                 >
+                    <LogOut size={18} /> <span>Sign Out</span>
+                 </button>
              </div>
         </div>
 
@@ -349,11 +410,16 @@ const App = () => {
                  </div>
                  <span className="font-serif font-bold text-lg text-slate-900">AuraGold</span>
              </div>
-             {view !== 'DASH' && (
-                 <button onClick={() => setView('DASH')} className="p-2 bg-slate-100 rounded-full text-slate-600">
-                     <ArrowLeft size={20} />
+             <div className="flex items-center gap-2">
+                 {view !== 'DASH' && view !== 'KARIGAR_DESK' && (
+                     <button onClick={() => setView(user.role === 'KARIGAR' ? 'KARIGAR_DESK' : 'DASH')} className="p-2 bg-slate-100 rounded-full text-slate-600">
+                         <ArrowLeft size={20} />
+                     </button>
+                 )}
+                 <button onClick={handleLogout} className="p-2 bg-rose-50 rounded-full text-rose-500">
+                     <LogOut size={20} />
                  </button>
-             )}
+             </div>
         </div>
 
         <div className="flex-1 overflow-hidden relative flex flex-col">
@@ -365,15 +431,21 @@ const App = () => {
         </div>
 
         <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 h-[84px] pb-6 px-6 flex justify-between items-center z-50 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] safe-bottom">
-             <TabBarItem active={view === 'DASH'} onClick={() => setView('DASH')} icon={<Home />} label="Home" />
-             <TabBarItem active={view === 'KARIGAR_DESK'} onClick={() => setView('KARIGAR_DESK')} icon={<Hammer />} label="Desk" />
+             {canAccess('DASH') ? 
+                <TabBarItem active={view === 'DASH'} onClick={() => setView('DASH')} icon={<Home />} label="Home" /> :
+                <TabBarItem active={view === 'KARIGAR_DESK'} onClick={() => setView('KARIGAR_DESK')} icon={<Hammer />} label="Desk" />
+             }
+             
+             {canAccess('KARIGAR_DESK') && canAccess('DASH') && <TabBarItem active={view === 'KARIGAR_DESK'} onClick={() => setView('KARIGAR_DESK')} icon={<Hammer />} label="Desk" />}
+             
              <div className="-mt-8">
                  <button onClick={() => setView(view === 'MENU' ? 'DASH' : 'MENU')} className="w-14 h-14 rounded-full flex items-center justify-center shadow-2xl bg-slate-900 text-white">
                     {view === 'MENU' ? <X size={24} /> : <Menu size={24} />}
                  </button>
              </div>
-             <TabBarItem active={view === 'ORDER_BOOK'} onClick={() => setView('ORDER_BOOK')} icon={<BookOpen />} label="Orders" />
-             <TabBarItem active={view === 'WHATSAPP'} onClick={() => setView('WHATSAPP')} icon={<MessageSquare />} label="Chat" />
+             
+             <TabBarItem active={view === 'ORDER_BOOK'} onClick={() => setView('ORDER_BOOK')} icon={<BookOpen />} label="Orders" visible={canAccess('ORDER_BOOK')} />
+             <TabBarItem active={view === 'WHATSAPP'} onClick={() => setView('WHATSAPP')} icon={<MessageSquare />} label="Chat" visible={canAccess('WHATSAPP')} />
         </div>
       </div>
     </ErrorBoundary>
