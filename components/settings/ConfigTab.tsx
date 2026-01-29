@@ -192,20 +192,37 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                             <Share2 size={14} className="text-blue-500" />
                             <h4 className="text-[10px] font-black uppercase text-slate-600 tracking-widest">Source Diagnostics & Switching</h4>
                         </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block ml-1">Primary Rate Source</label>
+                                <select 
+                                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                                    value={localSettings.preferredRateProvider || 'auto'}
+                                    onChange={(e) => setLocalSettings({...localSettings, preferredRateProvider: e.target.value})}
+                                >
+                                    <option value="auto">Auto (Default / Batuk)</option>
+                                    <option value="sagar">Sagar Jewellers (Force)</option>
+                                    <option value="batuk">Batuk / Augmont (Force)</option>
+                                </select>
+                                <p className="text-[9px] text-slate-400 mt-1 ml-1">This setting persists for background fetching.</p>
+                            </div>
+                        </div>
+
                         <div className="flex gap-3">
                             <button 
                                 onClick={() => handleForceFetch('batuk')}
                                 disabled={syncing}
                                 className="flex-1 bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:border-blue-400 hover:text-blue-600 transition-all flex items-center justify-center gap-2"
                             >
-                                Force Batuk (Augmont)
+                                Force Batuk (Test)
                             </button>
                             <button 
                                 onClick={() => handleForceFetch('sagar')}
                                 disabled={syncing}
                                 className="flex-1 bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:border-amber-400 hover:text-amber-600 transition-all flex items-center justify-center gap-2"
                             >
-                                Force Sagar
+                                Force Sagar (Test)
                             </button>
                         </div>
                     </div>

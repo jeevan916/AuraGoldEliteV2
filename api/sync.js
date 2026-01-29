@@ -84,7 +84,8 @@ router.post('/settings', ensureDb, async (req, res) => {
             goldRateProtectionMax: settings.goldRateProtectionMax,
             gracePeriodHours: settings.gracePeriodHours,
             followUpIntervalDays: settings.followUpIntervalDays,
-            goldRateFetchIntervalMinutes: settings.goldRateFetchIntervalMinutes
+            goldRateFetchIntervalMinutes: settings.goldRateFetchIntervalMinutes,
+            preferredRateProvider: settings.preferredRateProvider // Persist Provider Preference
         };
         await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['core_settings', JSON.stringify(coreConfig)]);
 

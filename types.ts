@@ -141,6 +141,7 @@ export interface GlobalSettings {
   gracePeriodHours: number; 
   followUpIntervalDays: number; 
   goldRateFetchIntervalMinutes: number; 
+  preferredRateProvider?: string; // 'auto', 'batuk', 'sagar'
   whatsappPhoneNumberId?: string;
   whatsappBusinessAccountId?: string;
   whatsappBusinessToken?: string;

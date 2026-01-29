@@ -116,13 +116,40 @@ export async function fetchAndSaveRate(forcedProviderId = null) {
     let lastError = null;
     let winningProvider = null;
 
-    // Filter providers if forcing one
-    const targetProviders = forcedProviderId 
-        ? PROVIDERS.filter(p => p.id === forcedProviderId)
-        : PROVIDERS;
+    let targetProviders = PROVIDERS;
+
+    if (forcedProviderId) {
+        targetProviders = PROVIDERS.filter(p => p.id === forcedProviderId);
+    } else {
+        // Read preference from DB to reorder or filter default list
+        try {
+            const pool = getPool();
+            if (pool) {
+                const connection = await pool.getConnection();
+                const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = 'core_settings'");
+                connection.release();
+                if (rows.length > 0) {
+                    const config = JSON.parse(rows[0].config);
+                    const pref = config.preferredRateProvider; // 'batuk' | 'sagar' | 'auto'
+                    if (pref && pref !== 'auto') {
+                        // Priority Reordering: Put preferred first, but keep others as fallback if explicit setting implies preference not exclusivity.
+                        // However, user usually implies "Use this one". 
+                        // Let's force it to be the first one tried.
+                        const pIndex = PROVIDERS.findIndex(p => p.id === pref);
+                        if (pIndex > -1) {
+                            const p = PROVIDERS[pIndex];
+                            const others = PROVIDERS.filter(x => x.id !== pref);
+                            targetProviders = [p, ...others];
+                            console.log(`[RateService] Priority updated to: ${pref.toUpperCase()}`);
+                        }
+                    }
+                }
+            }
+        } catch(e) { console.warn("Failed to read provider pref", e.message); }
+    }
 
     if (targetProviders.length === 0) {
-        return { success: false, error: `Provider '${forcedProviderId}' not found configuration.` };
+        return { success: false, error: `Provider configuration invalid.` };
     }
 
     // --- FAILOVER LOOP ---
