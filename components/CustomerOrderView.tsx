@@ -2,10 +2,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   CheckCircle2, Clock, MapPin, ShieldCheck, Box, CreditCard, 
-  Smartphone, Lock, AlertCircle, ArrowRight, QrCode, CalendarDays, LocateFixed, ReceiptIndianRupee
+  Smartphone, Lock, AlertCircle, ArrowRight, QrCode, CalendarDays, 
+  LocateFixed, ReceiptIndianRupee, TrendingUp, ChevronDown, ChevronUp, Scale, Info
 } from 'lucide-react';
-import { Order, ProductionStatus } from '../types';
+import { Order, ProductionStatus, ProtectionStatus } from '../types';
 import { errorService } from '../services/errorService';
+import { goldRateService } from '../services/goldRateService';
 
 interface CustomerOrderViewProps {
   order: Order;
@@ -15,6 +17,8 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [showOriginal, setShowOriginal] = useState(false);
   const [locationStatus, setLocationStatus] = useState<'PENDING' | 'GRANTED' | 'DENIED'>('PENDING');
+  const [expandedItem, setExpandedItem] = useState<string | null>(null);
+  const [liveRate, setLiveRate] = useState<number>(0);
   const loggedRef = useRef(false);
 
   const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
@@ -22,11 +26,9 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const nextPayment = order.paymentPlan.milestones.find(m => m.status !== 'PAID');
 
   useEffect(() => {
-    // Basic View Logging on Mount (One time)
+    // 1. Log Access
     if (!loggedRef.current) {
         loggedRef.current = true;
-        // Server already logs the basic access via middleware in api/core.js
-        // We add client-specific details here that server can't see (Screen size, etc)
         errorService.logActivity('USER_ACTION', `Customer viewing order: ${order.id}`, {
             orderId: order.id,
             screen: `${window.innerWidth}x${window.innerHeight}`,
@@ -34,11 +36,21 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
         });
     }
 
+    // 2. QR Code Gen
     if (remaining > 0) {
         const amount = nextPayment ? nextPayment.targetAmount : remaining;
         const upi = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=Sanghavi%20Jewellers&tr=${order.id}&am=${amount}&cu=INR`;
         setQrUrl(`https://quickchart.io/qr?text=${encodeURIComponent(upi)}&margin=2&size=300`);
     }
+
+    // 3. Fetch Live Rate for Protection Monitor
+    const fetchRate = async () => {
+        const res = await goldRateService.fetchLiveRate();
+        if (res.success) {
+            setLiveRate(res.rate22K);
+        }
+    };
+    fetchRate();
   }, [remaining, nextPayment, order.id]);
 
   const requestLocation = () => {
@@ -66,6 +78,13 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const displayMilestones = showOriginal && order.paymentPlan.originalMilestones 
       ? order.paymentPlan.originalMilestones 
       : order.paymentPlan.milestones;
+
+  // PROTECTION CALCS
+  const bookedRate = order.paymentPlan.protectionRateBooked || order.goldRateAtBooking;
+  const isProtected = order.paymentPlan.protectionStatus === ProtectionStatus.ACTIVE;
+  const savingsPerGram = liveRate > 0 ? liveRate - bookedRate : 0;
+  const totalGoldWeight = order.items.reduce((sum, item) => item.metalColor !== 'Silver' ? sum + item.netWeight : sum, 0);
+  const totalSavings = savingsPerGram * totalGoldWeight;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -98,6 +117,46 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
 
       <div className="px-6 -mt-16 relative z-20 space-y-6">
         
+        {/* 1. RATE PROTECTION MONITOR */}
+        {isProtected && totalGoldWeight > 0 && (
+            <div className="bg-white p-5 rounded-3xl shadow-lg border border-emerald-100 overflow-hidden relative">
+                <div className="flex justify-between items-start mb-4 relative z-10">
+                    <div>
+                        <h3 className="font-black text-slate-800 text-sm flex items-center gap-2">
+                            <ShieldCheck className="text-emerald-500" size={18} /> Rate Protection Active
+                        </h3>
+                        <p className="text-[10px] text-slate-500 mt-1">Your gold rate is locked against market hikes.</p>
+                    </div>
+                    <div className="bg-emerald-50 text-emerald-700 px-2 py-1 rounded-lg border border-emerald-100 text-[10px] font-bold uppercase">
+                        Booked @ ₹{bookedRate}/g
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 relative z-10">
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                        <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Current Market</p>
+                        <div className="flex items-center gap-1">
+                            <p className="text-lg font-bold text-slate-700">₹{liveRate > 0 ? liveRate.toLocaleString() : 'Loading...'}</p>
+                            {liveRate > bookedRate && <TrendingUp size={14} className="text-emerald-500" />}
+                        </div>
+                    </div>
+                    <div className={`p-3 rounded-2xl border ${savingsPerGram > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
+                        <p className="text-[9px] font-black uppercase tracking-widest mb-1 opacity-60">Value Shielded</p>
+                        <p className={`text-lg font-black ${savingsPerGram > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            {savingsPerGram > 0 ? `+₹${Math.round(totalSavings).toLocaleString()}` : 'Protected'}
+                        </p>
+                    </div>
+                </div>
+                
+                {savingsPerGram > 0 && (
+                    <div className="mt-3 text-[10px] text-emerald-700 font-bold flex items-center gap-1 bg-emerald-50/50 p-2 rounded-xl">
+                        <Info size={12} /> You are saving ₹{Math.round(savingsPerGram).toLocaleString()} per gram compared to today's rate.
+                    </div>
+                )}
+            </div>
+        )}
+
+        {/* 2. PAYMENT QR */}
         {remaining > 0 && (
           <div className="bg-white p-6 rounded-3xl shadow-lg border border-amber-100 flex flex-col items-center">
              {qrUrl && <img src={qrUrl} className="w-40 h-40 mb-4 border p-2 rounded-xl" alt="Payment QR" />}
@@ -114,6 +173,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
           </div>
         )}
 
+        {/* 3. SCHEDULE */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-4">
           <div className="flex justify-between items-center">
               <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
@@ -168,6 +228,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
           </div>
         </div>
 
+        {/* 4. TRANSACTIONS */}
         {order.payments.length > 0 && (
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-4">
                 <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
@@ -187,22 +248,76 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
             </div>
         )}
 
+        {/* 5. ITEM BREAKDOWN (DETAILED) */}
         <div className="space-y-4">
-          <h3 className="text-sm font-black uppercase text-slate-400 tracking-widest ml-1">Order Details</h3>
-          {order.items.map((item) => (
-             <div key={item.id} className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex gap-4 items-center">
-               <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-300 overflow-hidden">
-                  {item.photoUrls?.[0] ? <img src={item.photoUrls[0]} className="w-full h-full object-cover" /> : <Box size={24} />}
+          <h3 className="text-sm font-black uppercase text-slate-400 tracking-widest ml-1">Order Specification</h3>
+          {order.items.map((item) => {
+             const isExpanded = expandedItem === item.id;
+             // Calculate effective rate used for this item if weight exists
+             const effectiveRate = item.netWeight > 0 ? (item.baseMetalValue / item.netWeight) : bookedRate;
+
+             return (
+             <div key={item.id} className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 transition-all">
+               <div className="flex gap-4 items-start" onClick={() => setExpandedItem(isExpanded ? null : item.id)}>
+                   <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-300 overflow-hidden shrink-0">
+                      {item.photoUrls?.[0] ? <img src={item.photoUrls[0]} className="w-full h-full object-cover" /> : <Box size={24} />}
+                   </div>
+                   <div className="flex-1 min-w-0">
+                     <div className="flex justify-between items-start">
+                         <div>
+                             <h2 className="text-sm font-black text-slate-800">{item.category}</h2>
+                             <p className="text-[10px] text-slate-500 uppercase font-bold mt-0.5">
+                                 {item.metalColor} • {item.purity} • {item.netWeight}g
+                             </p>
+                         </div>
+                         <div className="text-right">
+                             <p className="text-sm font-black text-slate-900">₹{item.finalAmount.toLocaleString()}</p>
+                             <button className="text-[9px] font-bold text-blue-500 flex items-center gap-1 justify-end mt-1">
+                                 {isExpanded ? 'Hide' : 'Breakup'} {isExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                             </button>
+                         </div>
+                     </div>
+                     <div className="mt-2 inline-block px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[9px] font-black uppercase tracking-wide">
+                        {item.productionStatus.replace('_', ' ')}
+                     </div>
+                   </div>
                </div>
-               <div className="flex-1">
-                 <h2 className="text-sm font-black text-slate-800">{item.category}</h2>
-                 <p className="text-[10px] text-slate-500 uppercase">{item.metalColor} • {item.purity}</p>
-                 <div className="mt-2 inline-block px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[9px] font-black uppercase tracking-wide">
-                    {item.productionStatus}
-                 </div>
-               </div>
+
+               {/* Detailed Cost Table */}
+               {isExpanded && (
+                   <div className="mt-4 pt-4 border-t border-slate-100 animate-slideDown">
+                       <div className="bg-slate-50 rounded-xl p-3 grid grid-cols-2 gap-y-3 gap-x-4">
+                           <div>
+                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Rate Applied</p>
+                               <p className="text-xs font-bold text-slate-700">₹{Math.round(effectiveRate).toLocaleString()}/g</p>
+                           </div>
+                           <div>
+                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Metal Value</p>
+                               <p className="text-xs font-bold text-slate-700">₹{Math.round(item.baseMetalValue).toLocaleString()}</p>
+                           </div>
+                           <div>
+                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Making / VA</p>
+                               <p className="text-xs font-bold text-slate-700">₹{Math.round(item.wastageValue + item.totalLaborValue).toLocaleString()}</p>
+                           </div>
+                           <div>
+                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Stone Charges</p>
+                               <p className="text-xs font-bold text-slate-700">₹{item.stoneCharges.toLocaleString()}</p>
+                           </div>
+                           <div className="col-span-2 border-t border-slate-200 pt-2 flex justify-between items-center">
+                               <div>
+                                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">GST ({(order.totalAmount > 0 ? (item.taxAmount / (item.finalAmount - item.taxAmount)) * 100 : 3).toFixed(0)}%)</p>
+                                   <p className="text-xs font-bold text-slate-700">₹{Math.round(item.taxAmount).toLocaleString()}</p>
+                               </div>
+                               <div className="text-right">
+                                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Item Total</p>
+                                   <p className="text-sm font-black text-slate-900">₹{Math.round(item.finalAmount).toLocaleString()}</p>
+                               </div>
+                           </div>
+                       </div>
+                   </div>
+               )}
              </div>
-          ))}
+          )})}
         </div>
 
         <div className="text-center pb-8 opacity-40">
