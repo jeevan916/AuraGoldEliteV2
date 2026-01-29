@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   CheckCircle2, Clock, MapPin, ShieldCheck, Box, CreditCard, 
   Smartphone, Lock, AlertCircle, ArrowRight, QrCode, CalendarDays, 
-  LocateFixed, ReceiptIndianRupee, TrendingUp, ChevronDown, ChevronUp, Scale, Info, ShieldAlert
+  LocateFixed, ReceiptIndianRupee, TrendingUp, ChevronDown, ChevronUp, Scale, Info, ShieldAlert, Sparkles
 } from 'lucide-react';
 import { Order, ProductionStatus, ProtectionStatus } from '../types';
 import { errorService } from '../services/errorService';
@@ -86,15 +86,17 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   
   const isProtected = order.paymentPlan.protectionStatus === ProtectionStatus.ACTIVE;
   
-  // Logic: 
-  // 1. Savings = If Live Rate > Booked Rate (But under Limit)
-  // 2. Liability = If Live Rate > MaxProtectedRate (Limit Breached)
-  
   const totalGoldWeight = order.items.reduce((sum, item) => item.metalColor !== 'Silver' ? sum + item.netWeight : sum, 0);
   
   const isLimitBreached = liveRate > maxProtectedRate;
   const surchargePerGram = isLimitBreached ? liveRate - maxProtectedRate : 0;
-  const savingsPerGram = !isLimitBreached && liveRate > bookedRate ? liveRate - bookedRate : (isLimitBreached ? protectionLimit : 0);
+  
+  // Savings Calculation:
+  // If breached: You effectively pay (Live Rate - Protection Limit)
+  // Savings vs Live Rate = Protection Limit
+  // If safe: You pay Booked Rate
+  // Savings vs Live Rate = Live Rate - Booked Rate
+  const savingsPerGram = isLimitBreached ? protectionLimit : (liveRate - bookedRate);
   
   const totalSavings = savingsPerGram * totalGoldWeight;
   const potentialSurcharge = surchargePerGram * totalGoldWeight;
@@ -130,78 +132,118 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
 
       <div className="px-6 -mt-16 relative z-20 space-y-6">
         
-        {/* 1. RATE PROTECTION MONITOR */}
+        {/* 1. RATE PROTECTION MONITOR (REDESIGNED) */}
         {isProtected && totalGoldWeight > 0 && (
-            <div className={`bg-white p-5 rounded-3xl shadow-lg border-2 overflow-hidden relative ${isLimitBreached ? 'border-amber-400' : 'border-emerald-100'}`}>
-                <div className="flex justify-between items-start mb-4 relative z-10">
+            <div className={`bg-white rounded-3xl shadow-xl border overflow-hidden relative mb-2 ${isLimitBreached ? 'border-amber-200 shadow-amber-500/10' : 'border-emerald-100 shadow-emerald-500/10'}`}>
+                
+                {/* HEADER */}
+                <div className={`px-6 py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 ${isLimitBreached ? 'bg-amber-50' : 'bg-emerald-50'}`}>
                     <div>
-                        <h3 className={`font-black text-sm flex items-center gap-2 ${isLimitBreached ? 'text-amber-700' : 'text-slate-800'}`}>
-                            {isLimitBreached ? <ShieldAlert className="text-amber-500" size={18} /> : <ShieldCheck className="text-emerald-500" size={18} />}
-                            {isLimitBreached ? 'Protection Limit Reached' : 'Rate Protection Active'}
+                        <h3 className={`font-black text-sm flex items-center gap-2 uppercase tracking-wide ${isLimitBreached ? 'text-amber-800' : 'text-emerald-800'}`}>
+                            {isLimitBreached ? <ShieldAlert size={18} /> : <ShieldCheck size={18} />}
+                            {isLimitBreached ? 'Protection Limit Exceeded' : 'Rate Protection Active'}
                         </h3>
-                        <p className="text-[10px] text-slate-500 mt-1">
-                            {isLimitBreached ? "Market rate exceeds contract protection limit." : "Your gold rate is locked against market hikes."}
-                        </p>
-                    </div>
-                    <div className="bg-emerald-50 text-emerald-700 px-2 py-1 rounded-lg border border-emerald-100 text-[10px] font-bold uppercase">
-                        Booked @ ₹{bookedRate}/g
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 relative z-10 mb-4">
-                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                        <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Current Market</p>
-                        <div className="flex items-center gap-1">
-                            <p className="text-lg font-bold text-slate-700">₹{liveRate > 0 ? liveRate.toLocaleString() : 'Loading...'}</p>
-                            {liveRate > bookedRate && <TrendingUp size={14} className={isLimitBreached ? "text-amber-500" : "text-emerald-500"} />}
-                        </div>
-                    </div>
-                    <div className={`p-3 rounded-2xl border ${isLimitBreached ? 'bg-amber-50 border-amber-200' : (savingsPerGram > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100')}`}>
-                        <p className="text-[9px] font-black uppercase tracking-widest mb-1 opacity-60">
-                            {isLimitBreached ? 'Uncovered Gap' : 'Value Shielded'}
-                        </p>
-                        <p className={`text-lg font-black ${isLimitBreached ? 'text-amber-700' : (savingsPerGram > 0 ? 'text-emerald-600' : 'text-slate-400')}`}>
+                        <p className={`text-[10px] font-bold mt-1 leading-tight max-w-xs ${isLimitBreached ? 'text-amber-700/80' : 'text-emerald-700/80'}`}>
                             {isLimitBreached 
-                                ? `₹${Math.round(potentialSurcharge).toLocaleString()} Risk`
-                                : (savingsPerGram > 0 ? `+₹${Math.round(totalSavings).toLocaleString()}` : 'Protected')
-                            }
+                                ? `Market Rate is ₹${(liveRate - maxProtectedRate).toLocaleString()}/g above contract ceiling.` 
+                                : "Your rate is locked. You are fully shielded from market hikes."}
                         </p>
+                    </div>
+                    <div className="bg-white/80 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-black/5 shadow-sm self-start md:self-center">
+                        <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Booked Rate</p>
+                        <p className="text-lg font-black text-slate-800">₹{bookedRate.toLocaleString()}<span className="text-[10px] text-slate-400">/g</span></p>
                     </div>
                 </div>
 
-                {/* VISUAL CONTRACT BAR */}
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                    <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
-                        <span>Booked: ₹{bookedRate}</span>
-                        <span>Contract Ceiling: ₹{maxProtectedRate}</span>
-                    </div>
-                    
-                    {/* Bar Container */}
-                    <div className="h-3 bg-slate-200 rounded-full relative overflow-hidden">
-                        {/* Safe Zone (Green) */}
-                        <div className="absolute top-0 bottom-0 left-0 bg-emerald-400/30 w-full flex items-center justify-center text-[7px] font-black text-emerald-800 uppercase tracking-widest">
-                            Safety Range (+₹{protectionLimit})
+                {/* MAIN METRICS */}
+                <div className="p-6">
+                    <div className="flex gap-4 mb-6">
+                        <div className="flex-1 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Current Market</p>
+                            <div className="flex items-end gap-1">
+                                <span className="text-2xl font-black text-slate-900">₹{liveRate > 0 ? liveRate.toLocaleString() : '...'}</span>
+                                <span className="text-[9px] font-bold text-slate-400 mb-1">/g</span>
+                            </div>
                         </div>
                         
-                        {/* Current Rate Indicator */}
-                        {liveRate > 0 && (
-                            <div 
-                                className={`absolute top-0 bottom-0 w-1 transition-all duration-1000 ${isLimitBreached ? 'bg-amber-600 shadow-[0_0_10px_rgba(245,158,11,0.8)]' : 'bg-emerald-600'}`}
-                                style={{ 
-                                    left: `${Math.min(100, Math.max(0, ((liveRate - bookedRate) / (protectionLimit * 1.5)) * 100))}%`
-                                }}
-                            >
-                                <div className={`absolute -top-1 -translate-x-1/2 text-[8px] font-black px-1 rounded ${isLimitBreached ? 'bg-amber-600 text-white' : 'bg-emerald-600 text-white'}`}>
-                                    ₹{liveRate}
-                                </div>
-                            </div>
-                        )}
+                        {/* PROFIT/LOSS BADGE */}
+                        <div className={`flex-1 p-4 rounded-2xl border flex flex-col justify-center ${isLimitBreached ? 'bg-amber-50 border-amber-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                            <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isLimitBreached ? 'text-amber-700' : 'text-emerald-700'}`}>
+                                Your Net Benefit
+                            </p>
+                            <p className={`text-xl font-black ${isLimitBreached ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                +₹{Math.round(totalSavings).toLocaleString()}
+                            </p>
+                            {isLimitBreached && (
+                                <p className="text-[9px] font-bold text-amber-600/80 mt-0.5">
+                                    vs. Buying Today
+                                </p>
+                            )}
+                        </div>
                     </div>
-                    
-                    <p className="text-[9px] text-slate-400 mt-2 text-center">
-                        Contract covers market hikes up to <span className="font-bold text-slate-600">₹{maxProtectedRate}/g</span>. 
-                        {isLimitBreached && <span className="text-amber-600 font-bold block mt-1">Current rate exceeds protection limit. Difference may be applicable.</span>}
-                    </p>
+
+                    {/* VISUAL BAR (Redesigned) */}
+                    <div className="mb-6 relative pt-4 pb-2">
+                        {/* Labels above bar */}
+                        <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
+                            <span>Booked: ₹{bookedRate}</span>
+                            <span className={isLimitBreached ? "text-amber-600 font-black" : ""}>Limit: +₹{protectionLimit}</span>
+                        </div>
+
+                        {/* The Bar Track */}
+                        <div className="h-3 bg-slate-100 rounded-full relative w-full flex overflow-hidden">
+                            <div className="w-full h-full relative bg-slate-200">
+                                 {/* Green Zone (Protected) */}
+                                 {/* If live rate < booked, bar is 0. If live > booked, width is ratio of (live - booked) up to limit. */}
+                                 <div 
+                                    className="absolute left-0 top-0 bottom-0 bg-emerald-400 transition-all duration-1000" 
+                                    style={{ 
+                                        width: liveRate > bookedRate 
+                                            ? (isLimitBreached ? `${(protectionLimit / (liveRate - bookedRate)) * 100}%` : '100%') 
+                                            : '0%' 
+                                    }}
+                                 ></div>
+                                 
+                                 {/* Red Zone (Breach) */}
+                                 {isLimitBreached && (
+                                     <div 
+                                        className="absolute right-0 top-0 bottom-0 bg-amber-400 transition-all duration-1000"
+                                        style={{ width: `${((liveRate - maxProtectedRate) / (liveRate - bookedRate)) * 100}%` }}
+                                     ></div>
+                                 )}
+                            </div>
+                        </div>
+                        
+                        {/* Legend */}
+                        <div className="flex justify-between items-center mt-2">
+                             <p className="text-[9px] font-bold text-emerald-600 flex items-center gap-1">
+                                <ShieldCheck size={10} /> Covered: ₹{Math.min(Math.max(0, liveRate - bookedRate), protectionLimit).toLocaleString()}/g
+                             </p>
+                             {isLimitBreached && (
+                                 <p className="text-[9px] font-bold text-amber-600 flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
+                                    <AlertCircle size={10} /> Surcharge: ₹{surchargePerGram.toLocaleString()}/g
+                                 </p>
+                             )}
+                        </div>
+                    </div>
+
+                    {/* ACTIONABLE INSIGHT / URGENCY */}
+                    <div className="bg-slate-900 rounded-xl p-4 flex items-start gap-4 shadow-lg ring-1 ring-slate-900/5">
+                        <div className={`p-2 rounded-lg text-slate-900 shrink-0 ${isLimitBreached ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`}>
+                            {isLimitBreached ? <Scale size={20} /> : <Sparkles size={20} />}
+                        </div>
+                        <div>
+                            <h4 className="text-white font-bold text-xs uppercase tracking-wide mb-1 flex items-center gap-2">
+                                {isLimitBreached ? "Market Volatility Alert" : "Lock in your profit now"}
+                            </h4>
+                            <p className="text-[10px] text-slate-300 leading-relaxed font-medium">
+                                {isLimitBreached 
+                                    ? `Although the limit is exceeded, you are STILL SAVING ₹${Math.round(savingsPerGram)}/g compared to today's rate! Pay dues on time to keep this contract active.`
+                                    : `You are currently saving ₹${Math.round(savingsPerGram)}/g! Missing a payment date could void this protection and expose you to higher rates.`
+                                }
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </div>
         )}
