@@ -36,7 +36,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
 
     if (remaining > 0) {
         const amount = nextPayment ? nextPayment.targetAmount : remaining;
-        const upi = `upi://pay?pa=auragold@upi&pn=AuraGold%20Jewellers&tr=${order.id}&am=${amount}&cu=INR`;
+        const upi = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=Sanghavi%20Jewellers&tr=${order.id}&am=${amount}&cu=INR`;
         setQrUrl(`https://quickchart.io/qr?text=${encodeURIComponent(upi)}&margin=2&size=300`);
     }
   }, [remaining, nextPayment, order.id]);
@@ -61,7 +61,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
       );
   };
 
-  const upiLink = `upi://pay?pa=auragold@upi&pn=AuraGold%20Jewellery&tr=${order.id}&am=${nextPayment ? nextPayment.targetAmount : remaining}&cu=INR&tn=Order%20${order.id}`;
+  const upiLink = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=Sanghavi%20Jewellers&tr=${order.id}&am=${nextPayment ? nextPayment.targetAmount : remaining}&cu=INR&tn=Order%20${order.id}`;
 
   const displayMilestones = showOriginal && order.paymentPlan.originalMilestones 
       ? order.paymentPlan.originalMilestones 
