@@ -92,11 +92,10 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const surchargePerGram = isLimitBreached ? liveRate - maxProtectedRate : 0;
   
   // Savings Calculation:
-  // If breached: You effectively pay (Live Rate - Protection Limit)
-  // Savings vs Live Rate = Protection Limit
-  // If safe: You pay Booked Rate
-  // Savings vs Live Rate = Live Rate - Booked Rate
-  const savingsPerGram = isLimitBreached ? protectionLimit : (liveRate - bookedRate);
+  // If breached: Savings is capped at the protectionLimit.
+  // If not breached but market > booked: Savings is the diff.
+  // If market < booked: No savings (technically 0).
+  const savingsPerGram = Math.max(0, Math.min(liveRate - bookedRate, protectionLimit));
   
   const totalSavings = savingsPerGram * totalGoldWeight;
   const potentialSurcharge = surchargePerGram * totalGoldWeight;
@@ -141,11 +140,11 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                     <div>
                         <h3 className={`font-black text-sm flex items-center gap-2 uppercase tracking-wide ${isLimitBreached ? 'text-amber-800' : 'text-emerald-800'}`}>
                             {isLimitBreached ? <ShieldAlert size={18} /> : <ShieldCheck size={18} />}
-                            {isLimitBreached ? 'Protection Limit Exceeded' : 'Rate Protection Active'}
+                            {isLimitBreached ? 'Protection Limit Reached' : 'Rate Protection Active'}
                         </h3>
                         <p className={`text-[10px] font-bold mt-1 leading-tight max-w-xs ${isLimitBreached ? 'text-amber-700/80' : 'text-emerald-700/80'}`}>
                             {isLimitBreached 
-                                ? `Market Rate is ₹${(liveRate - maxProtectedRate).toLocaleString()}/g above contract ceiling.` 
+                                ? `Market rate exceeds contract protection limit.` 
                                 : "Your rate is locked. You are fully shielded from market hikes."}
                         </p>
                     </div>
@@ -167,18 +166,13 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                         </div>
                         
                         {/* PROFIT/LOSS BADGE */}
-                        <div className={`flex-1 p-4 rounded-2xl border flex flex-col justify-center ${isLimitBreached ? 'bg-amber-50 border-amber-100' : 'bg-emerald-50 border-emerald-100'}`}>
-                            <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isLimitBreached ? 'text-amber-700' : 'text-emerald-700'}`}>
+                        <div className={`flex-1 p-4 rounded-2xl border flex flex-col justify-center ${isLimitBreached ? 'bg-emerald-50 border-emerald-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                            <p className="text-[9px] font-black uppercase tracking-widest mb-1 text-emerald-700">
                                 Your Net Benefit
                             </p>
-                            <p className={`text-xl font-black ${isLimitBreached ? 'text-amber-600' : 'text-emerald-600'}`}>
+                            <p className="text-xl font-black text-emerald-600">
                                 +₹{Math.round(totalSavings).toLocaleString()}
                             </p>
-                            {isLimitBreached && (
-                                <p className="text-[9px] font-bold text-amber-600/80 mt-0.5">
-                                    vs. Buying Today
-                                </p>
-                            )}
                         </div>
                     </div>
 
@@ -194,23 +188,18 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                         <div className="h-3 bg-slate-100 rounded-full relative w-full flex overflow-hidden">
                             <div className="w-full h-full relative bg-slate-200">
                                  {/* Green Zone (Protected) */}
-                                 {/* If live rate < booked, bar is 0. If live > booked, width is ratio of (live - booked) up to limit. */}
+                                 {/* Calculate percentage fill based on LIVE rate relative to the Range (Booked -> MaxProtected) */}
+                                 {/* If live rate is 50% through the protected zone, bar is 50% green. Max is 100% green. */}
                                  <div 
                                     className="absolute left-0 top-0 bottom-0 bg-emerald-400 transition-all duration-1000" 
                                     style={{ 
                                         width: liveRate > bookedRate 
-                                            ? (isLimitBreached ? `${(protectionLimit / (liveRate - bookedRate)) * 100}%` : '100%') 
+                                            ? (isLimitBreached ? '100%' : `${((liveRate - bookedRate) / protectionLimit) * 100}%`) 
                                             : '0%' 
                                     }}
                                  ></div>
                                  
-                                 {/* Red Zone (Breach) */}
-                                 {isLimitBreached && (
-                                     <div 
-                                        className="absolute right-0 top-0 bottom-0 bg-amber-400 transition-all duration-1000"
-                                        style={{ width: `${((liveRate - maxProtectedRate) / (liveRate - bookedRate)) * 100}%` }}
-                                     ></div>
-                                 )}
+                                 {/* Red Zone (Breach) - Only shown if limit exceeded, but handled via overlay for visual simplicity or separate indicator */}
                             </div>
                         </div>
                         
@@ -221,7 +210,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                              </p>
                              {isLimitBreached && (
                                  <p className="text-[9px] font-bold text-amber-600 flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
-                                    <AlertCircle size={10} /> Surcharge: ₹{surchargePerGram.toLocaleString()}/g
+                                    <AlertCircle size={10} /> Surcharge: ₹{Math.round(surchargePerGram).toLocaleString()}/g
                                  </p>
                              )}
                         </div>
