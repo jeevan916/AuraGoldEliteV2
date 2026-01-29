@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { 
   Hammer, Search, Calendar, User, Clock, 
@@ -302,4 +303,34 @@ const KarigarManager: React.FC<KarigarManagerProps> = ({ orders, onUpdateItem, o
                                   <div className="flex gap-3 pt-2">
                                       <button 
                                           onClick={() => setEditingItemId(null)}
-                                          className="flex
+                                          className="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl font-bold text-xs hover:bg-slate-200 transition-colors"
+                                      >
+                                          Cancel
+                                      </button>
+                                      <button 
+                                          onClick={() => handleSave(order.id, item.id, item, order.customerContact, order.customerName, order.shareToken)}
+                                          className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-bold text-xs hover:bg-emerald-700 shadow-lg flex items-center justify-center gap-2 transition-all"
+                                      >
+                                          <Save size={14} /> Save Updates
+                                      </button>
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                  </div>
+              );
+          })}
+          
+          {filteredQueue.length === 0 && (
+              <div className="col-span-1 xl:col-span-2 py-20 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-[2.5rem]">
+                  <Hammer size={48} className="mx-auto mb-4 opacity-20" />
+                  <p className="font-bold uppercase tracking-widest text-sm">No Active Production Items</p>
+                  <p className="text-xs mt-2">All items are delivered or queue is empty.</p>
+              </div>
+          )}
+      </div>
+    </div>
+  );
+};
+
+export default KarigarManager;
