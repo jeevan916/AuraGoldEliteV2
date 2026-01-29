@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   MessageSquare, Check, CheckCircle2, Clock, AlertCircle, 
@@ -261,7 +260,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
                 >
                     <div className="flex justify-between items-start mb-1">
                         <h3 className="font-bold text-slate-800 text-sm truncate">{c.name}</h3>
-                        <span className="text-[10px] text-slate-400">{c.messages.length > 0 ? new Date(c.timestamp).toLocaleDateString() : 'New'}</span>
+                        <span className="text-[10px] text-slate-400">{c.messages.length > 0 ? new Date(c.timestamp).toLocaleDateString('en-IN') : 'New'}</span>
                     </div>
                     <div className="flex justify-between items-center">
                         <p className="text-xs text-slate-500 truncate w-40">{c.messages.length > 0 ? c.lastMessage.message : 'No messages yet'}</p>

@@ -1,4 +1,3 @@
-
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Order } from '../types';
@@ -22,7 +21,7 @@ export const generateOrderPDF = (order: Order) => {
   doc.setFontSize(10);
   doc.setTextColor(0);
   doc.text(`Order Agreement #: ${order.id}`, 140, yPos);
-  doc.text(`Date: ${new Date(order.createdAt).toLocaleDateString()}`, 140, yPos + 6);
+  doc.text(`Date: ${new Date(order.createdAt).toLocaleDateString('en-IN')}`, 140, yPos + 6);
 
   yPos += 30;
 
@@ -82,7 +81,7 @@ export const generateOrderPDF = (order: Order) => {
   // Fix: Order uses paymentPlan.milestones
   const planRows = order.paymentPlan.milestones.map((m, idx) => [
     idx === 0 ? 'Advance / Downpayment' : `Installment ${idx}`,
-    new Date(m.dueDate).toLocaleDateString(),
+    new Date(m.dueDate).toLocaleDateString('en-IN'),
     `₹${m.targetAmount.toLocaleString()}`,
     m.status
   ]);

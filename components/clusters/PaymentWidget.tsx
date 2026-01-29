@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2, AlertCircle, RefreshCw, Calendar, Clock, CheckCircle2, History } from 'lucide-react';
 import { Card, Button } from '../shared/BaseUI';
@@ -301,7 +300,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
             <div className="flex items-center gap-1.5 mb-1">
                 <Calendar size={12} className="text-slate-400" />
                 <p className="text-[10px] font-black uppercase text-slate-500 tracking-tight">
-                    {dueDate ? dueDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'Settled'}
+                    {dueDate ? dueDate.toLocaleDateString('en-IN') : 'Settled'}
                 </p>
                 {lateDays > 0 && (
                     <span className="flex items-center gap-0.5 bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded text-[9px] font-black uppercase animate-pulse">
@@ -493,7 +492,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                         <div>
                             <p className="text-sm font-bold text-slate-800">₹{p.amount.toLocaleString()}</p>
                             <p className="text-[10px] text-slate-500 font-medium flex items-center gap-2">
-                                <span>{new Date(p.date).toLocaleDateString()}</span>
+                                <span>{new Date(p.date).toLocaleDateString('en-IN')}</span>
                                 <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
                                 <span className="uppercase font-bold tracking-wider">{p.method}</span>
                             </p>

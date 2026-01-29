@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Plus, Trash2, ChevronRight, X, Loader2, Sparkles, Image as ImageIcon, Camera, Lock, Gem, CheckCircle2, Edit2
@@ -317,7 +316,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
         const itemName = cartItems.length > 0 ? cartItems[0].category + (cartItems.length > 1 ? ` & ${cartItems.length - 1} others` : '') : 'Jewellery';
         
         const scheduleString = finalOrder.paymentPlan.milestones.map((m, i) => {
-            const date = new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            const date = new Date(m.dueDate).toLocaleDateString('en-IN');
             return `${i+1}. ${date}: ₹${m.targetAmount.toLocaleString()}`;
         }).join('\n');
 

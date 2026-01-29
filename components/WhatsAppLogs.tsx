@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { 
   Search, Filter, Smartphone, Calendar, CheckCircle2, 
@@ -178,7 +177,7 @@ const WhatsAppLogs: React.FC<WhatsAppLogsProps> = ({ logs, onViewChat }) => {
                             </td>
                             <td className="px-8 py-6">
                                 <p className="text-sm font-bold text-slate-700">
-                                    {new Date(log.timestamp).toLocaleDateString()}
+                                    {new Date(log.timestamp).toLocaleDateString('en-IN')}
                                 </p>
                                 <p className="text-[10px] text-slate-400 font-medium">
                                     {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

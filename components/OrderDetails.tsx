@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 // Added CheckCheck to imports from lucide-react
 import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp } from 'lucide-react';
@@ -64,7 +63,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           if (allMilestones.length > 0) {
               const displayLimit = Math.min(allMilestones.length, 4);
               scheduleString = allMilestones.slice(0, displayLimit).map((m, i) => {
-                  const date = new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                  const date = new Date(m.dueDate).toLocaleDateString('en-IN');
                   return `${i+1}. ${date}: ₹${m.targetAmount.toLocaleString()}`;
               }).join('\n');
               
@@ -138,7 +137,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           
           const usedRate = newEffectiveRate * scaling;
           const metalValue = item.netWeight * usedRate;
-          const wastageValue = metalValue * (item.wastagePercentage / 100);
+          const wastageValue = item.netWeight * usedRate * (item.wastagePercentage / 100);
           const laborValue = item.makingChargesPerGram * item.netWeight;
           const subTotal = metalValue + wastageValue + laborValue + item.stoneCharges;
           const tax = subTotal * (settings.defaultTaxRate / 100);
@@ -339,7 +338,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       const currentRate = settings.currentGoldRate22K;
       const updatedItems = order.items.map(item => {
           const metalValue = item.netWeight * currentRate;
-          const wastageValue = metalValue * (item.wastagePercentage / 100);
+          const wastageValue = item.netWeight * currentRate * (item.wastagePercentage / 100);
           const laborValue = item.makingChargesPerGram * item.netWeight;
           const subTotal = metalValue + wastageValue + laborValue + item.stoneCharges;
           const tax = subTotal * (settings.defaultTaxRate / 100);
@@ -516,7 +515,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                                 <div className="flex-1 bg-slate-50/50 p-3 rounded-xl border border-slate-100 flex justify-between items-center">
                                     <div>
                                         <p className="text-xs font-bold text-slate-700">{m.description || (i === 0 ? 'Advance' : `Installment ${i}`)}</p>
-                                        <p className="text-[10px] text-slate-400 font-medium">{new Date(m.dueDate).toLocaleDateString()}</p>
+                                        <p className="text-[10px] text-slate-400 font-medium">{new Date(m.dueDate).toLocaleDateString('en-IN')}</p>
                                     </div>
                                     <div className="text-right">
                                         <p className={`text-sm font-black ${isPaid && !isOriginalView ? 'text-emerald-600' : 'text-slate-800'}`}>₹{m.targetAmount.toLocaleString()}</p>

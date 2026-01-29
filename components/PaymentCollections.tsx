@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { 
   Search, Filter, ReceiptIndianRupee, Calendar, CheckCircle2, 
@@ -59,7 +58,7 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
                       order: o,
                       // Clean YYYY-MM-DD for comparison
                       cleanDate: toDateStr(m.dueDate), 
-                      displayDate: new Date(m.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                      displayDate: new Date(m.dueDate).toLocaleDateString('en-IN')
                   });
               });
           }
@@ -74,7 +73,7 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
                   customerContact: o.customerContact,
                   order: o,
                   cleanDate: toDateStr(p.date),
-                  displayDate: new Date(p.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+                  displayDate: new Date(p.date).toLocaleDateString('en-IN'),
                   targetAmount: p.amount,
                   status: 'PAID'
               });

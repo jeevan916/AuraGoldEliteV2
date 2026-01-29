@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { 
   User, Phone, Mail, Calendar, TrendingUp, ShoppingBag, 
@@ -41,7 +40,7 @@ const CustomerProfile: React.FC<CustomerProfileProps> = ({
   }, 0);
 
   const lastActive = customerOrders.length > 0 
-    ? new Date(customerOrders[0].createdAt).toLocaleDateString() 
+    ? new Date(customerOrders[0].createdAt).toLocaleDateString('en-IN') 
     : 'New Customer';
 
   return (
@@ -129,7 +128,7 @@ const CustomerProfile: React.FC<CustomerProfileProps> = ({
                                               <Badge label={order.status} variant={order.status === 'COMPLETED' ? 'success' : 'warning'} />
                                           </div>
                                           <p className="text-xs text-slate-500">
-                                              {new Date(order.createdAt).toLocaleDateString()} • {order.items.length} Items
+                                              {new Date(order.createdAt).toLocaleDateString('en-IN')} • {order.items.length} Items
                                           </p>
                                           <div className="flex gap-1 mt-2">
                                               {order.items.map((i, idx) => (

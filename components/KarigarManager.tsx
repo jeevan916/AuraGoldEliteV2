@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { 
   Hammer, Search, Calendar, User, Clock, 
@@ -220,7 +219,7 @@ const KarigarManager: React.FC<KarigarManagerProps> = ({ orders, onUpdateItem, o
                                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Artisan Due</p>
                                   <div className={`flex items-center gap-1.5 justify-end ${isOverdue ? 'text-rose-600 animate-pulse' : 'text-slate-700'}`}>
                                       <Calendar size={14} />
-                                      <span className="text-xs font-black">{item.promisedDate ? new Date(item.promisedDate).toLocaleDateString('en-GB', {day:'numeric', month:'short'}) : 'Not Set'}</span>
+                                      <span className="text-xs font-black">{item.promisedDate ? new Date(item.promisedDate).toLocaleDateString('en-IN') : 'Not Set'}</span>
                                   </div>
                               </div>
                           </div>
@@ -303,47 +302,4 @@ const KarigarManager: React.FC<KarigarManagerProps> = ({ orders, onUpdateItem, o
                                   <div className="flex gap-3 pt-2">
                                       <button 
                                           onClick={() => setEditingItemId(null)}
-                                          className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200"
-                                      >
-                                          Discard
-                                      </button>
-                                      <button 
-                                          onClick={() => handleSave(order.id, item.id, item, order.customerContact, order.customerName, order.shareToken)}
-                                          className="flex-[2] py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-emerald-700 flex items-center justify-center gap-2"
-                                      >
-                                          <Save size={14} /> Commit Changes
-                                      </button>
-                                  </div>
-                              </div>
-                          )}
-                      </div>
-                      
-                      {/* Sub-strip for Order Journey */}
-                      <div className="bg-slate-50 px-6 py-3 border-t flex justify-between items-center">
-                          <div className="flex items-center gap-2">
-                              <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Journey:</span>
-                              <span className="text-[10px] font-bold text-slate-600">{item.productionStatus}</span>
-                          </div>
-                          {item.productionStatus === ProductionStatus.READY && (
-                              <div className="text-emerald-600 flex items-center gap-1 text-[9px] font-black uppercase">
-                                  <CheckCircle2 size={12} /> Ready for Handover
-                              </div>
-                          )}
-                      </div>
-                  </div>
-              );
-          })}
-
-          {filteredQueue.length === 0 && (
-              <div className="col-span-full py-32 flex flex-col items-center justify-center text-slate-400 opacity-30">
-                  <Hammer size={64} className="mb-4" />
-                  <p className="font-black uppercase tracking-widest">No active production items</p>
-              </div>
-          )}
-      </div>
-    </div>
-  );
-};
-
-export default KarigarManager;
+                                          className="flex

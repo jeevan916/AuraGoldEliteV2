@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { 
   Search, Package, CheckCircle2, Archive, Clock, ChevronRight, 
@@ -207,7 +206,7 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, settings, onViewOrder, on
                                         <span>{order.items.length} Items</span>
                                         {/* BOOKING DATE */}
                                         <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-600 uppercase">
-                                            <Calendar size={10} /> {new Date(order.createdAt).toLocaleDateString()}
+                                            <Calendar size={10} /> {new Date(order.createdAt).toLocaleDateString('en-IN')}
                                         </span>
                                     </div>
                                 </div>
