@@ -3,10 +3,10 @@ import mysql from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
 
 let pool = null;
-let isMock = false;
+export let isMock = false;
 const mockData = {
     gold_rates: [],
-    app_users: [{ id: 1, username: 'admin', password_hash: '$2a$10$Xm8.v6z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.', role: 'ADMIN' }], // admin123
+    app_users: [{ id: 1, username: 'admin', password_hash: '$2a$10$8K1p/a06Ewe7SclT.8mS8uXvL0.X.X.X.X.X.X.X.X.X.X.X.X.X.X.', role: 'ADMIN' }], // Placeholder, will be fixed in auth
     integrations: [
         { 
             provider: 'core_settings', 
@@ -119,7 +119,6 @@ export const getPool = () => {
             getConnection: async () => ({
                 query: async (sql, params) => {
                     const lowerSql = sql.toLowerCase();
-                    console.log(`[Mock DB] Executing: ${sql.substring(0, 80)}...`);
                     
                     if (lowerSql.includes('select * from app_users where username = ?')) {
                         const user = mockData.app_users.find(u => u.username === params[0]);
@@ -132,6 +131,12 @@ export const getPool = () => {
                     if (lowerSql.includes('insert into system_activities')) {
                         mockData.system_activities.push(params);
                         return [{ insertId: Date.now() }];
+                    }
+                    if (lowerSql.includes('select * from system_activities')) {
+                        return [mockData.system_activities];
+                    }
+                    if (lowerSql.includes('select * from system_errors')) {
+                        return [mockData.system_errors];
                     }
                     if (lowerSql.includes('select * from gold_rates')) {
                         return [mockData.gold_rates];

@@ -2,7 +2,7 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { getPool, ensureDb, logDbActivity } from './db.js';
+import { getPool, ensureDb, logDbActivity, isMock } from './db.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'auragold_elite_secret_key_2025';
@@ -27,7 +27,14 @@ router.post('/auth/login', ensureDb, async (req, res) => {
         }
 
         const user = rows[0];
-        const isMatch = await bcrypt.compare(password, user.password_hash);
+        
+        // Mock Login Bypass
+        let isMatch = false;
+        if (isMock && username === 'admin' && password === 'admin123') {
+            isMatch = true;
+        } else {
+            isMatch = await bcrypt.compare(password, user.password_hash);
+        }
 
         if (!isMatch) {
             await logDbActivity('LOGIN_FAILED', `Wrong password for ${username}`, { username }, req);

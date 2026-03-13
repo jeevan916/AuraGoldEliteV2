@@ -6,6 +6,22 @@ const router = express.Router();
 
 router.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
+router.get('/debug/paths', (req, res) => {
+    const rootDir = process.cwd();
+    const distPath = path.join(rootDir, 'dist');
+    
+    res.json({
+        success: true,
+        message: "Debug paths retrieved",
+        rootDir,
+        distPath,
+        env: process.env.NODE_ENV || 'development',
+        distExists: fs.existsSync(distPath),
+        distIndexExists: fs.existsSync(path.join(distPath, 'index.html')),
+        rootIndexExists: fs.existsSync(path.join(rootDir, 'index.html'))
+    });
+});
+
 // --- SYSTEM LOGS (ERRORS) ---
 router.get('/logs/errors', ensureDb, async (req, res) => {
     try {

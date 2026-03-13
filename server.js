@@ -94,25 +94,6 @@ app.use((req, res, next) => {
 });
 
 // Debug Routes (Before other API routes)
-app.get('/api/debug/paths', (req, res) => {
-    const distPath = path.join(__dirname, 'dist');
-    const cwdDistPath = path.join(process.cwd(), 'dist');
-    
-    res.json({
-        success: true,
-        message: "Debug paths retrieved",
-        __dirname,
-        cwd: process.cwd(),
-        finalDistPath: typeof finalDistPath !== 'undefined' ? finalDistPath : 'not_initialized',
-        env: process.env.NODE_ENV || 'development',
-        distExists: fs.existsSync(distPath),
-        distIndexExists: fs.existsSync(path.join(distPath, 'index.html')),
-        cwdDistExists: fs.existsSync(cwdDistPath),
-        cwdDistIndexExists: fs.existsSync(path.join(cwdDistPath, 'index.html')),
-        rootIndexExists: fs.existsSync(path.join(__dirname, 'index.html'))
-    });
-});
-
 app.get('/test-proxy', (req, res) => {
     res.send(`
         <div style="font-family: sans-serif; padding: 2rem;">
