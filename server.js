@@ -117,17 +117,28 @@ app.use('/api/*', (req, res) => res.status(404).json({ error: `API route ${req.o
 // Static File Serving Configuration
 const getValidDistPath = () => {
     const distPath = path.join(__dirname, 'dist');
+    const cwdDistPath = path.join(process.cwd(), 'dist');
     const rootPath = __dirname;
+    const cwdPath = process.cwd();
 
     if (fs.existsSync(path.join(distPath, 'index.html'))) {
         console.log(`[System] Serving production build from: ${distPath}`);
         return distPath;
     }
     
+    if (fs.existsSync(path.join(cwdDistPath, 'index.html'))) {
+        console.log(`[System] Serving production build from CWD: ${cwdDistPath}`);
+        return cwdDistPath;
+    }
+    
     if (fs.existsSync(path.join(rootPath, 'index.html'))) {
         console.warn(`[System] Warning: 'dist/index.html' not found. Falling back to root: ${rootPath}`);
-        console.warn(`[System] Note: Root index.html may require a build step to function correctly.`);
         return rootPath;
+    }
+
+    if (fs.existsSync(path.join(cwdPath, 'index.html'))) {
+        console.warn(`[System] Warning: 'dist/index.html' not found. Falling back to CWD root: ${cwdPath}`);
+        return cwdPath;
     }
 
     return null;
