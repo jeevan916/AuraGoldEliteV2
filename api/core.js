@@ -1,5 +1,7 @@
 
 import express from 'express';
+import path from 'path';
+import fs from 'fs';
 import { getPool, ensureDb, logDbActivity } from './db.js';
 
 const router = express.Router();
