@@ -8,7 +8,6 @@ import compression from 'compression';
 import { fileURLToPath } from 'url';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import { createServer as createViteServer } from 'vite';
 
 // Shared Libs
 import { initDb } from './api/db.js';
@@ -57,7 +56,7 @@ loadEnv();
 
 const app = express();
 const httpServer = createServer(app);
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.APPLET_ID ? 3000 : (process.env.PORT || 3000);
 
 const io = new Server(httpServer, {
     cors: {
@@ -149,14 +148,23 @@ const getValidDistPath = () => {
 
 const finalDistPath = getValidDistPath();
 
+let useVite = false;
 if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-        server: { middlewareMode: true },
-        appType: 'spa',
-    });
-    app.use(vite.middlewares);
-    console.log("[System] Vite middleware integrated for development.");
-} else if (finalDistPath) {
+    try {
+        const { createServer: createViteServer } = await import('vite');
+        const vite = await createViteServer({
+            server: { middlewareMode: true },
+            appType: 'spa',
+        });
+        app.use(vite.middlewares);
+        console.log("[System] Vite middleware integrated for development.");
+        useVite = true;
+    } catch (e) {
+        console.warn("[System] Vite integration failed, falling back to static serving.", e.message);
+    }
+}
+
+if (!useVite && finalDistPath) {
     console.log(`[System] Static serving enabled for: ${finalDistPath}`);
     app.use(express.static(finalDistPath));
     
