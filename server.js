@@ -92,6 +92,17 @@ app.use((req, res, next) => {
     next();
 });
 
+app.get('/api/debug/paths', (req, res) => {
+    res.json({
+        __dirname,
+        cwd: process.cwd(),
+        finalDistPath,
+        distExists: fs.existsSync(path.join(__dirname, 'dist')),
+        distIndexExists: fs.existsSync(path.join(__dirname, 'dist', 'index.html')),
+        rootIndexExists: fs.existsSync(path.join(__dirname, 'index.html'))
+    });
+});
+
 // Routes
 app.use('/api', authRouter); // Auth Routes
 app.use('/api', ratesRouter);
@@ -103,41 +114,70 @@ app.use('/api/architect', architectRouter);
 
 app.use('/api/*', (req, res) => res.status(404).json({ error: `API route ${req.originalUrl} not found.` }));
 
-const distIndex = path.join(__dirname, 'dist', 'index.html');
-const rootIndex = path.join(__dirname, 'index.html');
-
-if (fs.existsSync(distIndex) && fs.existsSync(rootIndex)) {
-    try {
-        const content = fs.readFileSync(rootIndex, 'utf-8');
-        if (content.includes('src="./index.tsx"') || content.includes('src="/index.tsx"')) {
-            const backupPath = path.join(__dirname, 'index.html.bkp');
-            fs.renameSync(rootIndex, backupPath);
-        }
-    } catch (e) {}
-}
-
+// Static File Serving Configuration
 const getValidDistPath = () => {
-    const distFolder = path.join(__dirname, 'dist');
-    if (fs.existsSync(path.join(distFolder, 'index.html'))) return distFolder;
+    const distPath = path.join(__dirname, 'dist');
+    const rootPath = __dirname;
+
+    if (fs.existsSync(path.join(distPath, 'index.html'))) {
+        console.log(`[System] Serving production build from: ${distPath}`);
+        return distPath;
+    }
+    
+    if (fs.existsSync(path.join(rootPath, 'index.html'))) {
+        console.warn(`[System] Warning: 'dist/index.html' not found. Falling back to root: ${rootPath}`);
+        console.warn(`[System] Note: Root index.html may require a build step to function correctly.`);
+        return rootPath;
+    }
+
     return null;
 };
 
-let finalDistPath = getValidDistPath();
+const finalDistPath = getValidDistPath();
 
 if (finalDistPath) {
+    console.log(`[System] Static serving enabled for: ${finalDistPath}`);
     app.use(express.static(finalDistPath));
-    app.get('*', (req, res) => {
-        if (!req.path.startsWith('/api') && !req.path.startsWith('/socket.io')) {
-            res.sendFile(path.join(finalDistPath, 'index.html'));
+    
+    // Explicit Root Route
+    app.get('/', (req, res) => {
+        const indexPath = path.join(finalDistPath, 'index.html');
+        console.log(`[System] Root request received. Serving: ${indexPath}`);
+        if (fs.existsSync(indexPath)) {
+            res.sendFile(indexPath);
+        } else {
+            console.error(`[System] Root Index Not Found at: ${indexPath}`);
+            res.status(404).send("Root Index Not Found. Please check deployment.");
         }
     });
+
+    // SPA Fallback
+    app.get('*', (req, res) => {
+        // Skip API and Socket.io routes
+        if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
+            return;
+        }
+        
+        const indexPath = path.join(finalDistPath, 'index.html');
+        if (fs.existsSync(indexPath)) {
+            res.sendFile(indexPath);
+        } else {
+            res.status(404).send("Application Index Not Found. Please run 'npm run build'.");
+        }
+    });
+} else {
+    console.error("[System] Critical Error: No index.html found in 'dist' or root. Static serving disabled.");
 }
 
 initDb().then((result) => {
     if (result.success) {
         initRateService();
+    } else {
+        console.error(`[System] Database initialization failed: ${result.error}`);
     }
+    
     httpServer.listen(PORT, '0.0.0.0', () => {
         console.log(`[Server] Operational on port ${PORT}`);
+        console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
     });
 });
