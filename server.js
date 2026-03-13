@@ -149,7 +149,10 @@ const getValidDistPath = () => {
 const finalDistPath = getValidDistPath();
 
 let useVite = false;
-if (process.env.NODE_ENV !== 'production') {
+// Only use Vite if explicitly in development OR if we are not in production and no dist exists
+const isDev = process.env.NODE_ENV === 'development' || (process.env.NODE_ENV !== 'production' && !finalDistPath);
+
+if (isDev) {
     try {
         const { createServer: createViteServer } = await import('vite');
         const vite = await createViteServer({
@@ -214,8 +217,9 @@ initDb().then((result) => {
         console.error(`[System] Database initialization failed: ${result.error}`);
     }
     
-    httpServer.listen(PORT, '0.0.0.0', () => {
-        console.log(`[Server] Operational on port ${PORT}`);
+    const listenArgs = process.env.APPLET_ID ? [PORT, '0.0.0.0'] : [PORT];
+    httpServer.listen(...listenArgs, () => {
+        console.log(`[Server] Operational on port/pipe ${PORT}`);
         console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
     });
 });
