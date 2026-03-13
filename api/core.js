@@ -11,16 +11,23 @@ router.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date
 router.get('/debug/paths', (req, res) => {
     const rootDir = process.cwd();
     const distPath = path.join(rootDir, 'dist');
+    const publicHtmlPath = path.resolve(rootDir, '../public_html');
+    const envPath = path.resolve(rootDir, '../public_html/.builds/config/.env');
     
     res.json({
         success: true,
         message: "Debug paths retrieved",
         rootDir,
         distPath,
+        publicHtmlPath,
+        envPath,
+        envExists: fs.existsSync(envPath),
+        envLoaded: !!process.env.DB_HOST,
         env: process.env.NODE_ENV || 'development',
         distExists: fs.existsSync(distPath),
         distIndexExists: fs.existsSync(path.join(distPath, 'index.html')),
-        rootIndexExists: fs.existsSync(path.join(rootDir, 'index.html'))
+        rootIndexExists: fs.existsSync(path.join(rootDir, 'index.html')),
+        publicHtmlIndexExists: fs.existsSync(path.join(publicHtmlPath, 'index.html'))
     });
 });
 

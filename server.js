@@ -33,6 +33,8 @@ const loadEnv = () => {
         path.resolve(process.cwd(), '.env'),
         path.resolve(__dirname, '.builds/config/.env'),
         path.resolve(__dirname, '.env'),
+        path.resolve(process.cwd(), '../public_html/.builds/config/.env'),
+        path.resolve(__dirname, '../public_html/.builds/config/.env'),
         '/home/public_html/.builds/config/.env',
         '/home/public_html/.env',
         path.join(process.cwd(), '..', '.builds/config/.env')
@@ -120,6 +122,8 @@ app.use('/api/*', (req, res) => res.status(404).json({ error: `API route ${req.o
 const getValidDistPath = () => {
     const distPath = path.join(__dirname, 'dist');
     const cwdDistPath = path.join(process.cwd(), 'dist');
+    const publicHtmlDistPath = path.resolve(process.cwd(), '../public_html/dist');
+    const publicHtmlRootPath = path.resolve(process.cwd(), '../public_html');
     const rootPath = __dirname;
     const cwdPath = process.cwd();
 
@@ -131,6 +135,16 @@ const getValidDistPath = () => {
     if (fs.existsSync(path.join(cwdDistPath, 'index.html'))) {
         console.log(`[System] Serving production build from CWD: ${cwdDistPath}`);
         return cwdDistPath;
+    }
+
+    if (fs.existsSync(path.join(publicHtmlDistPath, 'index.html'))) {
+        console.log(`[System] Serving production build from public_html/dist: ${publicHtmlDistPath}`);
+        return publicHtmlDistPath;
+    }
+
+    if (fs.existsSync(path.join(publicHtmlRootPath, 'index.html'))) {
+        console.log(`[System] Serving production build from public_html root: ${publicHtmlRootPath}`);
+        return publicHtmlRootPath;
     }
     
     if (fs.existsSync(path.join(rootPath, 'index.html'))) {
