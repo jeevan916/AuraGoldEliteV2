@@ -28,21 +28,6 @@ export default defineConfig(({ mode }) => {
           }
         }
       }
-    },
-    server: {
-      port: 3000,
-      proxy: {
-        '/api': {
-          target: 'http://localhost:3000',
-          changeOrigin: true,
-          secure: false
-        },
-        '/socket.io': {
-          target: 'http://localhost:3000',
-          ws: true,
-          changeOrigin: true
-        }
-      }
     }
   };
 });

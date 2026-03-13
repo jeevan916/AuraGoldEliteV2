@@ -3,23 +3,53 @@ import mysql from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
 
 let pool = null;
+let isMock = false;
+const mockData = {
+    gold_rates: [],
+    app_users: [{ id: 1, username: 'admin', password_hash: '$2a$10$Xm8.v6z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.z.', role: 'ADMIN' }], // admin123
+    integrations: [
+        { 
+            provider: 'core_settings', 
+            config: JSON.stringify({
+                preferredRateProvider: 'auto',
+                goldRateFetchIntervalMinutes: 60,
+                currentGoldRate24K: 7500,
+                currentGoldRate22K: 6870,
+                currentGoldRate18K: 5625,
+                currentSilverRate: 90
+            }) 
+        }
+    ],
+    system_activities: [],
+    system_errors: []
+};
 
 export async function initDb() {
     try {
         if (pool) await pool.end();
+        
+        const host = process.env.DB_HOST;
+        if (!host || host === '127.0.0.1') {
+            console.warn("[DB] No external DB_HOST provided. Falling back to Mock Database.");
+            isMock = true;
+            return { success: true, mock: true };
+        }
+
         const dbConfig = {
-            host: process.env.DB_HOST || '127.0.0.1',
+            host: host,
             user: process.env.DB_USER,
             password: process.env.DB_PASSWORD,
             database: process.env.DB_NAME,
             port: 3306,
             waitForConnections: true,
-            connectionLimit: 10,
-            connectTimeout: 20000,
+            connectionLimit: 5, // Reduced to prevent EMFILE
+            connectTimeout: 10000,
             enableKeepAlive: true
         };
         pool = mysql.createPool(dbConfig);
         const connection = await pool.getConnection();
+        isMock = false;
+        
         const tables = [
             `CREATE TABLE IF NOT EXISTS gold_rates (id INT AUTO_INCREMENT PRIMARY KEY, rate24k DECIMAL(10, 2), rate22k DECIMAL(10, 2), rate18k DECIMAL(10, 2), rateSilver DECIMAL(10, 2) DEFAULT 0, recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
             `CREATE TABLE IF NOT EXISTS integrations (provider VARCHAR(50) PRIMARY KEY, config JSON, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)`,
@@ -83,10 +113,55 @@ export async function initDb() {
     }
 }
 
-export const getPool = () => pool;
+export const getPool = () => {
+    if (isMock) {
+        return {
+            getConnection: async () => ({
+                query: async (sql, params) => {
+                    const lowerSql = sql.toLowerCase();
+                    console.log(`[Mock DB] Executing: ${sql.substring(0, 80)}...`);
+                    
+                    if (lowerSql.includes('select * from app_users where username = ?')) {
+                        const user = mockData.app_users.find(u => u.username === params[0]);
+                        return [user ? [user] : []];
+                    }
+                    if (lowerSql.includes('select config from integrations where provider = ?')) {
+                        const row = mockData.integrations.find(i => i.provider === params[0]);
+                        return [row ? [row] : []];
+                    }
+                    if (lowerSql.includes('insert into system_activities')) {
+                        mockData.system_activities.push(params);
+                        return [{ insertId: Date.now() }];
+                    }
+                    if (lowerSql.includes('select * from gold_rates')) {
+                        return [mockData.gold_rates];
+                    }
+                    if (lowerSql.includes('insert into gold_rates')) {
+                        mockData.gold_rates.push({ id: Date.now(), rate24k: params[0], rate22k: params[1], rate18k: params[2], rateSilver: params[3] });
+                        return [{ insertId: Date.now() }];
+                    }
+                    if (lowerSql.includes('update integrations set config = ? where provider = ?')) {
+                        const index = mockData.integrations.findIndex(i => i.provider === params[1]);
+                        if (index > -1) mockData.integrations[index].config = params[0];
+                        return [{ affectedRows: 1 }];
+                    }
+                    return [[]];
+                },
+                release: () => {}
+            }),
+            query: async (sql, params) => {
+                const conn = await getPool().getConnection();
+                const res = await conn.query(sql, params);
+                conn.release();
+                return res;
+            }
+        };
+    }
+    return pool;
+};
 
 export const ensureDb = async (req, res, next) => {
-    if (!pool) {
+    if (!pool && !isMock) {
         const result = await initDb();
         if (!result.success) return res.status(503).json({ error: "Database Unavailable" });
     }
