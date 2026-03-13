@@ -8,6 +8,7 @@ import compression from 'compression';
 import { fileURLToPath } from 'url';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import { createServer as createViteServer } from 'vite';
 
 // Shared Libs
 import { initDb } from './api/db.js';
@@ -92,15 +93,36 @@ app.use((req, res, next) => {
     next();
 });
 
+// Debug Routes (Before other API routes)
 app.get('/api/debug/paths', (req, res) => {
+    const distPath = path.join(__dirname, 'dist');
+    const cwdDistPath = path.join(process.cwd(), 'dist');
+    
     res.json({
+        success: true,
+        message: "Debug paths retrieved",
         __dirname,
         cwd: process.cwd(),
-        finalDistPath,
-        distExists: fs.existsSync(path.join(__dirname, 'dist')),
-        distIndexExists: fs.existsSync(path.join(__dirname, 'dist', 'index.html')),
+        finalDistPath: typeof finalDistPath !== 'undefined' ? finalDistPath : 'not_initialized',
+        env: process.env.NODE_ENV || 'development',
+        distExists: fs.existsSync(distPath),
+        distIndexExists: fs.existsSync(path.join(distPath, 'index.html')),
+        cwdDistExists: fs.existsSync(cwdDistPath),
+        cwdDistIndexExists: fs.existsSync(path.join(cwdDistPath, 'index.html')),
         rootIndexExists: fs.existsSync(path.join(__dirname, 'index.html'))
     });
+});
+
+app.get('/test-proxy', (req, res) => {
+    res.send(`
+        <div style="font-family: sans-serif; padding: 2rem;">
+            <h1>Proxy is Working</h1>
+            <p>Time: ${new Date().toISOString()}</p>
+            <p>If you see this, the Node.js server is correctly receiving requests.</p>
+            <hr/>
+            <p><a href="/api/debug/paths">View Debug Paths</a></p>
+        </div>
+    `);
 });
 
 // Routes
@@ -146,7 +168,14 @@ const getValidDistPath = () => {
 
 const finalDistPath = getValidDistPath();
 
-if (finalDistPath) {
+if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+    });
+    app.use(vite.middlewares);
+    console.log("[System] Vite middleware integrated for development.");
+} else if (finalDistPath) {
     console.log(`[System] Static serving enabled for: ${finalDistPath}`);
     app.use(express.static(finalDistPath));
     
@@ -154,11 +183,20 @@ if (finalDistPath) {
     app.get('/', (req, res) => {
         const indexPath = path.join(finalDistPath, 'index.html');
         console.log(`[System] Root request received. Serving: ${indexPath}`);
+        
         if (fs.existsSync(indexPath)) {
             res.sendFile(indexPath);
         } else {
             console.error(`[System] Root Index Not Found at: ${indexPath}`);
-            res.status(404).send("Root Index Not Found. Please check deployment.");
+            res.status(404).send(`
+                <div style="font-family: sans-serif; padding: 2rem; text-align: center;">
+                    <h1>AuraGold Elite - Deployment Status</h1>
+                    <p>The server is running, but the application files (dist/index.html) were not found.</p>
+                    <p>Path checked: <code>${indexPath}</code></p>
+                    <hr/>
+                    <p><strong>Auto-Deployment Tip:</strong> Ensure 'npm run build' has completed successfully on the server.</p>
+                </div>
+            `);
         }
     });
 
