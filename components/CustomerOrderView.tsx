@@ -3,7 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   CheckCircle2, Clock, MapPin, ShieldCheck, Box, CreditCard, 
   Smartphone, Lock, AlertCircle, ArrowRight, QrCode, CalendarDays, 
-  LocateFixed, ReceiptIndianRupee, TrendingUp, ChevronDown, ChevronUp, Scale, Info, ShieldAlert, Sparkles
+  LocateFixed, ReceiptIndianRupee, TrendingUp, ChevronDown, ChevronUp, Scale, Info, ShieldAlert, Sparkles,
+  Zap, Loader2
 } from 'lucide-react';
 import { Order, ProductionStatus, ProtectionStatus } from '../types';
 import { errorService } from '../services/errorService';
@@ -19,6 +20,8 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const [locationStatus, setLocationStatus] = useState<'PENDING' | 'GRANTED' | 'DENIED'>('PENDING');
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [liveRate, setLiveRate] = useState<number>(0);
+  const [setuLoading, setSetuLoading] = useState(false);
+  const [setuError, setSetuError] = useState<string | null>(null);
   const loggedRef = useRef(false);
 
   const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
@@ -73,7 +76,51 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
       );
   };
 
-  const upiLink = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=Sanghavi%20Jewellers&tr=${order.id}&am=${nextPayment ? nextPayment.targetAmount : remaining}&cu=INR&tn=Order%20${order.id}`;
+  const handleSetuPayment = async () => {
+    setSetuLoading(true);
+    setSetuError(null);
+    try {
+      const amountToPay = nextPayment ? nextPayment.targetAmount : remaining;
+      // Generate a unique bill ID for this attempt
+      const transactionId = `CUST-${order.id.split('-').pop()}-${Date.now()}`;
+      
+      const response = await fetch('/api/setu/create-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: amountToPay,
+          billerBillID: transactionId,
+          customerID: order.customerContact,
+          name: order.customerName,
+          orderId: order.id
+        })
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Failed to generate payment link");
+      }
+
+      // Setu Bridge v2 response structure
+      const payload = result.data?.data || result.data;
+      const shortLink = payload?.paymentLink?.shortURL || payload?.shortURL || payload?.shortLink;
+
+      if (!shortLink) {
+        throw new Error("Payment link not received from gateway");
+      }
+
+      // Redirect to Setu Payment Page
+      window.location.href = shortLink;
+    } catch (err: any) {
+      console.error("Setu Payment Error:", err);
+      setSetuError(err.message);
+      errorService.logError('CustomerSetuPayment', err.message);
+    } finally {
+      setSetuLoading(false);
+    }
+  };
+
+  const upiLink = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=${encodeURIComponent("Sanghavi Jewellers")}&tr=${encodeURIComponent(order.id)}&am=${nextPayment ? nextPayment.targetAmount : remaining}&cu=INR&tn=${encodeURIComponent("Order " + order.id)}`;
 
   const displayMilestones = showOriginal && order.paymentPlan.originalMilestones 
       ? order.paymentPlan.originalMilestones 
@@ -245,12 +292,36 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                 <h3 className="font-bold text-slate-800 text-lg">Balance Due: ₹{remaining.toLocaleString()}</h3>
                 <p className="text-xs text-slate-500">Scan QR or tap below to pay via UPI</p>
              </div>
-             <a 
-              href={upiLink}
-              className="w-full bg-slate-900 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"
-            >
-              <Smartphone size={16} /> Pay via GPay / PhonePe
-            </a>
+
+             {setuError && (
+                <div className="w-full mb-4 p-3 bg-rose-50 border border-rose-100 rounded-xl text-[10px] text-rose-600 font-bold flex items-center gap-2">
+                    <AlertCircle size={14} /> {setuError}
+                </div>
+             )}
+
+             <div className="w-full space-y-3">
+                <button 
+                  onClick={handleSetuPayment}
+                  disabled={setuLoading}
+                  className="w-full bg-amber-500 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all disabled:opacity-50"
+                >
+                  {setuLoading ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
+                  Pay via Setu UPI
+                </button>
+
+                <div className="flex items-center gap-4 py-1">
+                    <div className="h-px bg-slate-100 flex-1"></div>
+                    <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">OR</span>
+                    <div className="h-px bg-slate-100 flex-1"></div>
+                </div>
+
+                <a 
+                  href={upiLink}
+                  className="w-full bg-slate-900 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"
+                >
+                  <Smartphone size={16} /> Direct UPI Intent
+                </a>
+             </div>
           </div>
         )}
 

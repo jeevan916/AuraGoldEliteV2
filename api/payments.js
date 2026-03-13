@@ -35,19 +35,27 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         const authData = await authRes.json();
         if (!authRes.ok) throw new Error(`Auth Failed: ${authData.error || authData.message || 'Unknown Auth Error'}`);
 
+        const token = authData.data?.token || authData.data?.accessToken;
+        if (!token) throw new Error("Failed to retrieve access token from Setu.");
+
+        // Normalize phone number for Setu (expects 10 digits)
+        const cleanPhone = customerID.replace(/\D/g, '').slice(-10);
+
         // 3. Create Link
         const linkRes = await fetch('https://bridge.setu.co/api/v2/payment-links', {
             method: 'POST',
             headers: { 
-                'Authorization': `Bearer ${authData.data.token}`, 
+                'Authorization': `Bearer ${token}`, 
                 'Content-Type': 'application/json', 
                 'X-Setu-Product-Instance-ID': config.schemeId 
             },
             body: JSON.stringify({ 
                 amount: { value: Math.round(amount * 100), currencyCode: "INR" }, 
                 billerBillID, 
-                customer: { mobileNumber: customerID, name }, 
-                transactionNote: `Order ${orderId}` 
+                customer: { mobileNumber: cleanPhone, name }, 
+                transactionNote: `Order ${orderId}`,
+                expiryDate: new Date(Date.now() + 86400000).toISOString(), // 24h
+                paymentLinkType: "UPILINK"
             })
         });
 
@@ -57,10 +65,14 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         if (!linkRes.ok) {
             // Log deep error details for debugging
             console.error("Setu Link Gen Error:", JSON.stringify(linkData));
-            throw new Error(linkData.error?.message || linkData.message || "Gateway refused connection.");
+            return res.status(linkRes.status).json({ 
+                success: false, 
+                error: linkData.error?.message || linkData.message || "Gateway refused connection.",
+                details: linkData
+            });
         }
 
-        res.status(linkRes.status).json({ success: true, data: linkData });
+        res.json({ success: true, data: linkData });
 
     } catch (e) { 
         res.status(500).json({ success: false, error: e.message }); 

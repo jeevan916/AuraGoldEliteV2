@@ -4,7 +4,8 @@
 
 # Prevent AI Studio PushNewCommit 500 errors
 .git/
-.github/
+# .github/ (Uncommented to allow workflows to sync)
+migrated_prompt_history/
 .vscode/
 .idea/
 
