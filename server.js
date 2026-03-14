@@ -163,8 +163,8 @@ const getValidDistPath = () => {
 const finalDistPath = getValidDistPath();
 
 let useVite = false;
-// Only use Vite if explicitly in development OR if we are not in production and no dist exists
-const isDev = process.env.NODE_ENV === 'development' || (process.env.NODE_ENV !== 'production' && !finalDistPath);
+// Only use Vite if explicitly in development
+const isDev = process.env.NODE_ENV === 'development';
 
 if (isDev) {
     try {
@@ -230,10 +230,10 @@ initDb().then((result) => {
     } else {
         console.error(`[System] Database initialization failed: ${result.error}`);
     }
-    
-    const listenArgs = process.env.APPLET_ID ? [PORT, '0.0.0.0'] : [PORT];
-    httpServer.listen(...listenArgs, () => {
-        console.log(`[Server] Operational on port/pipe ${PORT}`);
-        console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
-    });
+});
+
+const listenArgs = process.env.APPLET_ID ? [PORT, '0.0.0.0'] : [PORT];
+httpServer.listen(...listenArgs, () => {
+    console.log(`[Server] Operational on port/pipe ${PORT}`);
+    console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
 });
