@@ -233,8 +233,7 @@ initDb().then((result) => {
     }
 });
 
-const listenArgs = process.env.APPLET_ID ? [PORT, '0.0.0.0'] : [PORT];
-httpServer.listen(...listenArgs, () => {
-    console.log(`[Server] Operational on port/pipe ${PORT}`);
+httpServer.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Server] Operational on port ${PORT}`);
     console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
 });
