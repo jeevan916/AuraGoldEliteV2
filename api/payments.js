@@ -1,6 +1,7 @@
 
 import express from 'express';
 import { getPool, ensureDb } from './db.js';
+import { SetuUPIDeepLink } from '@setu/upi-deep-links';
 
 const router = express.Router();
 
@@ -25,57 +26,31 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         if (rows.length === 0) throw new Error("Setu Integration not configured in Settings.");
         const config = rows[0].config;
 
-        // 2. Authenticate (Bridge v2)
-        const authRes = await fetch('https://bridge.setu.co/auth/v2/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clientId: config.clientId, clientSecret: config.secret })
-        });
-        
-        const authData = await authRes.json();
-        if (!authRes.ok) throw new Error(`Auth Failed: ${authData.error || authData.message || 'Unknown Auth Error'}`);
-
-        const token = authData.data?.token || authData.data?.accessToken;
-        if (!token) throw new Error("Failed to retrieve access token from Setu.");
-
-        // Normalize phone number for Setu (expects 10 digits)
-        const cleanPhone = customerID.replace(/\D/g, '').slice(-10);
-
-        // 3. Create Link
-        const linkRes = await fetch('https://bridge.setu.co/api/v2/payment-links', {
-            method: 'POST',
-            headers: { 
-                'Authorization': `Bearer ${token}`, 
-                'Content-Type': 'application/json', 
-                'X-Setu-Product-Instance-ID': config.schemeId 
-            },
-            body: JSON.stringify({ 
-                amount: { value: Math.round(amount * 100), currencyCode: "INR" }, 
-                billerBillID, 
-                customer: { mobileNumber: cleanPhone, name }, 
-                transactionNote: `Order ${orderId}`,
-                expiryDate: new Date(Date.now() + 86400000).toISOString(), // 24h
-                paymentLinkType: "UPILINK"
-            })
+        // 2. Authenticate and Create Link using SDK
+        // In Setu UPI Deeplinks:
+        // clientId -> schemeID
+        // schemeId -> productInstanceID
+        const upidl = SetuUPIDeepLink({
+            schemeID: config.clientId,
+            secret: config.secret,
+            productInstanceID: config.schemeId,
+            mode: 'PRODUCTION',
+            authType: 'JWT',
         });
 
-        // 4. Robust Response Handling
-        const linkData = await linkRes.json();
-        
-        if (!linkRes.ok) {
-            // Log deep error details for debugging
-            console.error("Setu Link Gen Error:", JSON.stringify(linkData));
-            return res.status(linkRes.status).json({ 
-                success: false, 
-                error: linkData.error?.message || linkData.message || "Gateway refused connection.",
-                details: linkData
-            });
-        }
+        const paymentLinkResponse = await upidl.createPaymentLink({
+            amountValue: Math.round(amount * 100),
+            billerBillID: billerBillID || orderId || `bill_${Date.now()}`,
+            amountExactness: 'EXACT',
+            payeeName: name,
+            transactionNote: `Order ${orderId}`
+        });
 
-        res.json({ success: true, data: linkData });
+        res.json({ success: true, data: paymentLinkResponse });
 
     } catch (e) { 
-        res.status(500).json({ success: false, error: e.message }); 
+        console.error("Setu Link Gen Error:", e);
+        res.status(500).json({ success: false, error: e.message || "Failed to generate Setu UPI link" }); 
     }
 });
 

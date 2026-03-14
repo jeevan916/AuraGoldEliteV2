@@ -20,6 +20,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
   const [loading, setLoading] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [setuData, setSetuData] = useState<{ shortURL: string, upiID: string, upiLink: string, platformBillID: string } | null>(null);
 
   const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
   const remaining = order.totalAmount - totalPaid;
@@ -215,6 +216,9 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
           const payload = responseBody.data?.data || responseBody.data;
           const shortLink = payload?.paymentLink?.shortURL || payload?.shortURL || payload?.shortLink;
+          const upiID = payload?.paymentLink?.upiID || payload?.upiID;
+          const upiLink = payload?.paymentLink?.upiLink || payload?.upiLink;
+          const platformBillID = payload?.platformBillID;
 
           if (!shortLink) {
               errorService.logError(
@@ -225,6 +229,9 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
               );
               throw new Error("Payment link was not returned by the gateway. This has been logged for engineering review.");
           }
+
+          setSetuData({ shortURL: shortLink, upiID, upiLink, platformBillID });
+          setQrCodeUrl(`https://quickchart.io/qr?text=${encodeURIComponent(shortLink)}&margin=2&size=300`);
 
           // ROBUST LINK SUFFIX EXTRACTION
           let linkSuffix = '';
@@ -443,9 +450,16 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                     <div className="bg-slate-50 p-6 rounded-2xl flex flex-col items-center border border-slate-200 animate-slideDown">
                         <div className="flex justify-between w-full mb-4 items-center">
                             <h4 className="text-xs font-black uppercase text-slate-500">Scan to Pay (₹{amount})</h4>
-                            <button onClick={() => setQrCodeUrl(null)} className="text-slate-400"><X size={18} /></button>
+                            <button onClick={() => { setQrCodeUrl(null); setSetuData(null); }} className="text-slate-400"><X size={18} /></button>
                         </div>
                         <img src={qrCodeUrl} className="w-48 h-48 bg-white p-2 rounded-xl shadow-inner mb-4" alt="UPI QR Code" />
+                        
+                        {setuData?.upiID && (
+                            <div className="w-full text-center mb-4">
+                                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">UPI ID</p>
+                                <p className="text-sm font-bold text-slate-800 bg-white px-3 py-1 rounded-lg border border-slate-200 mt-1">{setuData.upiID}</p>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <>

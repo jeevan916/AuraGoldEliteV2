@@ -24,6 +24,8 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const [setuError, setSetuError] = useState<string | null>(null);
   const loggedRef = useRef(false);
 
+  const [setuData, setSetuData] = useState<{ shortURL: string, upiID: string, upiLink: string, platformBillID: string } | null>(null);
+
   const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
   const remaining = order.totalAmount - totalPaid;
   const nextPayment = order.paymentPlan.milestones.find(m => m.status !== 'PAID');
@@ -39,8 +41,8 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
         });
     }
 
-    // 2. QR Code Gen
-    if (remaining > 0) {
+    // 2. QR Code Gen (Fallback)
+    if (remaining > 0 && !setuData) {
         const amount = nextPayment ? nextPayment.targetAmount : remaining;
         const upi = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=Sanghavi%20Jewellers&tr=${order.id}&am=${amount}&cu=INR`;
         setQrUrl(`https://quickchart.io/qr?text=${encodeURIComponent(upi)}&margin=2&size=300`);
@@ -54,7 +56,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
         }
     };
     fetchRate();
-  }, [remaining, nextPayment, order.id]);
+  }, [remaining, nextPayment, order.id, setuData]);
 
   const requestLocation = () => {
       if (!navigator.geolocation) return;
@@ -104,13 +106,16 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
       // Setu Bridge v2 response structure
       const payload = result.data?.data || result.data;
       const shortLink = payload?.paymentLink?.shortURL || payload?.shortURL || payload?.shortLink;
+      const upiID = payload?.paymentLink?.upiID || payload?.upiID;
+      const upiLink = payload?.paymentLink?.upiLink || payload?.upiLink;
+      const platformBillID = payload?.platformBillID;
 
       if (!shortLink) {
         throw new Error("Payment link not received from gateway");
       }
 
-      // Redirect to Setu Payment Page
-      window.location.href = shortLink;
+      setSetuData({ shortURL: shortLink, upiID, upiLink, platformBillID });
+      setQrUrl(`https://quickchart.io/qr?text=${encodeURIComponent(shortLink)}&margin=2&size=300`);
     } catch (err: any) {
       console.error("Setu Payment Error:", err);
       setSetuError(err.message);
@@ -288,6 +293,14 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
         {remaining > 0 && (
           <div className="bg-white p-6 rounded-3xl shadow-lg border border-amber-100 flex flex-col items-center">
              {qrUrl && <img src={qrUrl} className="w-40 h-40 mb-4 border p-2 rounded-xl" alt="Payment QR" />}
+             
+             {setuData?.upiID && (
+                <div className="mb-4 text-center">
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">UPI ID</p>
+                    <p className="text-sm font-bold text-slate-800 bg-slate-50 px-3 py-1 rounded-lg border border-slate-200 mt-1">{setuData.upiID}</p>
+                </div>
+             )}
+
              <div className="text-center mb-6">
                 <h3 className="font-bold text-slate-800 text-lg">Balance Due: ₹{remaining.toLocaleString()}</h3>
                 <p className="text-xs text-slate-500">Scan QR or tap below to pay via UPI</p>
@@ -300,27 +313,42 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
              )}
 
              <div className="w-full space-y-3">
-                <button 
-                  onClick={handleSetuPayment}
-                  disabled={setuLoading}
-                  className="w-full bg-amber-500 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all disabled:opacity-50"
-                >
-                  {setuLoading ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
-                  Pay via Setu UPI
-                </button>
+                {!setuData ? (
+                    <button 
+                      onClick={handleSetuPayment}
+                      disabled={setuLoading}
+                      className="w-full bg-amber-500 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      {setuLoading ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
+                      Generate Setu Payment Link
+                    </button>
+                ) : (
+                    <>
+                        <a 
+                          href={setuData.upiLink || upiLink}
+                          className="w-full bg-amber-500 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"
+                        >
+                          <Smartphone size={16} /> Direct UPI Intent
+                        </a>
+                    </>
+                )}
 
-                <div className="flex items-center gap-4 py-1">
-                    <div className="h-px bg-slate-100 flex-1"></div>
-                    <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">OR</span>
-                    <div className="h-px bg-slate-100 flex-1"></div>
-                </div>
+                {!setuData && (
+                    <>
+                        <div className="flex items-center gap-4 py-1">
+                            <div className="h-px bg-slate-100 flex-1"></div>
+                            <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">OR</span>
+                            <div className="h-px bg-slate-100 flex-1"></div>
+                        </div>
 
-                <a 
-                  href={upiLink}
-                  className="w-full bg-slate-900 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"
-                >
-                  <Smartphone size={16} /> Direct UPI Intent
-                </a>
+                        <a 
+                          href={upiLink}
+                          className="w-full bg-slate-900 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"
+                        >
+                          <Smartphone size={16} /> Direct UPI Intent
+                        </a>
+                    </>
+                )}
              </div>
           </div>
         )}
