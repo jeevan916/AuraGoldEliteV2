@@ -64,7 +64,7 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                     value: Math.round(amount * 100)
                 },
                 billerBillID: uniqueBillId,
-                amountExactness: 'EXACT',
+                amountExactness: 'EXACT_DOWN',
                 name: safeName || 'Customer',
                 transactionNote: safeNote || 'Payment'
             })
