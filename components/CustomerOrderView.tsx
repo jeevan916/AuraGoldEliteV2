@@ -30,6 +30,8 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const remaining = order.totalAmount - totalPaid;
   const nextPayment = order.paymentPlan.milestones.find(m => m.status !== 'PAID');
 
+  const [customAmount, setCustomAmount] = useState<number | ''>(nextPayment ? nextPayment.targetAmount : remaining);
+
   useEffect(() => {
     // 1. Log Access
     if (!loggedRef.current) {
@@ -43,7 +45,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
 
     // 2. QR Code Gen (Fallback)
     if (remaining > 0 && !setuData) {
-        const amount = nextPayment ? nextPayment.targetAmount : remaining;
+        const amount = Number(customAmount) || (nextPayment ? nextPayment.targetAmount : remaining);
         const upi = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=Sanghavi%20Jewellers&tr=${order.id}&am=${amount}&cu=INR`;
         setQrUrl(`https://quickchart.io/qr?text=${encodeURIComponent(upi)}&margin=2&size=300`);
     }
@@ -56,7 +58,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
         }
     };
     fetchRate();
-  }, [remaining, nextPayment, order.id, setuData]);
+  }, [remaining, nextPayment, order.id, setuData, customAmount]);
 
   const requestLocation = () => {
       if (!navigator.geolocation) return;
@@ -82,7 +84,14 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
     setSetuLoading(true);
     setSetuError(null);
     try {
-      const amountToPay = nextPayment ? nextPayment.targetAmount : remaining;
+      const amountToPay = Number(customAmount);
+      if (!amountToPay || amountToPay <= 0) {
+          throw new Error("Please enter a valid amount greater than 0.");
+      }
+      if (amountToPay > remaining) {
+          throw new Error(`Amount cannot exceed the balance due of ₹${remaining.toLocaleString()}`);
+      }
+      
       // Generate a unique bill ID for this attempt
       const transactionId = `CUST-${order.id.split('-').pop()}-${Date.now()}`;
       
@@ -125,7 +134,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
     }
   };
 
-  const upiLink = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=${encodeURIComponent("Sanghavi Jewellers")}&tr=${encodeURIComponent(order.id)}&am=${nextPayment ? nextPayment.targetAmount : remaining}&cu=INR&tn=${encodeURIComponent("Order " + order.id)}`;
+  const upiLink = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=${encodeURIComponent("Sanghavi Jewellers")}&tr=${encodeURIComponent(order.id)}&am=${Number(customAmount) || (nextPayment ? nextPayment.targetAmount : remaining)}&cu=INR&tn=${encodeURIComponent("Order " + order.id)}`;
 
   const displayMilestones = showOriginal && order.paymentPlan.originalMilestones 
       ? order.paymentPlan.originalMilestones 
@@ -305,6 +314,20 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                 <h3 className="font-bold text-slate-800 text-lg">Balance Due: ₹{remaining.toLocaleString()}</h3>
                 <p className="text-xs text-slate-500">Scan QR or tap below to pay via UPI</p>
              </div>
+
+             {!setuData && (
+                 <div className="w-full mb-6">
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 text-center">Amount to Pay (₹)</label>
+                    <input 
+                        type="number" 
+                        value={customAmount} 
+                        onChange={(e) => setCustomAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-full text-center text-2xl font-black text-slate-800 bg-slate-50 border border-slate-200 rounded-xl py-3 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        min="1"
+                        max={remaining}
+                    />
+                 </div>
+             )}
 
              {setuError && (
                 <div className="w-full mb-4 p-3 bg-rose-50 border border-rose-100 rounded-xl text-[10px] text-rose-600 font-bold flex items-center gap-2">

@@ -1,7 +1,6 @@
 
 import express from 'express';
 import { getPool, ensureDb } from './db.js';
-import { SetuUPIDeepLink } from '@setu/upi-deep-links';
 
 const router = express.Router();
 
@@ -26,32 +25,59 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         if (rows.length === 0) throw new Error("Setu Integration not configured in Settings.");
         const config = rows[0].config;
 
-        // 2. Authenticate and Create Link using SDK
-        // In Setu UPI Deeplinks:
-        // clientId -> schemeID
-        // schemeId -> productInstanceID
-        const upidl = SetuUPIDeepLink({
-            schemeID: config.clientId,
-            secret: config.secret,
-            productInstanceID: config.schemeId,
-            mode: 'PRODUCTION',
-            authType: 'JWT',
+        // 2. Authenticate using fetchToken API (OAuth)
+        const tokenResponse = await fetch('https://prod.setu.co/api/v2/auth/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                clientID: config.clientId,
+                secret: config.secret
+            })
         });
+
+        if (!tokenResponse.ok) {
+            const err = await tokenResponse.text();
+            throw new Error(`Setu fetchToken failed: ${err}`);
+        }
+
+        const tokenData = await tokenResponse.json();
+        const accessToken = tokenData.data.token;
 
         const uniqueBillId = billerBillID || (orderId ? `${orderId}_${Date.now()}` : `bill_${Date.now()}`);
 
         const safeName = name ? name.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Customer';
         const safeNote = orderId ? `Order ${orderId}`.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Payment';
 
-        const paymentLinkResponse = await upidl.createPaymentLink({
-            amountValue: Math.round(amount * 100),
-            billerBillID: uniqueBillId,
-            amountExactness: 'EXACT',
-            payeeName: safeName || 'Customer',
-            transactionNote: safeNote || 'Payment'
+        // 3. Create Payment Link
+        const paymentLinkResponse = await fetch('https://prod.setu.co/api/v2/payment-links', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+                'X-Setu-Product-Instance-ID': config.schemeId
+            },
+            body: JSON.stringify({
+                amount: {
+                    currencyCode: 'INR',
+                    value: Math.round(amount * 100)
+                },
+                billerBillID: uniqueBillId,
+                amountExactness: 'EXACT',
+                name: safeName || 'Customer',
+                transactionNote: safeNote || 'Payment'
+            })
         });
 
-        res.json({ success: true, data: paymentLinkResponse });
+        if (!paymentLinkResponse.ok) {
+            const err = await paymentLinkResponse.text();
+            throw new Error(`Setu paymentLink failed: ${err}`);
+        }
+
+        const paymentLinkData = await paymentLinkResponse.json();
+
+        res.json({ success: true, data: paymentLinkData.data });
 
     } catch (e) { 
         console.error("Setu Link Gen Error:", e);
