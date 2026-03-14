@@ -2,11 +2,53 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { getPool, ensureDb, logDbActivity } from './db.js';
+import { getPool, ensureDb, logDbActivity, isMock, initDb } from './db.js';
 
 const router = express.Router();
 
 router.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+
+router.get('/debug/db', async (req, res) => {
+    const host = process.env.DB_HOST;
+    const user = process.env.DB_USER;
+    const dbName = process.env.DB_NAME;
+    
+    let connectionTest = "Not attempted";
+    let errorMsg = null;
+    
+    try {
+        const pool = getPool();
+        if (pool && !isMock) {
+            const conn = await pool.getConnection();
+            connectionTest = "Success";
+            conn.release();
+        } else {
+            connectionTest = "Pool is null or running in Mock mode";
+            // Try to force a real connection test right now
+            if (host) {
+                const result = await initDb();
+                connectionTest = result.success ? "Success after forced init" : "Failed forced init";
+                errorMsg = result.error;
+            }
+        }
+    } catch (e) {
+        connectionTest = "Failed";
+        errorMsg = e.message;
+    }
+
+    res.json({
+        config: {
+            host: host || "MISSING",
+            user: user || "MISSING",
+            database: dbName || "MISSING",
+            passwordLength: process.env.DB_PASSWORD ? process.env.DB_PASSWORD.length : 0,
+            isMockMode: isMock
+        },
+        status: connectionTest,
+        error: errorMsg,
+        envKeys: Object.keys(process.env).filter(k => k.startsWith('DB_'))
+    });
+});
 
 router.get('/debug/paths', (req, res) => {
     const rootDir = process.cwd();
@@ -137,17 +179,7 @@ router.get('/public/order/:token', ensureDb, async (req, res) => {
     }
 });
 
-router.get('/debug/db', async (req, res) => {
-    try {
-        const pool = getPool();
-        const connection = await pool.getConnection();
-        await connection.query('SELECT 1');
-        connection.release();
-        res.json({ success: true, config: { host: process.env.DB_HOST, database: process.env.DB_NAME } });
-    } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
-    }
-});
+
 
 router.get('/bootstrap', ensureDb, async (req, res) => {
     try {

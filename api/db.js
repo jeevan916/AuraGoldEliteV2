@@ -50,6 +50,7 @@ export async function initDb() {
         pool = mysql.createPool(dbConfig);
         const connection = await pool.getConnection();
         isMock = false;
+        console.log(`[DB] Successfully connected to MySQL at ${host}`);
         
         const tables = [
             `CREATE TABLE IF NOT EXISTS gold_rates (id INT AUTO_INCREMENT PRIMARY KEY, rate24k DECIMAL(10, 2), rate22k DECIMAL(10, 2), rate18k DECIMAL(10, 2), rateSilver DECIMAL(10, 2) DEFAULT 0, recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
@@ -109,6 +110,7 @@ export async function initDb() {
         connection.release();
         return { success: true };
     } catch (err) {
+        console.error("[DB] Connection Error:", err.message);
         pool = null; 
         return { success: false, error: err.message };
     }
