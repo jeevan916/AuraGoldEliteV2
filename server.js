@@ -167,18 +167,19 @@ let useVite = false;
 const isDev = process.env.NODE_ENV === 'development';
 
 if (isDev) {
-    try {
-        const { createServer: createViteServer } = await import('vite');
-        const vite = await createViteServer({
-            server: { middlewareMode: true },
-            appType: 'spa',
-        });
-        app.use(vite.middlewares);
-        console.log("[System] Vite middleware integrated for development.");
-        useVite = true;
-    } catch (e) {
-        console.warn("[System] Vite integration failed, falling back to static serving.", e.message);
-    }
+    import('vite').then(async ({ createServer: createViteServer }) => {
+        try {
+            const vite = await createViteServer({
+                server: { middlewareMode: true },
+                appType: 'spa',
+            });
+            app.use(vite.middlewares);
+            console.log("[System] Vite middleware integrated for development.");
+        } catch (e) {
+            console.warn("[System] Vite integration failed, falling back to static serving.", e.message);
+        }
+    }).catch(e => console.warn("[System] Failed to import vite:", e.message));
+    useVite = true;
 }
 
 if (!useVite && finalDistPath) {
