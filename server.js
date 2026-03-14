@@ -221,8 +221,19 @@ if (!useVite && finalDistPath) {
             res.status(404).send("Application Index Not Found. Please run 'npm run build'.");
         }
     });
-} else {
+} else if (!useVite) {
     console.error("[System] Critical Error: No index.html found in 'dist' or root. Static serving disabled.");
+    
+    // Fallback root route for health checks
+    app.get('/', (req, res) => {
+        res.status(200).send(`
+            <div style="font-family: sans-serif; padding: 2rem; text-align: center;">
+                <h1>AuraGold Elite - Server Running</h1>
+                <p>The backend is operational, but the frontend build (dist/index.html) is missing.</p>
+                <p>Hostinger Health Check: OK</p>
+            </div>
+        `);
+    });
 }
 
 initDb().then((result) => {

@@ -29,7 +29,8 @@ export async function initDb() {
         if (pool) await pool.end();
         
         const host = process.env.DB_HOST;
-        if (!host || host === '127.0.0.1') {
+        // Only fallback to mock if host is missing, OR if we are inside AI Studio and trying to use localhost
+        if (!host || (process.env.APPLET_ID && (host === '127.0.0.1' || host === 'localhost'))) {
             console.warn("[DB] No external DB_HOST provided. Falling back to Mock Database.");
             isMock = true;
             return { success: true, mock: true };
