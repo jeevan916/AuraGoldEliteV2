@@ -221,7 +221,8 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
                 setuSecret: intMap.setu?.secret,
                 setuSchemeId: intMap.setu?.schemeId,
                 razorpayKeyId: intMap.razorpay?.keyId,
-                razorpayKeySecret: intMap.razorpay?.secret
+                razorpayKeySecret: intMap.razorpay?.secret,
+                isMockMode: isMock
             }
         }});
     } catch (e) { res.status(500).json({ error: e.message }); }

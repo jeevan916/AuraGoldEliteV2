@@ -394,6 +394,15 @@ const App = () => {
              <div className="mt-4 pt-4 border-t border-slate-100 space-y-1">
                  {canAccess('SYS_LOGS') && <SidebarItem active={view === 'SYS_LOGS'} onClick={() => setView('SYS_LOGS')} icon={HardDrive} label="System Logs" />}
                  {canAccess('SETTINGS') && <SidebarItem active={view === 'SETTINGS'} onClick={() => setView('SETTINGS')} icon={SettingsIcon} label="Settings" />}
+                 
+                 {/* DB Status Indicator */}
+                 <div className="px-4 py-3 mt-2">
+                     <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest border ${settings.isMockMode ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200'}`}>
+                         <div className={`w-2 h-2 rounded-full ${settings.isMockMode ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`}></div>
+                         {settings.isMockMode ? 'MOCK DB' : 'LIVE DB'}
+                     </div>
+                 </div>
+
                  <button 
                     onClick={handleLogout}
                     className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-xs font-bold text-rose-500 hover:bg-rose-50 transition-all"

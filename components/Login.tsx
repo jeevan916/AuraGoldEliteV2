@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { Lock, User, Loader2, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Lock, User, Loader2, ShieldCheck, Database, ServerCrash } from 'lucide-react';
 import { AuthUser } from '../types';
 
 interface LoginProps {
@@ -12,6 +12,21 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [dbStatus, setDbStatus] = useState<{ isMock: boolean, host: string, status: string } | null>(null);
+
+    useEffect(() => {
+        // Fetch DB status on mount
+        fetch('/api/debug/db')
+            .then(res => res.json())
+            .then(data => {
+                setDbStatus({
+                    isMock: data.config?.isMockMode || false,
+                    host: data.config?.host || 'Unknown',
+                    status: data.status || 'Unknown'
+                });
+            })
+            .catch(err => console.error("Failed to fetch DB status", err));
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -41,7 +56,25 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+            
+            {/* DB Status Banner */}
+            {dbStatus && (
+                <div className={`max-w-md w-full mb-4 p-4 rounded-2xl flex items-center gap-3 shadow-sm border ${dbStatus.isMock ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+                    <div className={`p-2 rounded-xl ${dbStatus.isMock ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                        {dbStatus.isMock ? <ServerCrash size={20} /> : <Database size={20} />}
+                    </div>
+                    <div>
+                        <h3 className="text-xs font-black uppercase tracking-widest">{dbStatus.isMock ? 'Mock Database Active' : 'Live Database Connected'}</h3>
+                        <p className="text-[10px] font-medium opacity-80 mt-0.5">
+                            {dbStatus.isMock 
+                                ? "Warning: Using temporary memory. Data will be lost on restart." 
+                                : `Connected to MySQL at ${dbStatus.host}`}
+                        </p>
+                    </div>
+                </div>
+            )}
+
             <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100">
                 <div className="bg-slate-900 p-8 text-center relative overflow-hidden">
                     <div className="relative z-10">

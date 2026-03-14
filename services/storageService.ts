@@ -194,7 +194,7 @@ class StorageService {
           this.state = {
               orders: dbData.orders || [],
               customers: dbData.customers || [],
-              settings: dbData.settings || INITIAL_SETTINGS,
+              settings: { ...INITIAL_SETTINGS, ...dbData.settings },
               templates: fetchedTemplates,
               logs: dbData.logs || [],
               planTemplates: (dbData.planTemplates && dbData.planTemplates.length > 0) ? dbData.planTemplates : INITIAL_PLAN_TEMPLATES,

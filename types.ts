@@ -152,6 +152,7 @@ export interface GlobalSettings {
   setuSecret?: string;
   msg91AuthKey?: string;
   msg91SenderId?: string;
+  isMockMode?: boolean;
 }
 
 export type MessageStatus = 'SENT' | 'DELIVERED' | 'READ' | 'FAILED' | 'QUEUED';
