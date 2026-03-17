@@ -18,6 +18,14 @@ const mockData = {
                 currentGoldRate18K: 5625,
                 currentSilverRate: 90
             }) 
+        },
+        {
+            provider: 'setu',
+            config: JSON.stringify({
+                clientId: process.env.SETU_CLIENT_ID || 'default_client_id',
+                secret: process.env.SETU_SECRET || 'default_secret',
+                schemeId: process.env.SETU_SCHEME_ID || 'default_scheme_id'
+            })
         }
     ],
     system_activities: [],
@@ -107,6 +115,20 @@ export async function initDb() {
             );
         }
 
+        // --- SEED DEFAULT SETU CONFIG ---
+        const [setuConfig] = await connection.query("SELECT * FROM integrations WHERE provider = ?", ['setu']);
+        if (setuConfig.length === 0) {
+            console.log("[DB] Seeding default Setu config...");
+            await connection.query(
+                "INSERT INTO integrations (provider, config) VALUES (?, ?)",
+                ['setu', JSON.stringify({
+                    clientId: process.env.SETU_CLIENT_ID || 'default_client_id',
+                    secret: process.env.SETU_SECRET || 'default_secret',
+                    schemeId: process.env.SETU_SCHEME_ID || 'default_scheme_id'
+                })]
+            );
+        }
+
         connection.release();
         return { success: true };
     } catch (err) {
@@ -147,6 +169,15 @@ export const getPool = () => {
                     if (lowerSql.includes('insert into gold_rates')) {
                         mockData.gold_rates.push({ id: Date.now(), rate24k: params[0], rate22k: params[1], rate18k: params[2], rateSilver: params[3] });
                         return [{ insertId: Date.now() }];
+                    }
+                    if (lowerSql.includes('insert into integrations')) {
+                        const index = mockData.integrations.findIndex(i => i.provider === params[0]);
+                        if (index > -1) {
+                            mockData.integrations[index].config = params[1];
+                        } else {
+                            mockData.integrations.push({ provider: params[0], config: params[1] });
+                        }
+                        return [{ affectedRows: 1 }];
                     }
                     if (lowerSql.includes('update integrations set config = ? where provider = ?')) {
                         const index = mockData.integrations.findIndex(i => i.provider === params[1]);

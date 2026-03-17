@@ -11,7 +11,7 @@ router.get('/gold-rate', ensureDb, async (req, res) => {
         const connection = await pool.getConnection();
 
         // 1. Get Configuration (for interval and fallback)
-        const [configRows] = await connection.query("SELECT config FROM integrations WHERE provider = 'core_settings'");
+        const [configRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['core_settings']);
         let intervalMins = 60; 
         let manualConfig = null;
         

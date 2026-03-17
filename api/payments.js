@@ -20,11 +20,18 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
-        const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = 'setu'");
+        const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
         connection.release();
         
         if (rows.length === 0) throw new Error("Setu Integration not configured in Settings.");
-        const config = rows[0].config;
+        let config = rows[0].config;
+        if (typeof config === 'string') {
+            try {
+                config = JSON.parse(config);
+            } catch (e) {
+                throw new Error("Invalid Setu configuration format.");
+            }
+        }
 
         const uniqueBillId = billerBillID || (orderId ? `${orderId}_${Date.now()}` : `bill_${Date.now()}`);
 
@@ -144,7 +151,7 @@ router.post('/razorpay/create-order', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
-        const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = 'razorpay'");
+        const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['razorpay']);
         connection.release();
         if (rows.length === 0) throw new Error("Razorpay not configured.");
         const config = rows[0].config;

@@ -126,7 +126,7 @@ export async function fetchAndSaveRate(forcedProviderId = null) {
             const pool = getPool();
             if (pool) {
                 const connection = await pool.getConnection();
-                const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = 'core_settings'");
+                const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['core_settings']);
                 connection.release();
                 if (rows.length > 0) {
                     const config = JSON.parse(rows[0].config);
@@ -303,14 +303,14 @@ export async function fetchAndSaveRate(forcedProviderId = null) {
             );
             
             // Update Core Settings Cache
-            const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = 'core_settings'");
+            const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['core_settings']);
             if (rows.length > 0) {
                 const config = JSON.parse(rows[0].config);
                 config.currentGoldRate24K = rate24k;
                 config.currentGoldRate22K = rate22k;
                 config.currentGoldRate18K = rate18k;
                 config.currentSilverRate = rateSilver;
-                await connection.query("UPDATE integrations SET config = ? WHERE provider = 'core_settings'", [JSON.stringify(config)]);
+                await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'core_settings']);
             }
             connection.release();
         }
@@ -346,7 +346,7 @@ export async function initRateService() {
         if (!pool) return setTimeout(initRateService, 5000); // Wait for DB
 
         const connection = await pool.getConnection();
-        const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = 'core_settings'");
+        const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['core_settings']);
         connection.release();
 
         let interval = 60; // Default
