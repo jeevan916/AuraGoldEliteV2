@@ -20,51 +20,81 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         const pool = getPool();
         const connection = await pool.getConnection();
         const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
-        connection.release();
         
-        if (rows.length === 0) throw new Error("Setu Integration not configured in Settings.");
+        if (rows.length === 0) {
+            connection.release();
+            throw new Error("Setu Integration not configured in Settings.");
+        }
+
         let config = rows[0].config;
         if (typeof config === 'string') {
             try {
                 config = JSON.parse(config);
             } catch (e) {
+                connection.release();
                 throw new Error("Invalid Setu configuration format.");
             }
         }
 
-        const uniqueBillId = billerBillID || (orderId ? `${orderId}_${Date.now()}` : `bill_${Date.now()}`);
-
-        const safeName = name ? name.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Customer';
-        const safeNote = orderId ? `Order ${orderId}`.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Payment';
-
         const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
         const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
 
-        // 2. Manual Token Generation (OAuth) - Matching PHP setuGenerateToken
-        const tokenResponse = await fetch(`${baseUrl}/auth/token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                clientID: config.clientId,
-                secret: config.secret
-            })
-        });
+        // 2. Token Management (OAuth with Caching)
+        let token = config.cachedToken;
+        const now = Math.floor(Date.now() / 1000);
+        
+        // If no token or token expires in less than 60 seconds, fetch a new one
+        if (!token || !config.tokenExpiresAt || config.tokenExpiresAt < (now + 60)) {
+            console.log("[Setu] Token expired or missing. Fetching new OAuth token...");
+            const tokenResponse = await fetch(`${baseUrl}/auth/token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    clientID: config.clientId,
+                    secret: config.secret
+                })
+            });
 
-        const tokenData = await tokenResponse.json();
-        if (!tokenResponse.ok || !tokenData.success) {
-            throw {
-                message: "Setu Authentication Failed",
-                response: {
-                    status: tokenResponse.status,
-                    data: tokenData
-                }
-            };
+            const tokenText = await tokenResponse.text();
+            let tokenData;
+            try {
+                tokenData = JSON.parse(tokenText);
+            } catch (e) {
+                connection.release();
+                throw {
+                    message: "Setu Authentication returned non-JSON response",
+                    response: { status: tokenResponse.status, data: tokenText.substring(0, 500) }
+                };
+            }
+
+            if (!tokenResponse.ok || !tokenData.success) {
+                connection.release();
+                throw {
+                    message: "Setu Authentication Failed",
+                    response: { status: tokenResponse.status, data: tokenData }
+                };
+            }
+
+            token = tokenData.data.token;
+            const expiresIn = tokenData.data.expiresIn || 1800;
+            
+            // Cache the token
+            config.cachedToken = token;
+            config.tokenExpiresAt = now + expiresIn;
+            
+            await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
+            console.log(`[Setu] New token cached. Expires in ${expiresIn}s`);
+        } else {
+            console.log("[Setu] Using cached OAuth token.");
         }
 
-        const token = tokenData.data.token;
+        connection.release();
 
-        // 3. Manual Payment Link Creation - Reverting to /payment-links
-        // This endpoint is the standard for UPI Deep Links and matches the X-Setu-Product-Instance-ID requirement.
+        const uniqueBillId = billerBillID || (orderId ? `${orderId}_${Date.now()}` : `bill_${Date.now()}`);
+        const safeName = name ? name.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Customer';
+        const safeNote = orderId ? `Order ${orderId}`.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Payment';
+
+        // 3. Manual Payment Link Creation
         const linkResponse = await fetch(`${baseUrl}/payment-links`, {
             method: 'POST',
             headers: {
@@ -84,14 +114,21 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
             })
         });
 
-        const linkData = await linkResponse.json();
+        const linkText = await linkResponse.text();
+        let linkData;
+        try {
+            linkData = JSON.parse(linkText);
+        } catch (e) {
+            throw {
+                message: "Setu Link Creation returned non-JSON response",
+                response: { status: linkResponse.status, data: linkText.substring(0, 500) }
+            };
+        }
+
         if (!linkResponse.ok || !linkData.success) {
             throw {
                 message: "Setu Link Creation Failed",
-                response: {
-                    status: linkResponse.status,
-                    data: linkData
-                }
+                response: { status: linkResponse.status, data: linkData }
             };
         }
 
@@ -125,6 +162,57 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
             error: typeof errorData.data === 'string' ? errorData.data : JSON.stringify(errorData, null, 2),
             raw: errorData 
         }); 
+    }
+});
+
+// Setu Test Connection
+router.post('/setu/test-connection', ensureDb, async (req, res) => {
+    const { clientId, secret, mode } = req.body;
+    
+    if (!clientId || !secret) {
+        return res.status(400).json({ success: false, error: "Client ID and Secret are required." });
+    }
+
+    const baseUrl = mode === 'SANDBOX' ? 'https://uat.setu.co/api/v2' : 'https://prod.setu.co/api/v2';
+
+    try {
+        const tokenResponse = await fetch(`${baseUrl}/auth/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                clientID: clientId,
+                secret: secret
+            })
+        });
+
+        const tokenText = await tokenResponse.text();
+        let tokenData;
+        try {
+            tokenData = JSON.parse(tokenText);
+        } catch (e) {
+            return res.status(500).json({ 
+                success: false, 
+                error: "Setu returned non-JSON response. Check environment (Sandbox/Production).",
+                raw: tokenText.substring(0, 500)
+            });
+        }
+
+        if (!tokenResponse.ok || !tokenData.success) {
+            return res.status(401).json({ 
+                success: false, 
+                error: tokenData.error?.detail || "Authentication Failed. Check Client ID and Secret.",
+                raw: tokenData
+            });
+        }
+
+        res.json({ 
+            success: true, 
+            message: "Connection Successful! OAuth token generated.",
+            expiresIn: tokenData.data.expiresIn 
+        });
+
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
