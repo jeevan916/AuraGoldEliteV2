@@ -1,7 +1,6 @@
 
 import express from 'express';
 import { getPool, ensureDb } from './db.js';
-import { SetuUPIDeepLink } from '@setu/upi-deep-links';
 
 const router = express.Router();
 
@@ -38,24 +37,62 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         const safeName = name ? name.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Customer';
         const safeNote = orderId ? `Order ${orderId}`.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Payment';
 
-        // 2. Authenticate and Create Link using SDK
-        const upidl = SetuUPIDeepLink({
-            schemeID: config.clientId, // Maps to Setu Scheme ID
-            secret: config.secret,
-            productInstanceID: config.schemeId, // Maps to Product Instance ID
-            mode: config.mode || 'PRODUCTION',
-            authType: 'JWT',
+        const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
+        const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
+
+        // 2. Manual Token Generation (OAuth) - Matching PHP setuGenerateToken
+        const tokenResponse = await fetch(`${baseUrl}/auth/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                clientID: config.clientId,
+                secret: config.secret
+            })
         });
 
-        const paymentLinkResponse = await upidl.createPaymentLink({
-            amountValue: Math.round(amount * 100),
-            billerBillID: uniqueBillId,
-            amountExactness: 'EXACT_DOWN',
-            payeeName: safeName || 'Customer',
-            transactionNote: safeNote || 'Payment'
+        const tokenData = await tokenResponse.json();
+        if (!tokenResponse.ok || !tokenData.success) {
+            throw {
+                message: "Setu Authentication Failed",
+                response: {
+                    status: tokenResponse.status,
+                    data: tokenData
+                }
+            };
+        }
+
+        const token = tokenData.data.token;
+
+        // 3. Manual Payment Link Creation - Matching PHP setuUpiPayNow
+        const linkResponse = await fetch(`${baseUrl}/payment-links`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                'X-Setu-Product-Instance-ID': config.schemeId
+            },
+            body: JSON.stringify({
+                billerBillID: uniqueBillId,
+                amount: {
+                    value: Math.round(amount * 100),
+                    currencyCode: "INR"
+                },
+                amountExactness: "EXACT"
+            })
         });
 
-        res.json({ success: true, data: paymentLinkResponse });
+        const linkData = await linkResponse.json();
+        if (!linkResponse.ok || !linkData.success) {
+            throw {
+                message: "Setu Link Creation Failed",
+                response: {
+                    status: linkResponse.status,
+                    data: linkData
+                }
+            };
+        }
+
+        res.json({ success: true, data: linkData });
 
     } catch (e) { 
         console.error("Setu Link Gen Error:", e);
