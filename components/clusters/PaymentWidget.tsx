@@ -219,7 +219,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           const payload = responseBody.data?.data || responseBody.data;
           const shortLink = payload?.paymentLink?.shortURL || payload?.shortURL || payload?.shortLink;
           const upiID = payload?.paymentLink?.upiID || payload?.upiID;
-          let upiIntentLink = payload?.paymentLink?.upiIntentLink || payload?.upiIntentLink || payload?.upiLink;
+          let upiIntentLink = payload?.paymentLink?.upiLink || payload?.paymentLink?.upiIntentLink || payload?.upiLink || payload?.upiIntentLink;
           const platformBillID = payload?.platformBillID;
 
           if (!shortLink) {
@@ -251,26 +251,14 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           });
           setQrCodeUrl(`https://quickchart.io/qr?text=${encodeURIComponent(shortLink)}&margin=2&size=300`);
 
-          // Use base64 encoded upiIntentLink for direct UPI intent trigger
+          // Use base64 encoded shortLink for WhatsApp button
           let buttonVariable = '';
-          if (upiIntentLink) {
+          if (shortLink) {
               try {
                   // Safe base64 encoding for potentially non-latin1 strings
-                  buttonVariable = btoa(unescape(encodeURIComponent(upiIntentLink))).replace(/\+/g, '-').replace(/\//g, '_');
+                  buttonVariable = btoa(unescape(encodeURIComponent(shortLink))).replace(/\+/g, '-').replace(/\//g, '_');
               } catch (e) {
-                  buttonVariable = btoa(upiIntentLink).replace(/\+/g, '-').replace(/\//g, '_');
-              }
-          } else {
-              // Fallback to link suffix
-              try {
-                  const urlObj = new URL(shortLink);
-                  const pathSegments = urlObj.pathname.split('/').filter(Boolean);
-                  if (pathSegments.length > 0) {
-                      buttonVariable = pathSegments[pathSegments.length - 1];
-                  }
-              } catch(e) {
-                  const parts = shortLink.split('/');
-                  buttonVariable = parts[parts.length - 1];
+                  buttonVariable = btoa(shortLink).replace(/\+/g, '-').replace(/\//g, '_');
               }
           }
 
