@@ -48,7 +48,11 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
             console.log("[Setu] Token expired or missing. Fetching new OAuth token...");
             const tokenResponse = await fetch(`${baseUrl}/auth/token`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                },
                 body: JSON.stringify({
                     clientID: config.clientId,
                     secret: config.secret
@@ -99,8 +103,10 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'Accept': 'application/json',
                 'Authorization': `Bearer ${token}`,
-                'X-Setu-Product-Instance-ID': config.schemeId
+                'X-Setu-Product-Instance-ID': config.schemeId,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             },
             body: JSON.stringify({
                 billerBillID: uniqueBillId,
@@ -178,7 +184,11 @@ router.post('/setu/test-connection', ensureDb, async (req, res) => {
     try {
         const tokenResponse = await fetch(`${baseUrl}/auth/token`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            },
             body: JSON.stringify({
                 clientID: clientId,
                 secret: secret
