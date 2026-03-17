@@ -184,7 +184,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     examples: ["Aditi", "15000", "hz83jd"],
     structure: [
         { type: "BODY", text: "Dear {{1}}, please pay ₹{{2}} securely using the UPI button below." },
-        { type: "BUTTONS", buttons: [{ type: "URL", text: "Pay Now", url: "https://setu.co/upi/s/{{1}}" }] }
+        { type: "BUTTONS", buttons: [{ type: "URL", text: "Pay Now", url: `${window.location.origin}/api/setu/pay/{{1}}` }] }
     ]
   },
   // 9) Finished Photo Upload

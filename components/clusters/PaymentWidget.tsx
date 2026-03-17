@@ -251,14 +251,17 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           }
 
           // SCENARIO 8: Setu UPI Button (Manual)
-          // UPDATED TO NEW TEMPLATE NAME
+          // UPDATED TO NEW TEMPLATE NAME AND REDIRECTOR LOGIC
+          // We pass the base64 encoded upiIntentLink as the button variable
+          const encodedIntent = btoa(upiIntentLink);
+          
           const result = await whatsappService.sendTemplateMessage(
               order.customerContact, 
               'auragold_setu_payment', 
               'en_US', 
               [order.customerName, val.toLocaleString()], 
               order.customerName,
-              linkSuffix 
+              encodedIntent 
           );
 
           if (result.success) {
