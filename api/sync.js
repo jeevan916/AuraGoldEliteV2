@@ -109,7 +109,8 @@ router.post('/settings', ensureDb, async (req, res) => {
             const setuConfig = { 
                 clientId: settings.setuClientId, 
                 secret: settings.setuSecret, 
-                schemeId: settings.setuSchemeId 
+                schemeId: settings.setuSchemeId,
+                mode: settings.setuMode || 'PRODUCTION'
             };
             await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['setu', JSON.stringify(setuConfig)]);
         }

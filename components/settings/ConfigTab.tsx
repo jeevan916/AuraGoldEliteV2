@@ -334,10 +334,21 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                                     <ConfigInput label="Razorpay Key ID" value={localSettings.razorpayKeyId} onChange={(v: string) => setLocalSettings({...localSettings, razorpayKeyId: v})} />
                                     <ConfigInput label="Razorpay Secret" value={localSettings.razorpayKeySecret} onChange={(v: string) => setLocalSettings({...localSettings, razorpayKeySecret: v})} type="password" />
                                 </div>
-                                <div className="border-t border-slate-200 pt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <ConfigInput label="Setu Client ID" value={localSettings.setuClientId} onChange={(v: string) => setLocalSettings({...localSettings, setuClientId: v})} />
+                                <div className="border-t border-slate-200 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <ConfigInput label="Setu Scheme ID" value={localSettings.setuClientId} onChange={(v: string) => setLocalSettings({...localSettings, setuClientId: v})} />
                                     <ConfigInput label="Setu Secret" value={localSettings.setuSecret} onChange={(v: string) => setLocalSettings({...localSettings, setuSecret: v})} type="password" />
-                                    <ConfigInput label="Scheme ID" value={localSettings.setuSchemeId} onChange={(v: string) => setLocalSettings({...localSettings, setuSchemeId: v})} />
+                                    <ConfigInput label="Product Instance ID" value={localSettings.setuSchemeId} onChange={(v: string) => setLocalSettings({...localSettings, setuSchemeId: v})} />
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block ml-1">Setu Environment</label>
+                                        <select 
+                                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                                            value={localSettings.setuMode || 'PRODUCTION'}
+                                            onChange={(e) => setLocalSettings({...localSettings, setuMode: e.target.value as any})}
+                                        >
+                                            <option value="PRODUCTION">Production</option>
+                                            <option value="SANDBOX">Sandbox</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
                         </div>

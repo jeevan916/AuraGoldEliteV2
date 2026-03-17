@@ -150,6 +150,7 @@ export interface GlobalSettings {
   setuClientId?: string; 
   setuSchemeId?: string; 
   setuSecret?: string;
+  setuMode?: 'SANDBOX' | 'PRODUCTION';
   msg91AuthKey?: string;
   msg91SenderId?: string;
   isMockMode?: boolean;

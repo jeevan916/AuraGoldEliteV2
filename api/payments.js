@@ -40,10 +40,10 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
 
         // 2. Authenticate and Create Link using SDK
         const upidl = SetuUPIDeepLink({
-            schemeID: config.clientId,
+            schemeID: config.clientId, // Maps to Setu Scheme ID
             secret: config.secret,
-            productInstanceID: config.schemeId,
-            mode: 'PRODUCTION',
+            productInstanceID: config.schemeId, // Maps to Product Instance ID
+            mode: config.mode || 'PRODUCTION',
             authType: 'JWT',
         });
 

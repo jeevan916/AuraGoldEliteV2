@@ -220,6 +220,7 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
                 setuClientId: intMap.setu?.clientId,
                 setuSecret: intMap.setu?.secret,
                 setuSchemeId: intMap.setu?.schemeId,
+                setuMode: intMap.setu?.mode || 'PRODUCTION',
                 razorpayKeyId: intMap.razorpay?.keyId,
                 razorpayKeySecret: intMap.razorpay?.secret,
                 isMockMode: isMock

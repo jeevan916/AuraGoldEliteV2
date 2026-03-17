@@ -30,7 +30,8 @@ export const INITIAL_SETTINGS: GlobalSettings = {
   whatsappBusinessToken: getEnv('VITE_WHATSAPP_TOKEN'),
   setuClientId: '', // Initialized for V2
   setuSchemeId: '', // Maps to Product Instance ID
-  setuSecret: ''
+  setuSecret: '',
+  setuMode: 'PRODUCTION'
 };
 
 export const JEWELRY_CATEGORIES = [
