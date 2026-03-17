@@ -330,8 +330,14 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
              )}
 
              {setuError && (
-                <div className="w-full mb-4 p-3 bg-rose-50 border border-rose-100 rounded-xl text-[10px] text-rose-600 font-bold flex items-center gap-2">
-                    <AlertCircle size={14} /> {setuError}
+                <div className="w-full mb-4 p-3 bg-rose-50 border border-rose-100 rounded-xl text-[10px] text-rose-600 font-bold flex flex-col gap-2 overflow-hidden">
+                    <div className="flex items-center gap-2">
+                       <AlertCircle size={14} className="shrink-0" /> 
+                       <span>Gateway Error</span>
+                    </div>
+                    <pre className="whitespace-pre-wrap break-all bg-white/50 p-2 rounded border border-rose-200 font-mono text-[9px] max-h-40 overflow-y-auto">
+                       {setuError}
+                    </pre>
                 </div>
              )}
 

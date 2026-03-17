@@ -367,9 +367,11 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                 <div className="p-2 bg-white rounded-lg shadow-sm">
                     <AlertCircle className="text-rose-600" size={24} />
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 overflow-hidden">
                     <p className="text-sm font-black text-rose-800 uppercase tracking-tight">Initiation Failed</p>
-                    <p className="text-xs text-rose-600 mt-1 leading-relaxed">{errorMsg}</p>
+                    <pre className="whitespace-pre-wrap break-all bg-white/50 p-2 rounded border border-rose-200 font-mono text-[9px] mt-2 max-h-40 overflow-y-auto text-rose-600">
+                        {errorMsg}
+                    </pre>
                     <div className="mt-4 flex gap-3">
                         <button 
                             onClick={() => activeTab === 'REQUEST' ? handleGenerateSetuLink() : handleCreateRazorpayOrder()} 

@@ -60,19 +60,31 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
     } catch (e) { 
         console.error("Setu Link Gen Error:", e);
         
-        let errorMsg = "Failed to generate Setu UPI link";
-        if (e.response && e.response.data) {
-            console.error("Setu API Error Data:", e.response.data);
-            errorMsg = JSON.stringify(e.response.data);
+        let errorData = {
+            message: e.message || "Failed to generate Setu UPI link",
+            stack: process.env.NODE_ENV === 'development' ? e.stack : undefined,
+        };
+
+        if (e.response) {
+            errorData = {
+                ...errorData,
+                status: e.response.status,
+                data: e.response.data,
+                headers: e.response.headers
+            };
         } else if (e.title || e.detail) {
-            errorMsg = `${e.title || 'Error'}: ${e.detail || ''}`;
-        } else if (e.message) {
-            errorMsg = e.message;
-        } else if (typeof e === 'object') {
-            errorMsg = JSON.stringify(e);
+            errorData = {
+                ...errorData,
+                title: e.title,
+                detail: e.detail
+            };
         }
 
-        res.status(500).json({ success: false, error: errorMsg }); 
+        res.status(500).json({ 
+            success: false, 
+            error: typeof errorData.data === 'string' ? errorData.data : JSON.stringify(errorData, null, 2),
+            raw: errorData 
+        }); 
     }
 });
 
