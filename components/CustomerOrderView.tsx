@@ -116,14 +116,14 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
       const payload = result.data?.data || result.data;
       const shortLink = payload?.paymentLink?.shortURL || payload?.shortURL || payload?.shortLink;
       const upiID = payload?.paymentLink?.upiID || payload?.upiID;
-      const upiLink = payload?.paymentLink?.upiLink || payload?.upiLink;
+      const upiIntentLink = payload?.paymentLink?.upiIntentLink || payload?.upiIntentLink || payload?.upiLink;
       const platformBillID = payload?.platformBillID;
 
       if (!shortLink) {
         throw new Error("Payment link not received from gateway");
       }
 
-      setSetuData({ shortURL: shortLink, upiID, upiLink, platformBillID });
+      setSetuData({ shortURL: shortLink, upiID, upiLink: upiIntentLink, platformBillID });
       setQrUrl(`https://quickchart.io/qr?text=${encodeURIComponent(shortLink)}&margin=2&size=300`);
     } catch (err: any) {
       console.error("Setu Payment Error:", err);
@@ -355,9 +355,9 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                     <>
                         <a 
                           href={setuData.upiLink || upiLink}
-                          className="w-full bg-amber-500 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"
+                          className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"
                         >
-                          <Smartphone size={16} /> Direct UPI Intent
+                          <Smartphone size={16} /> Pay via UPI App
                         </a>
                     </>
                 )}

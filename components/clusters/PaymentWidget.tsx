@@ -217,7 +217,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           const payload = responseBody.data?.data || responseBody.data;
           const shortLink = payload?.paymentLink?.shortURL || payload?.shortURL || payload?.shortLink;
           const upiID = payload?.paymentLink?.upiID || payload?.upiID;
-          const upiLink = payload?.paymentLink?.upiLink || payload?.upiLink;
+          const upiIntentLink = payload?.paymentLink?.upiIntentLink || payload?.upiIntentLink || payload?.upiLink;
           const platformBillID = payload?.platformBillID;
 
           if (!shortLink) {
@@ -230,7 +230,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
               throw new Error("Payment link was not returned by the gateway. This has been logged for engineering review.");
           }
 
-          setSetuData({ shortURL: shortLink, upiID, upiLink, platformBillID });
+          setSetuData({ shortURL: shortLink, upiID, upiLink: upiIntentLink, platformBillID });
           setQrCodeUrl(`https://quickchart.io/qr?text=${encodeURIComponent(shortLink)}&margin=2&size=300`);
 
           // ROBUST LINK SUFFIX EXTRACTION
