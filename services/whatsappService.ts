@@ -407,5 +407,39 @@ export const whatsappService = {
     } catch (e: any) { 
         return { success: false, error: e.message || "Send Failed", raw: e.raw }; 
     }
+  },
+
+  async syncSystemTemplates(): Promise<{ success: boolean; error?: string }> {
+    try {
+        const existing = await this.fetchMetaTemplates();
+        
+        for (const sysTpl of REQUIRED_SYSTEM_TEMPLATES) {
+            const match = existing.find(e => e.name === sysTpl.name);
+            
+            const tplToSync: WhatsAppTemplate = {
+                id: match?.id || `sys-${sysTpl.name}`,
+                name: sysTpl.name,
+                category: sysTpl.category as MetaCategory,
+                content: sysTpl.content,
+                variableExamples: sysTpl.examples,
+                structure: sysTpl.structure,
+                status: 'PENDING',
+                source: 'SYSTEM' as any,
+                tactic: 'URGENCY', // Default for system templates
+                targetProfile: 'REGULAR',
+                isAiGenerated: false
+            };
+
+            if (match) {
+                await this.editMetaTemplate(match.id, tplToSync);
+            } else {
+                await this.createMetaTemplate(tplToSync);
+            }
+        }
+
+        return { success: true };
+    } catch (e: any) {
+        return { success: false, error: e.message };
+    }
   }
 };

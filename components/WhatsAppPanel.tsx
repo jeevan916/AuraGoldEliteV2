@@ -50,6 +50,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
   
   const [aiInsight, setAiInsight] = useState<AiChatInsight | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -174,6 +175,23 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
       setTemplateParams(new Array(varCount).fill(''));
   };
 
+  const handleSyncTemplates = async () => {
+    if (!window.confirm("This will re-register all system templates with the current URL. Continue?")) return;
+    setIsSyncing(true);
+    try {
+        const result = await whatsappService.syncSystemTemplates();
+        if (result.success) {
+            alert("System templates synced successfully!");
+            onRefreshStatus();
+        } else {
+            alert(`Sync Failed: ${result.error}`);
+        }
+    } catch (e: any) {
+        alert(`Sync Error: ${e.message}`);
+    }
+    setIsSyncing(false);
+  };
+
   const handleSendMessage = async () => {
       if (!inputText.trim() || !activeConversation) return;
       const msg = inputText;
@@ -284,9 +302,20 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
                             <p className="text-xs text-slate-500">{activeConversation.phone}</p>
                         </div>
                     </div>
-                    <button onClick={onRefreshStatus} className="p-2 text-slate-400 hover:bg-slate-50 rounded-full">
-                        <RefreshCw size={20} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={handleSyncTemplates} 
+                            disabled={isSyncing}
+                            className="p-2 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 rounded-full transition-colors flex items-center gap-1"
+                            title="Sync System Templates"
+                        >
+                            <RefreshCw size={18} className={isSyncing ? 'animate-spin' : ''} />
+                            <span className="text-[10px] font-bold hidden md:inline">Sync Templates</span>
+                        </button>
+                        <button onClick={onRefreshStatus} className="p-2 text-slate-400 hover:bg-slate-50 rounded-full">
+                            <RefreshCw size={20} />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4 z-10">

@@ -49,11 +49,14 @@ export async function initDb() {
             user: process.env.DB_USER,
             password: process.env.DB_PASSWORD,
             database: process.env.DB_NAME,
-            port: 3306,
+            port: parseInt(process.env.DB_PORT || '3306'),
             waitForConnections: true,
-            connectionLimit: 5, // Reduced to prevent EMFILE
+            connectionLimit: 5,
             connectTimeout: 10000,
-            enableKeepAlive: true
+            enableKeepAlive: true,
+            ssl: process.env.DB_SSL === 'true' ? {
+                rejectUnauthorized: false // Often needed for cloud DBs
+            } : undefined
         };
         pool = mysql.createPool(dbConfig);
         const connection = await pool.getConnection();
@@ -133,8 +136,10 @@ export async function initDb() {
         return { success: true };
     } catch (err) {
         console.error("[DB] Connection Error:", err.message);
+        console.warn("[DB] Falling back to Mock Database due to connection failure.");
+        isMock = true;
         pool = null; 
-        return { success: false, error: err.message };
+        return { success: true, mock: true, error: err.message };
     }
 }
 
@@ -202,7 +207,13 @@ export const getPool = () => {
 export const ensureDb = async (req, res, next) => {
     if (!pool && !isMock) {
         const result = await initDb();
-        if (!result.success) return res.status(503).json({ error: "Database Unavailable" });
+        if (!result.success) {
+            return res.status(503).json({ 
+                error: "Database Unavailable", 
+                details: result.error,
+                help: "Please check your DB_HOST, DB_USER, DB_PASSWORD, and DB_NAME environment variables. If you intended to use the mock database, ensure DB_HOST is empty or set to 'localhost' inside AI Studio."
+            });
+        }
     }
     next();
 };

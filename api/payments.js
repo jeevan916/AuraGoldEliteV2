@@ -221,7 +221,7 @@ router.post('/setu/test-connection', ensureDb, async (req, res) => {
  * Decodes a base64 UPI intent and redirects to it.
  * This is used to bypass Meta's restriction on non-http schemes in URL buttons.
  */
-router.get(['/setu/pay/:encodedIntent', '/setu/pay'], (req, res) => {
+router.get(['/setu/pay/:encodedIntent', '/setu/pay'], async (req, res) => {
     try {
         const encodedIntent = req.params.encodedIntent || req.query.intent || req.query.s;
         

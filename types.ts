@@ -248,7 +248,7 @@ export interface WhatsAppTemplate {
   tactic: PsychologicalTactic;
   targetProfile: RiskProfile;
   isAiGenerated: boolean;
-  source: 'LOCAL' | 'META';
+  source: 'LOCAL' | 'META' | 'SYSTEM';
   status?: string;
   rejectionReason?: string; 
   category?: MetaCategory;
