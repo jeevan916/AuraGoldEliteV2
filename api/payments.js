@@ -87,7 +87,8 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${token}`,
+                'X-Setu-Product-Instance-ID': config.schemeId
             },
             body: JSON.stringify(orderData)
         });
