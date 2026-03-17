@@ -46,7 +46,8 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
     // 2. QR Code Gen (Fallback)
     if (remaining > 0 && !setuData) {
         const amount = Number(customAmount) || (nextPayment ? nextPayment.targetAmount : remaining);
-        const upi = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=Sanghavi%20Jewellers&tr=${order.id}&am=${amount}&cu=INR`;
+        const transactionNote = encodeURIComponent(`Order ${order.id}`);
+        const upi = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=Sanghavi%20Jewellers&tr=${order.id}&am=${amount}&cu=INR&tn=${transactionNote}`;
         setQrUrl(`https://quickchart.io/qr?text=${encodeURIComponent(upi)}&margin=2&size=300`);
     }
 
@@ -116,11 +117,20 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
       const payload = result.data?.data || result.data;
       const shortLink = payload?.paymentLink?.shortURL || payload?.shortURL || payload?.shortLink;
       const upiID = payload?.paymentLink?.upiID || payload?.upiID;
-      const upiIntentLink = payload?.paymentLink?.upiIntentLink || payload?.upiIntentLink || payload?.upiLink;
+      let upiIntentLink = payload?.paymentLink?.upiIntentLink || payload?.upiIntentLink || payload?.upiLink;
       const platformBillID = payload?.platformBillID;
 
       if (!shortLink) {
         throw new Error("Payment link not received from gateway");
+      }
+
+      if (!upiIntentLink && upiID) {
+        const payeeName = encodeURIComponent("Sanghavi Jewellers");
+        const transactionNote = encodeURIComponent(`Order ${order.id}`);
+        const amount = Number(customAmount) || (nextPayment ? nextPayment.targetAmount : remaining);
+        upiIntentLink = `upi://pay?pa=${upiID}&pn=${payeeName}&tr=${order.id}&am=${amount}&cu=INR&tn=${transactionNote}`;
+      } else if (!upiIntentLink) {
+        upiIntentLink = shortLink;
       }
 
       setSetuData({ shortURL: shortLink, upiID, upiLink: upiIntentLink, platformBillID });
@@ -134,7 +144,8 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
     }
   };
 
-  const upiLink = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=${encodeURIComponent("Sanghavi Jewellers")}&tr=${encodeURIComponent(order.id)}&am=${Number(customAmount) || (nextPayment ? nextPayment.targetAmount : remaining)}&cu=INR&tn=${encodeURIComponent("Order " + order.id)}`;
+  const transactionNote = encodeURIComponent(`Order ${order.id}`);
+  const upiLink = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=Sanghavi%20Jewellers&tr=${order.id}&am=${Number(customAmount) || (nextPayment ? nextPayment.targetAmount : remaining)}&cu=INR&tn=${transactionNote}`;
 
   const displayMilestones = showOriginal && order.paymentPlan.originalMilestones 
       ? order.paymentPlan.originalMilestones 

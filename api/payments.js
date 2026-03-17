@@ -63,22 +63,33 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
 
         const token = tokenData.data.token;
 
-        // 3. Manual Payment Link Creation - Matching PHP setuUpiPayNow
-        const linkResponse = await fetch(`${baseUrl}/payment-links`, {
+        // 3. Manual Payment Link Creation - Matching PHP createOrder
+        const orderData = {
+            schemeId: config.schemeId,
+            amount: {
+                currencyCode: "INR",
+                value: Math.round(amount * 100), // formatAmount usually converts to smallest unit
+            },
+            paymentMethods: {
+                upi: {
+                    expiry: 15, // minutes
+                },
+            },
+            productConfigId: 'default',
+            merchantId: config.clientId,
+            merchantReferenceId: uniqueBillId,
+            paymentDescription: safeNote,
+            customerMobileNumber: customerID,
+            showQR: true,
+        };
+
+        const linkResponse = await fetch(`${baseUrl}/payments`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-                'X-Setu-Product-Instance-ID': config.schemeId
+                'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify({
-                billerBillID: uniqueBillId,
-                amount: {
-                    value: Math.round(amount * 100),
-                    currencyCode: "INR"
-                },
-                amountExactness: "EXACT"
-            })
+            body: JSON.stringify(orderData)
         });
 
         const linkData = await linkResponse.json();
@@ -130,14 +141,36 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
  * Decodes a base64 UPI intent and redirects to it.
  * This is used to bypass Meta's restriction on non-http schemes in URL buttons.
  */
-router.get('/setu/pay/:encodedIntent', (req, res) => {
+router.get(['/setu/pay/:encodedIntent', '/setu/pay'], (req, res) => {
     try {
-        const encodedIntent = req.params.encodedIntent;
-        // Decode base64 to get the upi:// link
-        const intent = Buffer.from(encodedIntent, 'base64').toString('utf8');
+        const encodedIntent = req.params.encodedIntent || req.query.intent || req.query.s;
         
-        if (!intent.startsWith('upi://')) {
-            return res.status(400).send("Invalid payment intent. Link must start with upi://");
+        if (!encodedIntent) {
+            return res.status(400).send("Missing payment intent.");
+        }
+
+        let intent = '';
+        
+        // Normalize URL-safe base64 if needed
+        const normalized = encodedIntent.replace(/-/g, '+').replace(/_/g, '/');
+
+        // Try decoding as base64 first
+        try {
+            const decoded = Buffer.from(normalized, 'base64').toString('utf8');
+            if (decoded.startsWith('upi://') || decoded.startsWith('https://')) {
+                intent = decoded;
+            }
+        } catch (e) {
+            // Ignore base64 decode errors
+        }
+
+        // If it wasn't a valid base64 upi/https link, assume it's a raw Setu link suffix
+        if (!intent) {
+            if (/^[a-zA-Z0-9_-]+$/.test(encodedIntent)) {
+                intent = `https://setu.co/upi/s/${encodedIntent}`;
+            } else {
+                return res.status(400).send("Invalid payment intent. Link must start with upi:// or https://, or be a valid Setu link ID.");
+            }
         }
 
         // Return a simple HTML that redirects

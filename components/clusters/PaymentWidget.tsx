@@ -114,7 +114,8 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       const val = parseFloat(amount);
       if (!val || val <= 0) return;
       
-      const upiString = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=Sanghavi%20Jewellers&tr=${order.id}&am=${val}&cu=INR&tn=Jewellery%20Payment`;
+      const transactionNote = encodeURIComponent(`Order ${order.id}`);
+      const upiString = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=Sanghavi%20Jewellers&tr=${order.id}&am=${val}&cu=INR&tn=${transactionNote}`;
       setQrCodeUrl(`https://quickchart.io/qr?text=${encodeURIComponent(upiString)}&margin=2&size=300`);
       setActiveTab('REQUEST');
       errorService.logActivity('USER_ACTION', `Generated Static QR for ₹${val}`);
@@ -217,7 +218,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           const payload = responseBody.data?.data || responseBody.data;
           const shortLink = payload?.paymentLink?.shortURL || payload?.shortURL || payload?.shortLink;
           const upiID = payload?.paymentLink?.upiID || payload?.upiID;
-          const upiIntentLink = payload?.paymentLink?.upiIntentLink || payload?.upiIntentLink || payload?.upiLink;
+          let upiIntentLink = payload?.paymentLink?.upiIntentLink || payload?.upiIntentLink || payload?.upiLink;
           const platformBillID = payload?.platformBillID;
 
           if (!shortLink) {
@@ -228,6 +229,16 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                   JSON.stringify(responseBody)
               );
               throw new Error("Payment link was not returned by the gateway. This has been logged for engineering review.");
+          }
+
+          if (!upiIntentLink && upiID) {
+              // Construct the intent link manually ONLY if Setu didn't return it
+              const payeeName = encodeURIComponent("Sanghavi Jewellers");
+              const transactionNote = encodeURIComponent(`Order ${order.id}`);
+              upiIntentLink = `upi://pay?pa=${upiID}&pn=${payeeName}&tr=${order.id}&am=${val}&cu=INR&tn=${transactionNote}`;
+          } else if (!upiIntentLink) {
+              // Fallback to shortLink if we can't construct the intent
+              upiIntentLink = shortLink;
           }
 
           setSetuData({ shortURL: shortLink, upiID, upiLink: upiIntentLink, platformBillID });
@@ -251,17 +262,14 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           }
 
           // SCENARIO 8: Setu UPI Button (Manual)
-          // UPDATED TO NEW TEMPLATE NAME AND REDIRECTOR LOGIC
-          // We pass the base64 encoded upiIntentLink as the button variable
-          const encodedIntent = btoa(upiIntentLink);
-          
+          // We pass the link suffix as the button variable to construct the Setu URL
           const result = await whatsappService.sendTemplateMessage(
               order.customerContact, 
               'auragold_setu_payment', 
               'en_US', 
               [order.customerName, val.toLocaleString()], 
               order.customerName,
-              encodedIntent 
+              linkSuffix 
           );
 
           if (result.success) {

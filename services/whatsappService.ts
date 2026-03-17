@@ -34,6 +34,17 @@ const constructMetaComponents = (content: string, variableExamples: string[] = [
     // 1. Start with provided structure or empty array
     let components = structure ? JSON.parse(JSON.stringify(structure)) : [];
     
+    // Replace {{APP_URL}} placeholder in all component URLs
+    const appUrl = window.location.origin;
+    const settings = storageService.getSettings();
+    const setuBase = settings.setuMode === 'SANDBOX' ? 'https://uat.setu.co' : 'https://prod.setu.co';
+    
+    components = JSON.parse(
+        JSON.stringify(components)
+            .replace(/{{APP_URL}}/g, appUrl)
+            .replace(/{{SETU_BASE_URL}}/g, setuBase)
+    );
+    
     // 2. Locate or Create BODY
     let bodyIndex = components.findIndex((c: any) => c.type === 'BODY');
     
