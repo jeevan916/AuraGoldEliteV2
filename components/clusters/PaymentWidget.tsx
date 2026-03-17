@@ -251,32 +251,42 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           });
           setQrCodeUrl(`https://quickchart.io/qr?text=${encodeURIComponent(shortLink)}&margin=2&size=300`);
 
-          // ROBUST LINK SUFFIX EXTRACTION
-          let linkSuffix = '';
-          try {
-              const urlObj = new URL(shortLink);
-              const pathSegments = urlObj.pathname.split('/').filter(Boolean);
-              if (pathSegments.length > 0) {
-                  linkSuffix = pathSegments[pathSegments.length - 1];
+          // Use base64 encoded upiIntentLink for direct UPI intent trigger
+          let buttonVariable = '';
+          if (upiIntentLink) {
+              try {
+                  // Safe base64 encoding for potentially non-latin1 strings
+                  buttonVariable = btoa(unescape(encodeURIComponent(upiIntentLink))).replace(/\+/g, '-').replace(/\//g, '_');
+              } catch (e) {
+                  buttonVariable = btoa(upiIntentLink).replace(/\+/g, '-').replace(/\//g, '_');
               }
-          } catch(e) {
-              const parts = shortLink.split('/');
-              linkSuffix = parts[parts.length - 1];
+          } else {
+              // Fallback to link suffix
+              try {
+                  const urlObj = new URL(shortLink);
+                  const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+                  if (pathSegments.length > 0) {
+                      buttonVariable = pathSegments[pathSegments.length - 1];
+                  }
+              } catch(e) {
+                  const parts = shortLink.split('/');
+                  buttonVariable = parts[parts.length - 1];
+              }
           }
 
-          if (!linkSuffix) {
-              throw new Error("Could not extract Link ID from Gateway Response.");
+          if (!buttonVariable) {
+              throw new Error("Could not extract Link ID or Intent from Gateway Response.");
           }
 
           // SCENARIO 8: Setu UPI Button (Manual)
-          // We pass the link suffix as the button variable to construct the Setu URL
+          // We pass the base64 intent or link suffix as the button variable to construct the Setu URL
           const result = await whatsappService.sendTemplateMessage(
               order.customerContact, 
               'auragold_setu_payment', 
               'en_US', 
               [order.customerName, val.toLocaleString()], 
               order.customerName,
-              linkSuffix 
+              buttonVariable 
           );
 
           if (result.success) {
