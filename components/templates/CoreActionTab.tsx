@@ -39,9 +39,29 @@ export const CoreActionTab: React.FC<CoreActionTabProps> = ({
             <div className="space-y-3 overflow-y-auto custom-scrollbar pr-2 h-full">
                 {REQUIRED_SYSTEM_TEMPLATES.map(req => {
                     const match = templates.find(t => t.name === req.name || t.name.startsWith(req.name));
-                    const isMismatch = match && (
-                        (match.content?.match(/{{[0-9]+}}/g)?.length || 0) !== (req.content.match(/{{[0-9]+}}/g)?.length || 0)
-                    );
+                    
+                    let isMismatch = false;
+                    if (match) {
+                        const bodyMismatch = (match.content?.match(/{{[0-9]+}}/g)?.length || 0) !== (req.content.match(/{{[0-9]+}}/g)?.length || 0);
+                        
+                        let buttonMismatch = false;
+                        if (req.structure) {
+                            const reqButtons = req.structure.find((c: any) => c.type === 'BUTTONS')?.buttons || [];
+                            const matchButtons = match.structure?.find((c: any) => c.type === 'BUTTONS')?.buttons || [];
+                            
+                            if (reqButtons.length !== matchButtons.length) {
+                                buttonMismatch = true;
+                            } else {
+                                for (let i = 0; i < reqButtons.length; i++) {
+                                    if (reqButtons[i].type === 'URL' && reqButtons[i].url !== matchButtons[i].url) {
+                                        buttonMismatch = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        isMismatch = bodyMismatch || buttonMismatch;
+                    }
 
                     return (
                         <div key={req.name} className={`flex flex-col gap-2 p-4 rounded-2xl border bg-white transition-colors shadow-sm ${isMismatch ? 'border-amber-400 bg-amber-50' : 'border-slate-100 hover:border-amber-200'}`}>

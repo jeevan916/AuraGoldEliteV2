@@ -94,8 +94,17 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
 
               // 2. Iterate through LOCAL templates to update status or flag missing ones.
               // PURGE POLICY: We explicitly FILTER existing templates. If it doesn't start with 'auragold', it's dropped from the new state.
+              const seenLocalNames = new Set<string>();
+              
               const processedLocal = templates
                   .filter(localTpl => localTpl.name.toLowerCase().startsWith('auragold'))
+                  .filter(localTpl => {
+                      // Deduplicate local templates by name
+                      const nameLower = localTpl.name.toLowerCase();
+                      if (seenLocalNames.has(nameLower)) return false;
+                      seenLocalNames.add(nameLower);
+                      return true;
+                  })
                   .map(localTpl => {
                       const remote = metaMap.get(localTpl.name.toLowerCase());
 
@@ -218,7 +227,24 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
               const remoteVars = (match.content.match(/{{[0-9]+}}/g) || []).length;
               const isDrasticallyDifferent = Math.abs(req.content.length - match.content.length) > 50;
 
-              if (reqVars !== remoteVars || isDrasticallyDifferent) {
+              let buttonMismatch = false;
+              if (req.structure) {
+                  const reqButtons = req.structure.find((c: any) => c.type === 'BUTTONS')?.buttons || [];
+                  const matchButtons = match.structure?.find((c: any) => c.type === 'BUTTONS')?.buttons || [];
+                  
+                  if (reqButtons.length !== matchButtons.length) {
+                      buttonMismatch = true;
+                  } else {
+                      for (let i = 0; i < reqButtons.length; i++) {
+                          if (reqButtons[i].type === 'URL' && reqButtons[i].url !== matchButtons[i].url) {
+                              buttonMismatch = true;
+                              break;
+                          }
+                      }
+                  }
+              }
+
+              if (reqVars !== remoteVars || isDrasticallyDifferent || buttonMismatch) {
                   addLog(`MISMATCH: ${req.name}. Harmonizing...`);
                   await repairHelper(match, req); 
                   restoredCount++;
