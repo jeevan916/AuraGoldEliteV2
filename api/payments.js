@@ -63,34 +63,25 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
 
         const token = tokenData.data.token;
 
-        // 3. Manual Payment Link Creation - Matching PHP createOrder
-        const orderData = {
-            schemeId: config.schemeId,
-            amount: {
-                currencyCode: "INR",
-                value: Math.round(amount * 100), // formatAmount usually converts to smallest unit
-            },
-            paymentMethods: {
-                upi: {
-                    expiry: 15, // minutes
-                },
-            },
-            productConfigId: 'default',
-            merchantId: config.clientId,
-            merchantReferenceId: uniqueBillId,
-            paymentDescription: safeNote,
-            customerMobileNumber: customerID,
-            showQR: true,
-        };
-
-        const linkResponse = await fetch(`${baseUrl}/payments`, {
+        // 3. Manual Payment Link Creation - Reverting to /payment-links
+        // This endpoint is the standard for UPI Deep Links and matches the X-Setu-Product-Instance-ID requirement.
+        const linkResponse = await fetch(`${baseUrl}/payment-links`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`,
                 'X-Setu-Product-Instance-ID': config.schemeId
             },
-            body: JSON.stringify(orderData)
+            body: JSON.stringify({
+                billerBillID: uniqueBillId,
+                amount: {
+                    value: Math.round(amount * 100),
+                    currencyCode: "INR"
+                },
+                amountExactness: "EXACT",
+                name: safeName,
+                transactionNote: safeNote
+            })
         });
 
         const linkData = await linkResponse.json();
