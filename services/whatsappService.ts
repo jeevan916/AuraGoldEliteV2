@@ -37,7 +37,7 @@ const constructMetaComponents = (content: string, variableExamples: string[] = [
     // Replace {{APP_URL}} placeholder in all component URLs
     const appUrl = window.location.origin;
     const settings = storageService.getSettings();
-    const setuBase = settings.setuMode === 'SANDBOX' ? 'https://uat.setu.co' : 'https://prod.setu.co';
+    const setuBase = settings.setuMode === 'SANDBOX' ? 'https://uat.setu.co' : 'https://setu.co';
     
     components = JSON.parse(
         JSON.stringify(components)

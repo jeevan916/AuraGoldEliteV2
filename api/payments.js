@@ -247,7 +247,21 @@ router.get(['/setu/pay/:encodedIntent', '/setu/pay'], (req, res) => {
         // If it wasn't a valid base64 upi/https link, assume it's a raw Setu link suffix
         if (!intent) {
             if (/^[a-zA-Z0-9_-]+$/.test(encodedIntent)) {
-                intent = `https://setu.co/upi/s/${encodedIntent}`;
+                // Fetch settings to determine mode
+                const pool = getPool();
+                const connection = await pool.getConnection();
+                const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
+                connection.release();
+                
+                let mode = 'PRODUCTION';
+                if (rows.length > 0) {
+                    let config = rows[0].config;
+                    if (typeof config === 'string') config = JSON.parse(config);
+                    mode = config.mode || 'PRODUCTION';
+                }
+                
+                const setuHost = mode === 'SANDBOX' ? 'uat.setu.co' : 'setu.co';
+                intent = `https://${setuHost}/upi/s/${encodedIntent}`;
             } else {
                 return res.status(400).send("Invalid payment intent. Link must start with upi:// or https://, or be a valid Setu link ID.");
             }

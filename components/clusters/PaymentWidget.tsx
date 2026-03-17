@@ -20,7 +20,8 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
   const [loading, setLoading] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [setuData, setSetuData] = useState<{ shortURL: string, upiID: string, upiLink: string, platformBillID: string } | null>(null);
+  const [setuData, setSetuData] = useState<{ shortURL: string, upiID: string, upiLink: string, platformBillID: string, rawResponse?: any } | null>(null);
+  const [showRawResponse, setShowRawResponse] = useState(false);
 
   const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
   const remaining = order.totalAmount - totalPaid;
@@ -241,7 +242,13 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
               upiIntentLink = shortLink;
           }
 
-          setSetuData({ shortURL: shortLink, upiID, upiLink: upiIntentLink, platformBillID });
+          setSetuData({ 
+              shortURL: shortLink, 
+              upiID, 
+              upiLink: upiIntentLink, 
+              platformBillID,
+              rawResponse: responseBody.data 
+          });
           setQrCodeUrl(`https://quickchart.io/qr?text=${encodeURIComponent(shortLink)}&margin=2&size=300`);
 
           // ROBUST LINK SUFFIX EXTRACTION
@@ -459,20 +466,61 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
         {activeTab === 'REQUEST' && (
             <div className="animate-fadeIn space-y-4">
-                {qrCodeUrl ? (
+                {setuData ? (
                     <div className="bg-slate-50 p-6 rounded-2xl flex flex-col items-center border border-slate-200 animate-slideDown">
                         <div className="flex justify-between w-full mb-4 items-center">
-                            <h4 className="text-xs font-black uppercase text-slate-500">Scan to Pay (₹{amount})</h4>
-                            <button onClick={() => { setQrCodeUrl(null); setSetuData(null); }} className="text-slate-400"><X size={18} /></button>
+                            <h4 className="text-xs font-black uppercase text-slate-500">Setu UPI Link Generated</h4>
+                            <button onClick={() => { setQrCodeUrl(null); setSetuData(null); }} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={18} /></button>
                         </div>
-                        <img src={qrCodeUrl} className="w-48 h-48 bg-white p-2 rounded-xl shadow-inner mb-4" alt="UPI QR Code" />
                         
-                        {setuData?.upiID && (
-                            <div className="w-full text-center mb-4">
-                                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">UPI ID</p>
-                                <p className="text-sm font-bold text-slate-800 bg-white px-3 py-1 rounded-lg border border-slate-200 mt-1">{setuData.upiID}</p>
+                        {qrCodeUrl && (
+                            <div className="relative group">
+                                <img src={qrCodeUrl} className="w-48 h-48 bg-white p-2 rounded-xl shadow-inner mb-4 border border-slate-100" alt="UPI QR Code" />
+                                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-white/80 rounded-xl">
+                                    <p className="text-[10px] font-black uppercase text-slate-900">Scan to Pay ₹{amount}</p>
+                                </div>
                             </div>
                         )}
+                        
+                        <div className="w-full space-y-3">
+                            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Short URL</p>
+                                <div className="flex items-center justify-between gap-2">
+                                    <p className="text-xs font-bold text-slate-800 truncate flex-1">{setuData.shortURL}</p>
+                                    <button 
+                                        onClick={() => { navigator.clipboard.writeText(setuData.shortURL); alert("Copied!"); }}
+                                        className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600"
+                                    >
+                                        <Link size={14} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {setuData.upiID && (
+                                <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+                                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">UPI ID</p>
+                                    <p className="text-xs font-bold text-slate-800">{setuData.upiID}</p>
+                                </div>
+                            )}
+
+                            <div className="pt-2">
+                                <button 
+                                    onClick={() => setShowRawResponse(!showRawResponse)}
+                                    className="text-[10px] font-black uppercase text-blue-500 flex items-center gap-1 hover:text-blue-600"
+                                >
+                                    {showRawResponse ? 'Hide' : 'Show'} Full API Response
+                                </button>
+                                
+                                {showRawResponse && (
+                                    <div className="mt-3 bg-slate-900 rounded-xl p-4 overflow-hidden animate-fadeIn">
+                                        <p className="text-[9px] font-black text-slate-500 uppercase mb-2">JSON Response from Setu</p>
+                                        <pre className="text-[9px] font-mono text-emerald-400 overflow-x-auto whitespace-pre-wrap max-h-60">
+                                            {JSON.stringify(setuData.rawResponse, null, 2)}
+                                        </pre>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 ) : (
                     <>
