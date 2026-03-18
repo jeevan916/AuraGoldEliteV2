@@ -412,6 +412,7 @@ async function checkRateBreaches(currentRate24k) {
     }
 }
 
+export async function initRateService() {
     try {
         const pool = getPool();
         if (!pool) return setTimeout(initRateService, 5000); // Wait for DB
