@@ -18,6 +18,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const [showOriginal, setShowOriginal] = useState(false);
   const [locationStatus, setLocationStatus] = useState<'PENDING' | 'GRANTED' | 'DENIED'>('PENDING');
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
+  const [showLiabilityModal, setShowLiabilityModal] = useState(false);
   const [liveRate, setLiveRate] = useState<number>(0);
   const [setuLoading, setSetuLoading] = useState(false);
   const [setuError, setSetuError] = useState<string | null>(null);
@@ -36,6 +37,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
           const response = await fetch(`/api/orders/${order.id}/accept-liability`, { method: 'POST' });
           const result = await response.json();
           if (!result.success) throw new Error(result.error);
+          setShowLiabilityModal(false);
       } catch (err: any) {
           errorService.logError('AcceptLiability', err.message);
           alert("Failed to accept liability gap. Please try again.");
@@ -86,6 +88,10 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   };
 
   const handleSetuPayment = async () => {
+    if (order.requiresLiabilityAcceptance) {
+        setShowLiabilityModal(true);
+        return;
+    }
     setSetuLoading(true);
     setSetuError(null);
     try {
@@ -333,36 +339,48 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                 </div>
              )}
 
-             {order.requiresLiabilityAcceptance && (
-                 <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl mb-6 w-full">
-                     <h4 className="text-amber-800 font-bold text-sm mb-2 flex items-center gap-2">
-                         <AlertCircle size={16} /> Rate Breach Detected
-                     </h4>
-                     <p className="text-amber-700 text-[10px] mb-4">
-                         Market rates have exceeded your protection limit. To proceed with payments, 
-                         you must accept the liability gap recalculation.
-                     </p>
-                     <button 
-                         onClick={handleAcceptLiability}
-                         disabled={acceptingLiability}
-                         className="w-full bg-amber-600 text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2"
-                     >
-                         {acceptingLiability ? <Loader2 size={16} className="animate-spin" /> : <Scale size={16} />}
-                         Accept Liability Gap
-                     </button>
+
+             {/* Liability Acceptance Modal */}
+             {showLiabilityModal && (
+                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
+                     <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full">
+                         <h3 className="text-amber-800 font-black text-lg mb-4 flex items-center gap-2">
+                             <ShieldAlert /> Liability Adjustment Required
+                         </h3>
+                         <p className="text-slate-600 text-xs mb-4 leading-relaxed">
+                             As market rates have exceeded your protection limit, a liability gap adjustment is required to maintain your order's status. This is in accordance with the Terms & Conditions you accepted for rate protection.
+                         </p>
+                         <div className="bg-slate-100 p-4 rounded-xl mb-6">
+                             <p className="text-[10px] uppercase font-black text-slate-400">Additional Adjusted Cost</p>
+                             <p className="text-xl font-black text-slate-900">₹{Math.round(potentialSurcharge).toLocaleString()}</p>
+                         </div>
+                         <button 
+                             onClick={handleAcceptLiability}
+                             disabled={acceptingLiability}
+                             className="w-full bg-amber-600 text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest"
+                         >
+                             {acceptingLiability ? 'Processing...' : 'I Accept & Proceed'}
+                         </button>
+                         <button 
+                             onClick={() => setShowLiabilityModal(false)}
+                             className="w-full text-slate-400 py-3 mt-2 font-bold uppercase text-[10px] tracking-widest"
+                         >
+                             Cancel
+                         </button>
+                     </div>
                  </div>
              )}
 
              <div className="w-full space-y-3">
                 <button 
                   onClick={handleSetuPayment}
-                  disabled={setuLoading || order.requiresLiabilityAcceptance || (remaining > 0 && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date()))}
+                  disabled={setuLoading || (remaining > 0 && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date()))}
                   className="w-full bg-amber-500 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all disabled:opacity-50"
                 >
                   {setuLoading ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
-                  {order.requiresLiabilityAcceptance && (remaining > 0 && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date())) 
-                    ? 'Payment Overdue & Liability Required' 
-                    : (order.requiresLiabilityAcceptance ? 'Liability Acceptance Required' : (remaining > 0 && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date()) ? 'Payment Overdue' : 'Pay Now'))}
+                  {(remaining > 0 && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date())) 
+                    ? 'Payment Overdue' 
+                    : (order.requiresLiabilityAcceptance ? 'Accept Liability to Pay' : 'Pay Now')}
                 </button>
              </div>
           </div>
