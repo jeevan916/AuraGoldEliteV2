@@ -20,6 +20,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
   const [step, setStep] = useState(1);
   const [customer, setCustomer] = useState({ name: '', contact: '' });
   const [cartItems, setCartItems] = useState<JewelryDetail[]>([]);
+  const [discountAmount, setDiscountAmount] = useState<number>(0);
   
   // Rate Management
   const [orderRate, setOrderRate] = useState(settings.currentGoldRate22K);
@@ -126,7 +127,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
     };
   }, [currentItem, orderRate, settings, isRateManuallySet]);
 
-  const cartTotal = useMemo(() => cartItems.reduce((s, i) => s + i.finalAmount, 0), [cartItems]);
+  const cartTotal = useMemo(() => Math.max(0, cartItems.reduce((s, i) => s + i.finalAmount, 0) - discountAmount), [cartItems, discountAmount]);
 
   const handleApplyTemplate = (t: PaymentPlanTemplate) => {
       setPlan({
@@ -298,6 +299,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
       items: cartItems,
       payments: [],
       totalAmount: cartTotal,
+      discountAmount: discountAmount,
       goldRateAtBooking: orderRate, // This is the Base 22K Rate Reference
       status: OrderStatus.ACTIVE,
       createdAt: new Date().toISOString(),
@@ -576,6 +578,19 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                               </div>
                           </div>
                       ))}
+                  </div>
+                  <div className="bg-slate-50 p-4 border-t flex justify-between items-center">
+                      <p className="text-xs font-black uppercase text-slate-500">Discount Amount</p>
+                      <div className="flex items-center gap-2">
+                          <span className="text-slate-400 font-bold">₹</span>
+                          <input 
+                              type="number" 
+                              className="w-24 text-right font-black text-slate-800 bg-white border border-slate-200 rounded-lg p-1 outline-none focus:border-amber-500"
+                              value={discountAmount || ''}
+                              onChange={e => setDiscountAmount(Number(e.target.value))}
+                              placeholder="0"
+                          />
+                      </div>
                   </div>
               </div>
           )}

@@ -538,6 +538,25 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                )}
              </div>
           )})}
+          
+          <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-200 mt-6 shadow-sm">
+              <div className="space-y-3 text-sm">
+                  <div className="flex justify-between items-center text-slate-500 font-bold">
+                      <span>Subtotal</span>
+                      <span>₹{(order.totalAmount + (order.discountAmount || 0)).toLocaleString()}</span>
+                  </div>
+                  {order.discountAmount ? (
+                      <div className="flex justify-between items-center text-emerald-600 font-bold">
+                          <span>Discount Applied</span>
+                          <span>-₹{order.discountAmount.toLocaleString()}</span>
+                      </div>
+                  ) : null}
+                  <div className="pt-3 border-t border-slate-200 flex justify-between items-center text-xl font-black text-slate-900">
+                      <span>Total Amount</span>
+                      <span>₹{order.totalAmount.toLocaleString()}</span>
+                  </div>
+              </div>
+          </div>
         </div>
 
         <div className="text-center pb-8 opacity-40">

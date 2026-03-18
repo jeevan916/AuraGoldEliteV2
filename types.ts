@@ -124,6 +124,7 @@ export interface Order {
   items: JewelryDetail[];
   payments: Payment[];
   totalAmount: number;
+  discountAmount?: number;
   goldRateAtBooking: number;
   paymentPlan: PaymentPlan;
   status: OrderStatus;

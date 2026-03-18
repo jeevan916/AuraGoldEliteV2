@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 // Added CheckCheck to imports from lucide-react
-import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp, Plus, Edit2 } from 'lucide-react';
 import { Order, GlobalSettings, WhatsAppLogEntry, ProductionStatus, ProtectionStatus, OrderStatus, JewelryDetail } from '../types';
 import { generateOrderPDF } from '../services/pdfGenerator';
 import { whatsappService } from '../services/whatsappService';
@@ -28,6 +28,8 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
   const [activeTab, setActiveTab] = useState<'ITEMS' | 'FINANCIAL' | 'LOGS' | 'PROOF'>('FINANCIAL');
   const [isUpdatingWeight, setIsUpdatingWeight] = useState<string | null>(null); // Track item ID being edited
   const [newWeight, setNewWeight] = useState('');
+  const [isUpdatingDiscount, setIsUpdatingDiscount] = useState(false);
+  const [newDiscount, setNewDiscount] = useState('');
   const [sendingAgreement, setSendingAgreement] = useState(false);
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   
@@ -145,7 +147,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           return { ...item, baseMetalValue: metalValue, wastageValue, totalLaborValue: laborValue, taxAmount: tax, finalAmount: subTotal + tax };
       });
 
-      const newTotal = updatedItems.reduce((s, i) => s + i.finalAmount, 0);
+      const newTotal = Math.max(0, updatedItems.reduce((s, i) => s + i.finalAmount, 0) - (order.discountAmount || 0));
       const paid = order.payments.reduce((s, p) => s + p.amount, 0);
       const remaining = newTotal - paid;
 
@@ -232,7 +234,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           finalAmount: newFinalAmount
       } : i);
 
-      const newTotal = updatedItems.reduce((s, i) => s + i.finalAmount, 0);
+      const newTotal = Math.max(0, updatedItems.reduce((s, i) => s + i.finalAmount, 0) - (order.discountAmount || 0));
       const valueChange = newTotal - oldTotal;
 
       const newMilestones = JSON.parse(JSON.stringify(order.paymentPlan.milestones));
@@ -280,6 +282,51 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       setIsUpdatingWeight(null);
       setNewWeight('');
       alert("Weight updated and Customer notified.");
+  };
+
+  const handleUpdateDiscount = () => {
+      const discount = Number(newDiscount);
+      if (isNaN(discount) || discount < 0) return alert("Invalid discount amount");
+
+      const oldTotal = order.totalAmount;
+      const oldDiscount = order.discountAmount || 0;
+      const newTotal = Math.max(0, order.items.reduce((s, i) => s + i.finalAmount, 0) - discount);
+      const valueChange = newTotal - oldTotal;
+
+      const newMilestones = JSON.parse(JSON.stringify(order.paymentPlan.milestones));
+      const last = newMilestones[newMilestones.length - 1];
+      if (last.status !== 'PAID') {
+          last.targetAmount += valueChange;
+          last.cumulativeTarget += valueChange;
+      } else if (valueChange > 0) {
+          newMilestones.push({
+              id: `ADJ-DISC-${Date.now()}`,
+              dueDate: new Date().toISOString().split('T')[0],
+              targetAmount: valueChange,
+              cumulativeTarget: newTotal,
+              status: 'PENDING',
+              warningCount: 0,
+              description: 'Discount Adjustment'
+          } as any);
+      }
+
+      const originalMilestones = order.paymentPlan.originalMilestones || JSON.parse(JSON.stringify(order.paymentPlan.milestones));
+
+      const updatedOrder = { 
+          ...order, 
+          discountAmount: discount,
+          totalAmount: newTotal, 
+          paymentPlan: { 
+              ...order.paymentPlan, 
+              milestones: newMilestones,
+              originalMilestones 
+          } 
+      };
+
+      onOrderUpdate(updatedOrder as Order);
+      setIsUpdatingDiscount(false);
+      setNewDiscount('');
+      alert("Discount updated successfully.");
   };
 
   const handleStatusChange = async (itemId: string, newStatus: ProductionStatus) => {
@@ -345,7 +392,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           return { ...item, baseMetalValue: metalValue, wastageValue, totalLaborValue: laborValue, taxAmount: tax, finalAmount: subTotal + tax };
       });
 
-      const newTotal = updatedItems.reduce((s, i) => s + i.finalAmount, 0);
+      const newTotal = Math.max(0, updatedItems.reduce((s, i) => s + i.finalAmount, 0) - (order.discountAmount || 0));
       const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
       const remainingBalance = newTotal - totalPaid;
 
@@ -609,6 +656,41 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                   </div>
                </div>
              )})}
+             
+             <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 mt-6">
+                 <div className="space-y-2 text-sm">
+                     <div className="flex justify-between items-center text-slate-500 font-bold">
+                         <span>Subtotal</span>
+                         <span>₹{(order.totalAmount + (order.discountAmount || 0)).toLocaleString()}</span>
+                     </div>
+                     {order.discountAmount ? (
+                         <div className="flex justify-between items-center text-emerald-600 font-bold group">
+                             <div className="flex items-center gap-2">
+                                 <span>Discount</span>
+                                 <button onClick={() => { setIsUpdatingDiscount(true); setNewDiscount(order.discountAmount?.toString() || ''); }} className="opacity-0 group-hover:opacity-100 text-blue-500 hover:text-blue-700 transition-opacity"><Edit2 size={12} /></button>
+                             </div>
+                             <span>-₹{order.discountAmount.toLocaleString()}</span>
+                         </div>
+                     ) : (
+                         <div className="flex justify-between items-center text-slate-400 font-bold">
+                             <button onClick={() => { setIsUpdatingDiscount(true); setNewDiscount(''); }} className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1"><Plus size={12} /> Add Discount</button>
+                         </div>
+                     )}
+                     
+                     {isUpdatingDiscount && (
+                         <div className="mt-3 bg-blue-50 p-3 rounded-xl flex gap-2 items-center animate-slideDown">
+                             <input type="number" className="flex-1 bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none" placeholder="Discount Amount (₹)" value={newDiscount} onChange={e => setNewDiscount(e.target.value)} />
+                             <button onClick={handleUpdateDiscount} className="bg-blue-600 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase">Save</button>
+                             <button onClick={() => setIsUpdatingDiscount(false)} className="text-slate-400"><XCircle size={16}/></button>
+                         </div>
+                     )}
+
+                     <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-lg font-black text-slate-900">
+                         <span>Total Amount</span>
+                         <span>₹{order.totalAmount.toLocaleString()}</span>
+                     </div>
+                 </div>
+             </div>
           </div>
         )}
 
