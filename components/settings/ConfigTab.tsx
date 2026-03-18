@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
     Zap, Loader2, RefreshCw, Info, Server, MessageSquare, CreditCard, 
     Save, CheckCircle2, Database, ServerCrash, ShieldCheck, Clock, HardDrive, Share2
@@ -19,6 +19,10 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
     const [syncing, setSyncing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
+
+    useEffect(() => {
+        setLocalSettings(settings);
+    }, [settings]);
     
     // Diagnostic State
     const [rawRateData, setRawRateData] = useState<any>(null);
@@ -442,7 +446,7 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                         <ConfigInput label="Follow-Up Interval (Days)" value={localSettings.followUpIntervalDays} onChange={(v: string) => setLocalSettings({...localSettings, followUpIntervalDays: parseFloat(v)})} type="number" />
                         <ConfigInput label="Breach Buffer (Minutes)" value={localSettings.breachBufferMinutes} onChange={(v: string) => setLocalSettings({...localSettings, breachBufferMinutes: parseFloat(v)})} type="number" />
                         <ConfigInput label="Notification Cooldown (Hours)" value={localSettings.cooldownHours} onChange={(v: string) => setLocalSettings({...localSettings, cooldownHours: parseFloat(v)})} type="number" />
-                        <ConfigInput label="Reminder Schedule (Days Before, comma separated)" value={localSettings.reminderScheduleDays.join(',')} onChange={(v: string) => setLocalSettings({...localSettings, reminderScheduleDays: v.split(',').map(Number)})} type="text" />
+                        <ConfigInput label="Reminder Schedule (Days Before, comma separated)" value={Array.isArray(localSettings.reminderScheduleDays) ? localSettings.reminderScheduleDays.join(',') : ''} onChange={(v: string) => setLocalSettings({...localSettings, reminderScheduleDays: v.split(',').map(Number)})} type="text" />
                         <ConfigInput label="Overdue Reminder Frequency (Days)" value={localSettings.overdueFrequencyDays} onChange={(v: string) => setLocalSettings({...localSettings, overdueFrequencyDays: parseFloat(v)})} type="number" />
                         <ConfigInput label="Max Reminders Per Milestone" value={localSettings.maxRemindersPerMilestone} onChange={(v: string) => setLocalSettings({...localSettings, maxRemindersPerMilestone: parseFloat(v)})} type="number" />
                     </div>
