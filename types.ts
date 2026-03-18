@@ -255,6 +255,8 @@ export interface WhatsAppTemplate {
   appGroup?: AppTemplateGroup;
   structure?: any[];
   variableExamples?: string[];
+  hasDisparity?: boolean;
+  disparityReason?: string;
 }
 
 export interface SystemTrigger {

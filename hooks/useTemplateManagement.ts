@@ -113,6 +113,8 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
                           metaMap.delete(localTpl.name.toLowerCase()); // Remove from map so we know it's handled
                           
                           const bodyComp = remote.components?.find((c: any) => c.type === 'BODY');
+                          const remoteContent = bodyComp?.text || "";
+                          const hasDisparity = remoteContent.replace(/\s+/g, ' ').trim() !== localTpl.content.replace(/\s+/g, ' ').trim();
                           
                           return {
                               ...localTpl,
@@ -122,7 +124,9 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
                               structure: remote.components,
                               content: bodyComp?.text || localTpl.content, 
                               rejectionReason: remote.rejected_reason || undefined,
-                              source: 'META' as const
+                              source: 'META' as const,
+                              hasDisparity,
+                              disparityReason: hasDisparity ? "Local content differs from Meta" : undefined
                           };
                       } else {
                           // MATCH NOT FOUND: Check if it *should* be on Meta
@@ -244,7 +248,9 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
                   }
               }
 
-              if (reqVars !== remoteVars || isDrasticallyDifferent || buttonMismatch) {
+              const isApproved = match.status === 'APPROVED' || match.status === 'ACTIVE';
+
+              if (reqVars !== remoteVars || (!isApproved && isDrasticallyDifferent) || buttonMismatch) {
                   addLog(`MISMATCH: ${req.name}. Harmonizing...`);
                   await repairHelper(match, req); 
                   restoredCount++;

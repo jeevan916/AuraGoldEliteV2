@@ -120,7 +120,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     category: 'UTILITY',
     appGroup: 'ORDER_STATUS',
     variables: ['customer_name', 'item_name', 'new_weight', 'old_weight', 'value_change'],
-    content: "Update for {{1}}: The actual production weight for {{2}} is {{3}}g (Estimated: {{4}}g). Net value change: ₹{{5}}. We have updated your final invoice accordingly.",
+    content: "Important update for {{1}}: We would like to inform you that the actual production weight for your {{2}} has been finalized. The final weight is {{3}}g, compared to the initial estimated weight of {{4}}g. This results in a net value change of ₹{{5}}. We have updated your final invoice accordingly to reflect this adjustment.",
     examples: ["Sarah", "Ring", "4.2", "3.8", "2500"]
   },
   // 3) Recalculate
@@ -130,7 +130,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     category: 'UTILITY',
     appGroup: 'ORDER_STATUS',
     variables: ['customer_name', 'order_id', 'new_total', 'reason', 'token_link'],
-    content: "Dear {{1}}, your Order {{2}} has been revised. New Total: ₹{{3}}. Reason: {{4}}. View updated details here: https://order.auragoldelite.com/?token={{5}}",
+    content: "Dear {{1}}, we are writing to inform you that your Order {{2}} has been successfully revised in our system. The new total amount for your order is now ₹{{3}}. This adjustment was made due to the following reason: {{4}}. You can view your updated order details and track its progress securely by clicking here: https://order.auragoldelite.com/?token={{5}}",
     examples: ["Raj", "ORD-99", "55000", "Weight Adjustment", "XyZ789"]
   },
   // 4) Payment Received (Store) - FIXED for Meta Ratio Policy
@@ -170,7 +170,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     category: 'UTILITY',
     appGroup: 'SYSTEM_NOTIFICATIONS',
     variables: ['customer_name', 'surcharge_amount', 'order_id', 'new_base_rate', 'token_link'],
-    content: "Important {{1}}: Market Gold Rate exceeded protection limit. An adjustment of ₹{{2}} is applied to Order {{3}}. New Base Rate: ₹{{4}}/g. Details: https://order.auragoldelite.com/?token={{5}}",
+    content: "Important notice for {{1}}: We are writing to inform you that the current market gold rate has unfortunately exceeded your agreed protection limit. As a result, a necessary adjustment surcharge of ₹{{2}} has been applied to your Order {{3}}. The new base rate for your order is now ₹{{4}}/g. You can review these changes and your updated order details securely here: https://order.auragoldelite.com/?token={{5}}",
     examples: ["Rahul", "1500", "ORD-77", "6800", "Lmn456"]
   },
   // 8) Setu UPI Button (Manual)
@@ -184,7 +184,7 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     examples: ["Aditi", "15000", "hz83jd"],
     structure: [
         { type: "BODY", text: "Dear {{1}}, please pay ₹{{2}} securely using the UPI button below." },
-        { type: "BUTTONS", buttons: [{ type: "URL", text: "Pay Now", url: `{{APP_URL}}/api/setu/pay?s={{1}}` }] }
+        { type: "BUTTONS", buttons: [{ type: "URL", text: "Pay Now", url: `{{APP_URL}}/api/setu/pay?s={{3}}` }] }
     ]
   },
   // 9) Finished Photo Upload
@@ -194,11 +194,11 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     category: 'UTILITY',
     appGroup: 'ORDER_STATUS',
     variables: ['customer_name', 'order_id', 'token_link'],
-    content: "Your jewelry is ready {{1}}! Check out the finished look for Order {{2}}. We are ready for handover.",
+    content: "Great news, {{1}}! Your custom jewelry piece is finally ready. We are excited to share the finished look for your Order {{2}}. The item has passed our quality checks and we are now ready for the final handover. Please review the details.",
     examples: ["Karan", "ORD-88", "OpQ123"],
     structure: [
         { type: "HEADER", format: "IMAGE" },
-        { type: "BODY", text: "Your jewelry is ready {{1}}! Check out the finished look for Order {{2}}. We are ready for handover." },
+        { type: "BODY", text: "Great news, {{1}}! Your custom jewelry piece is finally ready. We are excited to share the finished look for your Order {{2}}. The item has passed our quality checks and we are now ready for the final handover. Please review the details." },
         { type: "BUTTONS", buttons: [{ type: "URL", text: "View Order", url: "https://order.auragoldelite.com/?token={{1}}" }] }
     ]
   }

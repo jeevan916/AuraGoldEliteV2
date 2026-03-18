@@ -16,7 +16,8 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
 }) => {
   const getStatusColor = (status?: string) => {
       switch(status) {
-          case 'APPROVED': return 'bg-emerald-100 text-emerald-700';
+          case 'APPROVED':
+          case 'ACTIVE': return 'bg-emerald-100 text-emerald-700';
           case 'REJECTED': return 'bg-rose-100 text-rose-700';
           case 'PENDING': return 'bg-amber-100 text-amber-700';
           case 'MISSING': return 'bg-slate-800 text-white animate-pulse';
@@ -69,6 +70,12 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({
                                 <p className="text-xs text-slate-500 line-clamp-3 mb-4 h-12 leading-relaxed">
                                     {tpl.content}
                                 </p>
+
+                                {tpl.hasDisparity && (
+                                    <div className="mb-2 text-[9px] text-amber-600 flex items-center gap-1 font-bold">
+                                        <AlertOctagon size={10} /> Disparity: {tpl.disparityReason}
+                                    </div>
+                                )}
 
                                 {tpl.status === 'MISSING' && (
                                     <div className="mb-2 text-[9px] text-rose-600 flex items-center gap-1 font-bold">
