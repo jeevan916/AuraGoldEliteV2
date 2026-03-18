@@ -6,19 +6,32 @@ const router = express.Router();
 
 // Setu Payment Proxy
 router.post('/setu/create-link', ensureDb, async (req, res) => {
-    const { amount, billerBillID, customerID, name, orderId } = req.body;
+    let { amount, billerBillID, customerID, name, orderId } = req.body;
     
     // 1. Guideline Compliance: Validate Required Fields
     if (!amount || amount <= 0) {
         return res.status(400).json({ success: false, error: "Invalid Amount. Value must be greater than 0." });
     }
-    if (!customerID || !name) {
-        return res.status(400).json({ success: false, error: "Customer Mobile Number and Name are required for Setu UPI." });
-    }
 
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
+
+        // If customerID or name is missing, try to fetch from order
+        if ((!customerID || !name) && orderId) {
+            const [orderRows] = await connection.query("SELECT data FROM orders WHERE id = ?", [orderId]);
+            if (orderRows.length > 0) {
+                const orderData = JSON.parse(orderRows[0].data);
+                customerID = customerID || orderData.customerContact;
+                name = name || orderData.customerName;
+            }
+        }
+
+        if (!customerID || !name) {
+            connection.release();
+            return res.status(400).json({ success: false, error: "Customer Mobile Number and Name are required for Setu UPI." });
+        }
+
         const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
         
         if (rows.length === 0) {
