@@ -18,12 +18,13 @@ interface OrderDetailsProps {
   onUpdateStatus: (itemId: string, status: ProductionStatus) => void;
   onRecordPayment: (orderId: string, amount: number, method: string, date: string, note: string) => void;
   onOrderUpdate: (updatedOrder: Order) => void; 
+  onDeleteOrder?: (id: string) => void;
   logs?: WhatsAppLogEntry[];
   onAddLog?: (log: WhatsAppLogEntry) => void;
 }
 
 const OrderDetails: React.FC<OrderDetailsProps> = ({ 
-    order, onBack, onOrderUpdate, logs = [], onAddLog, settings, onUpdateStatus
+    order, onBack, onOrderUpdate, onDeleteOrder, logs = [], onAddLog, settings, onUpdateStatus
 }) => {
   const [activeTab, setActiveTab] = useState<'ITEMS' | 'FINANCIAL' | 'LOGS' | 'PROOF'>('FINANCIAL');
   const [isUpdatingWeight, setIsUpdatingWeight] = useState<string | null>(null); // Track item ID being edited
@@ -452,6 +453,13 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       }
   };
 
+  const handleDeleteOrder = () => {
+      if (!onDeleteOrder) return;
+      if (confirm("Are you sure you want to permanently delete this order? This action cannot be undone and will remove all associated items and payments.")) {
+          onDeleteOrder(order.id);
+      }
+  };
+
   const isFullyPaid = order.payments.reduce((acc, p) => acc + p.amount, 0) >= order.totalAmount - 1;
   const isLapsed = order.paymentPlan.protectionStatus === ProtectionStatus.LAPSED;
 
@@ -469,6 +477,9 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
            <Button size="sm" variant="secondary" onClick={handleResendAgreement} loading={sendingAgreement}><Send size={14} /> Resend Agreement</Button>
            <Button size="sm" variant="secondary" onClick={handleOpenCustomerLink}><ExternalLink size={14} /> Customer View</Button>
            <Button size="sm" variant="secondary" onClick={() => generateOrderPDF(order)}><FileText size={14} /> Contract PDF</Button>
+           {onDeleteOrder && (
+               <Button size="sm" variant="danger" onClick={handleDeleteOrder}><XCircle size={14} /> Delete Order</Button>
+           )}
         </div>
       </div>
 

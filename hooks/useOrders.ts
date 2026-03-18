@@ -68,5 +68,11 @@ export function useOrders() {
     setOrders(updated);
   };
 
-  return { orders, setOrders, addOrder, updateOrder, recordPayment, updateItemStatus };
+  const deleteOrder = (orderId: string) => {
+    const updated = orders.filter(o => o.id !== orderId);
+    setOrders(updated);
+    errorService.logActivity('ORDER_DELETED', `Order ${orderId} deleted`);
+  };
+
+  return { orders, setOrders, addOrder, updateOrder, deleteOrder, recordPayment, updateItemStatus };
 }

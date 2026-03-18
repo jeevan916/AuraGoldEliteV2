@@ -134,7 +134,7 @@ const App = () => {
   const [systemActivities, setSystemActivities] = useState<ActivityLogEntry[]>([]);
   const [manualCustomers, setManualCustomers] = useState<Customer[]>(storageService.getCustomers());
 
-  const { orders, addOrder, updateOrder, recordPayment, updateItemStatus } = useOrders();
+  const { orders, addOrder, updateOrder, deleteOrder, recordPayment, updateItemStatus } = useOrders();
   const { logs, addLog, templates, setTemplates } = useWhatsApp();
 
   useEffect(() => {
@@ -224,6 +224,31 @@ const App = () => {
       window.location.reload();
   };
 
+  const handleDeleteOrder = (orderId: string) => {
+      const orderToDelete = orders.find(o => o.id === orderId);
+      if (orderToDelete) {
+          const normalize = (p: string) => p ? p.replace(/\D/g, '').slice(-10) : '';
+          const key = normalize(orderToDelete.customerContact);
+          if (key && !manualCustomers.some(c => normalize(c.contact) === key)) {
+              const newCustomer = {
+                  id: `CUST-${key}`,
+                  name: orderToDelete.customerName,
+                  contact: orderToDelete.customerContact,
+                  email: orderToDelete.customerEmail,
+                  secondaryContact: orderToDelete.secondaryContact,
+                  joinDate: orderToDelete.createdAt,
+                  orderIds: [],
+                  totalSpent: 0
+              };
+              const newManualCustomers = [...manualCustomers, newCustomer];
+              setManualCustomers(newManualCustomers);
+              storageService.setCustomers(newManualCustomers);
+          }
+      }
+      deleteOrder(orderId);
+      setView('ORDER_BOOK');
+  };
+
   const derivedCustomers = useMemo(() => {
       if (isPublicMode || !user) return [];
       
@@ -300,7 +325,7 @@ const App = () => {
           }} />;
           case 'ORDER_NEW': return <OrderForm settings={settings} planTemplates={planTemplates} onSubmit={(o) => { addOrder(o); setSelectedOrderId(o.id); setView('ORDER_DETAILS'); }} onCancel={() => setView('DASH')} />;
           case 'ORDER_BOOK': return <OrderBook orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onUpdateOrder={updateOrder} settings={settings} />;
-          case 'ORDER_DETAILS': return selectedOrder ? <OrderDetails order={selectedOrder} settings={settings} onBack={() => setView('ORDER_BOOK')} onUpdateStatus={(itemId, status) => updateItemStatus(selectedOrder.id, itemId, { productionStatus: status })} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} logs={logs} onAddLog={addLog} /> : <div className="text-center p-10">Order Not Found</div>;
+          case 'ORDER_DETAILS': return selectedOrder ? <OrderDetails order={selectedOrder} settings={settings} onBack={() => setView('ORDER_BOOK')} onUpdateStatus={(itemId, status) => updateItemStatus(selectedOrder.id, itemId, { productionStatus: status })} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} onDeleteOrder={handleDeleteOrder} logs={logs} onAddLog={addLog} /> : <div className="text-center p-10">Order Not Found</div>;
           case 'CUSTOMERS': return <CustomerList customers={derivedCustomers} orders={orders} onSelectCustomer={(id) => { setSelectedCustomerId(id); setView('CUSTOMER_PROFILE'); }} onAddCustomer={(c) => { setManualCustomers([...manualCustomers, c]); storageService.setCustomers([...manualCustomers, c]); }} />;
           case 'CUSTOMER_PROFILE': return selectedCustomer ? <CustomerProfile customer={selectedCustomer} orders={orders} onBack={() => setView('CUSTOMERS')} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onNewOrder={() => setView('ORDER_NEW')} /> : <div className="text-center p-10">Customer Not Found</div>;
           case 'COLLECTIONS': return <PaymentCollections orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onSendWhatsApp={() => {}} onAddLog={addLog} settings={settings} />;
