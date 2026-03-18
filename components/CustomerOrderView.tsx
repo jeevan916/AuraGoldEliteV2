@@ -356,11 +356,13 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
              <div className="w-full space-y-3">
                 <button 
                   onClick={handleSetuPayment}
-                  disabled={setuLoading || order.requiresLiabilityAcceptance}
+                  disabled={setuLoading || order.requiresLiabilityAcceptance || (remaining > 0 && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date()))}
                   className="w-full bg-amber-500 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all disabled:opacity-50"
                 >
                   {setuLoading ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
-                  {order.requiresLiabilityAcceptance ? 'Liability Acceptance Required' : 'Pay Now'}
+                  {order.requiresLiabilityAcceptance && (remaining > 0 && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date())) 
+                    ? 'Payment Overdue & Liability Required' 
+                    : (order.requiresLiabilityAcceptance ? 'Liability Acceptance Required' : (remaining > 0 && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date()) ? 'Payment Overdue' : 'Pay Now'))}
                 </button>
              </div>
           </div>
