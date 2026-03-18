@@ -387,6 +387,7 @@ async function checkRateBreaches(currentRate24k) {
                     orderData.requiresLiabilityAcceptance = hasMissedMilestone;
                     
                     await connection.query("UPDATE orders SET data = ?, lastNotifiedAt = ? WHERE id = ?", [JSON.stringify(orderData), new Date(), order.id]);
+                    if (io) io.emit('orders_sync');
                 }
             } else if (!isBreached && order.isRateBreached) {
                 // Rate stabilized
@@ -403,6 +404,7 @@ async function checkRateBreaches(currentRate24k) {
                     orderData.isRateBreached = false;
                     orderData.requiresLiabilityAcceptance = false;
                     await connection.query("UPDATE orders SET data = ?, lastNotifiedAt = ? WHERE id = ?", [JSON.stringify(orderData), new Date(), order.id]);
+                    if (io) io.emit('orders_sync');
                 }
             }
         }
