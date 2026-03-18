@@ -146,20 +146,25 @@ const App = () => {
         setIsPublicMode(true);
         setView('CUSTOMER_VIEW');
         
-        // Fetch single order from secure endpoint
-        fetch(`/api/public/order/${token}`)
-            .then(res => res.json())
-            .then(data => {
-                if (data.success && data.order) {
-                    setPublicOrder(data.order);
-                } else {
-                    alert("Invalid Link. Please check with AuraGold support.");
-                }
-            })
-            .catch(e => console.error("Link Error:", e));
-            
-        // STOP HERE: Do not load admin sockets or full database
-        return;
+        let alertShown = false;
+        const fetchOrder = () => {
+            fetch(`/api/public/order/${token}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && data.order) {
+                        setPublicOrder(data.order);
+                    } else if (!alertShown) {
+                        alert("Invalid Link. Please check with AuraGold support.");
+                        alertShown = true;
+                    }
+                })
+                .catch(e => console.error("Link Error:", e));
+        };
+        
+        fetchOrder();
+        const interval = setInterval(fetchOrder, 30000); // Poll every 30 seconds
+        
+        return () => clearInterval(interval);
     }
 
     // 2. CHECK LOCAL AUTH
