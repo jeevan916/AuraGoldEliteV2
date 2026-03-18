@@ -280,22 +280,24 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                     </div>
 
                     {/* ACTIONABLE INSIGHT / URGENCY */}
-                    <div className="bg-slate-900 rounded-xl p-4 flex items-start gap-4 shadow-lg ring-1 ring-slate-900/5">
-                        <div className={`p-2 rounded-lg text-slate-900 shrink-0 ${isLimitBreached ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`}>
-                            {isLimitBreached ? <Scale size={20} /> : <Sparkles size={20} />}
+                    {(!isLimitBreached || order.requiresLiabilityAcceptance) && (
+                        <div className="bg-slate-900 rounded-xl p-4 flex items-start gap-4 shadow-lg ring-1 ring-slate-900/5">
+                            <div className={`p-2 rounded-lg text-slate-900 shrink-0 ${isLimitBreached ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`}>
+                                {isLimitBreached ? <Scale size={20} /> : <Sparkles size={20} />}
+                            </div>
+                            <div>
+                                <h4 className="text-white font-bold text-xs uppercase tracking-wide mb-1 flex items-center gap-2">
+                                    {isLimitBreached ? "Market Volatility Alert" : "Lock in your profit now"}
+                                </h4>
+                                <p className="text-[10px] text-slate-300 leading-relaxed font-medium">
+                                    {isLimitBreached 
+                                        ? `Although the limit is exceeded, you are STILL SAVING ₹${Math.round(savingsPerGram)}/g compared to today's rate! Pay dues on time to keep this contract active.`
+                                        : `You are currently saving ₹${Math.round(savingsPerGram)}/g! Missing a payment date could void this protection and expose you to higher rates.`
+                                    }
+                                </p>
+                            </div>
                         </div>
-                        <div>
-                            <h4 className="text-white font-bold text-xs uppercase tracking-wide mb-1 flex items-center gap-2">
-                                {isLimitBreached ? "Market Volatility Alert" : "Lock in your profit now"}
-                            </h4>
-                            <p className="text-[10px] text-slate-300 leading-relaxed font-medium">
-                                {isLimitBreached 
-                                    ? `Although the limit is exceeded, you are STILL SAVING ₹${Math.round(savingsPerGram)}/g compared to today's rate! Pay dues on time to keep this contract active.`
-                                    : `You are currently saving ₹${Math.round(savingsPerGram)}/g! Missing a payment date could void this protection and expose you to higher rates.`
-                                }
-                            </p>
-                        </div>
-                    </div>
+                    )}
                 </div>
             </div>
         )}
