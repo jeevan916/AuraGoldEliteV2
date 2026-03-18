@@ -440,6 +440,11 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                         <ConfigInput label="Max Liability Limit (₹/g)" value={localSettings.goldRateProtectionMax} onChange={(v: string) => setLocalSettings({...localSettings, goldRateProtectionMax: parseFloat(v)})} type="number" />
                         <ConfigInput label="Grace Period (Hours)" value={localSettings.gracePeriodHours} onChange={(v: string) => setLocalSettings({...localSettings, gracePeriodHours: parseFloat(v)})} type="number" />
                         <ConfigInput label="Follow-Up Interval (Days)" value={localSettings.followUpIntervalDays} onChange={(v: string) => setLocalSettings({...localSettings, followUpIntervalDays: parseFloat(v)})} type="number" />
+                        <ConfigInput label="Breach Buffer (Minutes)" value={localSettings.breachBufferMinutes} onChange={(v: string) => setLocalSettings({...localSettings, breachBufferMinutes: parseFloat(v)})} type="number" />
+                        <ConfigInput label="Notification Cooldown (Hours)" value={localSettings.cooldownHours} onChange={(v: string) => setLocalSettings({...localSettings, cooldownHours: parseFloat(v)})} type="number" />
+                        <ConfigInput label="Reminder Schedule (Days Before, comma separated)" value={localSettings.reminderScheduleDays.join(',')} onChange={(v: string) => setLocalSettings({...localSettings, reminderScheduleDays: v.split(',').map(Number)})} type="text" />
+                        <ConfigInput label="Overdue Reminder Frequency (Days)" value={localSettings.overdueFrequencyDays} onChange={(v: string) => setLocalSettings({...localSettings, overdueFrequencyDays: parseFloat(v)})} type="number" />
+                        <ConfigInput label="Max Reminders Per Milestone" value={localSettings.maxRemindersPerMilestone} onChange={(v: string) => setLocalSettings({...localSettings, maxRemindersPerMilestone: parseFloat(v)})} type="number" />
                     </div>
                 </div>
             </div>

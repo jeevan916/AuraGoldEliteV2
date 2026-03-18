@@ -31,7 +31,12 @@ export const INITIAL_SETTINGS: GlobalSettings = {
   setuClientId: '', // Initialized for V2
   setuSchemeId: '', // Maps to Product Instance ID
   setuSecret: '',
-  setuMode: 'PRODUCTION'
+  setuMode: 'PRODUCTION',
+  breachBufferMinutes: 30,
+  cooldownHours: 24,
+  reminderScheduleDays: [15, 7, 3],
+  overdueFrequencyDays: 2,
+  maxRemindersPerMilestone: 5
 };
 
 export const JEWELRY_CATEGORIES = [

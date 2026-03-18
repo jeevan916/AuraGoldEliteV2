@@ -23,6 +23,7 @@ import architectRouter from './api/architect.js';
 
 // Background Services
 import { initRateService, setRateServiceIo, fetchAndSaveRate } from './api/rateService.js';
+import { runPaymentReminders } from './api/reminderService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -239,6 +240,8 @@ if (!useVite && finalDistPath) {
 initDb().then((result) => {
     if (result.success) {
         initRateService();
+        runPaymentReminders();
+        setInterval(runPaymentReminders, 24 * 60 * 60 * 1000);
     } else {
         console.error(`[System] Database initialization failed: ${result.error}`);
     }

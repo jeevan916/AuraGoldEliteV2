@@ -129,7 +129,9 @@ export interface Order {
   paymentPlan: PaymentPlan;
   status: OrderStatus;
   createdAt: string;
-  originalSnapshot?: OrderSnapshot; 
+  originalSnapshot?: OrderSnapshot;
+  isRateBreached?: boolean;
+  lastNotifiedAt?: number;
 }
 
 export interface GlobalSettings {
@@ -139,17 +141,22 @@ export interface GlobalSettings {
   currentSilverRate: number;
   defaultTaxRate: number;
   goldRateProtectionMax: number;
-  gracePeriodHours: number; 
-  followUpIntervalDays: number; 
-  goldRateFetchIntervalMinutes: number; 
+  gracePeriodHours: number;
+  followUpIntervalDays: number;
+  goldRateFetchIntervalMinutes: number;
+  breachBufferMinutes: number;
+  cooldownHours: number;
+  reminderScheduleDays: number[];
+  overdueFrequencyDays: number;
+  maxRemindersPerMilestone: number;
   preferredRateProvider?: string; // 'auto', 'batuk', 'sagar'
   whatsappPhoneNumberId?: string;
   whatsappBusinessAccountId?: string;
   whatsappBusinessToken?: string;
   razorpayKeyId?: string;
   razorpayKeySecret?: string;
-  setuClientId?: string; 
-  setuSchemeId?: string; 
+  setuClientId?: string;
+  setuSchemeId?: string;
   setuSecret?: string;
   setuMode?: 'SANDBOX' | 'PRODUCTION';
   msg91AuthKey?: string;

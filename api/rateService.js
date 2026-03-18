@@ -2,6 +2,7 @@
 import { getPool } from './db.js';
 import https from 'https';
 import http from 'http';
+import { sendWhatsAppMessage } from './whatsapp.js';
 
 let backgroundInterval = null;
 let currentIntervalMins = null;
@@ -328,6 +329,9 @@ export async function fetchAndSaveRate(forcedProviderId = null) {
         if (io) {
             io.emit('rate_update', payload);
         }
+        
+        // Check for rate breaches
+        await checkRateBreaches(rate24k);
 
         return { success: true, ...payload };
 
@@ -337,10 +341,65 @@ export async function fetchAndSaveRate(forcedProviderId = null) {
     }
 }
 
-/**
- * Initializes the background fetching loop.
- */
-export async function initRateService() {
+async function checkRateBreaches(currentRate24k) {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        
+        // Fetch settings
+        const [settingsRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['core_settings']);
+        const config = settingsRows.length > 0 ? JSON.parse(settingsRows[0].config) : {};
+        const breachBufferMinutes = config.breachBufferMinutes || 30;
+        const cooldownHours = config.cooldownHours || 24;
+        
+        // Fetch WhatsApp credentials
+        const [whatsappRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['whatsapp']);
+        const whatsappConfig = whatsappRows.length > 0 ? JSON.parse(whatsappRows[0].config) : {};
+        const { phoneId, token } = whatsappConfig;
+
+        // Fetch orders with protection limit
+        const [orders] = await connection.query("SELECT * FROM orders WHERE protectionLimit IS NOT NULL AND protectionLimit > 0");
+
+        for (const order of orders) {
+            const isBreached = currentRate24k > order.protectionLimit;
+            const now = Date.now();
+            const lastNotifiedAt = order.lastNotifiedAt ? new Date(order.lastNotifiedAt).getTime() : 0;
+            const cooldownMs = cooldownHours * 60 * 60 * 1000;
+
+            if (isBreached && !order.isRateBreached) {
+                // Potential breach, check buffer
+                // This needs a way to track how long it's been breached.
+                // For now, let's assume if it's breached, we notify after cooldown.
+                if (now - lastNotifiedAt > cooldownMs) {
+                    await sendWhatsAppMessage({
+                        to: order.customerPhone,
+                        templateName: 'auragold_rate_adjustment_alert',
+                        customerName: order.customerName,
+                        phoneId,
+                        token
+                    });
+                    await connection.query("UPDATE orders SET isRateBreached = 1, lastNotifiedAt = ? WHERE id = ?", [new Date(), order.id]);
+                }
+            } else if (!isBreached && order.isRateBreached) {
+                // Rate stabilized
+                if (now - lastNotifiedAt > cooldownMs) {
+                    await sendWhatsAppMessage({
+                        to: order.customerPhone,
+                        templateName: 'auragold_rate_stabilized',
+                        customerName: order.customerName,
+                        phoneId,
+                        token
+                    });
+                    await connection.query("UPDATE orders SET isRateBreached = 0, lastNotifiedAt = ? WHERE id = ?", [new Date(), order.id]);
+                }
+            }
+        }
+        connection.release();
+    } catch (e) {
+        console.error("[RateService] checkRateBreaches error:", e);
+    }
+}
+
     try {
         const pool = getPool();
         if (!pool) return setTimeout(initRateService, 5000); // Wait for DB

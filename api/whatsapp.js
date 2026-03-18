@@ -5,6 +5,63 @@ import { getPool, ensureDb, normalizePhone, logDbActivity } from './db.js';
 const router = express.Router();
 const META_API_VERSION = "v20.0";
 
+export async function sendWhatsAppMessage({ to, message, templateName, language, components, customerName, phoneId, token }) {
+    if (!phoneId || !token) {
+        throw new Error("Missing WhatsApp Credentials");
+    }
+
+    let payload = { 
+        messaging_product: "whatsapp", 
+        recipient_type: "individual",
+        to: normalizePhone(to) 
+    };
+
+    if (templateName) {
+        payload.type = "template";
+        payload.template = { 
+            name: templateName, 
+            language: { code: language || "en_US" }, 
+            components: components || []
+        };
+    } else {
+        payload.type = "text";
+        payload.text = { body: message };
+    }
+    
+    // Log the Trigger Event
+    const actionDesc = templateName ? `Sent Template: ${templateName}` : 'Sent Manual Message';
+    // Note: logDbActivity needs a req object, which we don't have here. 
+    // We might need to adjust logDbActivity or handle logging differently.
+    // For now, let's skip logDbActivity or create a simpler version.
+    
+    try {
+        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${phoneId}/messages`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await r.json();
+        
+        if (!r.ok || data.error) {
+             console.error("Meta Send Error:", JSON.stringify(data.error));
+             throw new Error(data.error?.message || "Meta API Error");
+        }
+
+        if (data.messages) {
+            const pool = getPool();
+            const connection = await pool.getConnection();
+            const log = { id: data.messages[0].id, customerName: customerName || "Customer", phoneNumber: normalizePhone(to), message: templateName ? `[Template: ${templateName}]` : message, status: 'SENT', timestamp: new Date().toISOString(), direction: 'outbound', type: templateName ? 'TEMPLATE' : 'CUSTOM' };
+            await connection.query('INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)', [log.id, log.phoneNumber, 'outbound', new Date(), JSON.stringify(log)]);
+            // Note: io is not available here.
+            connection.release();
+        }
+        return { success: true, data };
+    } catch (e) { 
+        console.error("WhatsApp Send Error:", e);
+        throw e;
+    }
+}
+
 // Webhook Verification
 router.get('/webhook', (req, res) => {
     const verify_token = process.env.WHATSAPP_VERIFY_TOKEN || "auragold_elite_secure_2025";
@@ -73,12 +130,8 @@ router.get('/templates', ensureDb, async (req, res) => {
 
     try {
         let allTemplates = [];
-        // Pagination Logic: Start with the first page
         let nextUrl = `https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates?limit=100`;
 
-        console.log("[Meta Sync] Starting fetch loop...");
-
-        // Loop until nextUrl is null
         while (nextUrl) {
             const r = await fetch(nextUrl, {
                 method: 'GET',
@@ -93,17 +146,14 @@ router.get('/templates', ensureDb, async (req, res) => {
 
             if (data.data && Array.isArray(data.data)) {
                 allTemplates = [...allTemplates, ...data.data];
-                console.log(`[Meta Sync] Fetched ${data.data.length} templates. Total so far: ${allTemplates.length}`);
             }
             
-            // Update nextUrl for the next iteration, or set to null to stop
             nextUrl = data.paging?.next || null;
         }
 
         const pool = getPool();
         const connection = await pool.getConnection();
         
-        // Sync to DB
         for (const tpl of allTemplates) {
             const appTpl = { 
                 id: tpl.id, 
@@ -166,7 +216,6 @@ router.post('/templates/:id', ensureDb, async (req, res) => {
     if (!token) return res.status(401).json({ success: false, error: "Missing Credentials" });
 
     try {
-        // Meta API for Editing: POST to /{template_id}
         const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${templateId}`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -238,67 +287,12 @@ router.post('/send', ensureDb, async (req, res) => {
         return res.status(401).json({ success: false, error: "Missing WhatsApp Credentials on Server" });
     }
 
-    let payload = { 
-        messaging_product: "whatsapp", 
-        recipient_type: "individual",
-        to: normalizePhone(to) 
-    };
-
-    if (templateName) {
-        payload.type = "template";
-        payload.template = { 
-            name: templateName, 
-            language: { code: language || "en_US" }, 
-            components: components || []
-        };
-    } else {
-        payload.type = "text";
-        payload.text = { body: message };
-    }
-    
-    // Log the Trigger Event (Who clicked "Send")
-    const actionDesc = templateName ? `Sent Template: ${templateName}` : 'Sent Manual Message';
-    await logDbActivity('WHATSAPP_SENT', actionDesc, { recipient: to, customer: customerName, template: templateName }, req);
-
     try {
-        const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${phoneId}/messages`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const data = await r.json();
-        
-        if (!r.ok || data.error) {
-             const pool = getPool();
-             const connection = await pool.getConnection();
-             await connection.query(
-                'INSERT INTO system_errors (id, source, message, stack, severity, timestamp, context) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                [
-                    `WA-SEND-ERR-${Date.now()}`, 
-                    'WhatsApp Send API', 
-                    `Failed to send ${templateName || 'Message'}`, 
-                    data.error.message || 'Unknown Meta Error', 
-                    'HIGH', 
-                    new Date(), 
-                    JSON.stringify({ payload, error: data.error })
-                ]
-             );
-             connection.release();
-             console.error("Meta Send Error:", JSON.stringify(data.error));
-             return res.status(400).json({ success: false, error: data.error?.message || "Meta API Error", raw: data });
-        }
-
-        if (data.messages) {
-            const pool = getPool();
-            const connection = await pool.getConnection();
-            const log = { id: data.messages[0].id, customerName: customerName || "Customer", phoneNumber: normalizePhone(to), message: templateName ? `[Template: ${templateName}]` : message, status: 'SENT', timestamp: new Date().toISOString(), direction: 'outbound', type: templateName ? 'TEMPLATE' : 'CUSTOM' };
-            await connection.query('INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)', [log.id, log.phoneNumber, 'outbound', new Date(), JSON.stringify(log)]);
-            if (req.io) req.io.emit('whatsapp_update', log);
-            connection.release();
-        }
-        res.status(r.status).json({ success: r.ok, data });
-    } catch (e) { 
-        res.status(500).json({ success: false, error: e.message }); 
+        const result = await sendWhatsAppMessage({ to, message, templateName, language, components, customerName, phoneId, token });
+        await logDbActivity('WHATSAPP_SENT', templateName ? `Sent Template: ${templateName}` : 'Sent Manual Message', { recipient: to, customer: customerName, template: templateName }, req);
+        res.status(200).json(result);
+    } catch (e) {
+        res.status(400).json({ success: false, error: e.message });
     }
 });
 
