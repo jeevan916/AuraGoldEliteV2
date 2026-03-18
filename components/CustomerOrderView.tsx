@@ -345,43 +345,61 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
                      <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full">
                          <h3 className="text-amber-800 font-black text-lg mb-4 flex items-center gap-2">
-                             <ShieldAlert /> Liability Adjustment Required
+                             <ShieldAlert /> Order Action Required
                          </h3>
                          <p className="text-slate-600 text-xs mb-4 leading-relaxed">
-                             As market rates have exceeded your protection limit, a liability gap adjustment is required to maintain your order's status. This is in accordance with the Terms & Conditions you accepted for rate protection.
+                             {order.requiresLiabilityAcceptance && (remaining > 0 && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date()))
+                                ? "Your order requires immediate attention: market rates have exceeded your protection limit, and you have overdue payments. Please accept the liability gap adjustment to proceed with your payments."
+                                : order.requiresLiabilityAcceptance 
+                                    ? "As market rates have exceeded your protection limit, a liability gap adjustment is required to maintain your order's status. This is in accordance with the Terms & Conditions you accepted for rate protection."
+                                    : "You have overdue payments that require your immediate attention."}
                          </p>
-                         <div className="bg-slate-100 p-4 rounded-xl mb-6">
-                             <p className="text-[10px] uppercase font-black text-slate-400">Additional Adjusted Cost</p>
-                             <p className="text-xl font-black text-slate-900">₹{Math.round(potentialSurcharge).toLocaleString()}</p>
-                         </div>
-                         <button 
-                             onClick={handleAcceptLiability}
-                             disabled={acceptingLiability}
-                             className="w-full bg-amber-600 text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest"
-                         >
-                             {acceptingLiability ? 'Processing...' : 'I Accept & Proceed'}
-                         </button>
+                         {order.requiresLiabilityAcceptance && (
+                             <div className="bg-slate-100 p-4 rounded-xl mb-6">
+                                 <p className="text-[10px] uppercase font-black text-slate-400">Additional Adjusted Cost</p>
+                                 <p className="text-xl font-black text-slate-900">₹{Math.round(potentialSurcharge).toLocaleString()}</p>
+                             </div>
+                         )}
+                         {order.requiresLiabilityAcceptance && (
+                             <button 
+                                 onClick={handleAcceptLiability}
+                                 disabled={acceptingLiability}
+                                 className="w-full bg-amber-600 text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest"
+                             >
+                                 {acceptingLiability ? 'Processing...' : 'I Accept & Proceed'}
+                             </button>
+                         )}
                          <button 
                              onClick={() => setShowLiabilityModal(false)}
                              className="w-full text-slate-400 py-3 mt-2 font-bold uppercase text-[10px] tracking-widest"
                          >
-                             Cancel
+                             {order.requiresLiabilityAcceptance ? 'Cancel' : 'Close'}
                          </button>
                      </div>
                  </div>
              )}
 
              <div className="w-full space-y-3">
-                <button 
-                  onClick={handleSetuPayment}
-                  disabled={setuLoading || (remaining > 0 && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date()))}
-                  className="w-full bg-amber-500 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all disabled:opacity-50"
-                >
-                  {setuLoading ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
-                  {(remaining > 0 && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date())) 
-                    ? 'Payment Overdue' 
-                    : (order.requiresLiabilityAcceptance ? 'Accept Liability to Pay' : 'Pay Now')}
-                </button>
+                <div className="flex gap-2">
+                    <button 
+                      onClick={handleSetuPayment}
+                      disabled={setuLoading || ((remaining > 0 && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date())) && order.requiresLiabilityAcceptance)}
+                      className="flex-1 bg-amber-500 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      {setuLoading ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
+                      {(remaining > 0 && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date()) && order.requiresLiabilityAcceptance) 
+                        ? 'Payment Overdue & Liability Required' 
+                        : (order.requiresLiabilityAcceptance ? 'Accept Liability to Pay' : 'Pay Now')}
+                    </button>
+                    {(order.requiresLiabilityAcceptance || (remaining > 0 && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date()))) && (
+                        <button 
+                            onClick={() => setShowLiabilityModal(true)}
+                            className="bg-slate-200 text-slate-600 p-4 rounded-xl"
+                        >
+                            <Info size={20} />
+                        </button>
+                    )}
+                </div>
              </div>
           </div>
         )}
