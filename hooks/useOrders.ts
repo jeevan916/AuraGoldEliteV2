@@ -69,8 +69,8 @@ export function useOrders() {
   };
 
   const deleteOrder = (orderId: string) => {
-    const updated = orders.filter(o => o.id !== orderId);
-    setOrders(updated);
+    storageService.deleteOrder(orderId);
+    setOrdersState([...storageService.getOrders()]);
     errorService.logActivity('ORDER_DELETED', `Order ${orderId} deleted`);
   };
 

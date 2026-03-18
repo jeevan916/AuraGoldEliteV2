@@ -24,6 +24,22 @@ router.post('/orders', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+router.delete('/orders/:id', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        await connection.query('DELETE FROM orders WHERE id = ?', [req.params.id]);
+        connection.release();
+        
+        // Broadcast deletion event to clients
+        if (req.io) {
+            req.io.emit('order_deleted', req.params.id);
+        }
+        
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.post('/customers', ensureDb, async (req, res) => {
     try {
         const pool = getPool();

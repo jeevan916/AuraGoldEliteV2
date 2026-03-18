@@ -116,7 +116,10 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                 },
                 amountExactness: "EXACT",
                 name: safeName,
-                transactionNote: safeNote
+                transactionNote: safeNote,
+                additionalInfo: {
+                    orderId: orderId || ""
+                }
             })
         });
 
@@ -364,68 +367,88 @@ router.get(['/setu/pay/:encodedIntent', '/setu/pay'], async (req, res) => {
 });
 
 // Setu Webhook Notification Endpoint
-router.post('/setu/webhook', ensureDb, async (req, res) => {
+router.post('/setu/notifications', ensureDb, async (req, res) => {
     try {
         const payload = req.body;
         console.log("Setu Webhook Received:", JSON.stringify(payload, null, 2));
         
-        // Acknowledge receipt immediately to Setu
-        res.status(200).json({ success: true });
+        // Acknowledge receipt immediately to Setu (must be 200 OK without any body)
+        res.status(200).send();
         
-        // Process the payment status update asynchronously
-        if (payload && payload.paymentDetails && payload.paymentDetails.paymentStatus === 'SUCCESS') {
-            const billerBillID = payload.billerBillID;
-            const amountPaid = payload.paymentDetails.amountPaid.value / 100; // Convert paisa to rupees
-            const upiTransactionID = payload.paymentDetails.upiTransactionID;
-            
-            // Extract orderId from billerBillID (e.g., "ORD123_1678900000" -> "ORD123")
-            const orderId = billerBillID.split('_')[0];
-            
-            const pool = getPool();
-            const connection = await pool.getConnection();
-            
-            // Find the order
-            const [rows] = await connection.query('SELECT data FROM orders');
-            const orderRow = rows.find(r => {
-                const o = JSON.parse(r.data);
-                return o.id === orderId;
-            });
-            
-            if (orderRow) {
-                const order = JSON.parse(orderRow.data);
-                
-                // Check if payment is already recorded
-                const alreadyRecorded = order.payments.some(p => p.reference === upiTransactionID);
-                
-                if (!alreadyRecorded) {
-                    order.payments.push({
-                        id: `pay_${Date.now()}`,
-                        amount: amountPaid,
-                        date: new Date().toISOString(),
-                        method: 'UPI',
-                        reference: upiTransactionID,
-                        status: 'SUCCESS'
-                    });
+        if (payload && payload.events && Array.isArray(payload.events)) {
+            for (const event of payload.events) {
+                if (event.type === 'BILL_FULFILMENT_STATUS' && event.data && event.data.status === 'PAYMENT_SUCCESSFUL') {
+                    const data = event.data;
+                    const billerBillID = data.billerBillID;
+                    const amountPaid = data.amountPaid.value / 100; // Convert paisa to rupees
+                    const upiTransactionID = data.transactionId || data.platformBillID;
                     
-                    // Update milestones
-                    let remaining = amountPaid;
-                    for (const milestone of order.paymentPlan.milestones) {
-                        if (milestone.status !== 'PAID' && remaining > 0) {
-                            if (remaining >= milestone.targetAmount) {
-                                milestone.status = 'PAID';
-                                remaining -= milestone.targetAmount;
-                            } else {
-                                milestone.status = 'PARTIAL';
-                                remaining = 0;
-                            }
-                        }
+                    // Extract orderId from additionalInfo if available, else fallback to billerBillID parsing
+                    let orderId = data.additionalInfo?.orderId;
+                    if (!orderId && billerBillID) {
+                        orderId = billerBillID.split('_')[0];
                     }
                     
-                    await connection.query('UPDATE orders SET data = ? WHERE JSON_EXTRACT(data, "$.id") = ?', [JSON.stringify(order), orderId]);
-                    console.log(`Order ${orderId} updated with Setu payment ${upiTransactionID}`);
+                    if (!orderId) {
+                        console.error("Could not determine orderId from webhook data:", data);
+                        continue;
+                    }
+                    
+                    const pool = getPool();
+                    const connection = await pool.getConnection();
+                    
+                    try {
+                        // Find the order
+                        const [rows] = await connection.query('SELECT data FROM orders');
+                        const orderRow = rows.find(r => {
+                            const o = JSON.parse(r.data);
+                            return o.id === orderId;
+                        });
+                        
+                        if (orderRow) {
+                            const order = JSON.parse(orderRow.data);
+                            
+                            // Check if payment is already recorded
+                            const alreadyRecorded = order.payments.some(p => p.reference === upiTransactionID);
+                            
+                            if (!alreadyRecorded) {
+                                order.payments.push({
+                                    id: `pay_${Date.now()}`,
+                                    amount: amountPaid,
+                                    date: new Date().toISOString(),
+                                    method: 'UPI',
+                                    reference: upiTransactionID,
+                                    status: 'SUCCESS'
+                                });
+                                
+                                // Update milestones
+                                let remaining = amountPaid;
+                                for (const milestone of order.paymentPlan.milestones) {
+                                    if (milestone.status !== 'PAID' && remaining > 0) {
+                                        if (remaining >= milestone.targetAmount) {
+                                            milestone.status = 'PAID';
+                                            remaining -= milestone.targetAmount;
+                                        } else {
+                                            milestone.status = 'PARTIAL';
+                                            remaining = 0;
+                                        }
+                                    }
+                                }
+                                
+                                await connection.query('UPDATE orders SET data = ? WHERE JSON_EXTRACT(data, "$.id") = ?', [JSON.stringify(order), orderId]);
+                                console.log(`Order ${orderId} updated with Setu payment ${upiTransactionID}`);
+                                
+                                // Broadcast update to clients
+                                if (req.io) {
+                                    req.io.emit('orders_sync', [order]);
+                                }
+                            }
+                        }
+                    } finally {
+                        connection.release();
+                    }
                 }
             }
-            connection.release();
         }
     } catch (e) {
         console.error("Setu Webhook Error:", e);

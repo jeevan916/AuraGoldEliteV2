@@ -95,6 +95,12 @@ class StorageService {
           console.log("[Storage] Received Real-Time Order Sync", incomingOrders.length);
           this.handleIncomingOrders(incomingOrders);
       });
+
+      // Listen for real-time Order deletions
+      this.socket.on('order_deleted', (orderId: string) => {
+          console.log("[Storage] Received Real-Time Order Deletion", orderId);
+          this.handleOrderDeletion(orderId);
+      });
   }
 
   public sendHeartbeat() {
@@ -147,6 +153,16 @@ class StorageService {
       if (hasChanges) {
           // Re-sort by date just in case
           this.state.orders = currentOrders.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          this.saveToLocal();
+          this.notify();
+      }
+  }
+
+  private handleOrderDeletion(orderId: string) {
+      const initialLength = this.state.orders.length;
+      this.state.orders = this.state.orders.filter(o => o.id !== orderId);
+      
+      if (this.state.orders.length !== initialLength) {
           this.saveToLocal();
           this.notify();
       }
@@ -229,6 +245,17 @@ class StorageService {
   public setOrders(orders: Order[]) { 
     this.state.orders = orders; 
     this.pushEntity('orders', { orders }); 
+  }
+
+  public async deleteOrder(orderId: string) {
+    this.state.orders = this.state.orders.filter(o => o.id !== orderId);
+    this.saveToLocal();
+    this.notify();
+    try {
+        await fetch(`${API_BASE}/api/sync/orders/${orderId}`, {
+            method: 'DELETE'
+        });
+    } catch (e) {}
   }
 
   public getLogs() { return this.state.logs; }
