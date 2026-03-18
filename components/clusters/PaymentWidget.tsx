@@ -22,6 +22,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [setuData, setSetuData] = useState<{ shortURL: string, upiID: string, upiLink: string, platformBillID: string, rawResponse?: any } | null>(null);
   const [showRawResponse, setShowRawResponse] = useState(false);
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
 
   const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
   const remaining = order.totalAmount - totalPaid;
@@ -41,10 +42,10 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       setErrorMsg(null);
   }, [activeTab]);
 
-  const updateOrderWithPayment = (val: number, method: string, notes: string) => {
+  const updateOrderWithPayment = (val: number, method: string, notes: string, dateStr?: string) => {
       const newPayment = {
         id: `PAY-${Date.now()}`,
-        date: new Date().toISOString(),
+        date: dateStr ? new Date(dateStr).toISOString() : new Date().toISOString(),
         amount: val,
         method: method,
         note: notes
@@ -80,7 +81,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
     setErrorMsg(null);
 
     try {
-      updateOrderWithPayment(val, mode, 'Manual Entry');
+      updateOrderWithPayment(val, mode, 'Manual Entry', paymentDate);
 
       // SCENARIO 4: Store Payment Receipt
       const res = await whatsappService.sendTemplateMessage(
@@ -414,21 +415,32 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                     </button>
                 ))}
                 </div>
-                <div className="flex gap-3 items-end">
-                    <div className="flex-1">
-                        <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block ml-1">Payment Amount</label>
-                        <div className="relative">
-                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                <div className="flex flex-col gap-4">
+                    <div className="flex gap-3 items-end">
+                        <div className="flex-1">
+                            <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block ml-1">Payment Amount</label>
+                            <div className="relative">
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                                <input 
+                                    type="number" 
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-4 pl-9 font-black text-xl text-slate-800 outline-none focus:bg-white transition-all"
+                                    value={amount}
+                                    onChange={e => setAmount(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <div className="flex-1">
+                            <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block ml-1">Payment Date</label>
                             <input 
-                                type="number" 
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl py-4 pl-9 font-black text-xl text-slate-800 outline-none focus:bg-white transition-all"
-                                value={amount}
-                                onChange={e => setAmount(e.target.value)}
+                                type="date" 
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl py-4 px-4 font-black text-sm text-slate-800 outline-none focus:bg-white transition-all h-[60px]"
+                                value={paymentDate}
+                                onChange={e => setPaymentDate(e.target.value)}
                             />
                         </div>
                     </div>
-                    <Button onClick={handleRecordPayment} loading={loading} disabled={!amount} size="lg" className="h-[60px]">
-                        Save
+                    <Button onClick={handleRecordPayment} loading={loading} disabled={!amount} size="lg" className="w-full h-[60px]">
+                        Save Payment
                     </Button>
                 </div>
             </div>
