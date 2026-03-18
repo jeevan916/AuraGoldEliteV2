@@ -1,4 +1,4 @@
-import { getPool } from './db.js';
+import { getPool, normalizePhone } from './db.js';
 import { sendWhatsAppMessage } from './whatsapp.js';
 
 export async function runPaymentReminders() {
@@ -20,7 +20,6 @@ export async function runPaymentReminders() {
         const { phoneId, token } = whatsappConfig;
 
         // Fetch orders and their payment schedules
-        // Assuming there is a payment_schedules table
         const [schedules] = await connection.query("SELECT ps.*, o.customerName, o.customerPhone FROM payment_schedules ps JOIN orders o ON ps.orderId = o.id WHERE ps.status = 'PENDING'");
 
         const now = new Date();
@@ -46,6 +45,18 @@ export async function runPaymentReminders() {
             }
 
             if (templateName) {
+                // Collision Avoidance: Check for recent rate breach alerts (last 24 hours)
+                const normalizedPhone = normalizePhone(schedule.customerPhone);
+                const [breachLogRows] = await connection.query(
+                    "SELECT COUNT(*) as count FROM whatsapp_logs WHERE phone = ? AND (data LIKE '%auragold_rate_adjustment_alert%' OR data LIKE '%auragold_rate_stabilized%') AND timestamp > ?",
+                    [normalizedPhone, new Date(now.getTime() - 24 * 60 * 60 * 1000)]
+                );
+
+                if (breachLogRows[0].count > 0) {
+                    console.log(`[ReminderService] Skipping reminder for ${schedule.customerPhone} due to recent rate breach alert.`);
+                    continue;
+                }
+
                 // Check if already sent too many
                 const [logRows] = await connection.query("SELECT COUNT(*) as count FROM whatsapp_logs WHERE data LIKE ? AND timestamp > ?", [`%${schedule.id}%`, new Date(now.getTime() - 24 * 60 * 60 * 1000)]);
                 if (logRows[0].count < maxRemindersPerMilestone) {

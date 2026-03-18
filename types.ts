@@ -132,6 +132,8 @@ export interface Order {
   originalSnapshot?: OrderSnapshot;
   isRateBreached?: boolean;
   lastNotifiedAt?: number;
+  requiresLiabilityAcceptance?: boolean;
+  liabilityGapAcceptedAt?: string;
 }
 
 export interface GlobalSettings {

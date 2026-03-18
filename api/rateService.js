@@ -366,10 +366,12 @@ async function checkRateBreaches(currentRate24k) {
             const lastNotifiedAt = order.lastNotifiedAt ? new Date(order.lastNotifiedAt).getTime() : 0;
             const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
+            // Check if any milestone is missed (overdue)
+            const [milestones] = await connection.query("SELECT * FROM payment_schedules WHERE orderId = ? AND status = 'PENDING' AND dueDate < ?", [order.id, new Date()]);
+            const hasMissedMilestone = milestones.length > 0;
+
             if (isBreached && !order.isRateBreached) {
-                // Potential breach, check buffer
-                // This needs a way to track how long it's been breached.
-                // For now, let's assume if it's breached, we notify after cooldown.
+                // Potential breach
                 if (now - lastNotifiedAt > cooldownMs) {
                     await sendWhatsAppMessage({
                         to: order.customerPhone,
@@ -378,7 +380,13 @@ async function checkRateBreaches(currentRate24k) {
                         phoneId,
                         token
                     });
-                    await connection.query("UPDATE orders SET isRateBreached = 1, lastNotifiedAt = ? WHERE id = ?", [new Date(), order.id]);
+                    // Update order data
+                    const orderData = JSON.parse(order.data);
+                    orderData.isRateBreached = true;
+                    // Only require liability acceptance if they have missed a milestone
+                    orderData.requiresLiabilityAcceptance = hasMissedMilestone;
+                    
+                    await connection.query("UPDATE orders SET data = ?, lastNotifiedAt = ? WHERE id = ?", [JSON.stringify(orderData), new Date(), order.id]);
                 }
             } else if (!isBreached && order.isRateBreached) {
                 // Rate stabilized
@@ -390,7 +398,11 @@ async function checkRateBreaches(currentRate24k) {
                         phoneId,
                         token
                     });
-                    await connection.query("UPDATE orders SET isRateBreached = 0, lastNotifiedAt = ? WHERE id = ?", [new Date(), order.id]);
+                    // Update order data
+                    const orderData = JSON.parse(order.data);
+                    orderData.isRateBreached = false;
+                    orderData.requiresLiabilityAcceptance = false;
+                    await connection.query("UPDATE orders SET data = ?, lastNotifiedAt = ? WHERE id = ?", [JSON.stringify(orderData), new Date(), order.id]);
                 }
             }
         }

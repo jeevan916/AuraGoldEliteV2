@@ -21,6 +21,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const [liveRate, setLiveRate] = useState<number>(0);
   const [setuLoading, setSetuLoading] = useState(false);
   const [setuError, setSetuError] = useState<string | null>(null);
+  const [acceptingLiability, setAcceptingLiability] = useState(false);
   const loggedRef = useRef(false);
 
   const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
@@ -28,6 +29,20 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const nextPayment = order.paymentPlan.milestones.find(m => m.status !== 'PAID');
 
   const [customAmount, setCustomAmount] = useState<number | ''>(nextPayment ? nextPayment.targetAmount : remaining);
+
+  const handleAcceptLiability = async () => {
+      setAcceptingLiability(true);
+      try {
+          const response = await fetch(`/api/orders/${order.id}/accept-liability`, { method: 'POST' });
+          const result = await response.json();
+          if (!result.success) throw new Error(result.error);
+      } catch (err: any) {
+          errorService.logError('AcceptLiability', err.message);
+          alert("Failed to accept liability gap. Please try again.");
+      } finally {
+          setAcceptingLiability(false);
+      }
+  };
 
   useEffect(() => {
     // 1. Log Access
@@ -316,14 +331,34 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                 </div>
              )}
 
+             {order.requiresLiabilityAcceptance && (
+                 <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl mb-6 w-full">
+                     <h4 className="text-amber-800 font-bold text-sm mb-2 flex items-center gap-2">
+                         <AlertCircle size={16} /> Rate Breach Detected
+                     </h4>
+                     <p className="text-amber-700 text-[10px] mb-4">
+                         Market rates have exceeded your protection limit. To proceed with payments, 
+                         you must accept the liability gap recalculation.
+                     </p>
+                     <button 
+                         onClick={handleAcceptLiability}
+                         disabled={acceptingLiability}
+                         className="w-full bg-amber-600 text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2"
+                     >
+                         {acceptingLiability ? <Loader2 size={16} className="animate-spin" /> : <Scale size={16} />}
+                         Accept Liability Gap
+                     </button>
+                 </div>
+             )}
+
              <div className="w-full space-y-3">
                 <button 
                   onClick={handleSetuPayment}
-                  disabled={setuLoading}
+                  disabled={setuLoading || order.requiresLiabilityAcceptance}
                   className="w-full bg-amber-500 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all disabled:opacity-50"
                 >
                   {setuLoading ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
-                  Pay Now
+                  {order.requiresLiabilityAcceptance ? 'Liability Acceptance Required' : 'Pay Now'}
                 </button>
              </div>
           </div>

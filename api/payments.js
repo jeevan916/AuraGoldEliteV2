@@ -476,4 +476,44 @@ router.post('/razorpay/create-order', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Liability Gap Acceptance
+router.post('/orders/:id/accept-liability', ensureDb, async (req, res) => {
+    const orderId = req.params.id;
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        
+        // Find the order
+        const [rows] = await connection.query('SELECT data FROM orders');
+        const orderRow = rows.find(r => {
+            const o = JSON.parse(r.data);
+            return o.id === orderId;
+        });
+        
+        if (!orderRow) {
+            connection.release();
+            return res.status(404).json({ success: false, error: "Order not found" });
+        }
+        
+        const order = JSON.parse(orderRow.data);
+        
+        // Update order data
+        order.requiresLiabilityAcceptance = false;
+        order.liabilityGapAcceptedAt = new Date().toISOString();
+        
+        await connection.query('UPDATE orders SET data = ? WHERE JSON_EXTRACT(data, "$.id") = ?', [JSON.stringify(order), orderId]);
+        connection.release();
+        
+        // Broadcast update to clients
+        if (req.io) {
+            req.io.emit('orders_sync', [order]);
+        }
+        
+        res.json({ success: true, order });
+    } catch (e) {
+        console.error("Accept Liability Error:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 export default router;
