@@ -15,7 +15,6 @@ interface CustomerOrderViewProps {
 }
 
 const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
-  const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [showOriginal, setShowOriginal] = useState(false);
   const [locationStatus, setLocationStatus] = useState<'PENDING' | 'GRANTED' | 'DENIED'>('PENDING');
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
@@ -23,8 +22,6 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const [setuLoading, setSetuLoading] = useState(false);
   const [setuError, setSetuError] = useState<string | null>(null);
   const loggedRef = useRef(false);
-
-  const [setuData, setSetuData] = useState<{ shortURL: string, upiID: string, upiLink: string, platformBillID: string } | null>(null);
 
   const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
   const remaining = order.totalAmount - totalPaid;
@@ -43,15 +40,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
         });
     }
 
-    // 2. QR Code Gen (Fallback)
-    if (remaining > 0 && !setuData) {
-        const amount = Number(customAmount) || (nextPayment ? nextPayment.targetAmount : remaining);
-        const transactionNote = encodeURIComponent(`Order ${order.id}`);
-        const upi = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=Sanghavi%20Jewellers&tr=${order.id}&am=${amount}&cu=INR&tn=${transactionNote}`;
-        setQrUrl(`https://quickchart.io/qr?text=${encodeURIComponent(upi)}&margin=2&size=300`);
-    }
-
-    // 3. Fetch Live Rate for Protection Monitor
+    // 2. Fetch Live Rate for Protection Monitor
     const fetchRate = async () => {
         const res = await goldRateService.fetchLiveRate();
         if (res.success) {
@@ -59,7 +48,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
         }
     };
     fetchRate();
-  }, [remaining, nextPayment, order.id, setuData, customAmount]);
+  }, [remaining, nextPayment, order.id, customAmount]);
 
   const requestLocation = () => {
       if (!navigator.geolocation) return;
@@ -124,17 +113,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
         throw new Error("Payment link not received from gateway");
       }
 
-      if (!upiIntentLink && upiID) {
-        const payeeName = encodeURIComponent("Sanghavi Jewellers");
-        const transactionNote = encodeURIComponent(`Order ${order.id}`);
-        const amount = Number(customAmount) || (nextPayment ? nextPayment.targetAmount : remaining);
-        upiIntentLink = `upi://pay?pa=${upiID}&pn=${payeeName}&tr=${order.id}&am=${amount}&cu=INR&tn=${transactionNote}`;
-      } else if (!upiIntentLink) {
-        upiIntentLink = shortLink;
-      }
-
-      setSetuData({ shortURL: shortLink, upiID, upiLink: upiIntentLink, platformBillID });
-      setQrUrl(`https://quickchart.io/qr?text=${encodeURIComponent(shortLink)}&margin=2&size=300`);
+      window.location.href = shortLink;
     } catch (err: any) {
       console.error("Setu Payment Error:", err);
       setSetuError(err.message);
@@ -143,9 +122,6 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
       setSetuLoading(false);
     }
   };
-
-  const transactionNote = encodeURIComponent(`Order ${order.id}`);
-  const upiLink = `upi://pay?pa=st.sanghavijeweller@pineaxis&pn=Sanghavi%20Jewellers&tr=${order.id}&am=${Number(customAmount) || (nextPayment ? nextPayment.targetAmount : remaining)}&cu=INR&tn=${transactionNote}`;
 
   const displayMilestones = showOriginal && order.paymentPlan.originalMilestones 
       ? order.paymentPlan.originalMilestones 
@@ -309,36 +285,24 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
             </div>
         )}
 
-        {/* 2. PAYMENT QR */}
+        {/* 2. PAYMENT */}
         {remaining > 0 && (
           <div className="bg-white p-6 rounded-3xl shadow-lg border border-amber-100 flex flex-col items-center">
-             {qrUrl && <img src={qrUrl} className="w-40 h-40 mb-4 border p-2 rounded-xl" alt="Payment QR" />}
-             
-             {setuData?.upiID && (
-                <div className="mb-4 text-center">
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">UPI ID</p>
-                    <p className="text-sm font-bold text-slate-800 bg-slate-50 px-3 py-1 rounded-lg border border-slate-200 mt-1">{setuData.upiID}</p>
-                </div>
-             )}
-
              <div className="text-center mb-6">
                 <h3 className="font-bold text-slate-800 text-lg">Balance Due: ₹{remaining.toLocaleString()}</h3>
-                <p className="text-xs text-slate-500">Scan QR or tap below to pay via UPI</p>
              </div>
 
-             {!setuData && (
-                 <div className="w-full mb-6">
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 text-center">Amount to Pay (₹)</label>
-                    <input 
-                        type="number" 
-                        value={customAmount} 
-                        onChange={(e) => setCustomAmount(e.target.value === '' ? '' : Number(e.target.value))}
-                        className="w-full text-center text-2xl font-black text-slate-800 bg-slate-50 border border-slate-200 rounded-xl py-3 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                        min="1"
-                        max={remaining}
-                    />
-                 </div>
-             )}
+             <div className="w-full mb-6">
+                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 text-center">Amount to Pay (₹)</label>
+                <input 
+                    type="number" 
+                    value={customAmount} 
+                    onChange={(e) => setCustomAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full text-center text-2xl font-black text-slate-800 bg-slate-50 border border-slate-200 rounded-xl py-3 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    min="1"
+                    max={remaining}
+                />
+             </div>
 
              {setuError && (
                 <div className="w-full mb-4 p-3 bg-rose-50 border border-rose-100 rounded-xl text-[10px] text-rose-600 font-bold flex flex-col gap-2 overflow-hidden">
@@ -353,42 +317,14 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
              )}
 
              <div className="w-full space-y-3">
-                {!setuData ? (
-                    <button 
-                      onClick={handleSetuPayment}
-                      disabled={setuLoading}
-                      className="w-full bg-amber-500 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all disabled:opacity-50"
-                    >
-                      {setuLoading ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
-                      Generate Setu Payment Link
-                    </button>
-                ) : (
-                    <>
-                        <a 
-                          href={setuData.upiLink || upiLink}
-                          className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"
-                        >
-                          <Smartphone size={16} /> Pay via UPI App
-                        </a>
-                    </>
-                )}
-
-                {!setuData && (
-                    <>
-                        <div className="flex items-center gap-4 py-1">
-                            <div className="h-px bg-slate-100 flex-1"></div>
-                            <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">OR</span>
-                            <div className="h-px bg-slate-100 flex-1"></div>
-                        </div>
-
-                        <a 
-                          href={upiLink}
-                          className="w-full bg-slate-900 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all"
-                        >
-                          <Smartphone size={16} /> Direct UPI Intent
-                        </a>
-                    </>
-                )}
+                <button 
+                  onClick={handleSetuPayment}
+                  disabled={setuLoading}
+                  className="w-full bg-amber-500 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all disabled:opacity-50"
+                >
+                  {setuLoading ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} 
+                  Pay Now
+                </button>
              </div>
           </div>
         )}
