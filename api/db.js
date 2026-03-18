@@ -106,6 +106,23 @@ export async function initDb() {
         try {
             await connection.query("ALTER TABLE gold_rates ADD COLUMN rateSilver DECIMAL(10, 2) DEFAULT 0");
         } catch (e) { }
+        try {
+            await connection.query("ALTER TABLE orders ADD COLUMN share_token VARCHAR(100)");
+            await connection.query("CREATE INDEX idx_share_token ON orders(share_token)");
+            
+            // Migration: populate share_token for existing orders
+            const [orders] = await connection.query("SELECT id, data FROM orders WHERE share_token IS NULL");
+            for (const order of orders) {
+                try {
+                    const data = JSON.parse(order.data);
+                    if (data.shareToken) {
+                        await connection.query("UPDATE orders SET share_token = ? WHERE id = ?", [data.shareToken, order.id]);
+                    }
+                } catch (e) {
+                    console.error(`[DB] Failed to migrate order ${order.id}:`, e.message);
+                }
+            }
+        } catch (e) { }
 
         // --- SEED DEFAULT ADMIN ---
         const [users] = await connection.query("SELECT * FROM app_users WHERE username = 'admin'");

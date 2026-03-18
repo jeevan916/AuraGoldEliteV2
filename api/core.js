@@ -155,20 +155,36 @@ router.post('/logs/activity', ensureDb, async (req, res) => {
 router.get('/public/order/:token', ensureDb, async (req, res) => {
     try {
         const token = req.params.token;
-        if (!token) return res.status(400).json({ success: false, error: "Token required" });
-
         const pool = getPool();
         const connection = await pool.getConnection();
-        const [rows] = await connection.query('SELECT data FROM orders');
+        
+        // Optimized query
+        const [rows] = await connection.query('SELECT data FROM orders WHERE share_token = ?', [token]);
         connection.release();
         
-        const order = rows.map(r => JSON.parse(r.data)).find(o => o.shareToken === token);
+        const order = rows.length > 0 ? JSON.parse(rows[0].data) : null;
         
         if (order) {
             // Log this specific access event with enriched metadata
             await logDbActivity('LINK_OPENED', `Customer viewed Order ${order.id}`, { orderId: order.id, customer: order.customerName }, req);
             
-            res.json({ success: true, order });
+            // Sanitize PII
+            const sanitizedOrder = {
+                id: order.id,
+                items: order.items,
+                payments: order.payments,
+                totalAmount: order.totalAmount,
+                discountAmount: order.discountAmount,
+                goldRateAtBooking: order.goldRateAtBooking,
+                paymentPlan: order.paymentPlan,
+                status: order.status,
+                createdAt: order.createdAt,
+                isRateBreached: order.isRateBreached,
+                requiresLiabilityAcceptance: order.requiresLiabilityAcceptance,
+                liabilityGapAcceptedAt: order.liabilityGapAcceptedAt
+            };
+            
+            res.json({ success: true, order: sanitizedOrder });
         } else {
             // Log failed access attempt
             await logDbActivity('SECURITY_ALERT', `Invalid Order Link Attempt: ${token}`, { token }, req);
