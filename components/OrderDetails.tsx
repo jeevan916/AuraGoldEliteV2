@@ -474,6 +474,15 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           <ArrowLeft size={20} /> Back
         </button>
         <div className="flex gap-2">
+           <Button size="sm" variant="secondary" onClick={async () => {
+                if(!confirm("Trigger test breach check for this order?")) return;
+                try {
+                    const res = await fetch(`/api/whatsapp/test-breach/${order.id}`, { method: 'POST' });
+                    const data = await res.json();
+                    if (data.success) alert("Test triggered successfully!");
+                    else alert("Failed: " + data.error);
+                } catch(e: any) { alert("Error: " + e.message); }
+            }}><ShieldAlert size={14} /> Test Breach</Button>
            <Button size="sm" variant="secondary" onClick={handleResendAgreement} loading={sendingAgreement}><Send size={14} /> Resend Agreement</Button>
            <Button size="sm" variant="secondary" onClick={handleOpenCustomerLink}><ExternalLink size={14} /> Customer View</Button>
            <Button size="sm" variant="secondary" onClick={() => generateOrderPDF(order)}><FileText size={14} /> Contract PDF</Button>

@@ -103,10 +103,15 @@ export const SYSTEM_TRIGGER_MAP: SystemTrigger[] = [
     { id: 'TRIG_6', label: '6. Remote Payment Success', description: 'Success for Payment Link/Gateway.', requiredVariables: ['Customer Name', 'Amount', 'Method', 'Order ID', 'Balance'], defaultTemplateName: 'auragold_payment_success_remote', appGroup: 'PAYMENT_COLLECTION' },
     { id: 'TRIG_7', label: '7. Market Adjustment', description: 'Surcharge applied (Limit Breached).', requiredVariables: ['Customer Name', 'Surcharge Amount', 'Order ID', 'New Base Rate', 'Link'], defaultTemplateName: 'auragold_rate_adjustment_alert', appGroup: 'SYSTEM_NOTIFICATIONS' },
     { id: 'TRIG_8', label: '8. Setu UPI Button', description: 'Manual deep link trigger.', requiredVariables: ['Customer Name', 'Amount', 'LinkSuffix'], defaultTemplateName: 'auragold_setu_payment', appGroup: 'SETU_PAYMENT' },
-    { id: 'TRIG_9', label: '9. Finished Photo', description: 'Header Image + Order Link.', requiredVariables: ['Customer Name', 'Order ID', 'Link'], defaultTemplateName: 'auragold_finished_item_showcase', appGroup: 'ORDER_STATUS' }
+    { id: 'TRIG_9', label: '9. Finished Photo', description: 'Header Image + Order Link.', requiredVariables: ['Customer Name', 'Order ID', 'Link'], defaultTemplateName: 'auragold_finished_item_showcase', appGroup: 'ORDER_STATUS' },
+    { id: 'TRIG_10', label: '10. Gentle Reminder', description: 'Gentle reminder for upcoming payment.', requiredVariables: ['Customer Name', 'Amount', 'Order ID', 'Link'], defaultTemplateName: 'auragold_gentle_reminder', appGroup: 'PAYMENT_COLLECTION' },
+    { id: 'TRIG_11', label: '11. Payment Overdue', description: 'Firm reminder for overdue payment.', requiredVariables: ['Customer Name', 'Amount', 'Link'], defaultTemplateName: 'auragold_payment_overdue', appGroup: 'PAYMENT_COLLECTION' },
+    { id: 'TRIG_12', label: '12. Urgent Lapse', description: 'Urgent reminder before rate protection lapses.', requiredVariables: ['Customer Name', 'Order ID', 'Amount', 'Link'], defaultTemplateName: 'auragold_urgent_lapse', appGroup: 'PAYMENT_COLLECTION' },
+    { id: 'TRIG_13', label: '13. Liability Adjustment', description: 'Surcharge applied (Limit Breached & Milestone Missed).', requiredVariables: ['Customer Name', 'Surcharge Amount', 'Order ID', 'New Base Rate', 'Link'], defaultTemplateName: 'auragold_rate_adjustment_liability', appGroup: 'SYSTEM_NOTIFICATIONS' },
+    { id: 'TRIG_14', label: '14. Rate Stabilized', description: 'Gold rate falls back under protection limit.', requiredVariables: ['Customer Name', 'Surcharge Amount', 'Order ID', 'New Base Rate', 'Link'], defaultTemplateName: 'auragold_rate_stabilized', appGroup: 'SYSTEM_NOTIFICATIONS' }
 ];
 
-// --- CORE SYSTEM TEMPLATES (THE 9 MANDATORY ONES) ---
+// --- CORE SYSTEM TEMPLATES (THE 14 MANDATORY ONES) ---
 export const REQUIRED_SYSTEM_TEMPLATES = [
   // 1) Order Created (Agreement)
   {
@@ -206,6 +211,56 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
         { type: "BODY", text: "Great news, {{1}}! Your custom jewelry piece is finally ready. We are excited to share the finished look for your Order {{2}}. The item has passed our quality checks and we are now ready for the final handover. Please review the details." },
         { type: "BUTTONS", buttons: [{ type: "URL", text: "View Order", url: "https://order.auragoldelite.com/?token={{1}}" }] }
     ]
+  },
+  // 10) Gentle Reminder
+  {
+    name: 'auragold_gentle_reminder',
+    description: 'Gentle reminder for upcoming payment.',
+    category: 'UTILITY',
+    appGroup: 'PAYMENT_COLLECTION',
+    variables: ['customer_name', 'amount', 'order_id', 'link'],
+    content: "Hello {{1}}, a gentle reminder that your installment of {{2}} for order {{3}} is due. Please pay here: {{4}} to avoid delays.",
+    examples: ["John", "₹15,000", "ORD-123", "https://order.auragoldelite.com/?token=abc"]
+  },
+  // 11) Payment Overdue
+  {
+    name: 'auragold_payment_overdue',
+    description: 'Firm reminder for overdue payment.',
+    category: 'UTILITY',
+    appGroup: 'PAYMENT_COLLECTION',
+    variables: ['customer_name', 'amount', 'link'],
+    content: "Dear {{1}}, we noticed your payment of {{2}} is overdue. To maintain your gold rate protection, please clear the dues via: {{3}} today.",
+    examples: ["Sarah", "₹15,000", "https://order.auragoldelite.com/?token=abc"]
+  },
+  // 12) Urgent Lapse
+  {
+    name: 'auragold_urgent_lapse',
+    description: 'Urgent reminder before rate protection lapses.',
+    category: 'UTILITY',
+    appGroup: 'PAYMENT_COLLECTION',
+    variables: ['customer_name', 'order_id', 'amount', 'link'],
+    content: "URGENT {{1}}: Your Gold Rate Protection for order {{2}} expires in 24 hours. Pay {{3}} immediately to save your booked rate: {{4}}",
+    examples: ["Mike", "ORD-123", "₹15,000", "https://order.auragoldelite.com/?token=abc"]
+  },
+  // 13) Rate Adjustment Liability
+  {
+    name: 'auragold_rate_adjustment_liability',
+    description: 'Triggered when protection limit is breached and a milestone is missed.',
+    category: 'UTILITY',
+    appGroup: 'SYSTEM_NOTIFICATIONS',
+    variables: ['customer_name', 'surcharge_amount', 'order_id', 'new_base_rate', 'token_link'],
+    content: "URGENT notice for {{1}}: Due to a missed payment milestone, your rate protection for Order {{3}} has lapsed. A market adjustment surcharge of ₹{{2}} has been applied. The new base rate is now ₹{{4}}/g. Please review and accept the new terms here: https://order.auragoldelite.com/?token={{5}}",
+    examples: ["Rahul", "1500", "ORD-77", "6800", "Lmn456"]
+  },
+  // 14) Rate Stabilized
+  {
+    name: 'auragold_rate_stabilized',
+    description: 'Triggered when the gold rate falls back under the protection limit.',
+    category: 'UTILITY',
+    appGroup: 'SYSTEM_NOTIFICATIONS',
+    variables: ['customer_name', 'surcharge_amount', 'order_id', 'new_base_rate', 'token_link'],
+    content: "Good news for {{1}}: The current market gold rate has stabilized and fallen back within your protection limit for Order {{3}}. The previous market adjustment surcharge of ₹{{2}} has been removed. Your base rate is restored to ₹{{4}}/g. You can review your updated order details securely here: https://order.auragoldelite.com/?token={{5}}",
+    examples: ["Rahul", "1500", "ORD-77", "6800", "Lmn456"]
   }
 ];
 

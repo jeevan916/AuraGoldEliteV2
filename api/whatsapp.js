@@ -1,6 +1,7 @@
 
 import express from 'express';
 import { getPool, ensureDb, normalizePhone, logDbActivity } from './db.js';
+import { checkRateBreaches } from './rateService.js';
 
 const router = express.Router();
 const META_API_VERSION = "v20.0";
@@ -293,6 +294,16 @@ router.post('/send', ensureDb, async (req, res) => {
         res.status(200).json(result);
     } catch (e) {
         res.status(400).json({ success: false, error: e.message });
+    }
+});
+
+router.post('/test-breach/:orderId', ensureDb, async (req, res) => {
+    const { orderId } = req.params;
+    try {
+        await checkRateBreaches(orderId, true);
+        res.status(200).json({ success: true, message: `Breach check triggered for order ${orderId}` });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 

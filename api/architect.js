@@ -13,7 +13,7 @@ const rootDir = process.cwd();
 const router = express.Router();
 
 const getAI = () => {
-    const key = process.env.API_KEY;
+    const key = process.env.GEMINI_API_KEY || process.env.API_KEY;
     if (!key) return null;
     return new GoogleGenAI({ apiKey: key });
 };

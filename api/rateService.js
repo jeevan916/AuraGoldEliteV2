@@ -3,10 +3,12 @@ import { getPool } from './db.js';
 import https from 'https';
 import http from 'http';
 import { sendWhatsAppMessage } from './whatsapp.js';
+import { io as ioClient } from 'socket.io-client';
 
 let backgroundInterval = null;
 let currentIntervalMins = null;
 let io = null;
+let socketClient = null;
 
 // Configuration for Rate Providers (Priority Order)
 // Updated: Batuk (Augmont) is now the primary source.
@@ -25,6 +27,62 @@ const PROVIDERS = [
 
 export const setRateServiceIo = (socketIo) => {
     io = socketIo;
+};
+
+export const initSocketRates = (serverUrl, apiKey) => {
+    console.log(`[RateService] Initializing socket rates with URL: ${serverUrl}`);
+    console.log(`[RateService] API Key provided: ${apiKey ? 'Yes' : 'No'}`);
+    if (!serverUrl || !apiKey) {
+        console.error("[RateService] Missing serverUrl or apiKey");
+        return;
+    }
+    if (socketClient) socketClient.disconnect();
+    
+    socketClient = ioClient(serverUrl, {
+        auth: { token: apiKey },
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 2000,
+        reconnectionDelayMax: 10000,
+        timeout: 20000
+    });
+
+    socketClient.on('connect', () => {
+        console.log('[RateService] Connected to external live rates stream');
+    });
+
+    socketClient.on('rates', async (data) => {
+        console.log('[RateService] Received rates from external stream');
+        // Assuming data structure matches RatesPayload
+        // Need to map this to the gold_rates table structure
+        // rate24k, rate22k, rate18k, rateSilver
+        // The payload has goldRates and silverRates which are arrays of RateItem
+        
+        // This is a simplification, need to map correctly
+        const gold24k = data.goldRates.find(r => r.name.includes('24K'))?.ask || 0;
+        const gold22k = data.goldRates.find(r => r.name.includes('22K'))?.ask || 0;
+        const gold18k = data.goldRates.find(r => r.name.includes('18K'))?.ask || 0;
+        const silver = data.silverRates.find(r => r.name.includes('Silver'))?.ask || 0;
+
+        try {
+            const pool = getPool();
+            const connection = await pool.getConnection();
+            await connection.query(
+                'INSERT INTO gold_rates (rate24k, rate22k, rate18k, rateSilver) VALUES (?, ?, ?, ?)',
+                [gold24k, gold22k, gold18k, silver]
+            );
+            connection.release();
+            if (io) io.emit('rates', { rate24k: gold24k, rate22k: gold22k, rate18k: gold18k, rateSilver: silver, recorded_at: new Date() });
+        } catch (e) {
+            console.error("[RateService] Error saving socket rates:", e.message);
+        }
+    });
+
+    socketClient.on('connect_error', (err) => {
+        console.error('[RateService] External stream connection error:', err.message);
+        if (err.description) console.error('[RateService] Error description:', err.description);
+        if (err.context) console.error('[RateService] Error context:', err.context);
+    });
 };
 
 // Helper for robust fetching from legacy servers (ignores SSL errors, follows redirects)
@@ -331,7 +389,7 @@ export async function fetchAndSaveRate(forcedProviderId = null) {
         }
         
         // Check for rate breaches
-        await checkRateBreaches(rate24k);
+        await checkRateBreaches();
 
         return { success: true, ...payload };
 
@@ -341,7 +399,7 @@ export async function fetchAndSaveRate(forcedProviderId = null) {
     }
 }
 
-async function checkRateBreaches(currentRate24k) {
+export async function checkRateBreaches(targetOrderId = null, forceTest = false) {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
@@ -358,7 +416,21 @@ async function checkRateBreaches(currentRate24k) {
         const { phoneId, token } = whatsappConfig;
 
         // Fetch orders with protection limit
-        const [orders] = await connection.query("SELECT * FROM orders WHERE protectionLimit IS NOT NULL AND protectionLimit > 0");
+        let query = "SELECT * FROM orders WHERE protectionLimit IS NOT NULL AND protectionLimit > 0";
+        const params = [];
+        if (targetOrderId && typeof targetOrderId === 'string') {
+            query = "SELECT * FROM orders WHERE id = ?";
+            params.push(targetOrderId);
+        }
+        const [orders] = await connection.query(query, params);
+
+        if (forceTest && orders.length === 0) {
+            throw new Error("Order not found. Note: Only orders with an active Rate Protection Limit can be tested for breaches.");
+        }
+
+        // Fetch current rate
+        const [rateRows] = await connection.query("SELECT rate24k FROM gold_rates ORDER BY recorded_at DESC LIMIT 1");
+        const currentRate24k = rateRows.length > 0 ? rateRows[0].rate24k : 0;
 
         for (const order of orders) {
             const isBreached = currentRate24k > order.protectionLimit;
@@ -370,47 +442,83 @@ async function checkRateBreaches(currentRate24k) {
             const [milestones] = await connection.query("SELECT * FROM payment_schedules WHERE orderId = ? AND status = 'PENDING' AND dueDate < ?", [order.id, new Date()]);
             const hasMissedMilestone = milestones.length > 0;
 
-            if (isBreached && !order.isRateBreached) {
+            // Calculate variables for the template
+            const orderData = JSON.parse(order.data);
+            const bookedRate = orderData.paymentPlan?.protectionRateBooked || orderData.goldRateAtBooking || 0;
+            const diff = currentRate24k - bookedRate;
+            const surchargePerGram = diff > order.protectionLimit ? diff - order.protectionLimit : 0;
+            const totalWeight = orderData.items?.reduce((sum, item) => sum + (item.netWeight || 0), 0) || 0;
+            const taxRate = config.defaultTaxRate || 3;
+            const estimatedImpact = surchargePerGram * totalWeight * (1 + (taxRate/100));
+            const newEffectiveRate = bookedRate + surchargePerGram;
+
+            const components = [
+                {
+                    type: "body",
+                    parameters: [
+                        { type: "text", text: order.customerName || "Customer" },
+                        { type: "text", text: Math.round(estimatedImpact).toLocaleString() },
+                        { type: "text", text: order.id },
+                        { type: "text", text: newEffectiveRate.toString() },
+                        { type: "text", text: orderData.shareToken || "" }
+                    ]
+                }
+            ];
+
+            if (forceTest || (isBreached && !order.isRateBreached)) {
                 // Potential breach
-                if (now - lastNotifiedAt > cooldownMs) {
-                    await sendWhatsAppMessage({
-                        to: order.customerPhone,
-                        templateName: 'auragold_rate_adjustment_alert',
-                        customerName: order.customerName,
-                        phoneId,
-                        token
-                    });
-                    // Update order data
-                    const orderData = JSON.parse(order.data);
-                    orderData.isRateBreached = true;
-                    // Only require liability acceptance if they have missed a milestone
-                    orderData.requiresLiabilityAcceptance = hasMissedMilestone;
+                if (forceTest || now - lastNotifiedAt > cooldownMs) {
+                    const templateName = hasMissedMilestone ? 'auragold_rate_adjustment_liability' : 'auragold_rate_adjustment_alert';
                     
-                    await connection.query("UPDATE orders SET data = ?, lastNotifiedAt = ? WHERE id = ?", [JSON.stringify(orderData), new Date(), order.id]);
-                    if (io) io.emit('orders_sync');
+                    try {
+                        await sendWhatsAppMessage({
+                            to: order.customerPhone,
+                            templateName,
+                            components,
+                            customerName: order.customerName,
+                            phoneId,
+                            token
+                        });
+                        // Update order data
+                        orderData.isRateBreached = true;
+                        // Only require liability acceptance if they have missed a milestone
+                        orderData.requiresLiabilityAcceptance = hasMissedMilestone;
+                        
+                        await connection.query("UPDATE orders SET data = ?, lastNotifiedAt = ? WHERE id = ?", [JSON.stringify(orderData), new Date(), order.id]);
+                        if (io) io.emit('orders_sync');
+                    } catch (err) {
+                        console.error(`[RateService] Failed to send breach alert for order ${order.id}:`, err.message);
+                        if (forceTest) throw err;
+                    }
                 }
             } else if (!isBreached && order.isRateBreached) {
                 // Rate stabilized
-                if (now - lastNotifiedAt > cooldownMs) {
-                    await sendWhatsAppMessage({
-                        to: order.customerPhone,
-                        templateName: 'auragold_rate_stabilized',
-                        customerName: order.customerName,
-                        phoneId,
-                        token
-                    });
-                    // Update order data
-                    const orderData = JSON.parse(order.data);
-                    orderData.isRateBreached = false;
-                    orderData.requiresLiabilityAcceptance = false;
-                    await connection.query("UPDATE orders SET data = ?, lastNotifiedAt = ? WHERE id = ?", [JSON.stringify(orderData), new Date(), order.id]);
-                    if (io) io.emit('orders_sync');
+                if (forceTest || now - lastNotifiedAt > cooldownMs) {
+                    try {
+                        await sendWhatsAppMessage({
+                            to: order.customerPhone,
+                            templateName: 'auragold_rate_stabilized',
+                            components,
+                            customerName: order.customerName,
+                            phoneId,
+                            token
+                        });
+                        // Update order data
+                        orderData.isRateBreached = false;
+                        orderData.requiresLiabilityAcceptance = false;
+                        await connection.query("UPDATE orders SET data = ?, lastNotifiedAt = ? WHERE id = ?", [JSON.stringify(orderData), new Date(), order.id]);
+                        if (io) io.emit('orders_sync');
+                    } catch (err) {
+                        console.error(`[RateService] Failed to send stabilized alert for order ${order.id}:`, err.message);
+                        if (forceTest) throw err;
+                    }
                 }
             }
         }
         connection.release();
     } catch (e) {
         console.error("[RateService] checkRateBreaches error:", e);
+        throw e; // Throw so the test route can catch and display the error
     }
 }
 

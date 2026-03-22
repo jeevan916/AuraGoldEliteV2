@@ -7,12 +7,13 @@ export default defineConfig(({ mode }) => {
   const envDir = process.cwd();
   const env = loadEnv(mode, envDir, '');
 
+  console.log("Vite Config - GEMINI_API_KEY present:", !!env.GEMINI_API_KEY);
+
   return {
     plugins: [react()],
     // Relative base is most reliable for Hostinger shared/VPS hosting
     base: './', 
     define: {
-      'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),
       'process.env.VITE_API_BASE_URL': JSON.stringify(env.VITE_API_BASE_URL || 'https://order.auragoldelite.com'),
     },
     build: {

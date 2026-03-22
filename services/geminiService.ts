@@ -12,9 +12,9 @@ const PRO_MODEL = 'gemini-3-pro-preview';
 const FLASH_MODEL = 'gemini-3-flash-preview';
 
 const getAI = () => {
-    const key = process.env.API_KEY;
+    const key = process.env.GEMINI_API_KEY || process.env.API_KEY;
     if (!key || key.includes('API_KEY')) return null;
-    return new GoogleGenAI({ apiKey: process.env.API_KEY });
+    return new GoogleGenAI({ apiKey: key });
 };
 
 export const geminiService = {

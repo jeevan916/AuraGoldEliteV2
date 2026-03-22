@@ -29,6 +29,8 @@ export async function runPaymentReminders() {
             const dueDate = new Date(schedule.dueDate);
             const diffTime = dueDate.getTime() - today.getTime();
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            console.log(`[ReminderService] Checking schedule ${schedule.id} for ${schedule.customerName}. Due in ${diffDays} days.`);
 
             let templateName = null;
             let tone = null;
@@ -60,14 +62,51 @@ export async function runPaymentReminders() {
                 // Check if already sent too many
                 const [logRows] = await connection.query("SELECT COUNT(*) as count FROM whatsapp_logs WHERE data LIKE ? AND timestamp > ?", [`%${schedule.id}%`, new Date(now.getTime() - 24 * 60 * 60 * 1000)]);
                 if (logRows[0].count < maxRemindersPerMilestone) {
-                    await sendWhatsAppMessage({
-                        to: schedule.customerPhone,
-                        templateName,
-                        customerName: schedule.customerName,
-                        phoneId,
-                        token
-                    });
-                    console.log(`[ReminderService] Sent ${tone} reminder for schedule ${schedule.id}`);
+                    // Fetch order to get shareToken
+                    const [orderRows] = await connection.query("SELECT data FROM orders WHERE id = ?", [schedule.orderId]);
+                    const orderData = orderRows.length > 0 ? JSON.parse(orderRows[0].data) : {};
+                    const shareToken = orderData.shareToken || "";
+                    const paymentLink = `https://order.auragoldelite.com/?token=${shareToken}`;
+                    const amountStr = `₹${schedule.targetAmount.toLocaleString()}`;
+
+                    let parameters = [];
+                    if (templateName === 'auragold_gentle_reminder') {
+                        parameters = [
+                            { type: "text", text: schedule.customerName || "Customer" },
+                            { type: "text", text: amountStr },
+                            { type: "text", text: schedule.orderId },
+                            { type: "text", text: paymentLink }
+                        ];
+                    } else if (templateName === 'auragold_payment_overdue') {
+                        parameters = [
+                            { type: "text", text: schedule.customerName || "Customer" },
+                            { type: "text", text: amountStr },
+                            { type: "text", text: paymentLink }
+                        ];
+                    } else if (templateName === 'auragold_urgent_lapse') {
+                        parameters = [
+                            { type: "text", text: schedule.customerName || "Customer" },
+                            { type: "text", text: schedule.orderId },
+                            { type: "text", text: amountStr },
+                            { type: "text", text: paymentLink }
+                        ];
+                    }
+
+                    const components = parameters.length > 0 ? [{ type: "body", parameters }] : [];
+
+                    try {
+                        await sendWhatsAppMessage({
+                            to: schedule.customerPhone,
+                            templateName,
+                            components,
+                            customerName: schedule.customerName,
+                            phoneId,
+                            token
+                        });
+                        console.log(`[ReminderService] Sent ${tone} reminder for schedule ${schedule.id}`);
+                    } catch (err) {
+                        console.error(`[ReminderService] Failed to send ${templateName} to ${schedule.customerPhone}:`, err.message);
+                    }
                 }
             }
         }

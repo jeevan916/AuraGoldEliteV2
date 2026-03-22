@@ -22,7 +22,7 @@ import coreRouter from './api/core.js';
 import architectRouter from './api/architect.js';
 
 // Background Services
-import { initRateService, setRateServiceIo, fetchAndSaveRate } from './api/rateService.js';
+import { initRateService, setRateServiceIo, fetchAndSaveRate, initSocketRates } from './api/rateService.js';
 import { runPaymentReminders } from './api/reminderService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -84,6 +84,11 @@ io.on('connection', (socket) => {
 
 // Inject IO into services
 setRateServiceIo(io);
+
+// Initialize Socket Rates if configured
+// if (process.env.EXTERNAL_RATES_URL && process.env.EXTERNAL_RATES_API_KEY) {
+//     initSocketRates(process.env.EXTERNAL_RATES_URL, process.env.EXTERNAL_RATES_API_KEY);
+// }
 
 app.set('trust proxy', 1); 
 app.use(compression());    
