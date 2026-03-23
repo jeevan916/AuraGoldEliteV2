@@ -324,6 +324,11 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
                             <div className={`max-w-[75%] rounded-xl p-3 shadow-sm relative ${msg.direction === 'inbound' ? 'bg-white' : 'bg-[#d9fdd3]'}`}>
                                 <p className="text-sm text-slate-800 whitespace-pre-wrap">{msg.message}</p>
                                 <div className="flex items-center justify-end gap-1 mt-1">
+                                    {msg.direction === 'outbound' && msg.sentBy && (
+                                        <span className="text-[9px] font-bold text-slate-400 uppercase mr-1 bg-slate-100 px-1 rounded">
+                                            {msg.sentBy}
+                                        </span>
+                                    )}
                                     <span className="text-[10px] text-slate-400">{new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                                     {msg.direction === 'outbound' && <StatusIcon status={msg.status} />}
                                 </div>

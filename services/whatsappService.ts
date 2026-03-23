@@ -279,7 +279,8 @@ export const whatsappService = {
     bodyVariables: string[] = [], 
     customerName: string, 
     buttonVariable?: string,
-    headerImageUrl?: string
+    headerImageUrl?: string,
+    sentBy?: 'ADMIN' | 'STAFF' | 'SYSTEM'
   ): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
     if (!recipient) return { success: false, error: "Invalid Phone Number" };
@@ -289,6 +290,21 @@ export const whatsappService = {
     if (!settings.whatsappPhoneNumberId || !token) return { success: false, error: "WhatsApp API Credentials Missing in Settings" };
 
     const safeTemplateName = templateName.toLowerCase().trim();
+
+    let actualSentBy = sentBy;
+    if (!actualSentBy) {
+        try {
+            const authStr = localStorage.getItem('aura_auth');
+            if (authStr) {
+                const user = JSON.parse(authStr);
+                actualSentBy = (user.role === 'ADMIN' || user.role === 'MANAGER') ? 'ADMIN' : 'STAFF';
+            } else {
+                actualSentBy = 'SYSTEM';
+            }
+        } catch (e) {
+            actualSentBy = 'SYSTEM';
+        }
+    }
 
     try {
         const components: any[] = [];
@@ -330,7 +346,8 @@ export const whatsappService = {
             templateName: safeTemplateName, 
             language: languageCode, 
             components, 
-            customerName 
+            customerName,
+            sentBy: actualSentBy
         };
 
         const response = await fetch(`${API_BASE}/api/whatsapp/send`, {
@@ -362,7 +379,8 @@ export const whatsappService = {
             status: 'SENT', 
             timestamp: new Date().toISOString(), 
             type: 'TEMPLATE', 
-            direction: 'outbound'
+            direction: 'outbound',
+            sentBy: actualSentBy
           }
         };
     } catch (error: any) {
@@ -370,13 +388,28 @@ export const whatsappService = {
     }
   },
 
-  async sendMessage(to: string, message: string, customerName: string): Promise<WhatsAppResponse> {
+  async sendMessage(to: string, message: string, customerName: string, sentBy?: 'ADMIN' | 'STAFF' | 'SYSTEM'): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
     if (!recipient) return { success: false, error: "Invalid Phone Number" };
 
     const settings = this.getSettings();
     const token = settings.whatsappBusinessToken?.trim();
     if (!settings.whatsappPhoneNumberId || !token) return { success: false, error: "WhatsApp API Credentials Missing in Settings" };
+
+    let actualSentBy = sentBy;
+    if (!actualSentBy) {
+        try {
+            const authStr = localStorage.getItem('aura_auth');
+            if (authStr) {
+                const user = JSON.parse(authStr);
+                actualSentBy = (user.role === 'ADMIN' || user.role === 'MANAGER') ? 'ADMIN' : 'STAFF';
+            } else {
+                actualSentBy = 'SYSTEM';
+            }
+        } catch (e) {
+            actualSentBy = 'SYSTEM';
+        }
+    }
 
     try {
       const response = await fetch(`${API_BASE}/api/whatsapp/send`, {
@@ -386,7 +419,7 @@ export const whatsappService = {
             'x-phone-id': settings.whatsappPhoneNumberId,
             'x-auth-token': token
         },
-        body: JSON.stringify({ to: recipient, message, customerName })
+        body: JSON.stringify({ to: recipient, message, customerName, sentBy: actualSentBy })
       });
 
       const data = await response.json();
@@ -401,7 +434,7 @@ export const whatsappService = {
         logEntry: {
           id: data.data?.messages?.[0]?.id || `wamid.${Date.now()}`,
           customerName, phoneNumber: recipient, message,
-          status: 'SENT', timestamp: new Date().toISOString(), type: 'CUSTOM', direction: 'outbound'
+          status: 'SENT', timestamp: new Date().toISOString(), type: 'CUSTOM', direction: 'outbound', sentBy: actualSentBy
         }
       };
     } catch (e: any) { 

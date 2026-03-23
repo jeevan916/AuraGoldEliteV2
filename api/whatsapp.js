@@ -6,7 +6,7 @@ import { checkRateBreaches } from './rateService.js';
 const router = express.Router();
 const META_API_VERSION = "v20.0";
 
-export async function sendWhatsAppMessage({ to, message, templateName, language, components, customerName, phoneId, token }) {
+export async function sendWhatsAppMessage({ to, message, templateName, language, components, customerName, phoneId, token, sentBy = 'SYSTEM' }) {
     if (!phoneId || !token) {
         throw new Error("Missing WhatsApp Credentials");
     }
@@ -51,7 +51,7 @@ export async function sendWhatsAppMessage({ to, message, templateName, language,
         if (data.messages) {
             const pool = getPool();
             const connection = await pool.getConnection();
-            const log = { id: data.messages[0].id, customerName: customerName || "Customer", phoneNumber: normalizePhone(to), message: templateName ? `[Template: ${templateName}]` : message, status: 'SENT', timestamp: new Date().toISOString(), direction: 'outbound', type: templateName ? 'TEMPLATE' : 'CUSTOM' };
+            const log = { id: data.messages[0].id, customerName: customerName || "Customer", phoneNumber: normalizePhone(to), message: templateName ? `[Template: ${templateName}]` : message, status: 'SENT', timestamp: new Date().toISOString(), direction: 'outbound', type: templateName ? 'TEMPLATE' : 'CUSTOM', sentBy };
             await connection.query('INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)', [log.id, log.phoneNumber, 'outbound', new Date(), JSON.stringify(log)]);
             // Note: io is not available here.
             connection.release();
@@ -280,7 +280,7 @@ router.delete('/templates', ensureDb, async (req, res) => {
 });
 
 router.post('/send', ensureDb, async (req, res) => {
-    const { to, message, templateName, language, components, customerName } = req.body;
+    const { to, message, templateName, language, components, customerName, sentBy } = req.body;
     const phoneId = req.headers['x-phone-id'];
     const token = req.headers['x-auth-token'];
 
@@ -289,8 +289,8 @@ router.post('/send', ensureDb, async (req, res) => {
     }
 
     try {
-        const result = await sendWhatsAppMessage({ to, message, templateName, language, components, customerName, phoneId, token });
-        await logDbActivity('WHATSAPP_SENT', templateName ? `Sent Template: ${templateName}` : 'Sent Manual Message', { recipient: to, customer: customerName, template: templateName }, req);
+        const result = await sendWhatsAppMessage({ to, message, templateName, language, components, customerName, phoneId, token, sentBy });
+        await logDbActivity('WHATSAPP_SENT', templateName ? `Sent Template: ${templateName}` : 'Sent Manual Message', { recipient: to, customer: customerName, template: templateName, sentBy }, req);
         res.status(200).json(result);
     } catch (e) {
         res.status(400).json({ success: false, error: e.message });

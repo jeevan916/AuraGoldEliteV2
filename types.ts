@@ -178,6 +178,7 @@ export interface WhatsAppLogEntry {
   direction: 'outbound' | 'inbound';
   type: 'TEMPLATE' | 'CUSTOM' | 'INBOUND';
   context?: string;
+  sentBy?: 'ADMIN' | 'STAFF' | 'SYSTEM';
 }
 
 export type CollectionTone = 'POLITE' | 'FIRM' | 'URGENT' | 'ENCOURAGING';

@@ -29,7 +29,8 @@ const mockData = {
         }
     ],
     system_activities: [],
-    system_errors: []
+    system_errors: [],
+    whatsapp_logs: []
 };
 
 export async function initDb() {
@@ -204,6 +205,28 @@ export const getPool = () => {
                     if (lowerSql.includes('update integrations set config = ? where provider = ?')) {
                         const index = mockData.integrations.findIndex(i => i.provider === params[1]);
                         if (index > -1) mockData.integrations[index].config = params[0];
+                        return [{ affectedRows: 1 }];
+                    }
+                    if (lowerSql.includes('insert into whatsapp_logs')) {
+                        const existingIndex = mockData.whatsapp_logs.findIndex(l => l.id === params[0]);
+                        if (existingIndex > -1) {
+                            mockData.whatsapp_logs[existingIndex].data = params[4];
+                        } else {
+                            mockData.whatsapp_logs.push({ id: params[0], phone: params[1], direction: params[2], timestamp: params[3], data: params[4] });
+                        }
+                        return [{ affectedRows: 1 }];
+                    }
+                    if (lowerSql.includes('select data from whatsapp_logs order by timestamp desc')) {
+                        const sorted = [...mockData.whatsapp_logs].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 150);
+                        return [sorted];
+                    }
+                    if (lowerSql.includes('select data from whatsapp_logs where id = ?')) {
+                        const log = mockData.whatsapp_logs.find(l => l.id === params[0]);
+                        return [log ? [log] : []];
+                    }
+                    if (lowerSql.includes('update whatsapp_logs set data = ? where id = ?')) {
+                        const index = mockData.whatsapp_logs.findIndex(l => l.id === params[1]);
+                        if (index > -1) mockData.whatsapp_logs[index].data = params[0];
                         return [{ affectedRows: 1 }];
                     }
                     return [[]];
