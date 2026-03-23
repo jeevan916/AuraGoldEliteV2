@@ -12,8 +12,12 @@ const PRO_MODEL = 'gemini-3-pro-preview';
 const FLASH_MODEL = 'gemini-3-flash-preview';
 
 const getAI = () => {
-    const key = process.env.GEMINI_API_KEY || process.env.API_KEY;
-    if (!key || key.includes('API_KEY')) return null;
+    const key = process.env.GEMINI_API_KEY;
+    
+    if (!key) {
+        console.error("AI Offline due to missing key");
+        return null;
+    }
     return new GoogleGenAI({ apiKey: key });
 };
 

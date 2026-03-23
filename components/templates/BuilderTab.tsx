@@ -42,7 +42,10 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
                 </div>
                 
                 <div className="space-y-4 relative z-10">
+                    <label htmlFor="promptText" className="sr-only">Prompt Text</label>
                     <textarea 
+                        id="promptText"
+                        name="promptText"
                         className="w-full h-32 p-3 bg-white border border-indigo-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner resize-none"
                         placeholder="Describe your template needs..."
                         value={promptText}
@@ -74,8 +77,10 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
-                      <label className="text-[10px] font-bold uppercase text-slate-400">Template Name</label>
+                      <label htmlFor="templateName" className="text-[10px] font-bold uppercase text-slate-400">Template Name</label>
                       <input 
+                          id="templateName"
+                          name="templateName"
                           value={templateName}
                           onChange={e => setTemplateName(e.target.value)}
                           className={`w-full font-mono text-sm border rounded-lg p-2 outline-none focus:border-blue-500 ${editingMetaId ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`}
@@ -84,8 +89,10 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold uppercase text-slate-400">Meta Category</label>
+                      <label htmlFor="metaCategory" className="text-[10px] font-bold uppercase text-slate-400">Meta Category</label>
                       <select 
+                          id="metaCategory"
+                          name="metaCategory"
                           value={selectedCategory} 
                           onChange={e => setSelectedCategory(e.target.value as MetaCategory)}
                           className="w-full text-sm border rounded-lg p-2 outline-none focus:border-blue-500"
@@ -97,8 +104,10 @@ export const BuilderTab: React.FC<BuilderTabProps> = ({
                     </div>
                 </div>
 
-                <label className="text-[10px] font-bold uppercase text-slate-400">Message Body</label>
+                <label htmlFor="messageBody" className="text-[10px] font-bold uppercase text-slate-400">Message Body</label>
                 <textarea 
+                    id="messageBody"
+                    name="messageBody"
                     value={generatedContent} 
                     onChange={e => setGeneratedContent(e.target.value)}
                     className="w-full h-32 p-3 bg-slate-50 rounded-xl text-sm mb-4 outline-none border focus:border-blue-500 font-mono"
