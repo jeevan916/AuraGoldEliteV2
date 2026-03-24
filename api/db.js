@@ -100,6 +100,16 @@ export async function initDb() {
                 password_hash VARCHAR(255) NOT NULL,
                 role VARCHAR(20) NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`,
+            `CREATE TABLE IF NOT EXISTS payment_schedules (
+                id VARCHAR(100) PRIMARY KEY,
+                orderId VARCHAR(100),
+                dueDate DATETIME,
+                targetAmount DECIMAL(10, 2),
+                cumulativeTarget DECIMAL(10, 2),
+                status VARCHAR(50),
+                warningCount INT DEFAULT 0,
+                FOREIGN KEY (orderId) REFERENCES orders(id) ON DELETE CASCADE
             )`
         ];
         for (const sql of tables) await connection.query(sql);

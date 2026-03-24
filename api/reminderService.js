@@ -20,17 +20,21 @@ export async function runPaymentReminders() {
         const { phoneId, token } = whatsappConfig;
 
         // Fetch orders and their payment schedules
-        const [schedules] = await connection.query("SELECT ps.*, o.customerName, o.customerPhone FROM payment_schedules ps JOIN orders o ON ps.orderId = o.id WHERE ps.status = 'PENDING'");
+        const [schedules] = await connection.query("SELECT ps.*, o.data as orderData FROM payment_schedules ps JOIN orders o ON ps.orderId = o.id WHERE ps.status = 'PENDING'");
 
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
         for (const schedule of schedules) {
+            const orderData = JSON.parse(schedule.orderData);
+            const customerName = orderData.customerName;
+            const customerPhone = orderData.customerContact || orderData.customerPhone;
+            
             const dueDate = new Date(schedule.dueDate);
             const diffTime = dueDate.getTime() - today.getTime();
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             
-            console.log(`[ReminderService] Checking schedule ${schedule.id} for ${schedule.customerName}. Due in ${diffDays} days.`);
+            console.log(`[ReminderService] Checking schedule ${schedule.id} for ${customerName}. Due in ${diffDays} days.`);
 
             let templateName = null;
             let tone = null;
@@ -48,14 +52,14 @@ export async function runPaymentReminders() {
 
             if (templateName) {
                 // Collision Avoidance: Check for recent rate breach alerts (last 24 hours)
-                const normalizedPhone = normalizePhone(schedule.customerPhone);
+                const normalizedPhone = normalizePhone(customerPhone);
                 const [breachLogRows] = await connection.query(
                     "SELECT COUNT(*) as count FROM whatsapp_logs WHERE phone = ? AND (data LIKE '%auragold_rate_adjustment_alert%' OR data LIKE '%auragold_rate_stabilized%') AND timestamp > ?",
                     [normalizedPhone, new Date(now.getTime() - 24 * 60 * 60 * 1000)]
                 );
 
                 if (breachLogRows[0].count > 0) {
-                    console.log(`[ReminderService] Skipping reminder for ${schedule.customerPhone} due to recent rate breach alert.`);
+                    console.log(`[ReminderService] Skipping reminder for ${customerPhone} due to recent rate breach alert.`);
                     continue;
                 }
 
@@ -63,8 +67,6 @@ export async function runPaymentReminders() {
                 const [logRows] = await connection.query("SELECT COUNT(*) as count FROM whatsapp_logs WHERE data LIKE ? AND timestamp > ?", [`%${schedule.id}%`, new Date(now.getTime() - 24 * 60 * 60 * 1000)]);
                 if (logRows[0].count < maxRemindersPerMilestone) {
                     // Fetch order to get shareToken
-                    const [orderRows] = await connection.query("SELECT data FROM orders WHERE id = ?", [schedule.orderId]);
-                    const orderData = orderRows.length > 0 ? JSON.parse(orderRows[0].data) : {};
                     const shareToken = orderData.shareToken || "";
                     const paymentLink = `https://order.auragoldelite.com/?token=${shareToken}`;
                     const amountStr = `₹${schedule.targetAmount.toLocaleString()}`;
@@ -72,20 +74,20 @@ export async function runPaymentReminders() {
                     let parameters = [];
                     if (templateName === 'auragold_gentle_reminder') {
                         parameters = [
-                            { type: "text", text: schedule.customerName || "Customer" },
+                            { type: "text", text: customerName || "Customer" },
                             { type: "text", text: amountStr },
                             { type: "text", text: schedule.orderId },
                             { type: "text", text: paymentLink }
                         ];
                     } else if (templateName === 'auragold_payment_overdue') {
                         parameters = [
-                            { type: "text", text: schedule.customerName || "Customer" },
+                            { type: "text", text: customerName || "Customer" },
                             { type: "text", text: amountStr },
                             { type: "text", text: paymentLink }
                         ];
                     } else if (templateName === 'auragold_urgent_lapse') {
                         parameters = [
-                            { type: "text", text: schedule.customerName || "Customer" },
+                            { type: "text", text: customerName || "Customer" },
                             { type: "text", text: schedule.orderId },
                             { type: "text", text: amountStr },
                             { type: "text", text: paymentLink }
@@ -96,16 +98,16 @@ export async function runPaymentReminders() {
 
                     try {
                         await sendWhatsAppMessage({
-                            to: schedule.customerPhone,
+                            to: customerPhone,
                             templateName,
                             components,
-                            customerName: schedule.customerName,
+                            customerName: customerName,
                             phoneId,
                             token
                         });
                         console.log(`[ReminderService] Sent ${tone} reminder for schedule ${schedule.id}`);
                     } catch (err) {
-                        console.error(`[ReminderService] Failed to send ${templateName} to ${schedule.customerPhone}:`, err.message);
+                        console.error(`[ReminderService] Failed to send ${templateName} to ${customerPhone}:`, err.message);
                     }
                 }
             }

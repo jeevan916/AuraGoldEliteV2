@@ -11,6 +11,26 @@ router.post('/orders', ensureDb, async (req, res) => {
         const connection = await pool.getConnection();
         for (const order of req.body.orders) {
             await connection.query('INSERT INTO orders (id, customer_contact, status, created_at, data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data), updated_at=VALUES(updated_at)', [order.id, order.customerContact, order.status, new Date(order.createdAt), JSON.stringify(order), Date.now()]);
+            
+            if (order.paymentPlan && order.paymentPlan.milestones) {
+                const milestoneIds = order.paymentPlan.milestones.map(m => m.id);
+                if (milestoneIds.length > 0) {
+                    await connection.query(`DELETE FROM payment_schedules WHERE orderId = ? AND id NOT IN (?)`, [order.id, milestoneIds]);
+                } else {
+                    await connection.query(`DELETE FROM payment_schedules WHERE orderId = ?`, [order.id]);
+                }
+                
+                for (const m of order.paymentPlan.milestones) {
+                    await connection.query(
+                        `INSERT INTO payment_schedules (id, orderId, dueDate, targetAmount, cumulativeTarget, status, warningCount) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?) 
+                         ON DUPLICATE KEY UPDATE dueDate=VALUES(dueDate), targetAmount=VALUES(targetAmount), cumulativeTarget=VALUES(cumulativeTarget), status=VALUES(status)`,
+                        [m.id, order.id, new Date(m.dueDate), m.targetAmount, m.cumulativeTarget, m.status, m.warningCount || 0]
+                    );
+                }
+            } else {
+                await connection.query(`DELETE FROM payment_schedules WHERE orderId = ?`, [order.id]);
+            }
         }
         connection.release();
         
