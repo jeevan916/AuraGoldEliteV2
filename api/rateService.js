@@ -416,7 +416,7 @@ export async function checkRateBreaches(targetOrderId = null, forceTest = false)
         const { phoneId, token } = whatsappConfig;
 
         // Fetch orders with protection limit
-        let query = "SELECT * FROM orders WHERE protectionLimit IS NOT NULL AND protectionLimit > 0";
+        let query = "SELECT * FROM orders WHERE status NOT IN ('DELIVERED', 'CANCELLED')";
         const params = [];
         if (targetOrderId && typeof targetOrderId === 'string') {
             query = "SELECT * FROM orders WHERE id = ?";
@@ -425,36 +425,44 @@ export async function checkRateBreaches(targetOrderId = null, forceTest = false)
         const [orders] = await connection.query(query, params);
 
         if (forceTest && orders.length === 0) {
-            throw new Error("Order not found. Note: Only orders with an active Rate Protection Limit can be tested for breaches.");
+            throw new Error("Order not found.");
         }
 
         // Fetch current rate
-        const [rateRows] = await connection.query("SELECT rate24k FROM gold_rates ORDER BY recorded_at DESC LIMIT 1");
-        const currentRate24k = rateRows.length > 0 ? rateRows[0].rate24k : 0;
+        const [rateRows] = await connection.query("SELECT rate24k, rate22k FROM gold_rates ORDER BY recorded_at DESC LIMIT 1");
+        const currentRate22k = rateRows.length > 0 ? rateRows[0].rate22k : 0;
 
         for (const order of orders) {
-            const isBreached = currentRate24k > order.protectionLimit;
+            const orderData = JSON.parse(order.data);
+            
+            // Only process orders with active rate protection
+            if (orderData.paymentPlan?.protectionStatus !== 'ACTIVE') {
+                if (!forceTest) continue;
+            }
+
+            const limit = orderData.paymentPlan?.protectionLimit || 0;
+            const bookedRate = orderData.paymentPlan?.protectionRateBooked || orderData.goldRateAtBooking || 0;
+            
+            const diff = currentRate22k - bookedRate;
+            const isBreached = diff > limit;
+            const surchargePerGram = isBreached ? diff - limit : 0;
+            
+            const totalWeight = orderData.items?.reduce((sum, item) => sum + (item.netWeight || 0), 0) || 0;
+            const taxRate = config.defaultTaxRate || 3;
+            const estimatedImpact = surchargePerGram * totalWeight * (1 + (taxRate/100));
+            const newEffectiveRate = bookedRate + surchargePerGram;
+
             const now = Date.now();
-            const lastNotifiedAt = order.lastNotifiedAt ? new Date(order.lastNotifiedAt).getTime() : 0;
+            const lastNotifiedAt = orderData.lastNotifiedAt ? new Date(orderData.lastNotifiedAt).getTime() : 0;
             const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
             // Check if any milestone is missed (overdue)
             const [milestones] = await connection.query("SELECT * FROM payment_schedules WHERE orderId = ? AND status = 'PENDING' AND dueDate < ?", [order.id, new Date()]);
             const hasMissedMilestone = milestones.length > 0;
 
-            // Calculate variables for the template
-            const orderData = JSON.parse(order.data);
             const customerName = orderData.customerName || "Customer";
             const customerPhone = order.customer_contact || orderData.customerContact || orderData.customerPhone;
             
-            const bookedRate = orderData.paymentPlan?.protectionRateBooked || orderData.goldRateAtBooking || 0;
-            const diff = currentRate24k - bookedRate;
-            const surchargePerGram = diff > order.protectionLimit ? diff - order.protectionLimit : 0;
-            const totalWeight = orderData.items?.reduce((sum, item) => sum + (item.netWeight || 0), 0) || 0;
-            const taxRate = config.defaultTaxRate || 3;
-            const estimatedImpact = surchargePerGram * totalWeight * (1 + (taxRate/100));
-            const newEffectiveRate = bookedRate + surchargePerGram;
-
             const components = [
                 {
                     type: "body",
@@ -468,7 +476,7 @@ export async function checkRateBreaches(targetOrderId = null, forceTest = false)
                 }
             ];
 
-            if (forceTest || (isBreached && !order.isRateBreached)) {
+            if (forceTest || (isBreached && !orderData.isRateBreached)) {
                 // Potential breach
                 if (forceTest || now - lastNotifiedAt > cooldownMs) {
                     const templateName = hasMissedMilestone ? 'auragold_rate_adjustment_liability' : 'auragold_rate_adjustment_alert';
@@ -486,15 +494,16 @@ export async function checkRateBreaches(targetOrderId = null, forceTest = false)
                         orderData.isRateBreached = true;
                         // Only require liability acceptance if they have missed a milestone
                         orderData.requiresLiabilityAcceptance = hasMissedMilestone;
+                        orderData.lastNotifiedAt = new Date().toISOString();
                         
-                        await connection.query("UPDATE orders SET data = ?, lastNotifiedAt = ? WHERE id = ?", [JSON.stringify(orderData), new Date(), order.id]);
+                        await connection.query("UPDATE orders SET data = ? WHERE id = ?", [JSON.stringify(orderData), order.id]);
                         if (io) io.emit('orders_sync');
                     } catch (err) {
                         console.error(`[RateService] Failed to send breach alert for order ${order.id}:`, err.message);
                         if (forceTest) throw err;
                     }
                 }
-            } else if (!isBreached && order.isRateBreached) {
+            } else if (!isBreached && orderData.isRateBreached) {
                 // Rate stabilized
                 if (forceTest || now - lastNotifiedAt > cooldownMs) {
                     try {
@@ -509,7 +518,8 @@ export async function checkRateBreaches(targetOrderId = null, forceTest = false)
                         // Update order data
                         orderData.isRateBreached = false;
                         orderData.requiresLiabilityAcceptance = false;
-                        await connection.query("UPDATE orders SET data = ?, lastNotifiedAt = ? WHERE id = ?", [JSON.stringify(orderData), new Date(), order.id]);
+                        orderData.lastNotifiedAt = new Date().toISOString();
+                        await connection.query("UPDATE orders SET data = ? WHERE id = ?", [JSON.stringify(orderData), order.id]);
                         if (io) io.emit('orders_sync');
                     } catch (err) {
                         console.error(`[RateService] Failed to send stabilized alert for order ${order.id}:`, err.message);
