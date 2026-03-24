@@ -444,6 +444,9 @@ export async function checkRateBreaches(targetOrderId = null, forceTest = false)
 
             // Calculate variables for the template
             const orderData = JSON.parse(order.data);
+            const customerName = orderData.customerName || "Customer";
+            const customerPhone = order.customer_contact || orderData.customerContact || orderData.customerPhone;
+            
             const bookedRate = orderData.paymentPlan?.protectionRateBooked || orderData.goldRateAtBooking || 0;
             const diff = currentRate24k - bookedRate;
             const surchargePerGram = diff > order.protectionLimit ? diff - order.protectionLimit : 0;
@@ -456,7 +459,7 @@ export async function checkRateBreaches(targetOrderId = null, forceTest = false)
                 {
                     type: "body",
                     parameters: [
-                        { type: "text", text: order.customerName || "Customer" },
+                        { type: "text", text: customerName },
                         { type: "text", text: Math.round(estimatedImpact).toLocaleString() },
                         { type: "text", text: order.id },
                         { type: "text", text: newEffectiveRate.toString() },
@@ -472,10 +475,10 @@ export async function checkRateBreaches(targetOrderId = null, forceTest = false)
                     
                     try {
                         await sendWhatsAppMessage({
-                            to: order.customerPhone,
+                            to: customerPhone,
                             templateName,
                             components,
-                            customerName: order.customerName,
+                            customerName: customerName,
                             phoneId,
                             token
                         });
@@ -496,10 +499,10 @@ export async function checkRateBreaches(targetOrderId = null, forceTest = false)
                 if (forceTest || now - lastNotifiedAt > cooldownMs) {
                     try {
                         await sendWhatsAppMessage({
-                            to: order.customerPhone,
+                            to: customerPhone,
                             templateName: 'auragold_rate_stabilized',
                             components,
-                            customerName: order.customerName,
+                            customerName: customerName,
                             phoneId,
                             token
                         });
