@@ -516,18 +516,11 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       finally { setDeletingId(null); }
   };
 
-  const handleCreateVariant = (trigger: SystemTrigger) => {
-      setTemplateName(`${trigger.defaultTemplateName}_v2`);
-      const placeholderText = trigger.requiredVariables.map((v, i) => `{{${i+1}}}`).join(' ');
-      setGeneratedContent(`New variant for ${trigger.label}: ${placeholderText}...`);
-      setSelectedCategory('UTILITY');
-      setSelectedGroup(trigger.appGroup);
-      setVariableExamples(trigger.requiredVariables);
-      setActiveTab('BUILDER');
-      setAiAnalysisReason(null);
-      setEditingMetaId(null);
-      setTimeout(() => { if (editorRef.current) editorRef.current.scrollIntoView({ behavior: 'smooth' }); }, 100);
-  };
+  const [isGeneratingVariant, setIsGeneratingVariant] = useState(false);
+  const [variantTrigger, setVariantTrigger] = useState<SystemTrigger | null>(null);
+  const [showVariantModal, setShowVariantModal] = useState(false);
+
+  // ... (existing state)
 
   const handleSaveLocalOrDeploy = async (action: 'LOCAL' | 'META') => {
       if(!generatedContent || !templateName) return alert("Name and Content required");
@@ -585,18 +578,39 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       setEditingStructure([]);
   };
 
+  const handleCreateVariant = (trigger: SystemTrigger) => {
+      setVariantTrigger(trigger);
+      setShowVariantModal(true);
+  };
+
+  const handleGenerateVariant = async (goal: string) => {
+      if (!variantTrigger) return;
+      setIsGeneratingVariant(true);
+      try {
+          const originalContent = templates.find(t => t.name === variantTrigger.defaultTemplateName)?.content || "";
+          const result = await geminiService.generateVariant(originalContent, goal);
+          
+          // For now, just alert the result as we don't have the full variant saving logic yet
+          alert(`Generated Variant: ${result.content}\n\nDiagnosis: ${result.diagnosis}`);
+          setShowVariantModal(false);
+      } catch (e: any) { alert("Generation failed: " + e.message); }
+      finally { setIsGeneratingVariant(false); }
+  };
+
   return {
     state: {
       activeTab, promptText, isGenerating, templateName, generatedContent, selectedCategory, 
       selectedGroup, editingStructure, variableExamples, highlightEditor, aiAnalysisReason, 
       editingMetaId, selectedTactic, selectedProfile, syncingMeta, pushingMeta, deletingId, 
-      deployingTriggerId, isFixing, repairing, repairLogs, rejectedTemplates, groupedTemplates
+      deployingTriggerId, isFixing, repairing, repairLogs, rejectedTemplates, groupedTemplates,
+      isGeneratingVariant, showVariantModal, variantTrigger
     },
     actions: {
       setActiveTab, setPromptText, setTemplateName, setGeneratedContent, setSelectedCategory, 
       setSelectedGroup, setSelectedTactic, setEditingStructure, setVariableExamples, setHighlightEditor,
       handleSyncFromMeta, handleAutoHeal, handleDeployStandard, handlePromptGeneration, 
-      handleEditTemplate, handleAiAutoFix, handleDeleteTemplate, handleCreateVariant, handleSaveLocalOrDeploy
+      handleEditTemplate, handleAiAutoFix, handleDeleteTemplate, handleCreateVariant, handleSaveLocalOrDeploy,
+      handleGenerateVariant, setShowVariantModal
     },
     refs: { logsEndRef, editorRef }
   };

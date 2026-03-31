@@ -141,6 +141,39 @@ export const geminiService = {
   },
 
   /**
+   * Variant Generator
+   */
+  async generateVariant(originalContent: string, goal: string): Promise<{ 
+      content: string, 
+      diagnosis: string 
+  }> {
+    const ai = getAI();
+    if (!ai) throw new Error("AI Offline");
+
+    const response = await ai.models.generateContent({
+        model: PRO_MODEL,
+        contents: `You are a WhatsApp Template Architect.
+        
+        Original Content: "${originalContent}"
+        Goal/Tone Change: "${goal}"
+        
+        TASK: Rewrite the content to match the goal while keeping the same number of variables (e.g., {{1}}, {{2}}).`,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    content: { type: Type.STRING },
+                    diagnosis: { type: Type.STRING }
+                },
+                required: ["content", "diagnosis"]
+            }
+        }
+    });
+    return JSON.parse(response.text);
+  },
+
+  /**
    * Strategic Nudge Generation
    */
   async generateStrategicNotification(order: Order, type: 'UPCOMING' | 'OVERDUE' | 'SYSTEM', goldRate: number, riskProfile: RiskProfile = 'REGULAR'): Promise<{ 

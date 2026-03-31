@@ -277,6 +277,8 @@ export interface SystemTrigger {
   requiredVariables: string[]; 
   defaultTemplateName: string;
   appGroup: AppTemplateGroup;
+  activeTemplateId?: string;
+  variants?: string[]; // IDs of associated templates
 }
 
 export interface PaymentPlanTemplate {
