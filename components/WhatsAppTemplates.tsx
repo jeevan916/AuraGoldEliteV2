@@ -77,6 +77,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           isGeneratingVariant={state.isGeneratingVariant}
           showVariantModal={state.showVariantModal}
           variantTrigger={state.variantTrigger}
+          handleSimulateTrigger={actions.handleSimulateTrigger}
         />
       )}
       

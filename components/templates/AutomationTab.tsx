@@ -14,10 +14,11 @@ interface AutomationTabProps {
   isGeneratingVariant: boolean;
   showVariantModal: boolean;
   variantTrigger: any;
+  handleSimulateTrigger: (trigger: any, template: any) => void;
 }
 
 export const AutomationTab: React.FC<AutomationTabProps> = ({ 
-  templates, handleCreateVariant, handleDeployStandard, handleGenerateVariant, setShowVariantModal, isGeneratingVariant, showVariantModal, variantTrigger
+  templates, handleCreateVariant, handleDeployStandard, handleGenerateVariant, setShowVariantModal, isGeneratingVariant, showVariantModal, variantTrigger, handleSimulateTrigger
 }) => {
   return (
     <div className="grid grid-cols-1 gap-4">
@@ -46,7 +47,11 @@ export const AutomationTab: React.FC<AutomationTabProps> = ({
                     </div>
 
                     <div className="col-span-3 flex gap-2 justify-end">
-                        <button className="p-2 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100" title="Simulate Trigger">
+                        <button 
+                            onClick={() => handleSimulateTrigger(trigger, match)}
+                            className="p-2 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100" 
+                            title="Simulate Trigger"
+                        >
                             <Play size={14} />
                         </button>
                         <button 

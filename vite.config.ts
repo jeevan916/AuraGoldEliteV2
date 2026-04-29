@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
     base: './', 
     define: {
       'process.env.VITE_API_BASE_URL': JSON.stringify(env.VITE_API_BASE_URL || 'https://order.auragoldelite.com'),
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },
     build: {
       outDir: 'dist',

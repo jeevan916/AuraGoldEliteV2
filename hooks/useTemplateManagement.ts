@@ -578,6 +578,62 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       setEditingStructure([]);
   };
 
+  const handleSaveLocalOrDeploy = async (action: 'LOCAL' | 'META') => {
+      if(!generatedContent || !templateName) return alert("Name and Content required");
+      
+      const safeExamples = alignExamples(generatedContent, variableExamples);
+
+      // ENFORCE NAMING CONVENTION IN BUILDER
+      let safeName = templateName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      if (!safeName.startsWith('auragold_')) safeName = `auragold_${safeName}`;
+
+      const newTpl: WhatsAppTemplate = {
+          id: `local-${Date.now()}`,
+          name: safeName,
+          content: generatedContent,
+          tactic: selectedTactic,
+          targetProfile: selectedProfile,
+          isAiGenerated: true,
+          source: 'LOCAL',
+          category: selectedCategory,
+          appGroup: selectedGroup,
+          structure: editingStructure.length > 0 ? editingStructure : undefined,
+          variableExamples: safeExamples
+      };
+
+      if (action === 'LOCAL') {
+          onUpdate([newTpl, ...templates]);
+          alert("Saved to Local Library with prefix 'auragold_'");
+      } else {
+          setPushingMeta(true);
+          let result;
+          if (editingMetaId && !editingMetaId.startsWith('local-')) {
+              result = await whatsappService.editMetaTemplate(editingMetaId, newTpl);
+              if (result.success) alert("Template Edited Successfully!");
+          } else {
+              result = await whatsappService.createMetaTemplate(newTpl);
+              if (result.success) alert(`Template Deployed! Active Name: ${result.finalName}`);
+          }
+          setPushingMeta(false);
+          if (result.success) {
+              const deployedTpl = { ...newTpl, name: result.finalName || safeName, source: 'META' as const, status: 'PENDING' as const };
+              if (editingMetaId) {
+                  onUpdate(templates.map(t => t.id === editingMetaId ? { ...deployedTpl, id: editingMetaId } : t));
+              } else {
+                  onUpdate([deployedTpl, ...templates]);
+              }
+              setAiAnalysisReason(null);
+              setEditingMetaId(null);
+          } else {
+              alert(`Deployment Error: ${result.error?.message || JSON.stringify(result.error)}`);
+              if (result.rawError) await runDeepDiagnostics(result.rawError, newTpl);
+          }
+      }
+      setGeneratedContent('');
+      setTemplateName('');
+      setEditingStructure([]);
+  };
+
   const handleCreateVariant = (trigger: SystemTrigger) => {
       setVariantTrigger(trigger);
       setShowVariantModal(true);
@@ -597,6 +653,54 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       finally { setIsGeneratingVariant(false); }
   };
 
+  const handleSimulateTrigger = async (trigger: SystemTrigger, template?: WhatsAppTemplate) => {
+      if (!template) {
+          alert("No active template linked to this trigger. Please deploy or link a template first.");
+          return;
+      }
+
+      const phone = prompt(`Enter WhatsApp number to simulate '${trigger.label}'\n(Include country code, e.g., 919876543210):`);
+      if (!phone) return;
+
+      // Generate dummy variables based on required variables
+      const dummyVars = trigger.requiredVariables.map((v) => {
+          const lowerV = v.toLowerCase();
+          if (lowerV.includes('amount') || lowerV.includes('price')) return '1000';
+          if (lowerV.includes('date')) return '2026-12-31';
+          if (lowerV.includes('link') || lowerV.includes('url') || lowerV.includes('suffix')) return 'test_link_123';
+          return `Test_${v.replace(/\s+/g, '')}`;
+      });
+
+      // Heuristic: if the last variable is a link, Meta usually expects it as a button parameter
+      let bodyVars = [...dummyVars];
+      let buttonVar = undefined;
+      const lastVarName = trigger.requiredVariables[trigger.requiredVariables.length - 1]?.toLowerCase() || '';
+      if (lastVarName.includes('link') || lastVarName.includes('url') || lastVarName.includes('suffix')) {
+          buttonVar = bodyVars.pop(); 
+      }
+
+      try {
+          const res = await whatsappService.sendTemplateMessage(
+              phone,
+              template.name,
+              'en_US',
+              bodyVars,
+              'Simulation User',
+              buttonVar,
+              undefined,
+              'SYSTEM'
+          );
+
+          if (res.success) {
+              alert(`✅ Simulation sent successfully to ${phone}!`);
+          } else {
+              alert(`❌ Simulation failed: ${res.error}\n\nMake sure your WhatsApp Business account is properly configured and the template is approved on Meta.`);
+          }
+      } catch (e: any) {
+          alert(`Error: ${e.message}`);
+      }
+  };
+
   return {
     state: {
       activeTab, promptText, isGenerating, templateName, generatedContent, selectedCategory, 
@@ -610,7 +714,7 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       setSelectedGroup, setSelectedTactic, setEditingStructure, setVariableExamples, setHighlightEditor,
       handleSyncFromMeta, handleAutoHeal, handleDeployStandard, handlePromptGeneration, 
       handleEditTemplate, handleAiAutoFix, handleDeleteTemplate, handleCreateVariant, handleSaveLocalOrDeploy,
-      handleGenerateVariant, setShowVariantModal
+      handleGenerateVariant, setShowVariantModal, handleSimulateTrigger
     },
     refs: { logsEndRef, editorRef }
   };

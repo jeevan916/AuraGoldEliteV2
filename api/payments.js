@@ -390,20 +390,29 @@ router.post('/setu/notifications', ensureDb, async (req, res) => {
         
         if (payload && payload.events && Array.isArray(payload.events)) {
             for (const event of payload.events) {
-                if (event.type === 'BILL_FULFILMENT_STATUS' && event.data && event.data.status === 'PAYMENT_SUCCESSFUL') {
+                const isSuccess = event.data && (
+                    event.data.status === 'PAYMENT_SUCCESSFUL' || 
+                    event.type === 'PAYMENT_SUCCESSFUL' ||
+                    event.type === 'BILL_FULFILMENT_SUCCESS' ||
+                    event.type === 'PAYMENT_LINK_PAID' ||
+                    event.data.paymentStatus === 'SUCCESS' ||
+                    event.data.status === 'SUCCESS'
+                );
+
+                if (isSuccess) {
                     const data = event.data;
-                    const billerBillID = data.billerBillID;
-                    const amountPaid = data.amountPaid.value / 100; // Convert paisa to rupees
-                    const upiTransactionID = data.transactionId || data.platformBillID;
+                    const billerBillID = data.billerBillID || data.paymentLinkID; // Try fallback IDs
+                    const amountPaid = (data.amountPaid?.value / 100) || (data.amount / 100) || 0; 
+                    const upiTransactionID = data.transactionId || data.platformBillID || data.bankReferenceNumber || `setu_${Date.now()}`;
                     
-                    // Extract orderId from additionalInfo if available, else fallback to billerBillID parsing
-                    let orderId = data.additionalInfo?.orderId;
+                    // Extract orderId from additionalInfo if available, else fallback to billerBillID/paymentLinkID parsing
+                    let orderId = data.additionalInfo?.orderId || data.additionalInfo?.orderID;
                     if (!orderId && billerBillID) {
                         orderId = billerBillID.split('_')[0];
                     }
                     
-                    if (!orderId) {
-                        console.error("Could not determine orderId from webhook data:", data);
+                    if (!orderId || amountPaid <= 0) {
+                        console.error("Could not determine valid orderId or amountPaid from webhook data:", data);
                         continue;
                     }
                     
