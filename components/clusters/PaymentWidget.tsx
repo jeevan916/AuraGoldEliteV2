@@ -190,14 +190,11 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
           errorService.logActivity('API_CALL', `Requesting Setu Link for Order ${order.id} (₹${val})`);
 
-          const transactionId = `AG-${order.id.split('-').pop()}-${Date.now()}`;
-
           const response = await fetch('/api/setu/create-link', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                   amount: val,
-                  billerBillID: transactionId,
                   customerID: order.customerContact, 
                   name: order.customerName,
                   orderId: order.id

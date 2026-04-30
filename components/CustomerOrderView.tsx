@@ -103,15 +103,13 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
           throw new Error(`Amount cannot exceed the balance due of ₹${remaining.toLocaleString()}`);
       }
       
-      // Generate a unique bill ID for this attempt
-      const transactionId = `CUST-${order.id.split('-').pop()}-${Date.now()}`;
+      // Let backend generate the unique bill ID using orderId
       
       const response = await fetch('/api/setu/create-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: amountToPay,
-          billerBillID: transactionId,
           customerID: order.customerContact,
           name: order.customerName,
           orderId: order.id

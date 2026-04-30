@@ -385,6 +385,13 @@ router.post('/setu/notifications', ensureDb, async (req, res) => {
         const payload = req.body;
         console.log("Setu Webhook Received:", JSON.stringify(payload, null, 2));
         
+        try {
+            const fs = await import('fs');
+            fs.appendFileSync('setu_webhook.log', new Date().toISOString() + ': ' + JSON.stringify(payload) + '\n');
+        } catch (e) {
+            console.error(e);
+        }
+        
         // Acknowledge receipt immediately to Setu (must be 200 OK without any body)
         res.status(200).send();
         

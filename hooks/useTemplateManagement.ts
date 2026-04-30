@@ -578,62 +578,6 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       setEditingStructure([]);
   };
 
-  const handleSaveLocalOrDeploy = async (action: 'LOCAL' | 'META') => {
-      if(!generatedContent || !templateName) return alert("Name and Content required");
-      
-      const safeExamples = alignExamples(generatedContent, variableExamples);
-
-      // ENFORCE NAMING CONVENTION IN BUILDER
-      let safeName = templateName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-      if (!safeName.startsWith('auragold_')) safeName = `auragold_${safeName}`;
-
-      const newTpl: WhatsAppTemplate = {
-          id: `local-${Date.now()}`,
-          name: safeName,
-          content: generatedContent,
-          tactic: selectedTactic,
-          targetProfile: selectedProfile,
-          isAiGenerated: true,
-          source: 'LOCAL',
-          category: selectedCategory,
-          appGroup: selectedGroup,
-          structure: editingStructure.length > 0 ? editingStructure : undefined,
-          variableExamples: safeExamples
-      };
-
-      if (action === 'LOCAL') {
-          onUpdate([newTpl, ...templates]);
-          alert("Saved to Local Library with prefix 'auragold_'");
-      } else {
-          setPushingMeta(true);
-          let result;
-          if (editingMetaId && !editingMetaId.startsWith('local-')) {
-              result = await whatsappService.editMetaTemplate(editingMetaId, newTpl);
-              if (result.success) alert("Template Edited Successfully!");
-          } else {
-              result = await whatsappService.createMetaTemplate(newTpl);
-              if (result.success) alert(`Template Deployed! Active Name: ${result.finalName}`);
-          }
-          setPushingMeta(false);
-          if (result.success) {
-              const deployedTpl = { ...newTpl, name: result.finalName || safeName, source: 'META' as const, status: 'PENDING' as const };
-              if (editingMetaId) {
-                  onUpdate(templates.map(t => t.id === editingMetaId ? { ...deployedTpl, id: editingMetaId } : t));
-              } else {
-                  onUpdate([deployedTpl, ...templates]);
-              }
-              setAiAnalysisReason(null);
-              setEditingMetaId(null);
-          } else {
-              alert(`Deployment Error: ${result.error?.message || JSON.stringify(result.error)}`);
-              if (result.rawError) await runDeepDiagnostics(result.rawError, newTpl);
-          }
-      }
-      setGeneratedContent('');
-      setTemplateName('');
-      setEditingStructure([]);
-  };
-
   const handleCreateVariant = (trigger: SystemTrigger) => {
       setVariantTrigger(trigger);
       setShowVariantModal(true);
