@@ -140,6 +140,26 @@ router.get('/logs/activities', ensureDb, async (req, res) => {
     }
 });
 
+router.get('/logs/webhooks', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query("SELECT * FROM webhook_logs ORDER BY created_at DESC LIMIT 100");
+        connection.release();
+        
+        // Parse the payloads back into JSON objects
+        const logs = rows.map(r => ({
+            ...r,
+            payload: r.payload && typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload
+        }));
+        
+        res.json({ success: true, logs });
+    } catch (e) {
+        console.error("Fetch webhooks error:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 router.post('/logs/activity', ensureDb, async (req, res) => {
     try {
         const { actionType, details, metadata } = req.body;

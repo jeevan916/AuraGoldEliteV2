@@ -386,10 +386,16 @@ router.post('/setu/notifications', ensureDb, async (req, res) => {
         console.log("Setu Webhook Received:", JSON.stringify(payload, null, 2));
         
         try {
-            const fs = await import('fs');
-            fs.appendFileSync('setu_webhook.log', new Date().toISOString() + ': ' + JSON.stringify(payload) + '\n');
+            const pool = getPool();
+            const logConn = await pool.getConnection();
+            const eventType = (payload && payload.events && payload.events[0]) ? payload.events[0].type : 'UNKNOWN';
+            await logConn.query(
+                "INSERT INTO webhook_logs (provider, event_type, payload) VALUES (?, ?, ?)",
+                ['setu', eventType, JSON.stringify(payload)]
+            );
+            logConn.release();
         } catch (e) {
-            console.error(e);
+            console.error("Failed to log webhook to db:", e);
         }
         
         // Acknowledge receipt immediately to Setu (must be 200 OK without any body)

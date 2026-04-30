@@ -70,12 +70,13 @@ const ErrorLogPanel = lazyRetry(() => import('./components/ErrorLogPanel'), 'Sys
 const CustomerOrderView = lazyRetry(() => import('./components/CustomerOrderView'), 'CustomerView');
 const SystemArchitect = lazyRetry(() => import('./components/SystemArchitect'), 'Architect');
 const KarigarManager = lazyRetry(() => import('./components/KarigarManager'), 'KarigarDesk');
+const WebhookLogs = lazyRetry(() => import('./components/WebhookLogs'), 'Webhooks');
 
-type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW' | 'ARCHITECT' | 'KARIGAR_DESK';
+type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW' | 'ARCHITECT' | 'KARIGAR_DESK' | 'WEBHOOKS';
 
 // --- ACCESS CONTROL LIST ---
 const ROLE_PERMISSIONS: Record<UserRole, MainView[]> = {
-    ADMIN: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'SYS_LOGS', 'SETTINGS', 'MENU', 'CUSTOMER_VIEW', 'ARCHITECT', 'KARIGAR_DESK'],
+    ADMIN: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'SYS_LOGS', 'SETTINGS', 'MENU', 'CUSTOMER_VIEW', 'ARCHITECT', 'KARIGAR_DESK', 'WEBHOOKS'],
     MANAGER: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'MENU', 'KARIGAR_DESK'],
     SALES: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'MENU'],
     KARIGAR: ['KARIGAR_DESK']
@@ -341,6 +342,7 @@ const App = () => {
           case 'STRATEGY': return <NotificationCenter notifications={[]} customers={derivedCustomers} onSend={() => {}} onRefresh={() => {}} loading={false} />;
           case 'MARKET': return <MarketIntelligence orders={orders} settings={settings} />;
           case 'SYS_LOGS': return <ErrorLogPanel errors={systemErrors} activities={systemActivities} onClear={() => { errorService.clearErrors(); errorService.clearActivity(); }} />;
+          case 'WEBHOOKS': return <WebhookLogs />;
           case 'SETTINGS': return <Settings settings={settings} onUpdate={handleUpdateSettings} />;
           case 'ARCHITECT': return <SystemArchitect />;
           case 'KARIGAR_DESK': return <KarigarManager orders={orders} onUpdateItem={updateItemStatus} onOrderUpdate={updateOrder} settings={settings} />;
@@ -358,6 +360,7 @@ const App = () => {
                   {canAccess('ARCHITECT') && <MenuItem onClick={() => setView('ARCHITECT')} icon={<Zap />} label="Architect" desc="God Mode System Control" colorClass="bg-amber-100 text-amber-600" />}
                   {canAccess('MARKET') && <MenuItem onClick={() => setView('MARKET')} icon={<Globe />} label="Market Intel" desc="Live rates & news" colorClass="bg-sky-50 text-sky-600" />}
                   {canAccess('SYS_LOGS') && <MenuItem onClick={() => setView('SYS_LOGS')} icon={<HardDrive />} label="System Logs" desc="Debug & Audit" colorClass="bg-slate-100 text-slate-600" />}
+                  {canAccess('WEBHOOKS') && <MenuItem onClick={() => setView('WEBHOOKS')} icon={<Activity />} label="Webhooks" desc="Real-time API events" colorClass="bg-indigo-50 text-indigo-600" />}
                   {canAccess('SETTINGS') && <MenuItem onClick={() => setView('SETTINGS')} icon={<SettingsIcon />} label="Configuration" desc="Database & Rates" colorClass="bg-slate-800 text-white" />}
               </div>
           );
@@ -423,6 +426,7 @@ const App = () => {
              
              <div className="mt-4 pt-4 border-t border-slate-100 space-y-1">
                  {canAccess('SYS_LOGS') && <SidebarItem active={view === 'SYS_LOGS'} onClick={() => setView('SYS_LOGS')} icon={HardDrive} label="System Logs" />}
+                 {canAccess('WEBHOOKS') && <SidebarItem active={view === 'WEBHOOKS'} onClick={() => setView('WEBHOOKS')} icon={Activity} label="Webhooks" />}
                  {canAccess('SETTINGS') && <SidebarItem active={view === 'SETTINGS'} onClick={() => setView('SETTINGS')} icon={SettingsIcon} label="Settings" />}
                  
                  {/* DB Status Indicator */}

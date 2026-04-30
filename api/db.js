@@ -110,6 +110,13 @@ export async function initDb() {
                 status VARCHAR(50),
                 warningCount INT DEFAULT 0,
                 FOREIGN KEY (orderId) REFERENCES orders(id) ON DELETE CASCADE
+            )`,
+            `CREATE TABLE IF NOT EXISTS webhook_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                provider VARCHAR(50),
+                event_type VARCHAR(100),
+                payload LONGTEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`
         ];
         for (const sql of tables) await connection.query(sql);
