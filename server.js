@@ -93,7 +93,8 @@ setRateServiceIo(io);
 app.set('trust proxy', 1); 
 app.use(compression());    
 app.use(cors());
-app.use(express.json({ limit: '100mb' }));
+app.use(express.json({ limit: '100mb', type: ['application/json', 'application/*+json', 'application/vnd.setu*'] }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 app.use((req, res, next) => {
     req.io = io;

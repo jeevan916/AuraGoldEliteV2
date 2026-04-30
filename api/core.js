@@ -148,10 +148,20 @@ router.get('/logs/webhooks', ensureDb, async (req, res) => {
         connection.release();
         
         // Parse the payloads back into JSON objects
-        const logs = rows.map(r => ({
-            ...r,
-            payload: r.payload && typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload
-        }));
+        const logs = rows.map(r => {
+            let parsedPayload = r.payload;
+            if (typeof r.payload === 'string') {
+                try {
+                    parsedPayload = JSON.parse(r.payload);
+                } catch (err) {
+                    parsedPayload = { rawString: r.payload, parseError: err.message };
+                }
+            }
+            return {
+                ...r,
+                payload: parsedPayload
+            };
+        });
         
         res.json({ success: true, logs });
     } catch (e) {

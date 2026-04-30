@@ -379,19 +379,31 @@ router.get(['/setu/pay/:encodedIntent', '/setu/pay'], async (req, res) => {
     }
 });
 
-// Setu Webhook Notification Endpoint
-router.post('/setu/notifications', ensureDb, async (req, res) => {
+// Setu Webhook Notification Endpoint (Catch-All)
+router.all(['/setu/notifications', '/setu/webhook'], ensureDb, async (req, res) => {
     try {
         const payload = req.body;
-        console.log("Setu Webhook Received:", JSON.stringify(payload, null, 2));
+        const headers = req.headers;
+        const method = req.method;
+        const query = req.query;
+        
+        console.log(`[Setu Webhook] ${method} Received:`, JSON.stringify(payload, null, 2));
         
         try {
             const pool = getPool();
             const logConn = await pool.getConnection();
-            const eventType = (payload && payload.events && payload.events[0]) ? payload.events[0].type : 'UNKNOWN';
+            const eventType = (payload && payload.events && payload.events[0]) ? payload.events[0].type : `RAW_${method}`;
+            
+            const logData = {
+                body: payload,
+                headers: headers,
+                query: query,
+                method: method
+            };
+
             await logConn.query(
                 "INSERT INTO webhook_logs (provider, event_type, payload) VALUES (?, ?, ?)",
-                ['setu', eventType, JSON.stringify(payload)]
+                ['setu', eventType, JSON.stringify(logData)]
             );
             logConn.release();
         } catch (e) {
