@@ -413,9 +413,19 @@ router.all(['/setu/notifications', '/setu/webhook'], ensureDb, async (req, res) 
         // Acknowledge receipt immediately to Setu (must be 200 OK without any body)
         res.status(200).send();
         
+        const eventsToProcess = [];
         if (payload && payload.events && Array.isArray(payload.events)) {
-            for (const event of payload.events) {
-                const isSuccess = event.data && (
+            eventsToProcess.push(...payload.events);
+        } else if (payload && payload.billerBillID) {
+            // Direct object from UPI Deep Link notifications
+            eventsToProcess.push({
+                type: payload.status || 'PAYMENT_SUCCESSFUL',
+                data: payload
+            });
+        }
+        
+        for (const event of eventsToProcess) {
+            const isSuccess = event.data && (
                     event.data.status === 'PAYMENT_SUCCESSFUL' || 
                     event.type === 'PAYMENT_SUCCESSFUL' ||
                     event.type === 'BILL_FULFILMENT_SUCCESS' ||

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useMemo, Suspense, lazy, useCallback } from 'react';
 import { 
   Plus, Home, ReceiptIndianRupee, Users, MessageSquare, 
   Menu, ArrowLeft, Cloud, Loader2, HardDrive, Settings as SettingsIcon,
@@ -118,10 +118,39 @@ const MenuItem = ({ icon, label, desc, onClick, colorClass }: any) => (
 );
 
 const App = () => {
-  const [view, setView] = useState<MainView>('DASH');
+  const [view, _setView] = useState<MainView>('DASH');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [selectedChatPhone, setSelectedChatPhone] = useState<string | null>(null);
+
+  const setView = useCallback((newView: MainView | ((prev: MainView) => MainView)) => {
+      _setView(prevView => {
+          const nextView = typeof newView === 'function' ? newView(prevView) : newView;
+          if (nextView !== prevView) {
+              window.history.pushState(
+                  { view: nextView, ts: Date.now() }, 
+                  '', 
+                  window.location.pathname + window.location.search
+              );
+          }
+          return nextView;
+      });
+  }, []);
+
+  useEffect(() => {
+      if (!window.history.state || !window.history.state.view) {
+          window.history.replaceState({ view: 'DASH', ts: Date.now() }, '', window.location.pathname + window.location.search);
+      }
+
+      const handlePopState = (event: PopStateEvent) => {
+          if (event.state && event.state.view) {
+              _setView(event.state.view);
+          }
+      };
+
+      window.addEventListener('popstate', handlePopState);
+      return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
   
   // Public & Auth State
   const [publicOrder, setPublicOrder] = useState<Order | null>(null);
