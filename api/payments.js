@@ -380,8 +380,17 @@ router.get(['/setu/pay/:encodedIntent', '/setu/pay'], async (req, res) => {
 });
 
 // Setu Webhook Notification Endpoint (Catch-All)
-router.all(['/setu/notifications', '/setu/webhook'], ensureDb, async (req, res) => {
+router.all(['/setu/notifications', '/setu/webhook'], async (req, res) => {
     try {
+        // Acknowledge receipt immediately to Setu (must be 2xx without fail)
+        res.status(200).send("OK");
+
+        const { initDb, getPool } = await import('./db.js');
+        // Ensure DB is initialized
+        if (!getPool()) {
+            await initDb();
+        }
+
         const payload = req.body;
         const headers = req.headers;
         const method = req.method;
@@ -409,9 +418,6 @@ router.all(['/setu/notifications', '/setu/webhook'], ensureDb, async (req, res) 
         } catch (e) {
             console.error("Failed to log webhook to db:", e);
         }
-        
-        // Acknowledge receipt immediately to Setu (must be 200 OK without any body)
-        res.status(200).send();
         
         const eventsToProcess = [];
         if (payload && payload.events && Array.isArray(payload.events)) {
@@ -452,6 +458,7 @@ router.all(['/setu/notifications', '/setu/webhook'], ensureDb, async (req, res) 
                     }
                     
                     const pool = getPool();
+                    if (!pool) continue;
                     const connection = await pool.getConnection();
                     
                     try {
