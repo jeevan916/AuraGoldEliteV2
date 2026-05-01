@@ -513,7 +513,6 @@ router.all(['/setu/notifications', '/setu/webhook'], async (req, res) => {
                     }
                 }
             }
-        }
     } catch (e) {
         console.error("Setu Webhook Error:", e);
     }
