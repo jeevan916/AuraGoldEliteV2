@@ -48,6 +48,7 @@ router.delete('/orders/:id', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
+        await connection.query('DELETE FROM payment_schedules WHERE orderId = ?', [req.params.id]);
         await connection.query('DELETE FROM orders WHERE id = ?', [req.params.id]);
         connection.release();
         

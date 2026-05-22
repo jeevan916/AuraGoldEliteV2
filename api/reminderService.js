@@ -20,7 +20,7 @@ export async function runPaymentReminders() {
         const { phoneId, token } = whatsappConfig;
 
         // Fetch orders and their payment schedules
-        const [schedules] = await connection.query("SELECT ps.*, o.data as orderData FROM payment_schedules ps JOIN orders o ON ps.orderId = o.id WHERE ps.status = 'PENDING'");
+        const [schedules] = await connection.query("SELECT ps.*, o.data as orderData FROM payment_schedules ps JOIN orders o ON ps.orderId = o.id WHERE ps.status = 'PENDING' AND o.status IN ('ACTIVE', 'OVERDUE')");
 
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -103,7 +103,8 @@ export async function runPaymentReminders() {
                             components,
                             customerName: customerName,
                             phoneId,
-                            token
+                            token,
+                            metadata: { scheduleId: schedule.id }
                         });
                         console.log(`[ReminderService] Sent ${tone} reminder for schedule ${schedule.id}`);
                     } catch (err) {

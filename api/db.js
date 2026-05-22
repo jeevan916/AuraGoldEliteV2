@@ -142,6 +142,13 @@ export async function initDb() {
             }
         } catch (e) { }
 
+        // --- CLEANUP ORPHANED ROWS ---
+        try {
+            await connection.query("DELETE FROM payment_schedules WHERE orderId NOT IN (SELECT id FROM orders)");
+        } catch(e) {
+            console.warn("[DB] Cleanup of orphaned payment schedules failed:", e.message);
+        }
+
         // --- SEED DEFAULT ADMIN ---
         const [users] = await connection.query("SELECT * FROM app_users WHERE username = 'admin'");
         if (users.length === 0) {

@@ -6,7 +6,7 @@ import { checkRateBreaches } from './rateService.js';
 const router = express.Router();
 const META_API_VERSION = "v20.0";
 
-export async function sendWhatsAppMessage({ to, message, templateName, language, components, customerName, phoneId, token, sentBy = 'SYSTEM' }) {
+export async function sendWhatsAppMessage({ to, message, templateName, language, components, customerName, phoneId, token, sentBy = 'SYSTEM', metadata = {} }) {
     if (!phoneId || !token) {
         throw new Error("Missing WhatsApp Credentials");
     }
@@ -51,7 +51,7 @@ export async function sendWhatsAppMessage({ to, message, templateName, language,
         if (data.messages) {
             const pool = getPool();
             const connection = await pool.getConnection();
-            const log = { id: data.messages[0].id, customerName: customerName || "Customer", phoneNumber: normalizePhone(to), message: templateName ? `[Template: ${templateName}]` : message, status: 'SENT', timestamp: new Date().toISOString(), direction: 'outbound', type: templateName ? 'TEMPLATE' : 'CUSTOM', sentBy };
+            const log = { id: data.messages[0].id, customerName: customerName || "Customer", phoneNumber: normalizePhone(to), message: templateName ? `[Template: ${templateName}]` : message, status: 'SENT', timestamp: new Date().toISOString(), direction: 'outbound', type: templateName ? 'TEMPLATE' : 'CUSTOM', sentBy, ...metadata };
             await connection.query('INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)', [log.id, log.phoneNumber, 'outbound', new Date(), JSON.stringify(log)]);
             // Note: io is not available here.
             connection.release();
