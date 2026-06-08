@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
     // Relative base is most reliable for Hostinger shared/VPS hosting
     base: './', 
     define: {
-      'process.env.VITE_API_BASE_URL': JSON.stringify(env.VITE_API_BASE_URL || ''),
+      'process.env.VITE_API_BASE_URL': JSON.stringify(''),
     },
     build: {
       outDir: 'dist',

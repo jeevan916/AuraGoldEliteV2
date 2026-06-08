@@ -217,10 +217,10 @@ if (!useVite && finalDistPath) {
     });
 
     // SPA Fallback
-    app.get(/.*/, (req, res) => {
+    app.get(/.*/, (req, res, next) => {
         // Skip API and Socket.io routes
         if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
-            return;
+            return next();
         }
         
         const indexPath = path.join(finalDistPath, 'index.html');

@@ -9,10 +9,6 @@ const router = express.Router();
 router.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
 router.get('/debug/db', async (req, res) => {
-    const host = process.env.DB_HOST;
-    const user = process.env.DB_USER;
-    const dbName = process.env.DB_NAME;
-    
     let connectionTest = "Not attempted";
     let errorMsg = null;
     
@@ -24,52 +20,18 @@ router.get('/debug/db', async (req, res) => {
             conn.release();
         } else {
             connectionTest = "Pool is null or running in Mock mode";
-            // Try to force a real connection test right now
-            if (host) {
-                const result = await initDb();
-                connectionTest = result.success ? "Success after forced init" : "Failed forced init";
-                errorMsg = result.error;
-            }
         }
     } catch (e) {
         connectionTest = "Failed";
-        errorMsg = e.message;
+        errorMsg = "Database connection error. Please check server logs.";
     }
 
     res.json({
         config: {
-            host: host || "MISSING",
-            user: user || "MISSING",
-            database: dbName || "MISSING",
-            passwordLength: process.env.DB_PASSWORD ? process.env.DB_PASSWORD.length : 0,
             isMockMode: isMock
         },
         status: connectionTest,
-        error: errorMsg,
-        envKeys: Object.keys(process.env).filter(k => k.startsWith('DB_'))
-    });
-});
-
-router.get('/debug/paths', (req, res) => {
-    const rootDir = process.cwd();
-    const distPath = path.join(rootDir, 'dist');
-    const publicHtmlPath = path.resolve(rootDir, '../public_html');
-    const envPath = path.resolve(rootDir, '../public_html/.builds/config/.env');
-    
-    res.json({
-        success: true,
-        message: "Debug paths retrieved",
-        rootDir,
-        distPath,
-        publicHtmlPath,
-        envPath,
-        envExists: fs.existsSync(envPath),
-        envLoaded: !!process.env.DB_HOST,
-        env: process.env.NODE_ENV || 'development',
-        distExists: fs.existsSync(distPath),
-        distIndexExists: fs.existsSync(path.join(distPath, 'index.html')),
-        rootIndexExists: fs.existsSync(path.join(rootDir, 'index.html')),
-        publicHtmlIndexExists: fs.existsSync(path.join(publicHtmlPath, 'index.html'))
+        error: errorMsg
     });
 });
 

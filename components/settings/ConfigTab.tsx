@@ -30,8 +30,6 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
     const [dbStatus, setDbStatus] = useState<'IDLE' | 'TESTING' | 'SUCCESS' | 'ERROR'>('IDLE');
     const [dbMessage, setDbMessage] = useState('');
     const [debugInfo, setDebugInfo] = useState<any>(null);
-    const [dbConfig, setDbConfig] = useState({ host: '127.0.0.1', user: '', password: '', database: '' });
-    const [savingDb, setSavingDb] = useState(false);
 
     const updateLocalStateFromFetch = (result: any) => {
         if (result && result.success) {
@@ -114,14 +112,6 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                 setDebugInfo(debugData);
                 if (debugData.error) {
                     setDbMessage(`Error: ${debugData.error}`);
-                    if(debugData.config) {
-                        setDbConfig(prev => ({
-                            ...prev,
-                            host: debugData.config.host || '127.0.0.1',
-                            user: debugData.config.user || '',
-                            database: debugData.config.database || ''
-                        }));
-                    }
                 } else {
                     setDbMessage("Unknown Connection Error");
                 }
@@ -129,34 +119,6 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
         } catch (e: any) {
             setDbStatus('ERROR');
             setDbMessage(`Network Error: ${e.message}`);
-        }
-    };
-
-    const handleSaveDbConfig = async () => {
-        if(!dbConfig.host || !dbConfig.user || !dbConfig.database) {
-            return alert("Please fill Host, User and Database fields.");
-        }
-        setSavingDb(true);
-        try {
-            const res = await fetch('/api/debug/configure', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(dbConfig)
-            });
-            const data = await res.json();
-            if(data.success) {
-                setDbStatus('SUCCESS');
-                setDbMessage('Credentials Saved & Connected!');
-                setDebugInfo(null);
-            } else {
-                setDbMessage("Failed: " + data.error);
-                setDbStatus('ERROR');
-            }
-        } catch(e: any) {
-            setDbMessage("Error: " + e.message);
-            setDbStatus('ERROR');
-        } finally {
-            setSavingDb(false);
         }
     };
 
@@ -416,19 +378,12 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                         <p className="text-xs font-bold">{dbMessage || "Status: Idle"}</p>
                     </div>
                     {dbStatus === 'ERROR' && debugInfo && (
-                        <div className="space-y-3 animate-fadeIn">
-                            <p className="text-[10px] font-black uppercase text-slate-400">Manual Configuration Override</p>
-                            <ConfigInput label="Host" value={dbConfig.host} onChange={(v: string) => setDbConfig({...dbConfig, host: v})} />
-                            <ConfigInput label="User" value={dbConfig.user} onChange={(v: string) => setDbConfig({...dbConfig, user: v})} />
-                            <ConfigInput label="Password" value={dbConfig.password} onChange={(v: string) => setDbConfig({...dbConfig, password: v})} type="password" />
-                            <ConfigInput label="Database Name" value={dbConfig.database} onChange={(v: string) => setDbConfig({...dbConfig, database: v})} />
-                            <button 
-                                onClick={handleSaveDbConfig}
-                                disabled={savingDb}
-                                className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-xs uppercase tracking-widest mt-2"
-                            >
-                                {savingDb ? 'Connecting...' : 'Update Connection'}
-                            </button>
+                        <div className="space-y-3 animate-fadeIn text-xs text-rose-600 font-bold bg-rose-50 p-4 rounded-xl">
+                            ⚠ External Database Connection Failed.
+                            <br/><br/>
+                            For security reasons, database connections must be configured securely via server environment variables (.env).
+                            <br/><br/>
+                            Ensure DB_HOST, DB_USER, DB_PASSWORD, and DB_NAME are configured correctly in your backend environment setup.
                         </div>
                     )}
                     <button onClick={handleTestDatabase} className="w-full bg-white border border-slate-200 text-slate-600 py-3 rounded-xl font-bold text-xs uppercase hover:bg-slate-50">
