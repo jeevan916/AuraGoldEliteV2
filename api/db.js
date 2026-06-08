@@ -173,7 +173,7 @@ export async function initDb() {
                     
                     // A. Migrate Customers from Orders
                     if (orderData.customerContact) {
-                        const customId = \`CUST-\${orderData.customerContact.replace(/\\D/g, '').slice(-10)}\`;
+                        const customId = `CUST-${orderData.customerContact.replace(/\D/g, '').slice(-10)}`;
                         const customerData = {
                             id: customId,
                             name: orderData.customerName || 'Unknown',
@@ -184,9 +184,9 @@ export async function initDb() {
                         };
                         
                         await connection.query(
-                            \`INSERT INTO customers (id, contact, name, data, updated_at) 
+                            `INSERT INTO customers (id, contact, name, data, updated_at) 
                              VALUES (?, ?, ?, ?, ?) 
-                             ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data)\`,
+                             ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data)`,
                             [customId, orderData.customerContact, orderData.customerName || 'Unknown', JSON.stringify(customerData), Date.now()]
                         );
                     }
@@ -196,9 +196,9 @@ export async function initDb() {
                         for (const payment of orderData.payments) {
                             if (!payment.id) continue;
                             await connection.query(
-                                \`INSERT INTO payments_log (id, order_id, customer_contact, amount, method, status, timestamp, data) 
+                                `INSERT INTO payments_log (id, order_id, customer_contact, amount, method, status, timestamp, data) 
                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                                 ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data)\`,
+                                 ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data)`,
                                 [
                                     payment.id, 
                                     orderData.id, 
@@ -213,7 +213,7 @@ export async function initDb() {
                         }
                     }
                 } catch (e) {
-                    console.error(\`[DB] Failed to process order \${row.id}: \`, e.message);
+                    console.error(`[DB] Failed to process order ${row.id}: `, e.message);
                 }
             }
             console.log("[DB] Finished data migration successfully.");
