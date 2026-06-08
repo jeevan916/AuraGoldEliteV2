@@ -12,6 +12,47 @@ router.post('/orders', ensureDb, async (req, res) => {
         for (const order of req.body.orders) {
             await connection.query('INSERT INTO orders (id, customer_contact, status, created_at, data, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data), updated_at=VALUES(updated_at)', [order.id, order.customerContact, order.status, new Date(order.createdAt), JSON.stringify(order), Date.now()]);
             
+            // Explicitly sync Customer so they aren't lost if order is deleted
+            if (order.customerContact) {
+                const customId = `CUST-${order.customerContact.replace(/\D/g, '').slice(-10)}`;
+                const customerData = {
+                    id: customId,
+                    name: order.customerName || 'Unknown',
+                    contact: order.customerContact,
+                    email: order.customerEmail || '',
+                    secondaryContact: order.secondaryContact || '',
+                    joinDate: order.createdAt
+                };
+                await connection.query(
+                    `INSERT INTO customers (id, contact, name, data, updated_at) 
+                     VALUES (?, ?, ?, ?, ?) 
+                     ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data), updated_at=VALUES(updated_at)`,
+                    [customId, order.customerContact, order.customerName || 'Unknown', JSON.stringify(customerData), Date.now()]
+                );
+            }
+
+            // Sync payments to a relational table so they aren't lost
+            if (Array.isArray(order.payments)) {
+                for (const payment of order.payments) {
+                    if (!payment.id) continue;
+                    await connection.query(
+                        `INSERT INTO payments_log (id, order_id, customer_contact, amount, method, status, timestamp, data) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                         ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data)`,
+                        [
+                            payment.id, 
+                            order.id, 
+                            order.customerContact,
+                            payment.amount || 0,
+                            payment.method || 'Unknown',
+                            payment.status || 'SUCCESS',
+                            new Date(payment.timestamp || Date.now()),
+                            JSON.stringify(payment)
+                        ]
+                    );
+                }
+            }
+
             if (order.paymentPlan && order.paymentPlan.milestones) {
                 const milestoneIds = order.paymentPlan.milestones.map(m => m.id);
                 if (milestoneIds.length > 0) {

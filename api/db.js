@@ -142,6 +142,85 @@ export async function initDb() {
             }
         } catch (e) { }
 
+        // --- COMPREHENSIVE DATA MIGRATION ---
+        try {
+            console.log("[DB] Starting comprehensive data migration...");
+            
+            // 1. Create independent tables for Customers and Payments
+            await connection.query(`CREATE TABLE IF NOT EXISTS payments_log (
+                id VARCHAR(100) PRIMARY KEY,
+                order_id VARCHAR(100),
+                customer_contact VARCHAR(50),
+                amount DECIMAL(10, 2),
+                method VARCHAR(50),
+                status VARCHAR(50),
+                timestamp DATETIME,
+                data LONGTEXT
+            )`);
+
+            // Also add an order_id column to whatsapp_logs to allow for tighter linkage
+            try { await connection.query("ALTER TABLE whatsapp_logs ADD COLUMN order_id VARCHAR(100)"); } catch(e){}
+            try { await connection.query("CREATE INDEX idx_whatsapp_order ON whatsapp_logs(order_id)"); } catch(e){}
+            try { await connection.query("CREATE INDEX idx_payments_order ON payments_log(order_id)"); } catch(e){}
+            try { await connection.query("CREATE INDEX idx_payments_contact ON payments_log(customer_contact)"); } catch(e){}
+            
+            // 2. Fetch all orders and migrate implicit data
+            const [allOrders] = await connection.query("SELECT id, data FROM orders");
+            
+            for (const row of allOrders) {
+                try {
+                    const orderData = JSON.parse(row.data);
+                    
+                    // A. Migrate Customers from Orders
+                    if (orderData.customerContact) {
+                        const customId = \`CUST-\${orderData.customerContact.replace(/\\D/g, '').slice(-10)}\`;
+                        const customerData = {
+                            id: customId,
+                            name: orderData.customerName || 'Unknown',
+                            contact: orderData.customerContact,
+                            email: orderData.customerEmail || '',
+                            secondaryContact: orderData.secondaryContact || '',
+                            joinDate: orderData.createdAt
+                        };
+                        
+                        await connection.query(
+                            \`INSERT INTO customers (id, contact, name, data, updated_at) 
+                             VALUES (?, ?, ?, ?, ?) 
+                             ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data)\`,
+                            [customId, orderData.customerContact, orderData.customerName || 'Unknown', JSON.stringify(customerData), Date.now()]
+                        );
+                    }
+                    
+                    // B. Migrate Payments from Orders
+                    if (Array.isArray(orderData.payments)) {
+                        for (const payment of orderData.payments) {
+                            if (!payment.id) continue;
+                            await connection.query(
+                                \`INSERT INTO payments_log (id, order_id, customer_contact, amount, method, status, timestamp, data) 
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                 ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data)\`,
+                                [
+                                    payment.id, 
+                                    orderData.id, 
+                                    orderData.customerContact,
+                                    payment.amount || 0,
+                                    payment.method || 'Unknown',
+                                    payment.status || 'SUCCESS',
+                                    new Date(payment.timestamp || Date.now()),
+                                    JSON.stringify(payment)
+                                ]
+                            );
+                        }
+                    }
+                } catch (e) {
+                    console.error(\`[DB] Failed to process order \${row.id}: \`, e.message);
+                }
+            }
+            console.log("[DB] Finished data migration successfully.");
+        } catch(e) {
+            console.error("[DB] Migration failed:", e.message);
+        }
+
         // --- CLEANUP ORPHANED ROWS ---
         try {
             await connection.query("DELETE FROM payment_schedules WHERE orderId NOT IN (SELECT id FROM orders)");
