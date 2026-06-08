@@ -39,6 +39,19 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
             });
+
+            if (!res.ok) {
+                let errorText = await res.text();
+                try {
+                    const errorJson = JSON.parse(errorText);
+                    setError(errorJson.error || `Server error: ${res.status}`);
+                } catch (parseError) {
+                    setError(`Server returned ${res.status}: ${errorText.substring(0, 50)}...`);
+                }
+                setLoading(false);
+                return;
+            }
+
             const data = await res.json();
 
             if (data.success && data.user) {
@@ -48,8 +61,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             } else {
                 setError(data.error || 'Login failed');
             }
-        } catch (e) {
-            setError("Connection failed. Please try again.");
+        } catch (e: any) {
+            setError(`Connection failed: ${e.message}`);
         } finally {
             setLoading(false);
         }

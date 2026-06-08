@@ -103,6 +103,8 @@ app.use((req, res, next) => {
 });
 
 // Debug Routes (Before other API routes)
+app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
+
 app.get('/test-proxy', (req, res) => {
     res.send(`
         <div style="font-family: sans-serif; padding: 2rem;">
