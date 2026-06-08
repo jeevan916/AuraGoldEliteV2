@@ -125,7 +125,7 @@ app.use('/api', coreRouter);
 app.use('/api/architect', architectRouter);
 app.use('/api/ai', aiRouter);
 
-app.use('/api/*all', (req, res) => res.status(404).json({ error: `API route ${req.originalUrl} not found.` }));
+app.use('/api', (req, res) => res.status(404).json({ error: `API route ${req.originalUrl} not found.` }));
 
 // Static File Serving Configuration
 const getValidDistPath = () => {
@@ -217,7 +217,7 @@ if (!useVite && finalDistPath) {
     });
 
     // SPA Fallback
-    app.get('*all', (req, res) => {
+    app.get(/.*/, (req, res) => {
         // Skip API and Socket.io routes
         if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
             return;
