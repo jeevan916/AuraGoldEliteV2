@@ -41,5 +41,10 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0"
+  },
+  "overrides": {
+    "axios": "^1.17.0",
+    "jsonwebtoken": "^9.0.3",
+    "uuid": "^14.0.0"
   }
 }
