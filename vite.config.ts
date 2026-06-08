@@ -1,6 +1,7 @@
 
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import process from 'node:process';
 
 export default defineConfig(({ mode }) => {
@@ -10,12 +11,11 @@ export default defineConfig(({ mode }) => {
   console.log("Vite Config - GEMINI_API_KEY present:", !!env.GEMINI_API_KEY);
 
   return {
-    plugins: [react()],
+    plugins: [react(), tailwindcss()],
     // Relative base is most reliable for Hostinger shared/VPS hosting
     base: './', 
     define: {
       'process.env.VITE_API_BASE_URL': JSON.stringify(env.VITE_API_BASE_URL || 'https://order.auragoldelite.com'),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },
     build: {
       outDir: 'dist',
@@ -24,9 +24,9 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
       rollupOptions: {
         output: {
-          manualChunks: {
-            'vendor': ['react', 'react-dom', 'recharts', 'lucide-react'],
-            'pdf': ['jspdf', 'jspdf-autotable']
+          manualChunks(id) {
+            if (id.includes('node_modules/jspdf')) return 'pdf';
+            if (id.includes('node_modules')) return 'vendor';
           }
         }
       }

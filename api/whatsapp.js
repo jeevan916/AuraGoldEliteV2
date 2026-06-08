@@ -48,6 +48,7 @@ export async function sendWhatsAppMessage({ to, message, templateName, language,
              throw new Error(data.error?.message || "Meta API Error");
         }
 
+        let returnLog = null;
         if (data.messages) {
             const pool = getPool();
             const connection = await pool.getConnection();
@@ -55,8 +56,9 @@ export async function sendWhatsAppMessage({ to, message, templateName, language,
             await connection.query('INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)', [log.id, log.phoneNumber, 'outbound', new Date(), JSON.stringify(log)]);
             // Note: io is not available here.
             connection.release();
+            returnLog = log;
         }
-        return { success: true, data };
+        return { success: true, data, logEntry: returnLog };
     } catch (e) { 
         console.error("WhatsApp Send Error:", e);
         throw e;
@@ -291,6 +293,11 @@ router.post('/send', ensureDb, async (req, res) => {
     try {
         const result = await sendWhatsAppMessage({ to, message, templateName, language, components, customerName, phoneId, token, sentBy });
         await logDbActivity('WHATSAPP_SENT', templateName ? `Sent Template: ${templateName}` : 'Sent Manual Message', { recipient: to, customer: customerName, template: templateName, sentBy }, req);
+        
+        if (result.logEntry && req.io) {
+            req.io.emit('whatsapp_update', result.logEntry);
+        }
+        
         res.status(200).json(result);
     } catch (e) {
         res.status(400).json({ success: false, error: e.message });

@@ -240,13 +240,13 @@ export const getPool = () => {
                         }
                         return [{ affectedRows: 1 }];
                     }
-                    if (lowerSql.includes('select data from whatsapp_logs order by timestamp desc')) {
+                    if (lowerSql.includes('select data from whatsapp_logs')) {
+                        if (lowerSql.includes('where id = ?')) {
+                            const log = mockData.whatsapp_logs.find(l => l.id === params[0]);
+                            return [log ? [log] : []];
+                        }
                         const sorted = [...mockData.whatsapp_logs].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 150);
                         return [sorted];
-                    }
-                    if (lowerSql.includes('select data from whatsapp_logs where id = ?')) {
-                        const log = mockData.whatsapp_logs.find(l => l.id === params[0]);
-                        return [log ? [log] : []];
                     }
                     if (lowerSql.includes('update whatsapp_logs set data = ? where id = ?')) {
                         const index = mockData.whatsapp_logs.findIndex(l => l.id === params[1]);
