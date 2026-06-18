@@ -133,9 +133,9 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
           if(confirm(`Send AI Message?\n\nTone: ${result.tone}\n\n"${result.message}"`)) {
              let res;
              if (result.templateId && result.variables) {
-                 res = await whatsappService.sendTemplateMessage(item.customerContact, result.templateId, 'en_US', result.variables, item.customerName);
+                 res = await whatsappService.sendTemplateMessage(item.customerContact, result.templateId, 'en_US', result.variables, item.customerName, undefined, undefined, undefined, item.orderId);
              } else {
-                 res = await whatsappService.sendMessage(item.customerContact, result.message, item.customerName);
+                 res = await whatsappService.sendMessage(item.customerContact, result.message, item.customerName, undefined, item.orderId);
              }
              if (res.success && res.logEntry && onAddLog) onAddLog(res.logEntry);
              alert("Sent!");

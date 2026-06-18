@@ -280,7 +280,8 @@ export const whatsappService = {
     customerName: string, 
     buttonVariable?: string,
     headerImageUrl?: string,
-    sentBy?: 'ADMIN' | 'STAFF' | 'SYSTEM'
+    sentBy?: 'ADMIN' | 'STAFF' | 'SYSTEM',
+    orderId?: string
   ): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
     if (!recipient) return { success: false, error: "Invalid Phone Number" };
@@ -347,7 +348,8 @@ export const whatsappService = {
             language: languageCode, 
             components, 
             customerName,
-            sentBy: actualSentBy
+            sentBy: actualSentBy,
+            orderId
         };
 
         const response = await fetch(`${API_BASE}/api/whatsapp/send`, {
@@ -380,7 +382,8 @@ export const whatsappService = {
             timestamp: new Date().toISOString(), 
             type: 'TEMPLATE', 
             direction: 'outbound',
-            sentBy: actualSentBy
+            sentBy: actualSentBy,
+            orderId
           }
         };
     } catch (error: any) {
@@ -388,7 +391,7 @@ export const whatsappService = {
     }
   },
 
-  async sendMessage(to: string, message: string, customerName: string, sentBy?: 'ADMIN' | 'STAFF' | 'SYSTEM'): Promise<WhatsAppResponse> {
+  async sendMessage(to: string, message: string, customerName: string, sentBy?: 'ADMIN' | 'STAFF' | 'SYSTEM', orderId?: string): Promise<WhatsAppResponse> {
     const recipient = this.formatPhoneNumber(to);
     if (!recipient) return { success: false, error: "Invalid Phone Number" };
 
@@ -419,7 +422,7 @@ export const whatsappService = {
             'x-phone-id': settings.whatsappPhoneNumberId,
             'x-auth-token': token
         },
-        body: JSON.stringify({ to: recipient, message, customerName, sentBy: actualSentBy })
+        body: JSON.stringify({ to: recipient, message, customerName, sentBy: actualSentBy, orderId })
       });
 
       const data = await response.json();
@@ -434,7 +437,7 @@ export const whatsappService = {
         logEntry: {
           id: data.data?.messages?.[0]?.id || `wamid.${Date.now()}`,
           customerName, phoneNumber: recipient, message,
-          status: 'SENT', timestamp: new Date().toISOString(), type: 'CUSTOM', direction: 'outbound', sentBy: actualSentBy
+          status: 'SENT', timestamp: new Date().toISOString(), type: 'CUSTOM', direction: 'outbound', sentBy: actualSentBy, orderId
         }
       };
     } catch (e: any) { 

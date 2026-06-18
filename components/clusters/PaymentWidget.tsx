@@ -272,7 +272,10 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
               'en_US', 
               [order.customerName, val.toLocaleString()], 
               order.customerName,
-              buttonVariable 
+              buttonVariable,
+              undefined,
+              undefined,
+              order.id
           );
 
           if (result.success) {
@@ -284,7 +287,9 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
               const fallbackRes = await whatsappService.sendMessage(
                   order.customerContact,
                   `Dear ${order.customerName}, please pay ₹${val.toLocaleString()} using this link: ${shortLink}`,
-                  order.customerName
+                  order.customerName,
+                  undefined,
+                  order.id
               );
               if (fallbackRes.success) {
                   alert("Template failed, but sent Text Link as fallback.");

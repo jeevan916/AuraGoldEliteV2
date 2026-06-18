@@ -111,6 +111,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
   // --- GOLD RATE PROTECTION LOGIC ---
   const liabilityState = useMemo(() => {
       if (order.paymentPlan.protectionStatus !== ProtectionStatus.ACTIVE) return null;
+      if (order.status === OrderStatus.DELIVERED || order.status === OrderStatus.CANCELLED) return null;
       
       const currentRate = settings.currentGoldRate22K;
       const bookedRate = order.paymentPlan.protectionRateBooked || order.goldRateAtBooking;
@@ -437,18 +438,38 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
 
   const handleLapseProtection = () => {
       if(confirm("Revoke Gold Rate Protection?")) {
-          onOrderUpdate({ ...order, originalSnapshot: { timestamp: new Date().toISOString(), originalTotal: order.totalAmount, originalRate: order.goldRateAtBooking, itemsSnapshot: [...order.items], reason: 'Manual Admin Revocation' }, paymentPlan: { ...order.paymentPlan, protectionStatus: ProtectionStatus.LAPSED } });
+          onOrderUpdate({ 
+              ...order, 
+              originalSnapshot: { timestamp: new Date().toISOString(), originalTotal: order.totalAmount, originalRate: order.goldRateAtBooking, itemsSnapshot: [...order.items], reason: 'Manual Admin Revocation' }, 
+              paymentPlan: { ...order.paymentPlan, protectionStatus: ProtectionStatus.LAPSED },
+              protectionRevokedAt: new Date().toISOString()
+          });
       }
   };
 
   const handleRefundCancel = () => {
       if(!confirm("Cancel Order?")) return;
-      onOrderUpdate({ ...order, status: OrderStatus.CANCELLED, paymentPlan: { ...order.paymentPlan, protectionStatus: ProtectionStatus.LAPSED } });
+      
+      const isBankTransfer = confirm("Was this refund issued via Bank Transfer?\n(Click OK for Transfer, Cancel for Cash)");
+      const refundMethod = isBankTransfer ? 'TRANSFER' : 'CASH';
+
+      onOrderUpdate({ 
+          ...order, 
+          status: OrderStatus.CANCELLED, 
+          cancelledAt: new Date().toISOString(),
+          refundMethod,
+          paymentPlan: { ...order.paymentPlan, protectionStatus: ProtectionStatus.LAPSED } 
+      });
   };
 
   const handleHandover = () => {
       if(confirm("Confirm Handover? Marks as DELIVERED.")) {
-          onOrderUpdate({ ...order, status: OrderStatus.DELIVERED, items: order.items.map(i => ({...i, productionStatus: ProductionStatus.DELIVERED})) });
+          onOrderUpdate({ 
+              ...order, 
+              status: OrderStatus.DELIVERED, 
+              deliveredAt: new Date().toISOString(),
+              items: order.items.map(i => ({...i, productionStatus: ProductionStatus.DELIVERED})) 
+          });
           onBack(); 
       }
   };
@@ -492,17 +513,27 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
         </div>
       </div>
 
-      <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden">
-         <div className="relative z-10">
-            <h1 className="text-3xl font-black tracking-tight mb-1">{order.customerName}</h1>
-            <p className="text-slate-400 font-medium text-sm flex items-center gap-4">
-                <span>{order.customerContact}</span>
-                <span className="w-1 h-1 bg-slate-600 rounded-full"></span>
-                <span>{order.items.length} Items</span>
-                {order.status === OrderStatus.DELIVERED && <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-emerald-500/30">Archived</span>}
-            </p>
+      <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start gap-6">
+         <div className="relative z-10 flex-1 min-w-0">
+            <h1 className="text-3xl font-black tracking-tight mb-1 break-words leading-tight">{order.customerName}</h1>
+            <div className="space-y-2">
+                <p className="text-slate-400 font-medium text-sm flex flex-wrap items-center gap-3">
+                    <span>{order.customerContact}</span>
+                    <span className="w-1 h-1 bg-slate-600 rounded-full shrink-0"></span>
+                    <span className="shrink-0">{order.items.length} Items</span>
+                    {order.status === OrderStatus.DELIVERED && <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-emerald-500/30 shrink-0">Archived</span>}
+                    {order.status === OrderStatus.CANCELLED && <span className="bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-rose-500/30 shrink-0">Cancelled</span>}
+                </p>
+                {(order.deliveredAt || order.cancelledAt || order.protectionRevokedAt) && (
+                    <div className="flex flex-wrap gap-2 text-[10px] uppercase font-bold tracking-wider">
+                        {order.deliveredAt && <span className="text-emerald-400/80 bg-emerald-400/10 px-2 py-1 rounded">Delivered on {new Date(order.deliveredAt).toLocaleString()}</span>}
+                        {order.cancelledAt && <span className="text-rose-400/80 bg-rose-400/10 px-2 py-1 rounded">Cancelled on {new Date(order.cancelledAt).toLocaleString()}{order.refundMethod ? ` (Refunded via ${order.refundMethod})` : ''}</span>}
+                        {isLapsed && order.protectionRevokedAt && <span className="text-amber-400/80 bg-amber-400/10 px-2 py-1 rounded">Protection Revoked on {new Date(order.protectionRevokedAt).toLocaleString()}</span>}
+                    </div>
+                )}
+            </div>
          </div>
-         <div className="absolute top-6 right-8">
+         <div className="relative z-10 shrink-0">
              <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border backdrop-blur-md ${isLapsed ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'}`}>
                  {isLapsed ? <AlertTriangle size={16} /> : <Lock size={16} />}
                  <div className="text-right">
@@ -609,7 +640,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           </div>
         )}
 
-        {activeTab === 'LOGS' && <div className="animate-fadeIn h-[600px]"><CommunicationWidget logs={logs} customerPhone={order.customerContact} customerName={order.customerName} onLogAdded={(l) => onAddLog && onAddLog(l)} /></div>}
+        {activeTab === 'LOGS' && <div className="animate-fadeIn h-[600px]"><CommunicationWidget logs={logs} customerPhone={order.customerContact} customerName={order.customerName} orderId={order.id} onLogAdded={(l) => onAddLog && onAddLog(l)} /></div>}
 
         {activeTab === 'ITEMS' && (
           <div className="space-y-4 animate-fadeIn">

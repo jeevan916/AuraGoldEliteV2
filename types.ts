@@ -134,6 +134,10 @@ export interface Order {
   lastNotifiedAt?: number;
   requiresLiabilityAcceptance?: boolean;
   liabilityGapAcceptedAt?: string;
+  deliveredAt?: string;
+  cancelledAt?: string;
+  refundMethod?: 'CASH' | 'TRANSFER';
+  protectionRevokedAt?: string;
 }
 
 export interface GlobalSettings {
@@ -179,6 +183,7 @@ export interface WhatsAppLogEntry {
   type: 'TEMPLATE' | 'CUSTOM' | 'INBOUND';
   context?: string;
   sentBy?: 'ADMIN' | 'STAFF' | 'SYSTEM';
+  orderId?: string;
 }
 
 export type CollectionTone = 'POLITE' | 'FIRM' | 'URGENT' | 'ENCOURAGING';

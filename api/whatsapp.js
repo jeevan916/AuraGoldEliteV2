@@ -6,7 +6,7 @@ import { checkRateBreaches } from './rateService.js';
 const router = express.Router();
 const META_API_VERSION = "v20.0";
 
-export async function sendWhatsAppMessage({ to, message, templateName, language, components, customerName, phoneId, token, sentBy = 'SYSTEM', metadata = {} }) {
+export async function sendWhatsAppMessage({ to, message, templateName, language, components, customerName, phoneId, token, sentBy = 'SYSTEM', metadata = {}, orderId }) {
     if (!phoneId || !token) {
         throw new Error("Missing WhatsApp Credentials");
     }
@@ -52,8 +52,8 @@ export async function sendWhatsAppMessage({ to, message, templateName, language,
         if (data.messages) {
             const pool = getPool();
             const connection = await pool.getConnection();
-            const log = { id: data.messages[0].id, customerName: customerName || "Customer", phoneNumber: normalizePhone(to), message: templateName ? `[Template: ${templateName}]` : message, status: 'SENT', timestamp: new Date().toISOString(), direction: 'outbound', type: templateName ? 'TEMPLATE' : 'CUSTOM', sentBy, ...metadata };
-            await connection.query('INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?)', [log.id, log.phoneNumber, 'outbound', new Date(), JSON.stringify(log)]);
+            const log = { id: data.messages[0].id, customerName: customerName || "Customer", phoneNumber: normalizePhone(to), message: templateName ? `[Template: ${templateName}]` : message, status: 'SENT', timestamp: new Date().toISOString(), direction: 'outbound', type: templateName ? 'TEMPLATE' : 'CUSTOM', sentBy, orderId, ...metadata };
+            await connection.query('INSERT INTO whatsapp_logs (id, phone, order_id, direction, timestamp, data) VALUES (?, ?, ?, ?, ?, ?)', [log.id, log.phoneNumber, orderId || null, 'outbound', new Date(), JSON.stringify(log)]);
             // Note: io is not available here.
             connection.release();
             returnLog = log;
@@ -94,9 +94,19 @@ router.post('/webhook', ensureDb, async (req, res) => {
             const msgBody = msg.text?.body || `[Media: ${msg.type}]`;
             const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
             const contactName = change.contacts?.[0]?.profile?.name || "Customer";
-            const logEntry = { id: msg.id, customerName: contactName, phoneNumber: fromFormatted, message: msgBody, status: 'READ', timestamp, direction: 'inbound', type: 'INBOUND' };
             
-            await connection.query(`INSERT INTO whatsapp_logs (id, phone, direction, timestamp, data) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data)`, [logEntry.id, fromFormatted, 'inbound', new Date(timestamp), JSON.stringify(logEntry)]);
+            // Link to latest order if any
+            const [ordersRows] = await connection.query("SELECT data FROM orders");
+            const customerOrders = ordersRows.map(r => JSON.parse(r.data)).filter(o => normalizePhone(o.customerContact) === fromFormatted);
+            let mostRecentOrderId = null;
+            if (customerOrders.length > 0) {
+                customerOrders.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                mostRecentOrderId = customerOrders[0].id;
+            }
+
+            const logEntry = { id: msg.id, customerName: contactName, phoneNumber: fromFormatted, message: msgBody, status: 'READ', timestamp, direction: 'inbound', type: 'INBOUND', orderId: mostRecentOrderId };
+            
+            await connection.query(`INSERT INTO whatsapp_logs (id, phone, order_id, direction, timestamp, data) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data), order_id=VALUES(order_id)`, [logEntry.id, fromFormatted, mostRecentOrderId, 'inbound', new Date(timestamp), JSON.stringify(logEntry)]);
             
             if (req.io) req.io.emit('whatsapp_update', logEntry);
         }
@@ -282,7 +292,7 @@ router.delete('/templates', ensureDb, async (req, res) => {
 });
 
 router.post('/send', ensureDb, async (req, res) => {
-    const { to, message, templateName, language, components, customerName, sentBy } = req.body;
+    const { to, message, templateName, language, components, customerName, sentBy, orderId } = req.body;
     const phoneId = req.headers['x-phone-id'];
     const token = req.headers['x-auth-token'];
 
@@ -291,8 +301,8 @@ router.post('/send', ensureDb, async (req, res) => {
     }
 
     try {
-        const result = await sendWhatsAppMessage({ to, message, templateName, language, components, customerName, phoneId, token, sentBy });
-        await logDbActivity('WHATSAPP_SENT', templateName ? `Sent Template: ${templateName}` : 'Sent Manual Message', { recipient: to, customer: customerName, template: templateName, sentBy }, req);
+        const result = await sendWhatsAppMessage({ to, message, templateName, language, components, customerName, phoneId, token, sentBy, orderId });
+        await logDbActivity('WHATSAPP_SENT', templateName ? `Sent Template: ${templateName}` : 'Sent Manual Message', { recipient: to, customer: customerName, template: templateName, sentBy, orderId }, req);
         
         if (result.logEntry && req.io) {
             req.io.emit('whatsapp_update', result.logEntry);

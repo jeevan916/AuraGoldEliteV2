@@ -1,6 +1,7 @@
 
 import express from 'express';
 import { getPool, ensureDb } from './db.js';
+import { sendWhatsAppMessage } from './whatsapp.js';
 
 const router = express.Router();
 
@@ -505,6 +506,42 @@ router.all(['/setu/notifications', '/setu/webhook'], async (req, res) => {
                                 // Broadcast update to clients
                                 if (req.io) {
                                     req.io.emit('orders_sync', [order]);
+                                }
+
+                                // Send WhatsApp Receipt
+                                try {
+                                    const [whatsappRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['whatsapp']);
+                                    const whatsappConfig = whatsappRows.length > 0 ? JSON.parse(whatsappRows[0].config) : {};
+                                    const { phoneId, token } = whatsappConfig;
+                                    
+                                    if (phoneId && token) {
+                                        const totalPaid = order.payments.reduce((sum, p) => sum + p.amount, 0);
+                                        const actualRemaining = order.totalAmount - totalPaid;
+                                        
+                                        const resData = await sendWhatsAppMessage({
+                                            to: order.customerContact,
+                                            templateName: 'auragold_payment_success_remote',
+                                            language: 'en_US',
+                                            components: [{ type: "body", parameters: [
+                                                { type: "text", text: order.customerName || "Customer" },
+                                                { type: "text", text: Number(amountPaid).toLocaleString('en-IN') },
+                                                { type: "text", text: "UPI" },
+                                                { type: "text", text: order.id },
+                                                { type: "text", text: Number(actualRemaining).toLocaleString('en-IN') }
+                                            ]}],
+                                            customerName: order.customerName,
+                                            phoneId,
+                                            token,
+                                            sentBy: 'SYSTEM',
+                                            orderId: order.id
+                                        });
+
+                                        if (resData && resData.logEntry && req.io) {
+                                            req.io.emit('whatsapp_update', resData.logEntry);
+                                        }
+                                    }
+                                } catch (waErr) {
+                                    console.error("Failed to send WhatsApp receipt:", waErr);
                                 }
                             }
                         }

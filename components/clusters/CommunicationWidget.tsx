@@ -9,12 +9,13 @@ interface CommunicationWidgetProps {
   logs: WhatsAppLogEntry[];
   customerPhone: string;
   customerName: string;
+  orderId: string;
   onLogAdded: (log: WhatsAppLogEntry) => void;
   compact?: boolean;
 }
 
 export const CommunicationWidget: React.FC<CommunicationWidgetProps> = ({ 
-  logs, customerPhone, customerName, onLogAdded, compact = false 
+  logs, customerPhone, customerName, orderId, onLogAdded, compact = false 
 }) => {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -23,10 +24,13 @@ export const CommunicationWidget: React.FC<CommunicationWidgetProps> = ({
   const normalize = (p: string) => p ? p.replace(/\D/g, '').slice(-10) : '';
   const targetPhone = normalize(customerPhone);
 
-  // Strict Filter: Only show logs that match the specific customer's 10-digit mobile
+  // Strict Filter: Only show logs that match the specific customer's 10-digit mobile OR the order ID
   const customerLogs = logs.filter(l => {
-    if (!targetPhone) return false; // Safety: Never show logs if target is undefined
-    return normalize(l.phoneNumber) === targetPhone;
+    if (!targetPhone) return false;
+    // Show if the orderId matches exactly
+    if (l.orderId && l.orderId === orderId) return true;
+    // Or if it's general chat and no order is assigned, fallback to matching the customer
+    return normalize(l.phoneNumber) === targetPhone && (!l.orderId || l.orderId === orderId);
   }).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   const handleSend = async () => {
@@ -38,7 +42,7 @@ export const CommunicationWidget: React.FC<CommunicationWidgetProps> = ({
     
     setSending(true);
     try {
-      const res = await whatsappService.sendMessage(customerPhone, message, customerName);
+      const res = await whatsappService.sendMessage(customerPhone, message, customerName, undefined, orderId);
       if (res.success && res.logEntry) {
         onLogAdded(res.logEntry);
         setMessage('');

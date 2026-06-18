@@ -127,7 +127,9 @@ export async function initDb() {
         try {
             await connection.query("ALTER TABLE orders ADD COLUMN share_token VARCHAR(100)");
             await connection.query("CREATE INDEX idx_share_token ON orders(share_token)");
-            
+        } catch (e) { }
+        
+        try {
             // Migration: populate share_token for existing orders
             const [orders] = await connection.query("SELECT id, data FROM orders WHERE share_token IS NULL");
             for (const order of orders) {
@@ -313,9 +315,9 @@ export const getPool = () => {
                     if (lowerSql.includes('insert into whatsapp_logs')) {
                         const existingIndex = mockData.whatsapp_logs.findIndex(l => l.id === params[0]);
                         if (existingIndex > -1) {
-                            mockData.whatsapp_logs[existingIndex].data = params[4];
+                            mockData.whatsapp_logs[existingIndex].data = params[params.length - 1];
                         } else {
-                            mockData.whatsapp_logs.push({ id: params[0], phone: params[1], direction: params[2], timestamp: params[3], data: params[4] });
+                            mockData.whatsapp_logs.push({ id: params[0], phone: params[1], direction: params[3], timestamp: params[4], data: params[params.length - 1] });
                         }
                         return [{ affectedRows: 1 }];
                     }
