@@ -488,19 +488,21 @@ router.all(['/setu/notifications', '/setu/webhook'], async (req, res) => {
                                 
                                 // Update milestones
                                 let remaining = amountPaid;
-                                for (const milestone of order.paymentPlan.milestones) {
-                                    if (milestone.status !== 'PAID' && remaining > 0) {
-                                        if (remaining >= milestone.targetAmount) {
-                                            milestone.status = 'PAID';
-                                            remaining -= milestone.targetAmount;
-                                        } else {
-                                            milestone.status = 'PARTIAL';
-                                            remaining = 0;
+                                if (order.paymentPlan && Array.isArray(order.paymentPlan.milestones)) {
+                                    for (const milestone of order.paymentPlan.milestones) {
+                                        if (milestone.status !== 'PAID' && remaining > 0) {
+                                            if (remaining >= milestone.targetAmount) {
+                                                milestone.status = 'PAID';
+                                                remaining -= milestone.targetAmount;
+                                            } else {
+                                                milestone.status = 'PARTIAL';
+                                                remaining = 0;
+                                            }
                                         }
                                     }
                                 }
                                 
-                                await connection.query('UPDATE orders SET data = ? WHERE JSON_EXTRACT(data, "$.id") = ?', [JSON.stringify(order), orderId]);
+                                await connection.query('UPDATE orders SET data = ? WHERE id = ?', [JSON.stringify(order), orderId]);
                                 console.log(`Order ${orderId} updated with Setu payment ${upiTransactionID}`);
                                 
                                 // Broadcast update to clients
@@ -601,7 +603,7 @@ router.post('/orders/:id/accept-liability', ensureDb, async (req, res) => {
         order.requiresLiabilityAcceptance = false;
         order.liabilityGapAcceptedAt = new Date().toISOString();
         
-        await connection.query('UPDATE orders SET data = ? WHERE JSON_EXTRACT(data, "$.id") = ?', [JSON.stringify(order), orderId]);
+        await connection.query('UPDATE orders SET data = ? WHERE id = ?', [JSON.stringify(order), orderId]);
         connection.release();
         
         // Broadcast update to clients

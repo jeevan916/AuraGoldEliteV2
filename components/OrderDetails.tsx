@@ -110,7 +110,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
 
   // --- GOLD RATE PROTECTION LOGIC ---
   const liabilityState = useMemo(() => {
-      if (order.paymentPlan.protectionStatus !== ProtectionStatus.ACTIVE) return null;
+      if (order.paymentPlan.protectionStatus !== ProtectionStatus.ACTIVE || order.paymentPlan.goldRateProtection === false) return null;
       if (order.status === OrderStatus.DELIVERED || order.status === OrderStatus.CANCELLED) return null;
       
       const currentRate = settings.currentGoldRate22K;
@@ -534,13 +534,15 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
             </div>
          </div>
          <div className="relative z-10 shrink-0">
-             <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border backdrop-blur-md ${isLapsed ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'}`}>
-                 {isLapsed ? <AlertTriangle size={16} /> : <Lock size={16} />}
-                 <div className="text-right">
-                     <p className="text-[9px] font-black uppercase tracking-widest">{isLapsed ? 'Protection Revoked' : 'Rate Protected'}</p>
-                     <p className="text-sm font-bold">₹{order.paymentPlan.protectionRateBooked || order.goldRateAtBooking}/g</p>
+             {order.paymentPlan.protectionStatus !== ProtectionStatus.NONE && order.paymentPlan.goldRateProtection !== false && (
+                 <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border backdrop-blur-md ${isLapsed ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'}`}>
+                     {isLapsed ? <AlertTriangle size={16} /> : <Lock size={16} />}
+                     <div className="text-right">
+                         <p className="text-[9px] font-black uppercase tracking-widest">{isLapsed ? 'Protection Revoked' : 'Rate Protected'}</p>
+                         <p className="text-sm font-bold">₹{order.paymentPlan.protectionRateBooked || order.goldRateAtBooking}/g</p>
+                     </div>
                  </div>
-             </div>
+             )}
          </div>
       </div>
 
@@ -632,7 +634,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                 <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
                     <h3 className="font-black text-slate-800 text-sm uppercase tracking-wide">Contract Controls</h3>
                     <div className="flex flex-col md:flex-row gap-4">
-                        {!isLapsed && <button onClick={handleLapseProtection} className="flex-1 bg-rose-50 border border-rose-100 text-rose-700 py-4 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-rose-100 transition-colors flex items-center justify-center gap-2"><AlertTriangle size={16} /> Revoke Rate Protection</button>}
+                        {order.paymentPlan.protectionStatus === ProtectionStatus.ACTIVE && order.paymentPlan.goldRateProtection !== false && <button onClick={handleLapseProtection} className="flex-1 bg-rose-50 border border-rose-100 text-rose-700 py-4 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-rose-100 transition-colors flex items-center justify-center gap-2"><AlertTriangle size={16} /> Revoke Rate Protection</button>}
                         {isFullyPaid ? <button onClick={handleHandover} className="flex-1 bg-slate-900 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-lg"><CheckCheck size={16} /> Handover & Archive Order</button> : <div className="flex-1 border border-dashed border-slate-300 rounded-xl flex items-center justify-center text-slate-400 text-xs font-bold uppercase py-4 bg-slate-50"><Archive size={16} className="mr-2" /> Handover Locked</div>}
                     </div>
                 </div>

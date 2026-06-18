@@ -20,7 +20,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
 
   // Logic to find overdue/due today orders
   const criticalOrders = liveOrders.filter(o => 
-    o.paymentPlan.milestones.some(m => m.status !== 'PAID' && m.dueDate <= today)
+    o.paymentPlan?.milestones?.some(m => m.status !== 'PAID' && m.dueDate <= today)
   );
 
   const handleRefresh = async () => {

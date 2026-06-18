@@ -151,7 +151,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const protectionLimit = order.paymentPlan.protectionLimit || 0; // Max Allowed Increase
   const maxProtectedRate = bookedRate + protectionLimit;
   
-  const isProtected = order.paymentPlan.protectionStatus === ProtectionStatus.ACTIVE;
+  const isProtected = order.paymentPlan.protectionStatus === ProtectionStatus.ACTIVE && order.paymentPlan.goldRateProtection !== false;
   
   const totalGoldWeight = order.items.reduce((sum, item) => item.metalColor !== 'Silver' ? sum + item.netWeight : sum, 0);
   

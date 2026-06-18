@@ -18,6 +18,7 @@ export enum ProductionStatus {
 }
 
 export enum ProtectionStatus {
+  NONE = 'NONE',
   ACTIVE = 'ACTIVE',
   WARNING = 'WARNING',
   LAPSED = 'LAPSED'

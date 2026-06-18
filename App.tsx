@@ -241,8 +241,16 @@ const App = () => {
         }));
     });
 
-    socket.on('orders_sync', () => {
+    socket.on('orders_sync', (syncedOrders: Order[]) => {
         // Just force a re-read from storage since storageService handles the merge
+        // Instantly update the public order if it matches
+        if (syncedOrders && syncedOrders.length > 0) {
+            setPublicOrder(prev => {
+                if (!prev) return prev;
+                const updated = syncedOrders.find(o => o.id === prev.id);
+                return updated || prev;
+            });
+        }
     });
 
     (window as any).dispatchView = (v: MainView) => setView(v);

@@ -117,10 +117,17 @@ app.get('/test-proxy', (req, res) => {
     `);
 });
 
+// Fallback for Setu webhooks configured without /api
+app.all(['/setu/notifications', '/setu/webhook'], (req, res, next) => {
+    req.url = `/api${req.url}`;
+    next();
+});
+
 // Routes
 app.use('/api', authRouter); // Auth Routes
 app.use('/api', ratesRouter);
 app.use('/api', paymentsRouter);
+app.use('/', paymentsRouter); // Fallback for root level Setu webhooks
 app.use('/api/whatsapp', whatsappRouter);
 app.use('/api/sync', syncRouter);
 app.use('/api', coreRouter);

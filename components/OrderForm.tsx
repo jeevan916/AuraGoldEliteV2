@@ -306,7 +306,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
       paymentPlan: { 
         ...plan, 
         milestones, 
-        protectionStatus: ProtectionStatus.ACTIVE, 
+        protectionStatus: plan.goldRateProtection ? ProtectionStatus.ACTIVE : ProtectionStatus.NONE, 
         protectionRateBooked: protectionRate, 
         protectionDeadline: milestones[milestones.length - 1].dueDate, 
         protectionLimit: settings.goldRateProtectionMax 
