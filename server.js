@@ -15,7 +15,7 @@ import { initDb } from './api/db.js';
 // Route Modules
 import authRouter from './api/auth.js';
 import ratesRouter from './api/rates.js';
-import paymentsRouter from './api/payments.js';
+import paymentsRouter, { startSetuPoller } from './api/payments.js';
 import whatsappRouter from './api/whatsapp.js';
 import syncRouter from './api/sync.js';
 import coreRouter from './api/core.js';
@@ -265,6 +265,7 @@ initDb().then((result) => {
         initRateService();
         runPaymentReminders();
         setInterval(runPaymentReminders, 24 * 60 * 60 * 1000);
+        startSetuPoller(io);
     } else {
         console.error(`[System] Database initialization failed: ${result.error}`);
     }

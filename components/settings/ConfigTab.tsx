@@ -352,6 +352,19 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                                             Test Setu Connection
                                         </button>
                                     </div>
+                                    <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl text-xs font-bold leading-relaxed shadow-sm mt-4">
+                                        <div className="flex items-start gap-2">
+                                            <span className="text-amber-500">⚠️</span>
+                                            <div>
+                                                <h4 className="uppercase tracking-wider mb-1">Setu Webhook Endpoint Required</h4>
+                                                <p className="font-medium opacity-90 mb-2">Setu will not notify the app of successful payments unless you configure this exact Webhook URL in your Setu Bridge Dashboard:</p>
+                                                <div className="font-mono bg-white text-slate-800 px-3 py-2 border border-amber-200 rounded-lg select-all break-all shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]">
+                                                    {window.location.origin}/api/setu/notifications
+                                                </div>
+                                                <p className="font-medium opacity-90 mt-2 text-[10px]">Ensure your Setu Product Instance ID matches the one configured above.</p>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

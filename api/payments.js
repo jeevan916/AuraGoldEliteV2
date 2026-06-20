@@ -155,6 +155,28 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
             };
         }
 
+        // Save platformBillID to order for background recovery checking
+        if (orderId && linkData.data && linkData.data.platformBillID) {
+            const processConn = await pool.getConnection();
+            try {
+                const [orderRows] = await processConn.query('SELECT data FROM orders WHERE id = ?', [orderId]);
+                if (orderRows.length > 0) {
+                    const order = JSON.parse(orderRows[0].data);
+                    if (!order.pendingSetuPayments) order.pendingSetuPayments = [];
+                    order.pendingSetuPayments.push({
+                        platformBillID: linkData.data.platformBillID,
+                        amount: amount,
+                        createdAt: new Date().toISOString()
+                    });
+                    await processConn.query('UPDATE orders SET data = ? WHERE id = ?', [JSON.stringify(order), orderId]);
+                }
+            } catch (err) {
+                console.error("Failed to save pending Setu payment:", err);
+            } finally {
+                processConn.release();
+            }
+        }
+
         res.json({ success: true, data: linkData });
 
     } catch (e) { 
@@ -475,10 +497,10 @@ router.get(['/setu/pay/:encodedIntent', '/setu/pay'], async (req, res) => {
 });
 
 // Setu Webhook Notification Endpoint (Catch-All)
-router.all(['/setu/notifications', '/setu/webhook', '/webhooks/setu'], async (req, res) => {
+router.all(['/setu/notifications', '/setu/webhook', '/webhooks/setu'], express.json({ type: '*/*' }), async (req, res) => {
     try {
         // Acknowledge receipt immediately to Setu (must be 2xx without fail)
-        res.status(200).send("OK");
+        res.status(200).json({ success: true, message: "OK" });
 
         const { initDb, getPool } = await import('./db.js');
         // Ensure DB is initialized
@@ -486,7 +508,13 @@ router.all(['/setu/notifications', '/setu/webhook', '/webhooks/setu'], async (re
             await initDb();
         }
 
-        const payload = req.body;
+        let payload = req.body;
+        
+        // Handle stringified bodies just in case
+        if (typeof payload === 'string') {
+            try { payload = JSON.parse(payload); } catch(e) {}
+        }
+
         const headers = req.headers;
         const method = req.method;
         const query = req.query;
@@ -552,98 +580,7 @@ router.all(['/setu/notifications', '/setu/webhook', '/webhooks/setu'], async (re
                         continue;
                     }
                     
-                    const pool = getPool();
-                    if (!pool) continue;
-                    const connection = await pool.getConnection();
-                    
-                    try {
-                        // Find the order
-                        const [rows] = await connection.query('SELECT data FROM orders');
-                        const orderRow = rows.find(r => {
-                            const o = JSON.parse(r.data);
-                            return o.id === orderId;
-                        });
-                        
-                        if (orderRow) {
-                            const order = JSON.parse(orderRow.data);
-                            
-                            // Check if payment is already recorded
-                            const alreadyRecorded = order.payments.some(p => p.reference === upiTransactionID);
-                            
-                            if (!alreadyRecorded) {
-                                order.payments.push({
-                                    id: `pay_${Date.now()}`,
-                                    amount: amountPaid,
-                                    date: new Date().toISOString(),
-                                    method: 'UPI',
-                                    reference: upiTransactionID,
-                                    status: 'SUCCESS'
-                                });
-                                
-                                // Update milestones
-                                let remaining = amountPaid;
-                                if (order.paymentPlan && Array.isArray(order.paymentPlan.milestones)) {
-                                    for (const milestone of order.paymentPlan.milestones) {
-                                        if (milestone.status !== 'PAID' && remaining > 0) {
-                                            if (remaining >= milestone.targetAmount) {
-                                                milestone.status = 'PAID';
-                                                remaining -= milestone.targetAmount;
-                                            } else {
-                                                milestone.status = 'PARTIAL';
-                                                remaining = 0;
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                await connection.query('UPDATE orders SET data = ? WHERE id = ?', [JSON.stringify(order), orderId]);
-                                console.log(`Order ${orderId} updated with Setu payment ${upiTransactionID}`);
-                                
-                                // Broadcast update to clients
-                                if (req.io) {
-                                    req.io.emit('orders_sync', [order]);
-                                }
-
-                                // Send WhatsApp Receipt
-                                try {
-                                    const [whatsappRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['whatsapp']);
-                                    const whatsappConfig = whatsappRows.length > 0 ? JSON.parse(whatsappRows[0].config) : {};
-                                    const { phoneId, token } = whatsappConfig;
-                                    
-                                    if (phoneId && token) {
-                                        const totalPaid = order.payments.reduce((sum, p) => sum + p.amount, 0);
-                                        const actualRemaining = order.totalAmount - totalPaid;
-                                        
-                                        const resData = await sendWhatsAppMessage({
-                                            to: order.customerContact,
-                                            templateName: 'auragold_payment_success_remote',
-                                            language: 'en_US',
-                                            components: [{ type: "body", parameters: [
-                                                { type: "text", text: order.customerName || "Customer" },
-                                                { type: "text", text: Number(amountPaid).toLocaleString('en-IN') },
-                                                { type: "text", text: "UPI" },
-                                                { type: "text", text: order.id },
-                                                { type: "text", text: Number(actualRemaining).toLocaleString('en-IN') }
-                                            ]}],
-                                            customerName: order.customerName,
-                                            phoneId,
-                                            token,
-                                            sentBy: 'SYSTEM',
-                                            orderId: order.id
-                                        });
-
-                                        if (resData && resData.logEntry && req.io) {
-                                            req.io.emit('whatsapp_update', resData.logEntry);
-                                        }
-                                    }
-                                } catch (waErr) {
-                                    console.error("Failed to send WhatsApp receipt:", waErr);
-                                }
-                            }
-                        }
-                    } finally {
-                        connection.release();
-                    }
+                    await processSuccessfulPayment(orderId, amountPaid, upiTransactionID, req);
                 }
             }
     } catch (e) {
@@ -712,4 +649,159 @@ router.post('/orders/:id/accept-liability', ensureDb, async (req, res) => {
     }
 });
 
+// Helper to record payment and send WhatsApp
+async function processSuccessfulPayment(orderId, amountPaid, upiTransactionID, req) {
+    const pool = getPool();
+    if (!pool) return;
+    const connection = await pool.getConnection();
+
+    try {
+        const [rows] = await connection.query('SELECT data FROM orders WHERE id=?', [orderId]);
+        if (rows.length === 0) return;
+        
+        const order = JSON.parse(rows[0].data);
+        
+        // Remove from pendingSetuPayments
+        if (order.pendingSetuPayments) {
+            order.pendingSetuPayments = order.pendingSetuPayments.filter(p => p.platformBillID !== upiTransactionID);
+        }
+        
+        const alreadyRecorded = order.payments && order.payments.some(p => p.reference === upiTransactionID || p.transactionId === upiTransactionID);
+        if (alreadyRecorded) return;
+
+        if (!order.payments) order.payments = [];
+        order.payments.push({
+            id: `pay_${Date.now()}`,
+            amount: amountPaid,
+            date: new Date().toISOString(),
+            method: 'UPI',
+            reference: upiTransactionID,
+            status: 'SUCCESS'
+        });
+        
+        let remaining = amountPaid;
+        if (order.paymentPlan && Array.isArray(order.paymentPlan.milestones)) {
+            for (const milestone of order.paymentPlan.milestones) {
+                if (milestone.status !== 'PAID' && remaining > 0) {
+                    if (remaining >= milestone.targetAmount) {
+                        milestone.status = 'PAID';
+                        remaining -= milestone.targetAmount;
+                    } else {
+                        milestone.status = 'PARTIAL';
+                        remaining = 0;
+                    }
+                }
+            }
+        }
+        
+        await connection.query('UPDATE orders SET data = ? WHERE id = ?', [JSON.stringify(order), orderId]);
+        console.log(`Order ${orderId} updated with Setu payment ${upiTransactionID}`);
+        
+        if (req && req.io) {
+            req.io.emit('orders_sync', [order]);
+        }
+
+        try {
+            const [whatsappRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['whatsapp']);
+            const whatsappConfig = whatsappRows.length > 0 ? JSON.parse(whatsappRows[0].config) : {};
+            const { phoneId, token } = whatsappConfig;
+            
+            if (phoneId && token) {
+                const totalPaid = order.payments.reduce((sum, p) => sum + p.amount, 0);
+                const actualRemaining = order.totalAmount - totalPaid;
+                
+                const { sendWhatsAppMessage } = await import('./whatsapp.js');
+                const resData = await sendWhatsAppMessage({
+                    to: order.customerContact,
+                    templateName: 'auragold_payment_success_remote',
+                    language: 'en_US',
+                    components: [{ type: "body", parameters: [
+                        { type: "text", text: order.customerName || "Customer" },
+                        { type: "text", text: Number(amountPaid).toLocaleString('en-IN') },
+                        { type: "text", text: "UPI" },
+                        { type: "text", text: order.id },
+                        { type: "text", text: Number(actualRemaining).toLocaleString('en-IN') }
+                    ]}],
+                    customerName: order.customerName,
+                    phoneId,
+                    token,
+                    sentBy: 'SYSTEM',
+                    orderId: order.id
+                });
+
+                if (resData && resData.logEntry && req && req.io) {
+                    req.io.emit('whatsapp_update', resData.logEntry);
+                }
+            }
+        } catch (waErr) {
+            console.error("Failed to send WhatsApp receipt:", waErr);
+        }
+    } finally {
+        connection.release();
+    }
+}
+
+// Background poller
+let pollerActive = false;
+export function startSetuPoller(io) {
+    if (pollerActive) return;
+    pollerActive = true;
+    
+    // Poll every 1 minute
+    setInterval(async () => {
+        const pool = getPool();
+        if (!pool) return;
+        
+        try {
+            const connection = await pool.getConnection();
+            const [setuRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
+            if (setuRows.length === 0) {
+                connection.release();
+                return;
+            }
+            
+            let config = setuRows[0].config;
+            if (typeof config === 'string') config = JSON.parse(config);
+            const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
+            const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
+            let token = config.cachedToken;
+            
+            if (!token) { connection.release(); return; }
+
+            const [orderRows] = await connection.query("SELECT id, data FROM orders");
+            connection.release();
+            
+            for (const row of orderRows) {
+                const order = JSON.parse(row.data);
+                if (order.pendingSetuPayments && order.pendingSetuPayments.length > 0) {
+                    for (const pending of order.pendingSetuPayments) {
+                        const ageMs = Date.now() - new Date(pending.createdAt).getTime();
+                        if (ageMs > 24 * 60 * 60 * 1000) continue; // skip older than 24 hours
+                        
+                        try {
+                            const statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
+                                headers: {
+                                    'Authorization': `Bearer ${token}`,
+                                    'X-Setu-Product-Instance-ID': config.schemeId
+                                }
+                            });
+                            const statusData = await statusResponse.json();
+                            if (statusData.success && statusData.data && statusData.data.status === 'PAYMENT_SUCCESSFUL') {
+                                const amountPaid = (statusData.data.amountPaid?.value / 100) || (statusData.data.amount?.value / 100) || 0; 
+                                const upiTransactionID = statusData.data.paymentLink?.platformBillID || statusData.data.platformBillID || pending.platformBillID;
+                                await processSuccessfulPayment(order.id, amountPaid, upiTransactionID, { io });
+                            }
+                        } catch (e) {
+                            console.error(`Error polling Setu for ${pending.platformBillID}:`, e.message);
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Poller Error:", err);
+        }
+    }, 60 * 1000);
+}
+
+export { processSuccessfulPayment };
 export default router;
