@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, RefreshCw, ScrollText } from 'lucide-react';
+import { Activity, RefreshCw, ScrollText, ShieldAlert, ShieldCheck, Zap } from 'lucide-react';
 
 interface WebhookLog {
     id: number;
@@ -8,6 +8,96 @@ interface WebhookLog {
     payload: any;
     created_at: string;
 }
+
+const DiagnosticCard = () => {
+    const [status, setStatus] = useState<'idle' | 'checking' | 'active' | 'inactive' | 'error'>('idle');
+    const [details, setDetails] = useState('');
+
+    const runDiagnostic = async () => {
+        setStatus('checking');
+        try {
+            // Make request directly to the public webhook endpoint to test Hostinger/Node IP filters
+            const res = await fetch('/api/setu/notifications', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ event_type: "DIAGNOSTIC_PING" })
+            });
+
+            if (res.status === 403 || res.status === 401) {
+                // HTTP 403 generally means Apache/LiteSpeed .htaccess Require ip blocked it
+                setStatus('active');
+                setDetails('Hostinger .htaccess IP firewall is actively blocking non-whitelisted IPs (HTTP 403).');
+                return;
+            }
+
+            const data = await res.json().catch(() => null);
+            if (data?.message === "Ignored: Unauthorized IP") {
+                setStatus('active');
+                setDetails('Node.js application IP firewall is actively blocking non-whitelisted IPs.');
+                return;
+            }
+
+            if (data?.message === "OK") {
+                if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                    setStatus('inactive');
+                    setDetails('Local development mode detected. Localhost is whitelisted by default to allow testing.');
+                } else {
+                    setStatus('inactive');
+                    setDetails('Endpoint is fully open. Requests from this browser (non-Setu IP) were allowed. Please check Hostinger .htaccess configuration.');
+                }
+                return;
+            }
+
+            setStatus('error');
+            setDetails(`Unexpected response: HTTP ${res.status}`);
+        } catch (err: any) {
+            setStatus('error');
+            setDetails(err.message || 'Network error while testing endpoint.');
+        }
+    };
+
+    return (
+        <div className="bg-white rounded-2xl border shadow-sm p-5 mb-4">
+            <div className="flex items-start md:items-center justify-between flex-col md:flex-row gap-4">
+                <div className="flex items-start gap-4">
+                    <div className="bg-indigo-50 p-3 rounded-xl text-indigo-600">
+                        <Zap size={24} />
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-slate-800 text-sm">IP Whitelist Diagnostics</h3>
+                        <p className="text-xs text-slate-500 mt-1 max-w-xl">
+                            Test if your Hostinger <code className="bg-slate-100 px-1 py-0.5 rounded">.htaccess</code> or Node.js IP firewall is correctly protecting the Setu Webhook endpoint from unauthorized access.
+                        </p>
+                        
+                        {status !== 'idle' && status !== 'checking' && (
+                            <div className={`mt-3 flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-lg inline-flex ${
+                                status === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 
+                                status === 'inactive' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 
+                                'bg-rose-50 text-rose-700 border border-rose-200'
+                            }`}>
+                                {status === 'active' ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
+                                {details}
+                            </div>
+                        )}
+                    </div>
+                </div>
+                
+                <button
+                    onClick={runDiagnostic}
+                    disabled={status === 'checking'}
+                    className="shrink-0 flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors disabled:opacity-70"
+                >
+                    {status === 'checking' ? (
+                        <RefreshCw size={14} className="animate-spin" />
+                    ) : (
+                        <Zap size={14} />
+                    )}
+                    Run Ping Test
+                </button>
+            </div>
+        </div>
+    );
+};
 
 const WebhookLogs = () => {
     const [logs, setLogs] = useState<WebhookLog[]>([]);
@@ -64,6 +154,8 @@ const WebhookLogs = () => {
                     Error loading webhooks: {error}
                 </div>
             )}
+
+            <DiagnosticCard />
 
             <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
                 {logs.length === 0 && !loading && (

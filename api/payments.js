@@ -499,6 +499,38 @@ router.get(['/setu/pay/:encodedIntent', '/setu/pay'], async (req, res) => {
 // Setu Webhook Notification Endpoint (Catch-All)
 router.all(['/setu/notifications', '/setu/webhook', '/webhooks/setu'], express.json({ type: '*/*' }), async (req, res) => {
     try {
+        // IP Whitelisting for Setu Production Egress IPs + Localhost for testing
+        // As per Setu's migration notice (May 13, 2026)
+        const allowedIPs = [
+            '65.1.162.205',
+            '13.205.62.92',
+            '127.0.0.1',
+            '::1',
+            '::ffff:127.0.0.1'
+        ];
+        
+        let clientIP = req.headers['x-real-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip;
+        if (typeof clientIP === 'string') {
+            // Get the first IP if there are multiple in x-forwarded-for
+            clientIP = clientIP.split(',')[0].trim();
+        }
+        
+        // In local development or misconfigured proxies, handle IP formatting
+        if (clientIP && clientIP.startsWith('::ffff:')) {
+            clientIP = clientIP.replace('::ffff:', '');
+        }
+
+        // We enforce IP filtering unconditionally to prevent spoofed payloads
+        // Local developer tests are handled because 127.0.0.1 is in the allowedIPs list
+        if (clientIP && !allowedIPs.includes(clientIP)) {
+            console.warn(`[Setu Webhook] Blocked request from unauthorized IP: ${clientIP}`);
+            // We return 200 OK anyway to prevent exposing that this is a webhook endpoint to scanners,
+            // or simply ignore it. But let's return 403 to be correct.
+            // Actually, Setu requires 200 OK. Returning 403 might make them retry.
+            // So we return 200 OK but don't process it.
+            return res.status(200).json({ success: true, message: "Ignored: Unauthorized IP" });
+        }
+
         // Acknowledge receipt immediately to Setu (must be 2xx without fail)
         res.status(200).json({ success: true, message: "OK" });
 
