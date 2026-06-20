@@ -22,6 +22,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const [liveRate, setLiveRate] = useState<number>(0);
   const [setuLoading, setSetuLoading] = useState(false);
   const [setuError, setSetuError] = useState<string | null>(null);
+  const [activePaymentPlatformId, setActivePaymentPlatformId] = useState<string | null>(null);
   const [acceptingLiability, setAcceptingLiability] = useState(false);
   const loggedRef = useRef(false);
 
@@ -66,6 +67,29 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
     };
     fetchRate();
   }, [remaining, nextPayment, order.id, customAmount]);
+
+  useEffect(() => {
+      let interval: any;
+      if (activePaymentPlatformId) {
+          interval = setInterval(async () => {
+              try {
+                  const res = await fetch(`/api/setu/status/${activePaymentPlatformId}`);
+                  const data = await res.json();
+                  if (data.success && data.data && data.data.status === 'PAYMENT_SUCCESSFUL') {
+                      setActivePaymentPlatformId(null);
+                      // the socket handler in App.tsx will update publicOrder
+                      window.location.reload(); // Quick refresh to get new state immediately
+                  } else if (data.success && data.data && ['PAYMENT_FAILED', 'EXPIRED'].includes(data.data.status)) {
+                      setActivePaymentPlatformId(null);
+                      setSetuError(`Payment status: ${data.data.status}`);
+                  }
+              } catch (e) {
+                  console.error("Poll error", e);
+              }
+          }, 3000);
+      }
+      return () => clearInterval(interval);
+  }, [activePaymentPlatformId]);
 
   const requestLocation = () => {
       if (!navigator.geolocation) return;
@@ -128,11 +152,23 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
       let upiIntentLink = payload?.paymentLink?.upiIntentLink || payload?.upiIntentLink || payload?.upiLink;
       const platformBillID = payload?.platformBillID;
 
-      if (!shortLink) {
+      if (!shortLink && !upiIntentLink) {
         throw new Error("Payment link not received from gateway");
       }
 
-      window.location.href = shortLink;
+      if (platformBillID) setActivePaymentPlatformId(platformBillID);
+
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      if (isMobile && upiIntentLink) {
+          window.location.href = upiIntentLink;
+      } else if (shortLink) {
+          // Open Setu Bridge in a new tab if possible so we can poll in background
+          // Fallback to location.href if popup blocked
+          const newWindow = window.open(shortLink, '_blank');
+          if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+              window.location.href = shortLink;
+          }
+      }
     } catch (err: any) {
       console.error("Setu Payment Error:", err);
       setSetuError(err.message);
@@ -378,6 +414,18 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
              )}
 
              <div className="w-full space-y-3">
+                {activePaymentPlatformId && (
+                    <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-xl flex items-center justify-between shadow-sm animate-pulse">
+                        <div className="flex items-center gap-3">
+                            <Loader2 className="animate-spin text-blue-500" size={20} />
+                            <div>
+                                <p className="font-bold text-sm">Processing Payment...</p>
+                                <p className="text-xs text-blue-600">Please complete the payment on Setu</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setActivePaymentPlatformId(null)} className="text-xs font-bold text-blue-600 bg-blue-100 px-3 py-1.5 rounded-lg active:scale-95">Cancel Check</button>
+                    </div>
+                )}
                 <div className="flex gap-2">
                     <button 
                       onClick={handleSetuPayment}

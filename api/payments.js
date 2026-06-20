@@ -188,6 +188,100 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
     }
 });
 
+// Setu Status Polling
+router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
+        if (rows.length === 0) {
+            connection.release();
+            return res.status(400).json({ success: false, error: "Setu Integration not configured." });
+        }
+
+        let config = rows[0].config;
+        if (typeof config === 'string') config = JSON.parse(config);
+        
+        const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
+        const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
+        
+        let token = config.cachedToken;
+        // In a real app we would refresh here if expired, but we can assume it's valid if they just created it.
+        const now = Math.floor(Date.now() / 1000);
+        if (!token || !config.tokenExpiresAt || config.tokenExpiresAt < now) {
+             const tokenResponse = await fetch(`${baseUrl}/auth/token`, {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                 body: JSON.stringify({ clientID: config.clientId, secret: config.secret })
+             });
+             const tokenData = await tokenResponse.json();
+             token = tokenData.data.token;
+             config.cachedToken = token;
+             config.tokenExpiresAt = now + (tokenData.data.expiresIn || 1800);
+             await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
+        }
+
+        const platformBillID = req.params.platformBillID;
+        const statusResponse = await fetch(`${baseUrl}/payment-links/${platformBillID}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'X-Setu-Product-Instance-ID': config.schemeId
+            }
+        });
+        
+        const statusData = await statusResponse.json();
+        connection.release();
+        
+        if (statusData.success && statusData.data && statusData.data.status === 'PAYMENT_SUCCESSFUL') {
+            const data = statusData.data;
+            // Now record the payment exactly as the webhook would!
+            const billerBillID = data.billerBillID;
+            const amountPaid = (data.amountPaid?.value / 100) || (data.amount?.value / 100) || 0; 
+            const upiTransactionID = data.paymentLink?.platformBillID || data.platformBillID || `setu_poll_${Date.now()}`;
+            
+            let orderId = data.additionalInfo?.orderId || data.additionalInfo?.orderID;
+            if (!orderId && billerBillID) orderId = billerBillID.split('_')[0];
+            
+            if (orderId && amountPaid > 0) {
+                const processConn = await pool.getConnection();
+                const [orderRows] = await processConn.query('SELECT data FROM orders WHERE id = ?', [orderId]);
+                if (orderRows.length > 0) {
+                    const order = JSON.parse(orderRows[0].data);
+                    
+                    // Check if already recorded
+                    const alreadyRecorded = order.payments && order.payments.some(p => p.transactionId === upiTransactionID);
+                    if (!alreadyRecorded) {
+                        if (!order.payments) order.payments = [];
+                        order.payments.push({
+                            id: `PAY-${Date.now()}`,
+                            amount: amountPaid,
+                            method: 'UPI',
+                            date: new Date().toISOString(),
+                            transactionId: upiTransactionID,
+                            status: 'COMPLETED',
+                            recordedBy: 'Setu Polling'
+                        });
+                        
+                        await processConn.query('UPDATE orders SET data = ? WHERE id = ?', [JSON.stringify(order), orderId]);
+                        console.log(`[Setu Polling] Order ${orderId} updated with Setu payment ${upiTransactionID}`);
+                        
+                        // Broadcast update
+                        if (req.io) {
+                            req.io.emit('orders_sync', [order]);
+                        }
+                    }
+                }
+                processConn.release();
+            }
+        }
+
+        res.json(statusData);
+    } catch (e) {
+        console.error("Setu Poll Error:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Setu Test Connection
 router.post('/setu/test-connection', ensureDb, async (req, res) => {
     const { clientId, secret, mode } = req.body;
@@ -381,7 +475,7 @@ router.get(['/setu/pay/:encodedIntent', '/setu/pay'], async (req, res) => {
 });
 
 // Setu Webhook Notification Endpoint (Catch-All)
-router.all(['/setu/notifications', '/setu/webhook'], async (req, res) => {
+router.all(['/setu/notifications', '/setu/webhook', '/webhooks/setu'], async (req, res) => {
     try {
         // Acknowledge receipt immediately to Setu (must be 2xx without fail)
         res.status(200).send("OK");

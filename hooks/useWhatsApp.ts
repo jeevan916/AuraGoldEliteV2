@@ -28,10 +28,18 @@ export function useWhatsApp() {
   };
 
   const addLog = (log: WhatsAppLogEntry) => {
-    const updated = [log, ...logs];
-    setLogs(updated); // Update React state immediately
-    // StorageService update happens in background via setLogs
-    storageService.setLogs(updated);
+    setLogsState(currentLogs => {
+        const existingIndex = currentLogs.findIndex(l => l.id === log.id);
+        let updated;
+        if (existingIndex > -1) {
+            updated = [...currentLogs];
+            updated[existingIndex] = log;
+        } else {
+            updated = [log, ...currentLogs];
+        }
+        storageService.setLogs(updated);
+        return updated;
+    });
   };
 
   return { logs, setLogs, templates, setTemplates, addLog };

@@ -1,9 +1,10 @@
 
 import React, { useState } from 'react';
 import { 
-  User, Search, ChevronRight, Plus, X
+  User, Search, ChevronRight, Plus, X, Users
 } from 'lucide-react';
 import { Customer, Order } from '../types';
+import { GoogleContactsImporter } from './GoogleContactsImporter';
 
 interface CustomerListProps {
   customers: Customer[];
@@ -16,6 +17,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, orders, onSelect
   const [search, setSearch] = useState('');
   
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: '', contact: '', email: '', secondary: '' });
 
   const filtered = customers.filter(c => 
@@ -42,6 +44,14 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, orders, onSelect
       }
   };
 
+  const handleImportContacts = (importedCustomers: Customer[]) => {
+      if (onAddCustomer) {
+          importedCustomers.forEach(c => onAddCustomer(c));
+          setShowImportModal(false);
+          setShowAddModal(false);
+      }
+  };
+
   // --- ADD CUSTOMER MODAL (Full Screen Sheet) ---
   if (showAddModal) {
       return (
@@ -52,6 +62,20 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, orders, onSelect
                     <button onClick={() => setShowAddModal(false)} className="p-2 bg-slate-200 rounded-full text-slate-600"><X size={20} /></button>
                 </div>
                 <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+                    <div className="mb-4">
+                        <button 
+                            onClick={() => setShowImportModal(true)}
+                            className="w-full flex items-center justify-center gap-3 bg-white border-2 border-blue-100 text-blue-600 hover:bg-blue-50 py-3 rounded-xl font-bold transition-colors"
+                        >
+                            <Users size={20} />
+                            Import from Google Contacts
+                        </button>
+                        <div className="flex items-center gap-4 my-6">
+                            <div className="flex-1 h-px bg-slate-200"></div>
+                            <span className="text-xs font-bold text-slate-400 uppercase">Or Add Manually</span>
+                            <div className="flex-1 h-px bg-slate-200"></div>
+                        </div>
+                    </div>
                     <div>
                         <label className="text-xs font-bold text-slate-400 uppercase mb-2 block ml-1">Full Name</label>
                         <input 
@@ -92,6 +116,13 @@ const CustomerList: React.FC<CustomerListProps> = ({ customers, orders, onSelect
                     </button>
                 </div>
             </div>
+            
+            {showImportModal && (
+                <GoogleContactsImporter 
+                    onClose={() => setShowImportModal(false)} 
+                    onImport={handleImportContacts} 
+                />
+            )}
         </div>
       );
   }

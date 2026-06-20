@@ -123,6 +123,12 @@ app.all(['/setu/notifications', '/setu/webhook'], (req, res, next) => {
     next();
 });
 
+// Fallback for WhatsApp webhooks matching alternative patterns
+app.all(['/whatsapp/webhook', '/api/webhooks/whatsapp'], (req, res, next) => {
+    req.url = '/api/whatsapp/webhook';
+    next();
+});
+
 // Routes
 app.use('/api', authRouter); // Auth Routes
 app.use('/api', ratesRouter);
