@@ -33,7 +33,7 @@ const DiagnosticCard = () => {
             const data = await res.json().catch(() => null);
             if (data?.message === "Ignored: Unauthorized IP") {
                 setStatus('active');
-                setDetails('Node.js application IP firewall is actively blocking non-whitelisted IPs.');
+                setDetails('Node.js fallback firewall blocked the request. NOTE: Hostinger .htaccess is NOT blocking requests (it reached Node). You are safe, but adding the .htaccess rules is recommended.');
                 return;
             }
 

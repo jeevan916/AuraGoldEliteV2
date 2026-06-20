@@ -516,7 +516,21 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                         <div key={p.id} className="flex justify-between items-center border-b border-slate-50 last:border-0 pb-3 last:pb-0">
                             <div>
                                 <p className="text-xs font-bold text-slate-700">Payment Received</p>
-                                <p className="text-[10px] text-slate-400">{new Date(p.date).toLocaleDateString('en-IN')} via {p.method}</p>
+                                <p className="text-[10px] text-slate-400 mt-0.5">{new Date(p.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })} via {p.method}</p>
+                                {(p.reference || p.transactionId || p.payer) && (
+                                    <div className="flex gap-2 mt-1">
+                                        {(p.reference || p.transactionId) && (
+                                            <p className="text-[9px] font-mono text-slate-500 bg-slate-50 px-1.5 py-0.5 inline-block rounded border border-slate-100">
+                                                ID: {p.reference || p.transactionId}
+                                            </p>
+                                        )}
+                                        {p.payer && (
+                                            <p className="text-[9px] font-mono text-slate-500 bg-slate-50 px-1.5 py-0.5 inline-block rounded border border-slate-100">
+                                                VPA: {p.payer}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             <span className="font-black text-emerald-600 text-sm">+₹{p.amount.toLocaleString()}</span>
                         </div>

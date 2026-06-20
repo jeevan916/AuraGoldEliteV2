@@ -587,33 +587,34 @@ router.all(['/setu/notifications', '/setu/webhook', '/webhooks/setu'], express.j
         
         for (const event of eventsToProcess) {
             const isSuccess = event.data && (
-                    event.data.status === 'PAYMENT_SUCCESSFUL' || 
-                    event.type === 'PAYMENT_SUCCESSFUL' ||
-                    event.type === 'BILL_FULFILMENT_SUCCESS' ||
-                    event.type === 'PAYMENT_LINK_PAID' ||
-                    event.data.paymentStatus === 'SUCCESS' ||
-                    event.data.status === 'SUCCESS'
-                );
+                event.data.status === 'PAYMENT_SUCCESSFUL' || 
+                event.type === 'PAYMENT_SUCCESSFUL' ||
+                event.type === 'BILL_FULFILMENT_SUCCESS' ||
+                event.type === 'PAYMENT_LINK_PAID' ||
+                event.data.paymentStatus === 'SUCCESS' ||
+                event.data.status === 'SUCCESS'
+            );
 
-                if (isSuccess) {
-                    const data = event.data;
-                    const billerBillID = data.billerBillID || data.paymentLinkID; // Try fallback IDs
-                    const amountPaid = (data.amountPaid?.value / 100) || (data.amount / 100) || 0; 
-                    const upiTransactionID = data.transactionId || data.platformBillID || data.bankReferenceNumber || `setu_${Date.now()}`;
-                    
-                    // Extract orderId from additionalInfo if available, else fallback to billerBillID/paymentLinkID parsing
-                    let orderId = data.additionalInfo?.orderId || data.additionalInfo?.orderID;
-                    if (!orderId && billerBillID) {
-                        orderId = billerBillID.split('_')[0];
-                    }
-                    
-                    if (!orderId || amountPaid <= 0) {
-                        console.error("Could not determine valid orderId or amountPaid from webhook data:", data);
-                        continue;
-                    }
-                    
-                    await processSuccessfulPayment(orderId, amountPaid, upiTransactionID, req);
+            if (isSuccess) {
+                const data = event.data;
+                const billerBillID = data.billerBillID || data.paymentLinkID; // Try fallback IDs
+                const amountPaid = (data.amountPaid?.value / 100) || (data.amount / 100) || 0; 
+                const upiTransactionID = data.transactionId || data.platformBillID || data.bankReferenceNumber || `setu_${Date.now()}`;
+                const payerVpa = data.payerVpa || data.sourceAccount?.number || null;
+                
+                // Extract orderId from additionalInfo if available, else fallback to billerBillID/paymentLinkID parsing
+                let orderId = data.additionalInfo?.orderId || data.additionalInfo?.orderID;
+                if (!orderId && billerBillID) {
+                    orderId = billerBillID.split('_')[0];
                 }
+                
+                if (!orderId || amountPaid <= 0) {
+                    console.error("Could not determine valid orderId or amountPaid from webhook data:", data);
+                    continue;
+                }
+                
+                await processSuccessfulPayment(orderId, amountPaid, upiTransactionID, payerVpa, req);
+            }
             }
     } catch (e) {
         console.error("Setu Webhook Error:", e);
@@ -682,7 +683,7 @@ router.post('/orders/:id/accept-liability', ensureDb, async (req, res) => {
 });
 
 // Helper to record payment and send WhatsApp
-async function processSuccessfulPayment(orderId, amountPaid, upiTransactionID, req) {
+async function processSuccessfulPayment(orderId, amountPaid, upiTransactionID, payerVpa, req) {
     const pool = getPool();
     if (!pool) return;
     const connection = await pool.getConnection();
@@ -708,6 +709,7 @@ async function processSuccessfulPayment(orderId, amountPaid, upiTransactionID, r
             date: new Date().toISOString(),
             method: 'UPI',
             reference: upiTransactionID,
+            payer: payerVpa || undefined,
             status: 'SUCCESS'
         });
         
@@ -821,7 +823,8 @@ export function startSetuPoller(io) {
                             if (statusData.success && statusData.data && statusData.data.status === 'PAYMENT_SUCCESSFUL') {
                                 const amountPaid = (statusData.data.amountPaid?.value / 100) || (statusData.data.amount?.value / 100) || 0; 
                                 const upiTransactionID = statusData.data.paymentLink?.platformBillID || statusData.data.platformBillID || pending.platformBillID;
-                                await processSuccessfulPayment(order.id, amountPaid, upiTransactionID, { io });
+                                const payerVpa = statusData.data.payerVpa || null;
+                                await processSuccessfulPayment(order.id, amountPaid, upiTransactionID, payerVpa, { io });
                             }
                         } catch (e) {
                             console.error(`Error polling Setu for ${pending.platformBillID}:`, e.message);

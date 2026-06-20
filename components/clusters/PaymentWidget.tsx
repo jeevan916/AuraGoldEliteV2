@@ -575,17 +575,34 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
         ) : (
             <div className="space-y-2">
                 {[...order.payments].reverse().map(p => (
-                    <div key={p.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center shadow-sm">
-                        <div>
-                            <p className="text-sm font-bold text-slate-800">₹{p.amount.toLocaleString()}</p>
-                            <p className="text-[10px] text-slate-500 font-medium flex items-center gap-2">
-                                <span>{new Date(p.date).toLocaleDateString('en-IN')}</span>
+                    <div key={p.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-start shadow-sm">
+                        <div className="flex-1 pr-4">
+                            <div className="flex items-center gap-2">
+                                <p className="text-sm font-bold text-slate-800">₹{p.amount.toLocaleString()}</p>
+                                <span className="text-[8px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full">{p.status || 'PAID'}</span>
+                            </div>
+                            <p className="text-[10px] text-slate-500 font-medium flex items-center gap-2 mt-1 mb-1.5">
+                                <span>{new Date(p.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
                                 <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
                                 <span className="uppercase font-bold tracking-wider">{p.method}</span>
                             </p>
+                            {(p.reference || p.transactionId || p.payer) && (
+                                <div className="flex flex-wrap gap-2 mb-1">
+                                    {(p.reference || p.transactionId) && (
+                                        <p className="text-[10px] font-mono text-slate-500 bg-slate-50 px-2 py-1 rounded inline-block border border-slate-100">
+                                            UPI/TXN: <span className="text-slate-700">{p.reference || p.transactionId}</span>
+                                        </p>
+                                    )}
+                                    {p.payer && (
+                                        <p className="text-[10px] font-mono text-slate-500 bg-slate-50 px-2 py-1 rounded inline-block border border-slate-100">
+                                            VPA: <span className="text-slate-700">{p.payer}</span>
+                                        </p>
+                                    )}
+                                </div>
+                            )}
                             {p.note && <p className="text-[10px] text-slate-400 mt-1 italic leading-relaxed">{p.note}</p>}
                         </div>
-                        <div className="bg-emerald-50 text-emerald-600 p-2 rounded-xl">
+                        <div className="bg-emerald-50 text-emerald-600 p-2 rounded-xl shrink-0">
                             <CheckCircle2 size={16} />
                         </div>
                     </div>
