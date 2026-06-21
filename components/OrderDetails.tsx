@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 // Added CheckCheck to imports from lucide-react
 import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp, Plus, Edit2 } from 'lucide-react';
 import { Order, GlobalSettings, WhatsAppLogEntry, ProductionStatus, ProtectionStatus, OrderStatus, JewelryDetail } from '../types';
@@ -10,6 +10,8 @@ import { compressImage } from '../services/imageOptimizer';
 // Importing Clusters (Plug & Play Units)
 import { PaymentWidget } from './clusters/PaymentWidget';
 import { CommunicationWidget } from './clusters/CommunicationWidget';
+
+import { applyLateFees } from '../services/orderUtils';
 
 interface OrderDetailsProps {
   order: Order;
@@ -31,11 +33,25 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
   const [newWeight, setNewWeight] = useState('');
   const [isUpdatingDiscount, setIsUpdatingDiscount] = useState(false);
   const [newDiscount, setNewDiscount] = useState('');
+  const [isUpdatingWaiveLateFee, setIsUpdatingWaiveLateFee] = useState(false);
+  const [newWaiveLateFee, setNewWaiveLateFee] = useState('');
   const [sendingAgreement, setSendingAgreement] = useState(false);
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
+  const lateFeeCheckedRef = useRef(false);
   
   // Schedule View State
   const [showOriginalSchedule, setShowOriginalSchedule] = useState(false);
+
+  useEffect(() => {
+      if (!lateFeeCheckedRef.current) {
+          lateFeeCheckedRef.current = true;
+          const clonedOrder = JSON.parse(JSON.stringify(order));
+          const changed = applyLateFees(clonedOrder);
+          if (changed) {
+              onOrderUpdate(clonedOrder);
+          }
+      }
+  }, [order, onOrderUpdate]);
 
   const handlePaymentUpdate = (updatedOrder: Order) => {
     onOrderUpdate(updatedOrder);
@@ -329,6 +345,47 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       setIsUpdatingDiscount(false);
       setNewDiscount('');
       alert("Discount updated successfully.");
+  };
+
+  const handleUpdateWaiveLateFee = () => {
+      const waived = Number(newWaiveLateFee);
+      if (isNaN(waived) || waived < 0) return alert("Invalid waive amount");
+      
+      const maxWaivable = order.lateFeeAmount || 0;
+      if (waived > maxWaivable) return alert("Cannot waive more than accumulated late fee");
+
+      const oldWaived = order.lateFeeWaived || 0;
+      const amountChange = waived - oldWaived; // if waived goes up, total goes down (amountChange is positive)
+      
+      const newTotal = order.totalAmount - amountChange;
+
+      const newMilestones = JSON.parse(JSON.stringify(order.paymentPlan.milestones));
+      const pendingMilestones = newMilestones.filter((m: any) => m.status !== 'PAID');
+      
+      if (pendingMilestones.length > 0) {
+          const last = pendingMilestones[pendingMilestones.length - 1];
+          last.targetAmount -= amountChange;
+          last.cumulativeTarget -= amountChange;
+      } else if (newMilestones.length > 0) {
+          const last = newMilestones[newMilestones.length - 1];
+          last.targetAmount -= amountChange;
+          last.cumulativeTarget -= amountChange;
+      }
+
+      const updatedOrder = { 
+          ...order, 
+          lateFeeWaived: waived,
+          totalAmount: newTotal, 
+          paymentPlan: { 
+              ...order.paymentPlan, 
+              milestones: newMilestones
+          } 
+      };
+
+      onOrderUpdate(updatedOrder as Order);
+      setIsUpdatingWaiveLateFee(false);
+      setNewWaiveLateFee('');
+      alert("Late fee waiver updated successfully.");
   };
 
   const handleStatusChange = async (itemId: string, newStatus: ProductionStatus) => {
@@ -714,7 +771,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                  <div className="space-y-2 text-sm">
                      <div className="flex justify-between items-center text-slate-500 font-bold">
                          <span>Subtotal</span>
-                         <span>₹{(order.totalAmount + (order.discountAmount || 0)).toLocaleString()}</span>
+                         <span>₹{(order.totalAmount + (order.discountAmount || 0) - ((order.lateFeeAmount || 0) - (order.lateFeeWaived || 0))).toLocaleString()}</span>
                      </div>
                      {order.discountAmount ? (
                          <div className="flex justify-between items-center text-emerald-600 font-bold group">
@@ -735,6 +792,28 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                              <input type="number" className="flex-1 bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none" placeholder="Discount Amount (₹)" value={newDiscount} onChange={e => setNewDiscount(e.target.value)} />
                              <button onClick={handleUpdateDiscount} className="bg-blue-600 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase">Save</button>
                              <button onClick={() => setIsUpdatingDiscount(false)} className="text-slate-400"><XCircle size={16}/></button>
+                         </div>
+                     )}
+
+                     {/* Late Fee Display */}
+                     {order.lateFeeAmount ? (
+                         <div className="flex justify-between items-center text-rose-600 font-bold group mt-2">
+                             <div className="flex flex-col">
+                                 <div className="flex items-center gap-2">
+                                     <span>Late Fee & Overdue</span>
+                                     <button onClick={() => { setIsUpdatingWaiveLateFee(true); setNewWaiveLateFee(order.lateFeeWaived?.toString() || ''); }} className="opacity-0 group-hover:opacity-100 text-blue-500 hover:text-blue-700 transition-opacity"><Edit2 size={12} /></button>
+                                 </div>
+                                 {order.lateFeeWaived ? <span className="text-[9px] text-rose-400">Waived: ₹{order.lateFeeWaived.toLocaleString()}</span> : null}
+                             </div>
+                             <span>+₹{(order.lateFeeAmount - (order.lateFeeWaived || 0)).toLocaleString()}</span>
+                         </div>
+                     ) : null}
+
+                     {isUpdatingWaiveLateFee && (
+                         <div className="mt-3 bg-rose-50 p-3 rounded-xl flex gap-2 items-center animate-slideDown">
+                             <input type="number" className="flex-1 bg-white border border-rose-200 rounded-lg p-2 text-xs font-bold outline-none" placeholder="Amount to Waive (₹)" value={newWaiveLateFee} onChange={e => setNewWaiveLateFee(e.target.value)} />
+                             <button onClick={handleUpdateWaiveLateFee} className="bg-rose-600 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase">Waive</button>
+                             <button onClick={() => setIsUpdatingWaiveLateFee(false)} className="text-slate-400"><XCircle size={16}/></button>
                          </div>
                      )}
 

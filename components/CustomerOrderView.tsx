@@ -612,16 +612,27 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
           
           <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-200 mt-6 shadow-sm">
               <div className="space-y-3 text-sm">
-                  <div className="flex justify-between items-center text-slate-500 font-bold">
+                  <div className="flex justify-between items-center text-slate-500 font-bold mb-3">
                       <span>Subtotal</span>
-                      <span>₹{(order.totalAmount + (order.discountAmount || 0)).toLocaleString()}</span>
+                      <span>₹{(order.totalAmount + (order.discountAmount || 0) - ((order.lateFeeAmount || 0) - (order.lateFeeWaived || 0))).toLocaleString()}</span>
                   </div>
                   {order.discountAmount ? (
-                      <div className="flex justify-between items-center text-emerald-600 font-bold">
+                      <div className="flex justify-between items-center text-emerald-600 font-bold mb-3">
                           <span>Discount Applied</span>
                           <span>-₹{order.discountAmount.toLocaleString()}</span>
                       </div>
                   ) : null}
+                  
+                  {order.lateFeeAmount ? (
+                      <div className="flex justify-between items-center text-rose-600 font-bold mb-3">
+                          <div className="flex flex-col">
+                              <span>Late Fee & Overdue Charges</span>
+                              {order.lateFeeWaived ? <span className="text-[10px] text-rose-400">Waived: ₹{order.lateFeeWaived.toLocaleString()}</span> : null}
+                          </div>
+                          <span>+₹{(order.lateFeeAmount - (order.lateFeeWaived || 0)).toLocaleString()}</span>
+                      </div>
+                  ) : null}
+
                   <div className="pt-3 border-t border-slate-200 flex justify-between items-center text-xl font-black text-slate-900">
                       <span>Total Amount</span>
                       <span>₹{order.totalAmount.toLocaleString()}</span>

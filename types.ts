@@ -139,6 +139,9 @@ export interface Order {
   cancelledAt?: string;
   refundMethod?: 'CASH' | 'TRANSFER';
   protectionRevokedAt?: string;
+  lateFeePeriodsApplied?: Record<string, number>;
+  lateFeeAmount?: number;
+  lateFeeWaived?: number;
 }
 
 export interface GlobalSettings {

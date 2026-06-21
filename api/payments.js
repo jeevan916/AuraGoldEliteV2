@@ -131,6 +131,7 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                 amountExactness: "EXACT",
                 name: safeName,
                 transactionNote: safeNote,
+                expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
                 additionalInfo: {
                     orderId: orderId || ""
                 }
@@ -775,67 +776,10 @@ async function processSuccessfulPayment(orderId, amountPaid, upiTransactionID, p
     }
 }
 
-// Background poller
-let pollerActive = false;
+// Background poller has been disabled as we now rely robustly on Setu webhooks.
 export function startSetuPoller(io) {
-    if (pollerActive) return;
-    pollerActive = true;
-    
-    // Poll every 1 minute
-    setInterval(async () => {
-        const pool = getPool();
-        if (!pool) return;
-        
-        try {
-            const connection = await pool.getConnection();
-            const [setuRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
-            if (setuRows.length === 0) {
-                connection.release();
-                return;
-            }
-            
-            let config = setuRows[0].config;
-            if (typeof config === 'string') config = JSON.parse(config);
-            const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
-            const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
-            let token = config.cachedToken;
-            
-            if (!token) { connection.release(); return; }
-
-            const [orderRows] = await connection.query("SELECT id, data FROM orders");
-            connection.release();
-            
-            for (const row of orderRows) {
-                const order = JSON.parse(row.data);
-                if (order.pendingSetuPayments && order.pendingSetuPayments.length > 0) {
-                    for (const pending of order.pendingSetuPayments) {
-                        const ageMs = Date.now() - new Date(pending.createdAt).getTime();
-                        if (ageMs > 24 * 60 * 60 * 1000) continue; // skip older than 24 hours
-                        
-                        try {
-                            const statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
-                                headers: {
-                                    'Authorization': `Bearer ${token}`,
-                                    'X-Setu-Product-Instance-ID': config.schemeId
-                                }
-                            });
-                            const statusData = await statusResponse.json();
-                            if (statusData.success && statusData.data && statusData.data.status === 'PAYMENT_SUCCESSFUL') {
-                                const amountPaid = (statusData.data.amountPaid?.value / 100) || (statusData.data.amount?.value / 100) || 0; 
-                                const upiTransactionID = statusData.data.paymentLink?.platformBillID || statusData.data.platformBillID || pending.platformBillID;
-                                const payerVpa = statusData.data.payerVpa || null;
-                                await processSuccessfulPayment(order.id, amountPaid, upiTransactionID, payerVpa, { io });
-                            }
-                        } catch (e) {
-                            console.error(`Error polling Setu for ${pending.platformBillID}:`, e.message);
-                        }
-                    }
-                }
-            }
-        } catch (err) {
-            console.error("Poller Error:", err);
-        }
-    }, 60 * 1000);
+    // Disabled to prevent O(N) background polling of unpaid Setu payment requests.
+    // Webhooks are the primary mechanism.
 }
 
 export { processSuccessfulPayment };
