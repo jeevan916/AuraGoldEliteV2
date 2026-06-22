@@ -252,7 +252,15 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
             }
         });
         
-        const statusData = await statusResponse.json();
+        const statusResponseText = await statusResponse.text();
+        let statusData;
+        try {
+            statusData = JSON.parse(statusResponseText);
+        } catch (e) {
+            console.error(`Setu status polling failed (Status ${statusResponse.status}): ${statusResponseText.substring(0, 200)}`);
+            connection.release();
+            return res.status(500).json({ success: false, error: "Invalid response from Setu" });
+        }
         connection.release();
         
         if (statusData.success && statusData.data && statusData.data.status === 'PAYMENT_SUCCESSFUL') {
@@ -266,35 +274,7 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
             if (!orderId && billerBillID) orderId = billerBillID.split('_')[0];
             
             if (orderId && amountPaid > 0) {
-                const processConn = await pool.getConnection();
-                const [orderRows] = await processConn.query('SELECT data FROM orders WHERE id = ?', [orderId]);
-                if (orderRows.length > 0) {
-                    const order = JSON.parse(orderRows[0].data);
-                    
-                    // Check if already recorded
-                    const alreadyRecorded = order.payments && order.payments.some(p => p.transactionId === upiTransactionID);
-                    if (!alreadyRecorded) {
-                        if (!order.payments) order.payments = [];
-                        order.payments.push({
-                            id: `PAY-${Date.now()}`,
-                            amount: amountPaid,
-                            method: 'UPI',
-                            date: new Date().toISOString(),
-                            transactionId: upiTransactionID,
-                            status: 'COMPLETED',
-                            recordedBy: 'Setu Polling'
-                        });
-                        
-                        await processConn.query('UPDATE orders SET data = ? WHERE id = ?', [JSON.stringify(order), orderId]);
-                        console.log(`[Setu Polling] Order ${orderId} updated with Setu payment ${upiTransactionID}`);
-                        
-                        // Broadcast update
-                        if (req.io) {
-                            req.io.emit('orders_sync', [order]);
-                        }
-                    }
-                }
-                processConn.release();
+                await processSuccessfulPayment(orderId, amountPaid, upiTransactionID, data.payerVpa || null, req);
             }
         }
 
@@ -821,7 +801,12 @@ export function startSetuPoller(io) {
                                     'X-Setu-Product-Instance-ID': config.schemeId
                                 }
                             });
-                            const statusData = await statusResponse.json();
+                            const statusResponseText = await statusResponse.text();
+                            if (!statusResponseText.trim().startsWith('{')) {
+                                console.error(`Error polling Setu for ${pending.platformBillID}: Received HTML/Invalid response with status ${statusResponse.status}`);
+                                continue;
+                            }
+                            const statusData = JSON.parse(statusResponseText);
                             if (statusData.success && statusData.data && statusData.data.status === 'PAYMENT_SUCCESSFUL') {
                                 const amountPaid = (statusData.data.amountPaid?.value / 100) || (statusData.data.amount?.value / 100) || 0; 
                                 const upiTransactionID = statusData.data.paymentLink?.platformBillID || statusData.data.platformBillID || pending.platformBillID;
