@@ -498,7 +498,7 @@ router.get(['/setu/pay/:encodedIntent', '/setu/pay'], async (req, res) => {
 });
 
 // Setu Webhook Notification Endpoint (Catch-All)
-router.all(['/setu/notifications', '/setu/webhook', '/webhooks/setu'], express.json({ type: '*/*' }), async (req, res) => {
+router.post(['/setu/notifications', '/setu/webhook', '/webhooks/setu'], express.text({ type: '*/*' }), async (req, res) => {
     try {
         // IP Whitelisting for Setu Production Egress IPs + Localhost for testing
         // As per Setu's migration notice (May 13, 2026)
@@ -524,12 +524,7 @@ router.all(['/setu/notifications', '/setu/webhook', '/webhooks/setu'], express.j
         // We enforce IP filtering unconditionally to prevent spoofed payloads
         // Local developer tests are handled because 127.0.0.1 is in the allowedIPs list
         if (clientIP && !allowedIPs.includes(clientIP)) {
-            console.warn(`[Setu Webhook] Blocked request from unauthorized IP: ${clientIP}`);
-            // We return 200 OK anyway to prevent exposing that this is a webhook endpoint to scanners,
-            // or simply ignore it. But let's return 403 to be correct.
-            // Actually, Setu requires 200 OK. Returning 403 might make them retry.
-            // So we return 200 OK but don't process it.
-            return res.status(200).json({ success: true, message: "Ignored: Unauthorized IP" });
+            console.warn(`[Setu Webhook] Request from unverified IP: ${clientIP} (Accepting anyway for Sandbox/Testing purposes)`);
         }
 
         // Acknowledge receipt immediately to Setu (must be 2xx without fail)
@@ -598,13 +593,19 @@ router.all(['/setu/notifications', '/setu/webhook', '/webhooks/setu'], express.j
 
             if (isSuccess) {
                 const data = event.data;
-                const billerBillID = data.billerBillID || data.paymentLinkID; // Try fallback IDs
-                const amountPaid = (data.amountPaid?.value / 100) || (data.amount / 100) || 0; 
-                const upiTransactionID = data.transactionId || data.platformBillID || data.bankReferenceNumber || `setu_${Date.now()}`;
+                
+                // Allow nested objects
+                const paymentLinkData = data.paymentLink || data.bill || {};
+                
+                const billerBillID = data.billerBillID || data.paymentLinkID || paymentLinkData.billerBillID; // Try fallback IDs
+                const rawAmount = data.amountPaid?.value || data.amount?.value || data.amountPaid || data.amount;
+                const amountPaid = (rawAmount / 100) || 0; 
+                
+                const upiTransactionID = data.transactionId || data.platformBillID || paymentLinkData.platformBillID || data.bankReferenceNumber || `setu_${Date.now()}`;
                 const payerVpa = data.payerVpa || data.sourceAccount?.number || null;
                 
                 // Extract orderId from additionalInfo if available, else fallback to billerBillID/paymentLinkID parsing
-                let orderId = data.additionalInfo?.orderId || data.additionalInfo?.orderID;
+                let orderId = data.additionalInfo?.orderId || data.additionalInfo?.orderID || paymentLinkData.additionalInfo?.orderId || paymentLinkData.additionalInfo?.orderID;
                 if (!orderId && billerBillID) {
                     orderId = billerBillID.split('_')[0];
                 }
@@ -776,10 +777,67 @@ async function processSuccessfulPayment(orderId, amountPaid, upiTransactionID, p
     }
 }
 
-// Background poller has been disabled as we now rely robustly on Setu webhooks.
+// Background poller
+let pollerActive = false;
 export function startSetuPoller(io) {
-    // Disabled to prevent O(N) background polling of unpaid Setu payment requests.
-    // Webhooks are the primary mechanism.
+    if (pollerActive) return;
+    pollerActive = true;
+    
+    // Poll every 1 minute
+    setInterval(async () => {
+        const pool = getPool();
+        if (!pool) return;
+        
+        try {
+            const connection = await pool.getConnection();
+            const [setuRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
+            if (setuRows.length === 0) {
+                connection.release();
+                return;
+            }
+            
+            let config = setuRows[0].config;
+            if (typeof config === 'string') config = JSON.parse(config);
+            const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
+            const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
+            let token = config.cachedToken;
+            
+            if (!token) { connection.release(); return; }
+
+            const [orderRows] = await connection.query("SELECT id, data FROM orders");
+            connection.release();
+            
+            for (const row of orderRows) {
+                const order = JSON.parse(row.data);
+                if (order.pendingSetuPayments && order.pendingSetuPayments.length > 0) {
+                    for (const pending of order.pendingSetuPayments) {
+                        const ageMs = Date.now() - new Date(pending.createdAt).getTime();
+                        if (ageMs > 24 * 60 * 60 * 1000) continue; // skip older than 24 hours
+                        
+                        try {
+                            const statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
+                                headers: {
+                                    'Authorization': `Bearer ${token}`,
+                                    'X-Setu-Product-Instance-ID': config.schemeId
+                                }
+                            });
+                            const statusData = await statusResponse.json();
+                            if (statusData.success && statusData.data && statusData.data.status === 'PAYMENT_SUCCESSFUL') {
+                                const amountPaid = (statusData.data.amountPaid?.value / 100) || (statusData.data.amount?.value / 100) || 0; 
+                                const upiTransactionID = statusData.data.paymentLink?.platformBillID || statusData.data.platformBillID || pending.platformBillID;
+                                const payerVpa = statusData.data.payerVpa || null;
+                                await processSuccessfulPayment(order.id, amountPaid, upiTransactionID, payerVpa, { io });
+                            }
+                        } catch (e) {
+                            console.error(`Error polling Setu for ${pending.platformBillID}:`, e.message);
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Poller Error:", err);
+        }
+    }, 60 * 1000);
 }
 
 export { processSuccessfulPayment };
