@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 // Added CheckCheck to imports from lucide-react
-import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp, Plus, Edit2 } from 'lucide-react';
+import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp, Plus, Edit2, Printer } from 'lucide-react';
 import { Order, GlobalSettings, WhatsAppLogEntry, ProductionStatus, ProtectionStatus, OrderStatus, JewelryDetail } from '../types';
-import { generateOrderPDF } from '../services/pdfGenerator';
+import { generateOrderPDF, generateReceiptPDF } from '../services/pdfGenerator';
 import { whatsappService } from '../services/whatsappService';
 import { Button } from './shared/BaseUI';
 import { compressImage } from '../services/imageOptimizer';
@@ -563,6 +563,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
             }}><ShieldAlert size={14} /> Test Breach</Button>
            <Button size="sm" variant="secondary" onClick={handleResendAgreement} loading={sendingAgreement}><Send size={14} /> Resend Agreement</Button>
            <Button size="sm" variant="secondary" onClick={handleOpenCustomerLink}><ExternalLink size={14} /> Customer View</Button>
+           <Button size="sm" variant="secondary" onClick={() => generateReceiptPDF(order)}><Printer size={14} /> Print Receipt</Button>
            <Button size="sm" variant="secondary" onClick={() => generateOrderPDF(order)}><FileText size={14} /> Contract PDF</Button>
            {onDeleteOrder && (
                <Button size="sm" variant="danger" onClick={handleDeleteOrder}><XCircle size={14} /> Delete Order</Button>

@@ -42,7 +42,11 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ currentUser }) => {
             if (data.success) {
                 setUsers(data.users);
             } else {
-                setError(data.error || 'Failed to load users');
+                if (data.error === 'Invalid token' || data.error === 'No token provided') {
+                    setError('Session expired. Please log out and log back in.');
+                } else {
+                    setError(data.error || 'Failed to load users');
+                }
             }
         } catch (e: any) {
             setError(e.message);
@@ -153,6 +157,16 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ currentUser }) => {
                 <ShieldAlert size={48} className="mb-4" />
                 <h2 className="text-xl font-bold text-slate-800">Access Denied</h2>
                 <p className="text-sm">Only administrators can manage staff access.</p>
+            </div>
+        );
+    }
+
+    if (!currentUser.token) {
+        return (
+            <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center">
+                <ShieldAlert size={48} className="mb-4 text-amber-500" />
+                <h2 className="text-xl font-bold text-slate-800">Session Expired</h2>
+                <p className="text-sm mt-2 max-w-md">Your login session is outdated and missing a security token. Please log out and log back in to access Staff Management.</p>
             </div>
         );
     }
