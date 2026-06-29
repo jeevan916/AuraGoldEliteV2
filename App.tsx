@@ -4,7 +4,7 @@ import {
   Plus, Home, ReceiptIndianRupee, Users, MessageSquare, 
   Menu, ArrowLeft, Cloud, Loader2, HardDrive, Settings as SettingsIcon,
   BrainCircuit, Calculator, FileText, ScrollText, Globe, Activity, ShoppingBag, BookOpen, X, RefreshCw, DownloadCloud, Zap,
-  History, Layout, PieChart, ShieldAlert, Hammer, LogOut, User
+  History, Layout, PieChart, ShieldAlert, Hammer, LogOut, User, Shield
 } from 'lucide-react';
 import { io } from 'socket.io-client';
 
@@ -72,11 +72,13 @@ const SystemArchitect = lazyRetry(() => import('./components/SystemArchitect'), 
 const KarigarManager = lazyRetry(() => import('./components/KarigarManager'), 'KarigarDesk');
 const WebhookLogs = lazyRetry(() => import('./components/WebhookLogs'), 'Webhooks');
 
-type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW' | 'ARCHITECT' | 'KARIGAR_DESK' | 'WEBHOOKS';
+const StaffManager = lazyRetry(() => import('./components/StaffManager').then(m => ({ default: m.StaffManager })), 'StaffManager');
+
+type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW' | 'ARCHITECT' | 'KARIGAR_DESK' | 'WEBHOOKS' | 'STAFF_MANAGER';
 
 // --- ACCESS CONTROL LIST ---
 const ROLE_PERMISSIONS: Record<UserRole, MainView[]> = {
-    ADMIN: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'SYS_LOGS', 'SETTINGS', 'MENU', 'CUSTOMER_VIEW', 'ARCHITECT', 'KARIGAR_DESK', 'WEBHOOKS'],
+    ADMIN: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'SYS_LOGS', 'SETTINGS', 'MENU', 'CUSTOMER_VIEW', 'ARCHITECT', 'KARIGAR_DESK', 'WEBHOOKS', 'STAFF_MANAGER'],
     MANAGER: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'MENU', 'KARIGAR_DESK'],
     SALES: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'MENU'],
     KARIGAR: ['KARIGAR_DESK']
@@ -380,6 +382,7 @@ const App = () => {
           case 'MARKET': return <MarketIntelligence orders={orders} settings={settings} />;
           case 'SYS_LOGS': return <ErrorLogPanel errors={systemErrors} activities={systemActivities} onClear={() => { errorService.clearErrors(); errorService.clearActivity(); }} />;
           case 'WEBHOOKS': return <WebhookLogs />;
+          case 'STAFF_MANAGER': return user ? <StaffManager currentUser={user} /> : null;
           case 'SETTINGS': return <Settings settings={settings} onUpdate={handleUpdateSettings} />;
           case 'ARCHITECT': return <SystemArchitect />;
           case 'KARIGAR_DESK': return <KarigarManager orders={orders} onUpdateItem={updateItemStatus} onOrderUpdate={updateOrder} settings={settings} />;
@@ -398,6 +401,7 @@ const App = () => {
                   {canAccess('MARKET') && <MenuItem onClick={() => setView('MARKET')} icon={<Globe />} label="Market Intel" desc="Live rates & news" colorClass="bg-sky-50 text-sky-600" />}
                   {canAccess('SYS_LOGS') && <MenuItem onClick={() => setView('SYS_LOGS')} icon={<HardDrive />} label="System Logs" desc="Debug & Audit" colorClass="bg-slate-100 text-slate-600" />}
                   {canAccess('WEBHOOKS') && <MenuItem onClick={() => setView('WEBHOOKS')} icon={<Activity />} label="Webhooks" desc="Real-time API events" colorClass="bg-indigo-50 text-indigo-600" />}
+                  {canAccess('STAFF_MANAGER') && <MenuItem onClick={() => setView('STAFF_MANAGER')} icon={<Shield />} label="Staff Access" desc="Roles & Permissions" colorClass="bg-emerald-50 text-emerald-600" />}
                   {canAccess('SETTINGS') && <MenuItem onClick={() => setView('SETTINGS')} icon={<SettingsIcon />} label="Configuration" desc="Database & Rates" colorClass="bg-slate-800 text-white" />}
               </div>
           );
@@ -462,6 +466,7 @@ const App = () => {
              </div>
              
              <div className="mt-4 pt-4 border-t border-slate-100 space-y-1">
+                 {canAccess('STAFF_MANAGER') && <SidebarItem active={view === 'STAFF_MANAGER'} onClick={() => setView('STAFF_MANAGER')} icon={Shield} label="Staff Access" />}
                  {canAccess('SYS_LOGS') && <SidebarItem active={view === 'SYS_LOGS'} onClick={() => setView('SYS_LOGS')} icon={HardDrive} label="System Logs" />}
                  {canAccess('WEBHOOKS') && <SidebarItem active={view === 'WEBHOOKS'} onClick={() => setView('WEBHOOKS')} icon={Activity} label="Webhooks" />}
                  {canAccess('SETTINGS') && <SidebarItem active={view === 'SETTINGS'} onClick={() => setView('SETTINGS')} icon={SettingsIcon} label="Settings" />}
