@@ -26,11 +26,12 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const [acceptingLiability, setAcceptingLiability] = useState(false);
   const loggedRef = useRef(false);
 
-  const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
-  const remaining = order.totalAmount - totalPaid;
+  const totalPaid = Math.round(order.payments.reduce((acc, p) => acc + p.amount, 0));
+  const remaining = Math.max(0, Math.round(order.totalAmount - totalPaid));
   const nextPayment = order.paymentPlan.milestones.find(m => m.status !== 'PAID');
 
-  const [customAmount, setCustomAmount] = useState<number | ''>(nextPayment ? nextPayment.targetAmount : remaining);
+  const defaultAmount = nextPayment ? Math.min(Math.round(nextPayment.targetAmount), remaining) : remaining;
+  const [customAmount, setCustomAmount] = useState<number | ''>(defaultAmount);
 
   const handleAcceptLiability = async () => {
       setAcceptingLiability(true);
@@ -124,7 +125,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
           throw new Error("Please enter a valid amount greater than 0.");
       }
       if (amountToPay > remaining) {
-          throw new Error(`Amount cannot exceed the balance due of ₹${remaining.toLocaleString()}`);
+          throw new Error(`Amount cannot exceed the balance due of ₹${Math.round(remaining).toLocaleString('en-IN')}`);
       }
       
       // Let backend generate the unique bill ID using orderId
@@ -227,7 +228,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
           </div>
           <div className="text-center">
             <p className="text-[10px] font-black uppercase opacity-50 tracking-widest mb-2">Total Order Value</p>
-            <p className="text-5xl font-black text-white">₹{order.totalAmount.toLocaleString()}</p>
+            <p className="text-5xl font-black text-white">₹{Math.round(order.totalAmount).toLocaleString('en-IN')}</p>
           </div>
         </div>
       </div>
@@ -253,7 +254,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                     </div>
                     <div className="bg-white/80 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-black/5 shadow-sm self-start md:self-center">
                         <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Booked Rate</p>
-                        <p className="text-lg font-black text-slate-800">₹{bookedRate.toLocaleString()}<span className="text-[10px] text-slate-400">/g</span></p>
+                        <p className="text-lg font-black text-slate-800">₹{Math.round(bookedRate).toLocaleString('en-IN')}<span className="text-[10px] text-slate-400">/g</span></p>
                     </div>
                 </div>
 
@@ -263,7 +264,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                         <div className="flex-1 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                             <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Current Market</p>
                             <div className="flex items-end gap-1">
-                                <span className="text-2xl font-black text-slate-900">₹{liveRate > 0 ? liveRate.toLocaleString() : '...'}</span>
+                                <span className="text-2xl font-black text-slate-900">₹{liveRate > 0 ? Math.round(liveRate).toLocaleString('en-IN') : '...'}</span>
                                 <span className="text-[9px] font-bold text-slate-400 mb-1">/g</span>
                             </div>
                         </div>
@@ -346,7 +347,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
         {remaining > 0 && (
           <div className="bg-white p-6 rounded-3xl shadow-lg border border-amber-100 flex flex-col items-center">
              <div className="text-center mb-6">
-                <h3 className="font-bold text-slate-800 text-lg">Balance Due: ₹{remaining.toLocaleString()}</h3>
+                <h3 className="font-bold text-slate-800 text-lg">Balance Due: ₹{Math.round(remaining).toLocaleString('en-IN')}</h3>
              </div>
 
              <div className="w-full mb-6">
@@ -492,7 +493,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                          <p className="text-[10px] text-slate-400 font-medium">{new Date(m.dueDate).toLocaleDateString('en-IN')}</p>
                        </div>
                        <div className="text-right">
-                         <p className={`text-sm font-black ${isPaid && !isOriginalView ? 'text-emerald-600' : 'text-slate-800'}`}>₹{m.targetAmount.toLocaleString()}</p>
+                         <p className={`text-sm font-black ${isPaid && !isOriginalView ? 'text-emerald-600' : 'text-slate-800'}`}>₹{Math.round(m.targetAmount).toLocaleString('en-IN')}</p>
                        </div>
                      </div>
                      <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full inline-block ${isPaid && !isOriginalView ? 'bg-emerald-100 text-emerald-700' : isOverdue && !isOriginalView ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600'}`}>
@@ -532,7 +533,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                                     </div>
                                 )}
                             </div>
-                            <span className="font-black text-emerald-600 text-sm">+₹{p.amount.toLocaleString()}</span>
+                            <span className="font-black text-emerald-600 text-sm">+₹{Math.round(p.amount).toLocaleString('en-IN')}</span>
                         </div>
                     ))}
                 </div>
@@ -562,7 +563,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                              </p>
                          </div>
                          <div className="text-right">
-                             <p className="text-sm font-black text-slate-900">₹{item.finalAmount.toLocaleString()}</p>
+                             <p className="text-sm font-black text-slate-900">₹{Math.round(item.finalAmount).toLocaleString('en-IN')}</p>
                              <button className="text-[9px] font-bold text-blue-500 flex items-center gap-1 justify-end mt-1">
                                  {isExpanded ? 'Hide' : 'Breakup'} {isExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
                              </button>
@@ -592,7 +593,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                            </div>
                            <div>
                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Stone Charges</p>
-                               <p className="text-xs font-bold text-slate-700">₹{item.stoneCharges.toLocaleString()}</p>
+                               <p className="text-xs font-bold text-slate-700">₹{Math.round(item.stoneCharges).toLocaleString('en-IN')}</p>
                            </div>
                            <div className="col-span-2 border-t border-slate-200 pt-2 flex justify-between items-center">
                                <div>
@@ -614,12 +615,12 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
               <div className="space-y-3 text-sm">
                   <div className="flex justify-between items-center text-slate-500 font-bold mb-3">
                       <span>Subtotal</span>
-                      <span>₹{(order.totalAmount + (order.discountAmount || 0) - ((order.lateFeeAmount || 0) - (order.lateFeeWaived || 0))).toLocaleString()}</span>
+                      <span>₹{Math.round(order.totalAmount + (order.discountAmount || 0) - ((order.lateFeeAmount || 0) - (order.lateFeeWaived || 0))).toLocaleString('en-IN')}</span>
                   </div>
                   {order.discountAmount ? (
                       <div className="flex justify-between items-center text-emerald-600 font-bold mb-3">
                           <span>Discount Applied</span>
-                          <span>-₹{order.discountAmount.toLocaleString()}</span>
+                          <span>-₹{Math.round(order.discountAmount).toLocaleString('en-IN')}</span>
                       </div>
                   ) : null}
                   
@@ -627,15 +628,15 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                       <div className="flex justify-between items-center text-rose-600 font-bold mb-3">
                           <div className="flex flex-col">
                               <span>Late Fee & Overdue Charges</span>
-                              {order.lateFeeWaived ? <span className="text-[10px] text-rose-400">Waived: ₹{order.lateFeeWaived.toLocaleString()}</span> : null}
+                              {order.lateFeeWaived ? <span className="text-[10px] text-rose-400">Waived: ₹{Math.round(order.lateFeeWaived).toLocaleString('en-IN')}</span> : null}
                           </div>
-                          <span>+₹{(order.lateFeeAmount - (order.lateFeeWaived || 0)).toLocaleString()}</span>
+                          <span>+₹{Math.round(order.lateFeeAmount - (order.lateFeeWaived || 0)).toLocaleString('en-IN')}</span>
                       </div>
                   ) : null}
 
                   <div className="pt-3 border-t border-slate-200 flex justify-between items-center text-xl font-black text-slate-900">
                       <span>Total Amount</span>
-                      <span>₹{order.totalAmount.toLocaleString()}</span>
+                      <span>₹{Math.round(order.totalAmount).toLocaleString('en-IN')}</span>
                   </div>
               </div>
           </div>

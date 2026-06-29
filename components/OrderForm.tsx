@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { 
   Order, JewelryDetail, OrderStatus, GlobalSettings, 
-  ProductionStatus, Purity, ProtectionStatus, Milestone, PaymentPlan, PaymentPlanTemplate
+  ProductionStatus, Purity, ProtectionStatus, Milestone, PaymentPlan, PaymentPlanTemplate, Customer
 } from '../types';
 import { compressImage } from '../services/imageOptimizer';
 import { whatsappService } from '../services/whatsappService';
@@ -12,14 +12,28 @@ import { whatsappService } from '../services/whatsappService';
 interface OrderFormProps {
   settings: GlobalSettings;
   planTemplates?: PaymentPlanTemplate[];
+  customers?: Customer[];
   onSubmit: (order: Order) => void;
   onCancel: () => void;
 }
 
-const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onSubmit, onCancel }) => {
+const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], customers = [], onSubmit, onCancel }) => {
   const [step, setStep] = useState(1);
   const [customer, setCustomer] = useState({ name: '', contact: '' });
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [cartItems, setCartItems] = useState<JewelryDetail[]>([]);
+  
+  const filteredCustomers = useMemo(() => {
+    const termName = customer.name.toLowerCase().trim();
+    const termContact = customer.contact.trim();
+    if (!termName && !termContact) return [];
+    
+    return customers.filter(c => {
+        const matchName = termName && c.name.toLowerCase().includes(termName);
+        const matchContact = termContact && c.contact.includes(termContact);
+        return matchName || matchContact;
+    }).slice(0, 5);
+  }, [customer, customers]);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   
   // Rate Management
@@ -111,11 +125,11 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
         }
     }
 
-    const metalValue = (currentItem.netWeight || 0) * rate;
-    const wastageValue = metalValue * ((currentItem.wastagePercentage || 0) / 100);
-    const laborValue = (currentItem.makingChargesPerGram || 0) * (currentItem.netWeight || 0);
+    const metalValue = Math.round((currentItem.netWeight || 0) * rate);
+    const wastageValue = Math.round(metalValue * ((currentItem.wastagePercentage || 0) / 100));
+    const laborValue = Math.round((currentItem.makingChargesPerGram || 0) * (currentItem.netWeight || 0));
     const subTotal = metalValue + wastageValue + laborValue + (currentItem.stoneCharges || 0);
-    const tax = subTotal * (settings.defaultTaxRate / 100);
+    const tax = Math.round(subTotal * (settings.defaultTaxRate / 100));
     
     return { 
         rateUsed: rate,
@@ -319,7 +333,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
         
         const scheduleString = finalOrder.paymentPlan.milestones.map((m, i) => {
             const date = new Date(m.dueDate).toLocaleDateString('en-IN');
-            return `${i+1}. ${date}: ₹${m.targetAmount.toLocaleString()}`;
+            return `${i+1}. ${date}: ₹${Math.round(m.targetAmount).toLocaleString('en-IN')}`;
         }).join('\n');
 
         const termsText = `${finalOrder.paymentPlan.months || 1} Months Installment`;
@@ -331,7 +345,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
             [
                 finalOrder.customerName, // {{1}} Name
                 itemName,                // {{2}} Order of...
-                finalOrder.totalAmount.toLocaleString(), // {{3}} Total Value
+                Math.round(finalOrder.totalAmount).toLocaleString('en-IN'), // {{3}} Total Value
                 termsText,               // {{4}} Terms
                 scheduleString,          // {{5}} Schedule List
                 finalOrder.shareToken    // {{6}} Token
@@ -401,7 +415,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
             </div>
             <div className="text-right relative z-10">
                 <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-widest">Order Estimate</p>
-                <p className="text-3xl font-black text-amber-400">₹{cartTotal.toLocaleString()}</p>
+                <p className="text-3xl font-black text-amber-400">₹{Math.round(cartTotal).toLocaleString('en-IN')}</p>
             </div>
           </div>
 
@@ -534,7 +548,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                 <div className="flex justify-between items-center mb-2">
                     <div>
                         <p className="text-[9px] font-black uppercase text-amber-600 mb-1 tracking-wider">Applied Rate ({currentItem.purity})</p>
-                        <p className="text-lg font-black text-amber-800">₹{pricing.rateUsed.toLocaleString()}/g</p>
+                        <p className="text-lg font-black text-amber-800">₹{Math.round(pricing.rateUsed).toLocaleString('en-IN')}/g</p>
                     </div>
                     <div className="text-right">
                         <p className="text-[9px] font-black uppercase text-amber-600 mb-1 tracking-wider">Item Total</p>
@@ -554,7 +568,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
               <div className="pos-card overflow-hidden">
                   <div className="bg-slate-50 p-4 border-b flex justify-between items-center">
                     <p className="text-[10px] font-black uppercase text-slate-500">Selected Items ({cartItems.length})</p>
-                    <p className="text-xs font-black text-slate-800 uppercase tracking-widest">Running Total: ₹{cartTotal.toLocaleString()}</p>
+                    <p className="text-xs font-black text-slate-800 uppercase tracking-widest">Running Total: ₹{Math.round(cartTotal).toLocaleString('en-IN')}</p>
                   </div>
                   <div className="divide-y">
                       {cartItems.map(item => (
@@ -600,12 +614,17 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
       {step === 2 && (
         <div className="space-y-4 animate-fadeIn py-6">
             <h3 className="text-lg font-black text-slate-800 ml-1">Client Authorization</h3>
-            <div className="pos-card p-8 space-y-6">
+            <div className="pos-card p-8 space-y-6 relative">
                 <InputWrapper label="Customer Legal Name">
                     <input 
                       className="w-full font-bold text-xl bg-transparent p-1 outline-none" 
                       value={customer.name} 
-                      onChange={e => setCustomer({...customer, name: e.target.value})} 
+                      onChange={e => {
+                          setCustomer({...customer, name: e.target.value});
+                          setShowCustomerDropdown(true);
+                      }} 
+                      onFocus={() => setShowCustomerDropdown(true)}
+                      onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
                       placeholder="Ex: Ananya Sharma" 
                     />
                 </InputWrapper>
@@ -613,10 +632,35 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                     <input 
                       type="tel" className="w-full font-bold text-xl bg-transparent p-1 outline-none" 
                       value={customer.contact} 
-                      onChange={e => setCustomer({...customer, contact: e.target.value})} 
+                      onChange={e => {
+                          setCustomer({...customer, contact: e.target.value});
+                          setShowCustomerDropdown(true);
+                      }} 
+                      onFocus={() => setShowCustomerDropdown(true)}
+                      onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
                       placeholder="91XXXXXXXXXX" 
                     />
                 </InputWrapper>
+                
+                {showCustomerDropdown && filteredCustomers.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50">
+                        {filteredCustomers.map(c => (
+                            <div 
+                                key={c.id} 
+                                className="p-4 border-b border-slate-50 last:border-0 hover:bg-amber-50 cursor-pointer flex justify-between items-center transition-colors"
+                                onClick={() => {
+                                    console.log('Customer selected:', c);
+                                    setCustomer({ name: c.name, contact: c.contact });
+                                    setShowCustomerDropdown(false);
+                                }}
+                                onMouseDown={(e) => e.preventDefault()} // Prevent blur from firing before click
+                            >
+                                <span className="font-bold text-slate-800">{c.name}</span>
+                                <span className="text-sm text-slate-500 font-mono">{c.contact}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
       )}
@@ -672,7 +716,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
 
                     <div className="flex justify-between items-end border-t pt-4">
                         <h3 className="text-lg font-black text-slate-800 ml-1">Manual Configuration</h3>
-                        <p className="text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase tracking-tighter">Agreement Total: ₹{cartTotal.toLocaleString()}</p>
+                        <p className="text-xs font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase tracking-tighter">Agreement Total: ₹{Math.round(cartTotal).toLocaleString('en-IN')}</p>
                     </div>
 
                     <div className="pos-card p-6 space-y-6">
@@ -708,12 +752,12 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                     <div className="flex justify-between items-center bg-white p-4 rounded-2xl border shadow-sm">
                         <div>
                             <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Order Total</p>
-                            <p className="text-xl font-black text-slate-800">₹{cartTotal.toLocaleString()}</p>
+                            <p className="text-xl font-black text-slate-800">₹{Math.round(cartTotal).toLocaleString('en-IN')}</p>
                         </div>
                         <div className="text-right">
                             <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Scheduled</p>
                             <p className={`text-xl font-black ${Math.abs(manualTotalScheduled - cartTotal) < 10 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                                ₹{manualTotalScheduled.toLocaleString()}
+                                ₹{Math.round(manualTotalScheduled).toLocaleString('en-IN')}
                             </p>
                         </div>
                     </div>
@@ -764,7 +808,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], onS
                     </div>
                     {Math.abs(manualTotalScheduled - cartTotal) > 10 && (
                         <div className="text-center text-xs text-rose-500 font-bold bg-rose-50 p-2 rounded-lg">
-                            Balance Remaining: ₹{(cartTotal - manualTotalScheduled).toLocaleString()}
+                            Balance Remaining: ₹{Math.round(cartTotal - manualTotalScheduled).toLocaleString('en-IN')}
                         </div>
                     )}
                 </div>

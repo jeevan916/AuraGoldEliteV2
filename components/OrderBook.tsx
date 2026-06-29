@@ -215,12 +215,12 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, settings, onViewOrder, on
                             <div className="flex items-center gap-6 w-full lg:w-auto justify-between lg:justify-end border-t lg:border-t-0 pt-4 lg:pt-0 border-slate-50">
                                 <div>
                                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 lg:text-right">Order Value</p>
-                                    <p className="font-bold text-slate-800 lg:text-right">₹{order.totalAmount.toLocaleString()}</p>
+                                    <p className="font-bold text-slate-800 lg:text-right">₹{Math.round(order.totalAmount).toLocaleString('en-IN')}</p>
                                 </div>
                                 <div>
                                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 lg:text-right">Balance</p>
                                     <p className={`font-bold lg:text-right ${balance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                                        {balance > 0 ? `₹${balance.toLocaleString()}` : 'Paid'}
+                                        {balance > 0 ? `₹${Math.round(balance).toLocaleString('en-IN')}` : 'Paid'}
                                     </p>
                                 </div>
                                 

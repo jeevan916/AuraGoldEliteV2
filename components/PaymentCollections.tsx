@@ -278,7 +278,7 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
                   </td>
                   <td className="px-8 py-6">
                      <p className={`text-lg font-black ${isTransaction ? 'text-emerald-600' : 'text-slate-900'}`}>
-                       ₹{(item.targetAmount || 0).toLocaleString()}
+                       ₹{Math.round(item.targetAmount || 0).toLocaleString('en-IN')}
                      </p>
                   </td>
                   <td className="px-8 py-6">

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { Zap, ArrowRight, CheckCircle2, BrainCircuit, MessageSquare, FileText, ScrollText, TrendingUp, BookOpen, RefreshCw, Loader2 } from 'lucide-react';
-import { Order, OrderStatus } from '../types';
+import { Zap, ArrowRight, CheckCircle2, BrainCircuit, MessageSquare, FileText, ScrollText, TrendingUp, BookOpen, RefreshCw, Loader2, Activity } from 'lucide-react';
+import { Order, OrderStatus, ActivityLogEntry } from '../types';
 import { Card, SectionHeader, Badge, Button } from './shared/BaseUI';
 import { PaymentWidget } from './clusters/PaymentWidget';
 
@@ -9,9 +9,10 @@ interface DashboardProps {
   orders: Order[];
   currentRates?: { k24: number, k22: number, silver: number };
   onRefreshRates?: () => Promise<void>;
+  activities?: ActivityLogEntry[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRates }) => {
+const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRates, activities = [] }) => {
   const today = new Date().toISOString().split('T')[0];
   const [refreshing, setRefreshing] = useState(false);
   
@@ -142,7 +143,41 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, currentRates, onRefreshRa
         </div>
       </div>
 
-      {/* 4. New Booking CTA */}
+      {/* 4. Recent Activity Stream */}
+      <div>
+        <SectionHeader 
+          title="Activity Stream" 
+          subtitle="Latest payments & order updates" 
+          action={<Button variant="ghost" size="sm" onClick={() => (window as any).dispatchView('SYS_LOGS')}><ArrowRight size={16} /></Button>}
+        />
+        
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex flex-col gap-3">
+          {(() => {
+            const latestActivities = activities
+              .filter(a => ['PAYMENT_RECORDED', 'ORDER_CREATED', 'STATUS_UPDATE'].includes(a.actionType))
+              .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+              .slice(0, 5);
+
+            if (latestActivities.length === 0) {
+              return <div className="text-center text-slate-400 text-xs py-4 font-medium">No recent activities</div>;
+            }
+
+            return latestActivities.map(act => (
+              <div key={act.id} className="flex gap-3 items-start border-b border-slate-50 last:border-0 pb-3 last:pb-0">
+                <div className={`mt-0.5 p-2 rounded-full flex-shrink-0 ${act.actionType === 'PAYMENT_RECORDED' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>
+                  {act.actionType === 'PAYMENT_RECORDED' ? <CheckCircle2 size={14} /> : <Activity size={14} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-slate-800 break-words">{act.details}</p>
+                  <p className="text-xs text-slate-400 font-mono mt-1">{new Date(act.timestamp).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+              </div>
+            ));
+          })()}
+        </div>
+      </div>
+
+      {/* 5. New Booking CTA */}
       <button 
         onClick={() => (window as any).dispatchView('ORDER_NEW')}
         className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black uppercase tracking-widest text-sm flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-transform"

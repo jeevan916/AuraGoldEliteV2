@@ -83,7 +83,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
               const displayLimit = Math.min(allMilestones.length, 4);
               scheduleString = allMilestones.slice(0, displayLimit).map((m, i) => {
                   const date = new Date(m.dueDate).toLocaleDateString('en-IN');
-                  return `${i+1}. ${date}: ₹${m.targetAmount.toLocaleString()}`;
+                  return `${i+1}. ${date}: ₹${Math.round(m.targetAmount).toLocaleString('en-IN')}`;
               }).join('\n');
               
               if (allMilestones.length > displayLimit) {
@@ -103,7 +103,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
               [
                   order.customerName || 'Customer',         // {{1}} Name
                   itemName,                                // {{2}} Item
-                  order.totalAmount.toLocaleString(),      // {{3}} Total
+                  Math.round(order.totalAmount).toLocaleString('en-IN'),      // {{3}} Total
                   termsText,                               // {{4}} Terms
                   scheduleString,                          // {{5}} Schedule
                   order.shareToken                         // {{6}} Link Token
@@ -453,7 +453,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
 
       const newTotal = Math.max(0, updatedItems.reduce((s, i) => s + i.finalAmount, 0) - (order.discountAmount || 0));
       const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
-      const remainingBalance = newTotal - totalPaid;
+      const remainingBalance = Number((newTotal - totalPaid).toFixed(2));
 
       const paidMilestones = order.paymentPlan.milestones.filter(m => m.status === 'PAID');
       const pendingMilestones = order.paymentPlan.milestones.filter(m => m.status !== 'PAID');
@@ -488,7 +488,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           } 
       };
 
-      whatsappService.sendTemplateMessage(updatedOrder.customerContact, 'auragold_order_revised', 'en_US', [updatedOrder.customerName, updatedOrder.id, newTotal.toLocaleString(), 'Rate Repopulation', updatedOrder.shareToken], updatedOrder.customerName);
+      whatsappService.sendTemplateMessage(updatedOrder.customerContact, 'auragold_order_revised', 'en_US', [updatedOrder.customerName, updatedOrder.id, Math.round(newTotal).toLocaleString('en-IN'), 'Rate Repopulation', updatedOrder.shareToken], updatedOrder.customerName);
       onOrderUpdate(updatedOrder);
       alert("Order Repopulated!");
   };
@@ -675,7 +675,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                                         <p className="text-[10px] text-slate-400 font-medium">{new Date(m.dueDate).toLocaleDateString('en-IN')}</p>
                                     </div>
                                     <div className="text-right">
-                                        <p className={`text-sm font-black ${isPaid && !isOriginalView ? 'text-emerald-600' : 'text-slate-800'}`}>₹{m.targetAmount.toLocaleString()}</p>
+                                        <p className={`text-sm font-black ${isPaid && !isOriginalView ? 'text-emerald-600' : 'text-slate-800'}`}>₹{Math.round(m.targetAmount).toLocaleString('en-IN')}</p>
                                         <span className={`text-[8px] font-black uppercase ${isPaid && !isOriginalView ? 'text-emerald-600' : 'text-slate-400'}`}>
                                             {isOriginalView ? 'Snapshot' : m.status}
                                         </span>
@@ -718,10 +718,10 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                     <div className="flex justify-between items-start">
                         <div>
                             <h3 className="font-bold text-slate-800">{item.category}</h3>
-                            <p className="text-xs text-slate-500">{item.purity} • {item.netWeight}g <span className="text-emerald-600 font-bold ml-1">@ ₹{appliedRate.toLocaleString()}/g</span></p>
+                            <p className="text-xs text-slate-500">{item.purity} • {item.netWeight}g <span className="text-emerald-600 font-bold ml-1">@ ₹{Math.round(appliedRate).toLocaleString('en-IN')}/g</span></p>
                         </div>
                         <div className="text-right">
-                            <p className="text-sm font-black text-slate-900">₹{item.finalAmount.toLocaleString()}</p>
+                            <p className="text-sm font-black text-slate-900">₹{Math.round(item.finalAmount).toLocaleString('en-IN')}</p>
                             <div className="flex items-center gap-3 justify-end mt-1">
                                 <button onClick={() => setIsUpdatingWeight(item.id)} className="text-[9px] font-bold text-blue-600 flex items-center gap-1"><Scale size={10} /> Update Weight</button>
                                 <button onClick={() => setExpandedItem(isExpanded ? null : item.id)} className="text-[9px] font-bold text-slate-400 flex items-center gap-1">
@@ -736,7 +736,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                         <div className="mt-3 pt-3 border-t border-slate-100 text-[10px] grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-slate-500 bg-slate-50/50 p-3 rounded-xl animate-slideDown">
                             <div>
                                 <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Booking Rate</span>
-                                <span className="font-mono text-emerald-700 font-bold">₹{appliedRate.toLocaleString()}/g</span>
+                                <span className="font-mono text-emerald-700 font-bold">₹{Math.round(appliedRate).toLocaleString('en-IN')}/g</span>
                             </div>
                             <div>
                                 <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Metal Value</span>
@@ -752,7 +752,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                             </div>
                             <div>
                                 <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Stone</span>
-                                <span className="font-mono text-slate-700">₹{item.stoneCharges.toLocaleString()}</span>
+                                <span className="font-mono text-slate-700">₹{Math.round(item.stoneCharges).toLocaleString('en-IN')}</span>
                             </div>
                             <div>
                                 <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Tax (GST)</span>
@@ -771,7 +771,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                  <div className="space-y-2 text-sm">
                      <div className="flex justify-between items-center text-slate-500 font-bold">
                          <span>Subtotal</span>
-                         <span>₹{(order.totalAmount + (order.discountAmount || 0) - ((order.lateFeeAmount || 0) - (order.lateFeeWaived || 0))).toLocaleString()}</span>
+                         <span>₹{Math.round(order.totalAmount + (order.discountAmount || 0) - ((order.lateFeeAmount || 0) - (order.lateFeeWaived || 0))).toLocaleString('en-IN')}</span>
                      </div>
                      {order.discountAmount ? (
                          <div className="flex justify-between items-center text-emerald-600 font-bold group">
@@ -779,7 +779,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                                  <span>Discount</span>
                                  <button onClick={() => { setIsUpdatingDiscount(true); setNewDiscount(order.discountAmount?.toString() || ''); }} className="opacity-0 group-hover:opacity-100 text-blue-500 hover:text-blue-700 transition-opacity"><Edit2 size={12} /></button>
                              </div>
-                             <span>-₹{order.discountAmount.toLocaleString()}</span>
+                             <span>-₹{Math.round(order.discountAmount).toLocaleString('en-IN')}</span>
                          </div>
                      ) : (
                          <div className="flex justify-between items-center text-slate-400 font-bold">
@@ -803,9 +803,9 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                                      <span>Late Fee & Overdue</span>
                                      <button onClick={() => { setIsUpdatingWaiveLateFee(true); setNewWaiveLateFee(order.lateFeeWaived?.toString() || ''); }} className="opacity-0 group-hover:opacity-100 text-blue-500 hover:text-blue-700 transition-opacity"><Edit2 size={12} /></button>
                                  </div>
-                                 {order.lateFeeWaived ? <span className="text-[9px] text-rose-400">Waived: ₹{order.lateFeeWaived.toLocaleString()}</span> : null}
+                                 {order.lateFeeWaived ? <span className="text-[9px] text-rose-400">Waived: ₹{Math.round(order.lateFeeWaived).toLocaleString('en-IN')}</span> : null}
                              </div>
-                             <span>+₹{(order.lateFeeAmount - (order.lateFeeWaived || 0)).toLocaleString()}</span>
+                             <span>+₹{Math.round(order.lateFeeAmount - (order.lateFeeWaived || 0)).toLocaleString('en-IN')}</span>
                          </div>
                      ) : null}
 
@@ -819,7 +819,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
 
                      <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-lg font-black text-slate-900">
                          <span>Total Amount</span>
-                         <span>₹{order.totalAmount.toLocaleString()}</span>
+                         <span>₹{Math.round(order.totalAmount).toLocaleString('en-IN')}</span>
                      </div>
                  </div>
              </div>
@@ -831,7 +831,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                 <div className="bg-amber-50 border border-amber-200 rounded-[2rem] p-6 shadow-sm">
                     <div className="flex items-center gap-3 mb-4"><History size={24} className="text-amber-600" /><div><h3 className="font-black text-amber-900 text-lg">Lapse Recovery</h3><p className="text-xs text-amber-700">Contract violated.</p></div></div>
                     {order.originalSnapshot ? (
-                        <div className="bg-white rounded-xl p-4 border border-amber-100 space-y-2 mb-6"><div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-bold">Reason</span><span className="font-black text-rose-600 uppercase">{order.originalSnapshot.reason}</span></div><div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-bold">Original Price</span><span className="font-black text-slate-800">₹{order.originalSnapshot.originalTotal.toLocaleString()}</span></div><div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-bold">Original Rate</span><span className="font-black text-slate-800">₹{order.originalSnapshot.originalRate}/g</span></div></div>
+                        <div className="bg-white rounded-xl p-4 border border-amber-100 space-y-2 mb-6"><div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-bold">Reason</span><span className="font-black text-rose-600 uppercase">{order.originalSnapshot.reason}</span></div><div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-bold">Original Price</span><span className="font-black text-slate-800">₹{Math.round(order.originalSnapshot.originalTotal).toLocaleString('en-IN')}</span></div><div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-bold">Original Rate</span><span className="font-black text-slate-800">₹{order.originalSnapshot.originalRate}/g</span></div></div>
                     ) : <div className="text-xs text-amber-600 mb-4 italic">No snapshot available.</div>}
                     <div className="grid grid-cols-2 gap-4"><button onClick={handleRepopulateOrder} className="bg-emerald-600 text-white p-4 rounded-xl flex flex-col items-center justify-center gap-2 shadow-lg"><RefreshCw size={24} /><div className="text-center"><span className="block font-black text-xs uppercase">Repopulate</span><span className="text-[9px] opacity-80">Accept New Rate</span></div></button><button onClick={handleRefundCancel} className="bg-rose-600 text-white p-4 rounded-xl flex flex-col items-center justify-center gap-2 shadow-lg"><XCircle size={24} /><div className="text-center"><span className="block font-black text-xs uppercase">Refund</span><span className="text-[9px] opacity-80">Cancel Funds</span></div></button></div>
                 </div>

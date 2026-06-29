@@ -76,7 +76,7 @@ const CustomerProfile: React.FC<CustomerProfileProps> = ({
         <div className="flex-1 grid grid-cols-2 gap-4">
             <Card className="p-5 flex flex-col justify-center bg-amber-50 border-amber-100">
                 <p className="text-[10px] font-black uppercase text-amber-700 tracking-widest mb-1">Lifetime Value</p>
-                <p className="text-3xl font-black text-slate-800">₹{customer.totalSpent.toLocaleString()}</p>
+                <p className="text-3xl font-black text-slate-800">₹{Math.round(customer.totalSpent).toLocaleString('en-IN')}</p>
             </Card>
             <Card className="p-5 flex flex-col justify-center bg-blue-50 border-blue-100">
                 <p className="text-[10px] font-black uppercase text-blue-700 tracking-widest mb-1">Total Orders</p>
@@ -85,7 +85,7 @@ const CustomerProfile: React.FC<CustomerProfileProps> = ({
             <Card className="p-5 flex flex-col justify-center bg-white">
                 <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Outstanding</p>
                 <p className={`text-xl font-black ${totalDue > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                    ₹{totalDue.toLocaleString()}
+                    ₹{Math.round(totalDue).toLocaleString('en-IN')}
                 </p>
             </Card>
             <Card className="p-5 flex flex-col justify-center bg-white">
@@ -142,10 +142,10 @@ const CustomerProfile: React.FC<CustomerProfileProps> = ({
                                   
                                   <div className="text-right">
                                       <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Total</p>
-                                      <p className="font-bold text-slate-800 mb-2">₹{order.totalAmount.toLocaleString()}</p>
+                                      <p className="font-bold text-slate-800 mb-2">₹{Math.round(order.totalAmount).toLocaleString('en-IN')}</p>
                                       {balance > 0 ? (
                                           <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded">
-                                              Due: ₹{balance.toLocaleString()}
+                                              Due: ₹{Math.round(balance).toLocaleString('en-IN')}
                                           </span>
                                       ) : (
                                           <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
