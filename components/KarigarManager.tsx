@@ -70,36 +70,105 @@ const KarigarManager: React.FC<KarigarManagerProps> = ({ orders, onUpdateItem, o
           karigarName: q.item.karigarName || '',
           promisedDate: q.item.promisedDate || '',
           backendNotes: q.item.backendNotes || '',
+          customizationDetails: q.item.customizationDetails || '',
           netWeight: q.item.netWeight,
+          makingChargesPerGram: q.item.makingChargesPerGram || 0,
+          otherCharges: q.item.otherCharges || 0,
           productionStatus: q.item.productionStatus
       });
   };
 
-  const handleSave = async (orderId: string, itemId: string, originalItem: JewelryDetail, customerContact: string, customerName: string, shareToken: string) => {
-      // Logic for notifying customer if critical fields changed
+  const handleSave = async (order: Order, itemId: string, originalItem: JewelryDetail) => {
       const weightChanged = editFields.netWeight !== undefined && editFields.netWeight !== originalItem.netWeight;
+      const makingChargesChanged = editFields.makingChargesPerGram !== undefined && editFields.makingChargesPerGram !== originalItem.makingChargesPerGram;
+      const otherChargesChanged = editFields.otherCharges !== undefined && editFields.otherCharges !== (originalItem.otherCharges || 0);
       const statusChanged = editFields.productionStatus !== undefined && editFields.productionStatus !== originalItem.productionStatus;
 
-      onUpdateItem(orderId, itemId, editFields);
+      if (weightChanged || makingChargesChanged || otherChargesChanged) {
+          const w = editFields.netWeight ?? originalItem.netWeight;
+          const makingCharges = editFields.makingChargesPerGram ?? originalItem.makingChargesPerGram;
+          const otherChg = editFields.otherCharges ?? (originalItem.otherCharges || 0);
+
+          const oldTotal = order.totalAmount;
+          const effectiveRate = originalItem.netWeight > 0 ? (originalItem.baseMetalValue / originalItem.netWeight) : order.goldRateAtBooking;
+
+          const metalValue = w * effectiveRate;
+          const wastageValue = metalValue * (originalItem.wastagePercentage / 100);
+          const laborValue = makingCharges * w;
+          const subTotal = metalValue + wastageValue + laborValue + originalItem.stoneCharges + otherChg;
+          const tax = subTotal * (settings.defaultTaxRate / 100);
+          const newFinalAmount = subTotal + tax;
+
+          const updatedItems = order.items.map(i => i.id === itemId ? {
+              ...i,
+              ...editFields,
+              netWeight: w,
+              makingChargesPerGram: makingCharges,
+              otherCharges: otherChg,
+              baseMetalValue: metalValue,
+              wastageValue,
+              totalLaborValue: laborValue,
+              taxAmount: tax,
+              finalAmount: newFinalAmount
+          } : i);
+
+          const newTotal = Math.max(0, updatedItems.reduce((s, i) => s + i.finalAmount, 0) - (order.discountAmount || 0));
+          const valueChange = newTotal - oldTotal;
+
+          const newMilestones = JSON.parse(JSON.stringify(order.paymentPlan.milestones));
+          const last = newMilestones[newMilestones.length - 1];
+          if (last.status !== 'PAID') {
+              last.targetAmount += valueChange;
+              last.cumulativeTarget += valueChange;
+          } else {
+              newMilestones.push({
+                  id: `ADJ-WT-${Date.now()}`,
+                  dueDate: new Date().toISOString().split('T')[0],
+                  targetAmount: valueChange,
+                  cumulativeTarget: newTotal,
+                  status: 'PENDING',
+                  warningCount: 0,
+                  description: 'Order Adjustment'
+              } as any);
+          }
+
+          const originalMilestones = order.paymentPlan.originalMilestones || JSON.parse(JSON.stringify(order.paymentPlan.milestones));
+
+          const updatedOrder = { 
+              ...order, 
+              items: updatedItems, 
+              totalAmount: newTotal, 
+              paymentPlan: { 
+                  ...order.paymentPlan, 
+                  milestones: newMilestones,
+                  originalMilestones 
+              } 
+          };
+
+          onOrderUpdate(updatedOrder);
+      } else {
+          onUpdateItem(order.id, itemId, editFields);
+      }
+
       setEditingItemId(null);
 
       // Trigger WA Notifications
       try {
           if (weightChanged) {
               await whatsappService.sendTemplateMessage(
-                  customerContact,
+                  order.customerContact,
                   'auragold_weight_update',
                   'en_US',
-                  [customerName, originalItem.category, editFields.netWeight!.toString(), originalItem.netWeight.toString(), "Adjusted in Ledger"],
-                  customerName
+                  [order.customerName, originalItem.category, editFields.netWeight!.toString(), originalItem.netWeight.toString(), "Adjusted in Ledger"],
+                  order.customerName
               );
           } else if (statusChanged) {
                await whatsappService.sendTemplateMessage(
-                  customerContact,
+                  order.customerContact,
                   'auragold_production_update',
                   'en_US',
-                  [customerName, originalItem.category, orderId, editFields.productionStatus!.replace('_', ' '), shareToken],
-                  customerName
+                  [order.customerName, originalItem.category, order.id, editFields.productionStatus!.replace('_', ' '), order.shareToken],
+                  order.customerName
               );
           }
       } catch (e) {
@@ -294,6 +363,37 @@ const KarigarManager: React.FC<KarigarManagerProps> = ({ orders, onUpdateItem, o
                                       </div>
                                   </div>
 
+                                  <div className="grid grid-cols-2 gap-4">
+                                      <div className="space-y-1">
+                                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Making Charges (₹/g)</label>
+                                          <input 
+                                              type="number"
+                                              className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-black focus:border-emerald-500 outline-none"
+                                              value={editFields.makingChargesPerGram}
+                                              onChange={e => setEditFields({...editFields, makingChargesPerGram: parseFloat(e.target.value) || 0})}
+                                          />
+                                      </div>
+                                      <div className="space-y-1">
+                                          <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Other Charges (₹)</label>
+                                          <input 
+                                              type="number"
+                                              className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-black focus:border-emerald-500 outline-none"
+                                              value={editFields.otherCharges}
+                                              onChange={e => setEditFields({...editFields, otherCharges: parseFloat(e.target.value) || 0})}
+                                          />
+                                      </div>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Customer Notes (Public)</label>
+                                      <textarea 
+                                          className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-medium focus:border-emerald-400 outline-none h-16 resize-none"
+                                          value={editFields.customizationDetails}
+                                          onChange={e => setEditFields({...editFields, customizationDetails: e.target.value})}
+                                          placeholder="Notes visible to customer..."
+                                      />
+                                  </div>
+
                                   <div className="space-y-1">
                                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Workshop Backend Notes (Internal)</label>
                                       <textarea 
@@ -312,7 +412,7 @@ const KarigarManager: React.FC<KarigarManagerProps> = ({ orders, onUpdateItem, o
                                           Cancel
                                       </button>
                                       <button 
-                                          onClick={() => handleSave(order.id, item.id, item, order.customerContact, order.customerName, order.shareToken)}
+                                          onClick={() => handleSave(order, item.id, item)}
                                           className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-bold text-xs hover:bg-emerald-700 shadow-lg flex items-center justify-center gap-2 transition-all"
                                       >
                                           <Save size={14} /> Save Updates

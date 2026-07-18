@@ -29,8 +29,14 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
     order, onBack, onOrderUpdate, onDeleteOrder, logs = [], onAddLog, settings, onUpdateStatus
 }) => {
   const [activeTab, setActiveTab] = useState<'ITEMS' | 'FINANCIAL' | 'LOGS' | 'PROOF'>('FINANCIAL');
-  const [isUpdatingWeight, setIsUpdatingWeight] = useState<string | null>(null); // Track item ID being edited
-  const [newWeight, setNewWeight] = useState('');
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editItemForm, setEditItemForm] = useState({
+      netWeight: '',
+      makingChargesPerGram: '',
+      otherCharges: '',
+      customizationDetails: '',
+      backendNotes: ''
+  });
   const [isUpdatingDiscount, setIsUpdatingDiscount] = useState(false);
   const [newDiscount, setNewDiscount] = useState('');
   const [isUpdatingWaiveLateFee, setIsUpdatingWaiveLateFee] = useState(false);
@@ -223,8 +229,11 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       alert("Contract Updated & Customer Notified.");
   };
 
-  const handleUpdateItemWeight = async (itemId: string) => {
-      const w = parseFloat(newWeight);
+  const handleUpdateItemDetails = async (itemId: string) => {
+      const w = parseFloat(editItemForm.netWeight);
+      const makingCharges = parseFloat(editItemForm.makingChargesPerGram) || 0;
+      const otherChg = parseFloat(editItemForm.otherCharges) || 0;
+
       if (!w || w <= 0) return alert("Invalid Weight");
       
       const targetItem = order.items.find(i => i.id === itemId);
@@ -237,14 +246,18 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       
       const metalValue = w * effectiveRate;
       const wastageValue = metalValue * (targetItem.wastagePercentage / 100);
-      const laborValue = targetItem.makingChargesPerGram * w;
-      const subTotal = metalValue + wastageValue + laborValue + targetItem.stoneCharges;
+      const laborValue = makingCharges * w;
+      const subTotal = metalValue + wastageValue + laborValue + targetItem.stoneCharges + otherChg;
       const tax = subTotal * (settings.defaultTaxRate / 100);
       const newFinalAmount = subTotal + tax;
 
       const updatedItems = order.items.map(i => i.id === itemId ? {
           ...i,
           netWeight: w,
+          makingChargesPerGram: makingCharges,
+          otherCharges: otherChg,
+          customizationDetails: editItemForm.customizationDetails,
+          backendNotes: editItemForm.backendNotes,
           baseMetalValue: metalValue,
           wastageValue,
           totalLaborValue: laborValue,
@@ -268,7 +281,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
               cumulativeTarget: newTotal,
               status: 'PENDING',
               warningCount: 0,
-              description: 'Weight Adjustment'
+              description: 'Order Adjustment'
           } as any);
       }
 
@@ -287,19 +300,20 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       };
 
       try {
-          await whatsappService.sendTemplateMessage(
-              updatedOrder.customerContact,
-              'auragold_weight_update',
-              'en_US',
-              [updatedOrder.customerName, targetItem.category, w.toString(), oldWeight.toString(), Math.abs(Math.round(valueChange)).toLocaleString()],
-              updatedOrder.customerName
-          );
+          if (w !== oldWeight) {
+              await whatsappService.sendTemplateMessage(
+                  updatedOrder.customerContact,
+                  'auragold_weight_update',
+                  'en_US',
+                  [updatedOrder.customerName, targetItem.category, w.toString(), oldWeight.toString(), Math.abs(Math.round(valueChange)).toLocaleString()],
+                  updatedOrder.customerName
+              );
+          }
       } catch (e) {}
 
       onOrderUpdate(updatedOrder as Order);
-      setIsUpdatingWeight(null);
-      setNewWeight('');
-      alert("Weight updated and Customer notified.");
+      setEditingItemId(null);
+      alert("Item details updated successfully.");
   };
 
   const handleUpdateDiscount = () => {
@@ -724,7 +738,16 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                         <div className="text-right">
                             <p className="text-sm font-black text-slate-900">₹{Math.round(item.finalAmount).toLocaleString('en-IN')}</p>
                             <div className="flex items-center gap-3 justify-end mt-1">
-                                <button onClick={() => setIsUpdatingWeight(item.id)} className="text-[9px] font-bold text-blue-600 flex items-center gap-1"><Scale size={10} /> Update Weight</button>
+                                <button onClick={() => {
+                                    setEditingItemId(item.id);
+                                    setEditItemForm({
+                                        netWeight: item.netWeight.toString(),
+                                        makingChargesPerGram: item.makingChargesPerGram.toString(),
+                                        otherCharges: (item.otherCharges || 0).toString(),
+                                        customizationDetails: item.customizationDetails || '',
+                                        backendNotes: item.backendNotes || ''
+                                    });
+                                }} className="text-[9px] font-bold text-blue-600 flex items-center gap-1"><Edit2 size={10} /> Edit Item</button>
                                 <button onClick={() => setExpandedItem(isExpanded ? null : item.id)} className="text-[9px] font-bold text-slate-400 flex items-center gap-1">
                                     {isExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />} Breakdown
                                 </button>
@@ -756,6 +779,10 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                                 <span className="font-mono text-slate-700">₹{Math.round(item.stoneCharges).toLocaleString('en-IN')}</span>
                             </div>
                             <div>
+                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Other</span>
+                                <span className="font-mono text-slate-700">₹{Math.round(item.otherCharges || 0).toLocaleString('en-IN')}</span>
+                            </div>
+                            <div>
                                 <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Tax (GST)</span>
                                 <span className="font-mono text-slate-700">₹{Math.round(item.taxAmount).toLocaleString()}</span>
                             </div>
@@ -763,7 +790,39 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                     )}
 
                     <div className="mt-3 flex gap-2 overflow-x-auto pb-1">{Object.values(ProductionStatus).map(s => <button key={s} onClick={() => handleStatusChange(item.id, s)} className={`text-[8px] font-black uppercase px-2 py-1 rounded border ${item.productionStatus === s ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-400'}`}>{s.replace('_', ' ')}</button>)}</div>
-                    {isUpdatingWeight === item.id && <div className="mt-3 bg-blue-50 p-3 rounded-xl flex gap-2 items-center animate-slideDown"><input type="number" className="flex-1 bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none" placeholder="New Weight (g)" value={newWeight} onChange={e => setNewWeight(e.target.value)} /><button onClick={() => handleUpdateItemWeight(item.id)} className="bg-blue-600 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase">Save</button><button onClick={() => setIsUpdatingWeight(null)} className="text-slate-400"><XCircle size={16}/></button></div>}
+                    
+                    {editingItemId === item.id && (
+                        <div className="mt-3 bg-blue-50 p-4 rounded-xl flex flex-col gap-3 animate-slideDown">
+                            <div className="grid grid-cols-3 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500">Weight (g)</label>
+                                    <input type="number" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none" placeholder="Weight" value={editItemForm.netWeight} onChange={e => setEditItemForm({...editItemForm, netWeight: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500">Making (₹/g)</label>
+                                    <input type="number" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none" placeholder="Making/g" value={editItemForm.makingChargesPerGram} onChange={e => setEditItemForm({...editItemForm, makingChargesPerGram: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500">Other Charges (₹)</label>
+                                    <input type="number" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none" placeholder="Other" value={editItemForm.otherCharges} onChange={e => setEditItemForm({...editItemForm, otherCharges: e.target.value})} />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500">Customer Notes</label>
+                                    <input type="text" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs outline-none" placeholder="Notes for customer" value={editItemForm.customizationDetails} onChange={e => setEditItemForm({...editItemForm, customizationDetails: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500">Karigar Notes</label>
+                                    <input type="text" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs outline-none" placeholder="Internal notes" value={editItemForm.backendNotes} onChange={e => setEditItemForm({...editItemForm, backendNotes: e.target.value})} />
+                                </div>
+                            </div>
+                            <div className="flex gap-2 justify-end">
+                                <button onClick={() => setEditingItemId(null)} className="text-slate-400 font-bold text-[10px] uppercase px-3 py-2">Cancel</button>
+                                <button onClick={() => handleUpdateItemDetails(item.id)} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase">Save & Recalculate</button>
+                            </div>
+                        </div>
+                    )}
                   </div>
                </div>
              )})}

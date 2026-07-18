@@ -80,6 +80,7 @@ export interface JewelryDetail {
   wastageValue: number;
   makingChargesPerGram: number;
   totalLaborValue: number;
+  otherCharges?: number;
   stoneCharges: number;
   stoneDetails?: string; 
   purity: Purity;
