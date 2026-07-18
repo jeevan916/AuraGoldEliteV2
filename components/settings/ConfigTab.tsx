@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
     Zap, Loader2, RefreshCw, Info, Server, MessageSquare, CreditCard, 
-    Save, CheckCircle2, Database, ServerCrash, ShieldCheck, Clock, HardDrive, Share2
+    Save, CheckCircle2, Database, ServerCrash, ShieldCheck, Clock, HardDrive, Share2, Users
 } from 'lucide-react';
 import { GlobalSettings } from '../../types';
 import { goldRateService } from '../../services/goldRateService';
@@ -381,6 +381,21 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                     {isSaving ? <Loader2 className="animate-spin" /> : saveSuccess ? <CheckCircle2 /> : <Save />}
                     {saveSuccess ? 'Saved Successfully' : 'Save Changes'}
                 </button>
+
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                    <h3 className="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
+                        <Users size={16} className="text-slate-400" /> Karigar (Artisan) List
+                    </h3>
+                    <div className="space-y-2">
+                        <p className="text-[10px] text-slate-500 font-bold mb-2">Enter karigar names separated by commas. These will be available for selection in the Karigar Desk.</p>
+                        <textarea 
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-all min-h-[100px]"
+                            value={Array.isArray(localSettings.karigars) ? localSettings.karigars.join(', ') : ''}
+                            onChange={(e) => setLocalSettings({...localSettings, karigars: e.target.value.split(',').map(s => s.trim()).filter(Boolean)})}
+                            placeholder="e.g. Raju, Prakash, Shyam Jewellers"
+                        />
+                    </div>
+                </div>
 
                 <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
                     <h3 className="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">

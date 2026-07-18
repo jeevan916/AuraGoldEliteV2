@@ -160,6 +160,7 @@ export interface GlobalSettings {
   overdueFrequencyDays: number;
   maxRemindersPerMilestone: number;
   preferredRateProvider?: string; // 'auto', 'batuk', 'sagar'
+  karigars?: string[];
   whatsappPhoneNumberId?: string;
   whatsappBusinessAccountId?: string;
   whatsappBusinessToken?: string;

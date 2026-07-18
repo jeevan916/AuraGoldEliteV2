@@ -42,10 +42,10 @@ const KarigarManager: React.FC<KarigarManagerProps> = ({ orders, onUpdateItem, o
   }, [orders]);
 
   const karigars = useMemo(() => {
-      const names = new Set<string>();
+      const names = new Set<string>(settings.karigars || []);
       productionQueue.forEach(q => q.item.karigarName && names.add(q.item.karigarName));
       return Array.from(names).sort();
-  }, [productionQueue]);
+  }, [productionQueue, settings.karigars]);
 
   const filteredQueue = useMemo(() => {
     return productionQueue.filter(q => {
@@ -248,11 +248,15 @@ const KarigarManager: React.FC<KarigarManagerProps> = ({ orders, onUpdateItem, o
                                       <div className="space-y-1">
                                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Assign Karigar</label>
                                           <input 
+                                              list="karigar-list"
                                               className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-bold focus:border-amber-400 outline-none"
                                               value={editFields.karigarName}
                                               onChange={e => setEditFields({...editFields, karigarName: e.target.value})}
                                               placeholder="Artisan Name"
                                           />
+                                          <datalist id="karigar-list">
+                                              {karigars.map(k => <option key={k} value={k} />)}
+                                          </datalist>
                                       </div>
                                       <div className="space-y-1">
                                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Karigar Due Date</label>

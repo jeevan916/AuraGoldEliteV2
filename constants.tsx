@@ -25,6 +25,7 @@ export const INITIAL_SETTINGS: GlobalSettings = {
   followUpIntervalDays: 3, // Default follow up every 3 days
   goldRateFetchIntervalMinutes: 60, // Default 60 mins
   preferredRateProvider: 'auto', // Default: Auto (Priority List)
+  karigars: [],
   whatsappPhoneNumberId: getEnv('VITE_WHATSAPP_PHONE_ID'),
   whatsappBusinessAccountId: getEnv('VITE_WHATSAPP_WABA_ID'),
   whatsappBusinessToken: getEnv('VITE_WHATSAPP_TOKEN'),
