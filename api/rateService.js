@@ -183,7 +183,7 @@ export async function fetchAndSaveRate(forcedProviderId = null) {
                 const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['core_settings']);
                 connection.release();
                 if (rows.length > 0) {
-                    const config = JSON.parse(rows[0].config);
+                    const config = typeof rows[0].config === "string" ? JSON.parse(rows[0].config) : rows[0].config;
                     const pref = config.preferredRateProvider; // 'batuk' | 'sagar' | 'auto'
                     if (pref && pref !== 'auto') {
                         // Priority Reordering: Put preferred first, but keep others as fallback if explicit setting implies preference not exclusivity.
@@ -359,7 +359,7 @@ export async function fetchAndSaveRate(forcedProviderId = null) {
             // Update Core Settings Cache
             const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['core_settings']);
             if (rows.length > 0) {
-                const config = JSON.parse(rows[0].config);
+                const config = typeof rows[0].config === "string" ? JSON.parse(rows[0].config) : rows[0].config;
                 config.currentGoldRate24K = rate24k;
                 config.currentGoldRate22K = rate22k;
                 config.currentGoldRate18K = rate18k;
@@ -401,13 +401,13 @@ export async function checkRateBreaches(targetOrderId = null, forceTest = false)
         
         // Fetch settings
         const [settingsRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['core_settings']);
-        const config = settingsRows.length > 0 ? JSON.parse(settingsRows[0].config) : {};
+        const config = settingsRows.length > 0 ? typeof settingsRows[0].config === "string" ? JSON.parse(settingsRows[0].config) : settingsRows[0].config : {};
         const breachBufferMinutes = config.breachBufferMinutes || 30;
         const cooldownHours = config.cooldownHours || 24;
         
         // Fetch WhatsApp credentials
         const [whatsappRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['whatsapp']);
-        const whatsappConfig = whatsappRows.length > 0 ? JSON.parse(whatsappRows[0].config) : {};
+        const whatsappConfig = whatsappRows.length > 0 ? typeof whatsappRows[0].config === "string" ? JSON.parse(whatsappRows[0].config) : whatsappRows[0].config : {};
         const { phoneId, token } = whatsappConfig;
 
         // Fetch orders with protection limit
@@ -541,7 +541,7 @@ export async function initRateService() {
 
         let interval = 60; // Default
         if (rows.length > 0) {
-            const config = JSON.parse(rows[0].config);
+            const config = typeof rows[0].config === "string" ? JSON.parse(rows[0].config) : rows[0].config;
             interval = config.goldRateFetchIntervalMinutes || 60;
         }
 

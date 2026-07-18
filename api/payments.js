@@ -43,7 +43,7 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         let config = rows[0].config;
         if (typeof config === 'string') {
             try {
-                config = JSON.parse(config);
+                config = typeof config === "string" ? JSON.parse(config) : config;
             } catch (e) {
                 connection.release();
                 throw new Error("Invalid Setu configuration format.");
@@ -223,7 +223,7 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
         }
 
         let config = rows[0].config;
-        if (typeof config === 'string') config = JSON.parse(config);
+        if (typeof config === 'string') config = typeof config === "string" ? JSON.parse(config) : config;
         
         const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
         const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
@@ -380,7 +380,7 @@ router.get(['/setu/pay/:encodedIntent', '/setu/pay'], async (req, res) => {
                 let mode = 'PRODUCTION';
                 if (rows.length > 0) {
                     let config = rows[0].config;
-                    if (typeof config === 'string') config = JSON.parse(config);
+                    if (typeof config === 'string') config = typeof config === "string" ? JSON.parse(config) : config;
                     mode = config.mode || 'PRODUCTION';
                 }
                 
@@ -719,7 +719,7 @@ async function processSuccessfulPayment(orderId, amountPaid, upiTransactionID, p
 
         try {
             const [whatsappRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['whatsapp']);
-            const whatsappConfig = whatsappRows.length > 0 ? JSON.parse(whatsappRows[0].config) : {};
+            const whatsappConfig = whatsappRows.length > 0 ? typeof whatsappRows[0].config === "string" ? JSON.parse(whatsappRows[0].config) : whatsappRows[0].config : {};
             const { phoneId, token } = whatsappConfig;
             
             if (phoneId && token) {
@@ -777,7 +777,7 @@ export function startSetuPoller(io) {
             }
             
             let config = setuRows[0].config;
-            if (typeof config === 'string') config = JSON.parse(config);
+            if (typeof config === 'string') config = typeof config === "string" ? JSON.parse(config) : config;
             const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
             const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
             let token = config.cachedToken;

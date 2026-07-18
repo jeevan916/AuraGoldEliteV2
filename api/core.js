@@ -202,7 +202,13 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
         connection.release();
         
         const intMap = {}; 
-        intRows.forEach(r => { try { intMap[r.provider] = JSON.parse(r.config); } catch(e){} });
+        intRows.forEach(r => { 
+            try { 
+                intMap[r.provider] = typeof r.config === "string" ? JSON.parse(r.config) : r.config; 
+            } catch(e) {
+                console.error("Failed to parse config for", r.provider, e);
+            } 
+        });
         
         const core = intMap.core_settings || {};
         

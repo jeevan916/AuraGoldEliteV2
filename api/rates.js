@@ -17,7 +17,7 @@ router.get('/gold-rate', ensureDb, async (req, res) => {
         
         if (configRows.length > 0) {
             try {
-                manualConfig = JSON.parse(configRows[0].config);
+                manualConfig = typeof configRows[0].config === "string" ? JSON.parse(configRows[0].config) : configRows[0].config;
                 intervalMins = manualConfig.goldRateFetchIntervalMinutes || 60;
             } catch (e) {}
         }

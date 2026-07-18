@@ -55,7 +55,7 @@ router.get('/memory', async (req, res) => {
     try {
         const pool = getPool();
         const [rows] = await pool.query("SELECT config FROM integrations WHERE provider = ?", ['system_memory']);
-        if (rows.length > 0) res.json({ success: true, memory: JSON.parse(rows[0].config) });
+        if (rows.length > 0) res.json({ success: true, memory: typeof rows[0].config === "string" ? JSON.parse(rows[0].config) : rows[0].config });
         else res.json({ success: false, message: "Memory offline" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });

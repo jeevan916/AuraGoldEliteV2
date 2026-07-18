@@ -9,14 +9,14 @@ export async function runPaymentReminders() {
 
         // Fetch settings
         const [settingsRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['core_settings']);
-        const config = settingsRows.length > 0 ? JSON.parse(settingsRows[0].config) : {};
+        const config = settingsRows.length > 0 ? typeof settingsRows[0].config === "string" ? JSON.parse(settingsRows[0].config) : settingsRows[0].config : {};
         const reminderScheduleDays = config.reminderScheduleDays || [15, 7, 3];
         const overdueFrequencyDays = config.overdueFrequencyDays || 2;
         const maxRemindersPerMilestone = config.maxRemindersPerMilestone || 5;
 
         // Fetch WhatsApp credentials
         const [whatsappRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['whatsapp']);
-        const whatsappConfig = whatsappRows.length > 0 ? JSON.parse(whatsappRows[0].config) : {};
+        const whatsappConfig = whatsappRows.length > 0 ? typeof whatsappRows[0].config === "string" ? JSON.parse(whatsappRows[0].config) : whatsappRows[0].config : {};
         const { phoneId, token } = whatsappConfig;
 
         // Fetch orders and their payment schedules
