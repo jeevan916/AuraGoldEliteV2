@@ -370,14 +370,26 @@ export const whatsappService = {
             return { success: false, error: errDetail, raw: data.raw };
         }
 
+        const sysTpl = REQUIRED_SYSTEM_TEMPLATES.find(t => t.name === safeTemplateName);
+        let compiledMessage = `[Template: ${safeTemplateName}]`;
+        if (sysTpl) {
+            compiledMessage = sysTpl.content;
+            bodyVariables.forEach((val, idx) => {
+                compiledMessage = compiledMessage.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), val.toString());
+            });
+            if (buttonVariable) {
+                compiledMessage += `\n\nLink: ${buttonVariable}`;
+            }
+        }
+
         return {
           success: true,
           messageId: data.data?.messages?.[0]?.id,
-          logEntry: {
+          logEntry: data.logEntry || {
             id: data.data?.messages?.[0]?.id || `wamid.${Date.now()}`,
             customerName, 
             phoneNumber: recipient, 
-            message: `[Template: ${safeTemplateName}]`,
+            message: compiledMessage,
             status: 'SENT', 
             timestamp: new Date().toISOString(), 
             type: 'TEMPLATE', 

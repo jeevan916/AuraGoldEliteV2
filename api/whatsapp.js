@@ -6,6 +6,49 @@ import { checkRateBreaches } from './rateService.js';
 const router = express.Router();
 const META_API_VERSION = "v20.0";
 
+const SYSTEM_TEMPLATES = {
+  auragold_order_agreement: "Dear {{1}}, thank you for choosing AuraGold. We are pleased to share the details and payment schedule for your order of {{2}}.\n\nTotal Order Value: ₹{{3}} (rate protection limited)\nPayment Terms: {{4}}\n\nPayment Schedule:\n{{5}}\n\nYou can view the detailed breakdown and track your order progress here: https://order.auragoldelite.com/?token={{6}}\n\n!!!Pay your payments ON Time to prevent Gold Rate Protection Lapses!!!",
+  auragold_weight_update: "Important update for {{1}}: We would like to inform you that the actual production weight for your {{2}} has been finalized. The final weight is {{3}}g, compared to the initial estimated weight of {{4}}g. This results in a net value change of ₹{{5}}. We have updated your final invoice accordingly to reflect this adjustment.",
+  auragold_order_revised: "Dear {{1}}, we are writing to inform you that your Order {{2}} has been successfully revised in our system. The new total amount for your order is now ₹{{3}}. This adjustment was made due to the following reason: {{4}}. You can view your updated order details and track its progress securely by clicking here: https://order.auragoldelite.com/?token={{5}}",
+  auragold_payment_receipt_store: "Hello {{1}}, this is an official receipt from AuraGold. We acknowledge receiving a payment of ₹{{2}} via {{3}} towards your Order ID {{4}}. Thank you for visiting our store. Your remaining outstanding balance is ₹{{5}}.",
+  auragold_production_update: "Hello {{1}}, we have an update regarding your item {{2}} under Order ID {{3}}. The production status has now moved to the {{4}} stage. You can view the detailed progress tracking here: https://order.auragoldelite.com/?token={{5}}",
+  auragold_payment_success_remote: "Dear {{1}}, your secure payment has been successfully confirmed. We have received ₹{{2}} via {{3}} for your Order ID {{4}}. Your ledger has been updated. The new remaining balance is ₹{{5}}.",
+  auragold_rate_adjustment_alert: "Important notice for {{1}}: We are writing to inform you that the current market gold rate has unfortunately exceeded your agreed protection limit. As a result, a necessary adjustment surcharge of ₹{{2}} has been applied to your Order {{3}}. The new base rate for your order is now ₹{{4}}/g. You can review these changes and your updated order details securely here: https://order.auragoldelite.com/?token={{5}}",
+  auragold_setu_payment: "Dear {{1}}, please pay ₹{{2}} securely using the UPI button below.",
+  auragold_finished_item_showcase: "Great news, {{1}}! Your custom jewelry piece is finally ready. We are excited to share the finished look for your Order {{2}}. The item has passed our quality checks and we are now ready for the final handover. Please review the details.",
+  auragold_gentle_reminder: "Hello {{1}}, a gentle reminder that your installment of {{2}} for order {{3}} is due. Please pay here: {{4}} to avoid delays.",
+  auragold_payment_overdue: "Dear {{1}}, we noticed your payment of {{2}} is overdue. To maintain your gold rate protection, please clear the dues via: {{3}} today.",
+  auragold_urgent_lapse: "URGENT {{1}}: Your Gold Rate Protection for order {{2}} expires in 24 hours. Pay {{3}} immediately to save your booked rate: {{4}}",
+  auragold_rate_adjustment_liability: "URGENT notice for {{1}}: Due to a missed payment milestone, your rate protection for Order {{3}} has lapsed. A market adjustment surcharge of ₹{{2}} has been applied. The new base rate is now ₹{{4}}/g. Please review and accept the new terms here: https://order.auragoldelite.com/?token={{5}}"
+};
+
+function compileTemplateMessage(templateName, components) {
+    const content = SYSTEM_TEMPLATES[templateName];
+    if (!content) return `[Template: ${templateName}]`;
+
+    let compiled = content;
+    
+    // Find body parameters
+    const bodyComponent = (components || []).find(c => c.type === 'body' || c.type === 'BODY');
+    if (bodyComponent && bodyComponent.parameters) {
+        bodyComponent.parameters.forEach((param, idx) => {
+            const val = param.text || '';
+            compiled = compiled.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), val);
+        });
+    }
+
+    // Find button parameters or URL parameters
+    const buttonComponent = (components || []).find(c => c.type === 'button' || c.type === 'BUTTON');
+    if (buttonComponent && buttonComponent.parameters) {
+        buttonComponent.parameters.forEach((param) => {
+            const val = param.text || '';
+            compiled += `\n\nLink: ${val}`;
+        });
+    }
+
+    return compiled;
+}
+
 export async function sendWhatsAppMessage({ to, message, templateName, language, components, customerName, phoneId, token, sentBy = 'SYSTEM', metadata = {}, orderId }) {
     if (!phoneId || !token) {
         throw new Error("Missing WhatsApp Credentials");
@@ -52,7 +95,8 @@ export async function sendWhatsAppMessage({ to, message, templateName, language,
         if (data.messages) {
             const pool = getPool();
             const connection = await pool.getConnection();
-            const log = { id: data.messages[0].id, customerName: customerName || "Customer", phoneNumber: normalizePhone(to), message: templateName ? `[Template: ${templateName}]` : message, status: 'SENT', timestamp: new Date().toISOString(), direction: 'outbound', type: templateName ? 'TEMPLATE' : 'CUSTOM', sentBy, orderId, ...metadata };
+            const compiledMsg = templateName ? compileTemplateMessage(templateName, components) : message;
+            const log = { id: data.messages[0].id, customerName: customerName || "Customer", phoneNumber: normalizePhone(to), message: compiledMsg, status: 'SENT', timestamp: new Date().toISOString(), direction: 'outbound', type: templateName ? 'TEMPLATE' : 'CUSTOM', sentBy, orderId, templateName, components, ...metadata };
             await connection.query('INSERT INTO whatsapp_logs (id, phone, order_id, direction, timestamp, data) VALUES (?, ?, ?, ?, ?, ?)', [log.id, log.phoneNumber, orderId || null, 'outbound', new Date(), JSON.stringify(log)]);
             // Note: io is not available here.
             connection.release();

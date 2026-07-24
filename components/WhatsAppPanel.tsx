@@ -243,9 +243,9 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
 
   const StatusIcon = ({ status }: { status: MessageStatus }) => {
     switch (status) {
-      case 'READ': return <div className="flex"><CheckCircle2 size={12} className="text-blue-500" /><CheckCircle2 size={12} className="text-blue-500 -ml-1.5" /></div>;
-      case 'DELIVERED': return <div className="flex"><CheckCircle2 size={12} className="text-slate-400" /><CheckCircle2 size={12} className="text-slate-400 -ml-1.5" /></div>;
-      case 'SENT': return <Check size={12} className="text-slate-400" />;
+      case 'READ': return <div className="flex items-center"><Check size={13} className="text-sky-500" /><Check size={13} className="text-sky-500 -ml-2" /></div>;
+      case 'DELIVERED': return <div className="flex items-center"><Check size={13} className="text-slate-400" /><Check size={13} className="text-slate-400 -ml-2" /></div>;
+      case 'SENT': return <Check size={13} className="text-slate-400" />;
       default: return <Clock size={12} className="text-slate-300" />;
     }
   };
