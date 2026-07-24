@@ -6,7 +6,7 @@ let pool = null;
 export let isMock = false;
 const mockData = {
     gold_rates: [],
-    app_users: [{ id: 1, username: 'admin', password_hash: '$2a$10$8K1p/a06Ewe7SclT.8mS8uXvL0.X.X.X.X.X.X.X.X.X.X.X.X.X.X.', role: 'ADMIN' }], // Placeholder, will be fixed in auth
+    app_users: [{ id: 1, username: 'admin', password_hash: '$2a$10$8K1p/a06Ewe7SclT.8mS8uXvL0.X.X.X.X.X.X.X.X.X.X.X.X.X.X.', role: 'ADMIN', mobile_number: '' }], // Placeholder, will be fixed in auth
     integrations: [
         { 
             provider: 'core_settings', 
@@ -99,6 +99,7 @@ export async function initDb() {
                 username VARCHAR(50) UNIQUE NOT NULL,
                 password_hash VARCHAR(255) NOT NULL,
                 role VARCHAR(20) NOT NULL,
+                mobile_number VARCHAR(20) DEFAULT '',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`,
             `CREATE TABLE IF NOT EXISTS payment_schedules (
@@ -123,6 +124,9 @@ export async function initDb() {
         
         try {
             await connection.query("ALTER TABLE gold_rates ADD COLUMN rateSilver DECIMAL(10, 2) DEFAULT 0");
+        } catch (e) { }
+        try {
+            await connection.query("ALTER TABLE app_users ADD COLUMN mobile_number VARCHAR(20) DEFAULT ''");
         } catch (e) { }
         try {
             await connection.query("ALTER TABLE orders ADD COLUMN share_token VARCHAR(100)");
@@ -276,6 +280,55 @@ export const getPool = () => {
                     if (lowerSql.includes('select * from app_users where username = ?')) {
                         const user = mockData.app_users.find(u => u.username === params[0]);
                         return [user ? [user] : []];
+                    }
+                    if (lowerSql.includes('select') && lowerSql.includes('from app_users')) {
+                        return [mockData.app_users.map(u => ({ id: u.id, username: u.username, role: u.role, mobile_number: u.mobile_number || '', created_at: u.created_at || new Date().toISOString() }))];
+                    }
+                    if (lowerSql.includes('insert into app_users')) {
+                        const newUser = {
+                            id: Date.now(),
+                            username: params[0],
+                            password_hash: params[1],
+                            role: params[2],
+                            mobile_number: params[3] || '',
+                            created_at: new Date().toISOString()
+                        };
+                        mockData.app_users.push(newUser);
+                        return [{ affectedRows: 1, insertId: newUser.id }];
+                    }
+                    if (lowerSql.includes('update app_users')) {
+                        if (lowerSql.includes('password_hash = ?') && lowerSql.includes('role = ?')) {
+                            const index = mockData.app_users.findIndex(u => u.id == params[3]);
+                            if (index > -1) {
+                                mockData.app_users[index].role = params[0];
+                                mockData.app_users[index].mobile_number = params[1];
+                                mockData.app_users[index].password_hash = params[2];
+                            }
+                        } else if (lowerSql.includes('password_hash = ?')) {
+                            const index = mockData.app_users.findIndex(u => u.id == params[1]);
+                            if (index > -1) {
+                                mockData.app_users[index].password_hash = params[0];
+                            }
+                        } else if (lowerSql.includes('role = ?') && lowerSql.includes('mobile_number = ?')) {
+                            const index = mockData.app_users.findIndex(u => u.id == params[2]);
+                            if (index > -1) {
+                                mockData.app_users[index].role = params[0];
+                                mockData.app_users[index].mobile_number = params[1];
+                            }
+                        } else if (lowerSql.includes('role = ?')) {
+                            const index = mockData.app_users.findIndex(u => u.id == params[1]);
+                            if (index > -1) {
+                                mockData.app_users[index].role = params[0];
+                            }
+                        }
+                        return [{ affectedRows: 1 }];
+                    }
+                    if (lowerSql.includes('delete from app_users')) {
+                        const index = mockData.app_users.findIndex(u => u.id == params[0]);
+                        if (index > -1) {
+                            mockData.app_users.splice(index, 1);
+                        }
+                        return [{ affectedRows: 1 }];
                     }
                     if (lowerSql.includes('select config from integrations where provider = ?')) {
                         const row = mockData.integrations.find(i => i.provider === params[0]);

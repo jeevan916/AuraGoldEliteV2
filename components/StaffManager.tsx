@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, ShieldAlert, Plus, Edit2, Trash2, Key, Users, RefreshCw, Loader2 } from 'lucide-react';
+import { Shield, ShieldAlert, Plus, Edit2, Trash2, Key, Users, RefreshCw, Loader2, Phone } from 'lucide-react';
 import { AuthUser, UserRole } from '../types';
 import { SectionHeader, Card, Button } from './shared/BaseUI';
 
@@ -11,6 +11,7 @@ interface StaffUser {
     id: number;
     username: string;
     role: UserRole;
+    mobile_number?: string;
     created_at: string;
 }
 
@@ -21,15 +22,16 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ currentUser }) => {
     
     // Modal states
     const [showNewUserModal, setShowNewUserModal] = useState(false);
-    const [editRoleUser, setEditRoleUser] = useState<StaffUser | null>(null);
-    const [editPasswordUser, setEditPasswordUser] = useState<StaffUser | null>(null);
+    const [editUser, setEditUser] = useState<StaffUser | null>(null);
     
     // Form states
     const [newUsername, setNewUsername] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [newRole, setNewRole] = useState<UserRole>('SALES');
+    const [newMobileNumber, setNewMobileNumber] = useState('');
     
     const [updatedRole, setUpdatedRole] = useState<UserRole>('SALES');
+    const [updatedMobileNumber, setUpdatedMobileNumber] = useState('');
     const [updatedPassword, setUpdatedPassword] = useState('');
 
     const fetchUsers = async () => {
@@ -68,13 +70,20 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ currentUser }) => {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${currentUser.token}`
                 },
-                body: JSON.stringify({ username: newUsername, password: newPassword, role: newRole })
+                body: JSON.stringify({ 
+                    username: newUsername, 
+                    password: newPassword, 
+                    role: newRole,
+                    mobile_number: newMobileNumber 
+                })
             });
             const data = await res.json();
             if (data.success) {
                 setShowNewUserModal(false);
                 setNewUsername('');
                 setNewPassword('');
+                setNewMobileNumber('');
+                setNewRole('SALES');
                 fetchUsers();
             } else {
                 alert(data.error || 'Failed to create user');
@@ -84,49 +93,30 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ currentUser }) => {
         }
     };
 
-    const handleUpdateRole = async (e: React.FormEvent) => {
+    const handleUpdateUser = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!editRoleUser) return;
+        if (!editUser) return;
         try {
-            const res = await fetch(`/api/auth/users/${editRoleUser.id}/role`, {
+            const res = await fetch(`/api/auth/users/${editUser.id}`, {
                 method: 'PUT',
                 headers: { 
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${currentUser.token}`
                 },
-                body: JSON.stringify({ role: updatedRole })
+                body: JSON.stringify({ 
+                    role: updatedRole,
+                    mobile_number: updatedMobileNumber,
+                    password: updatedPassword || undefined
+                })
             });
             const data = await res.json();
             if (data.success) {
-                setEditRoleUser(null);
+                setEditUser(null);
+                setUpdatedPassword('');
+                setUpdatedMobileNumber('');
                 fetchUsers();
             } else {
-                alert(data.error);
-            }
-        } catch (e: any) {
-            alert(e.message);
-        }
-    };
-
-    const handleUpdatePassword = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!editPasswordUser) return;
-        try {
-            const res = await fetch(`/api/auth/users/${editPasswordUser.id}/password`, {
-                method: 'PUT',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${currentUser.token}`
-                },
-                body: JSON.stringify({ password: updatedPassword })
-            });
-            const data = await res.json();
-            if (data.success) {
-                setEditPasswordUser(null);
-                setUpdatedPassword('');
-                alert('Password updated successfully');
-            } else {
-                alert(data.error);
+                alert(data.error || 'Failed to update user');
             }
         } catch (e: any) {
             alert(e.message);
@@ -175,7 +165,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ currentUser }) => {
         <div className="p-6 max-w-6xl mx-auto space-y-6 pb-32">
             <SectionHeader 
                 title="Staff Management" 
-                subtitle="Login access and role allocation" 
+                subtitle="Login access, role allocation, and contact details" 
                 action={
                     <div className="flex gap-2">
                         <Button variant="ghost" onClick={fetchUsers}><RefreshCw size={16} /></Button>
@@ -195,6 +185,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ currentUser }) => {
                             <tr>
                                 <th className="p-4 font-black uppercase text-[10px] tracking-widest">Username</th>
                                 <th className="p-4 font-black uppercase text-[10px] tracking-widest">Role</th>
+                                <th className="p-4 font-black uppercase text-[10px] tracking-widest">Mobile Number</th>
                                 <th className="p-4 font-black uppercase text-[10px] tracking-widest">Created At</th>
                                 <th className="p-4 font-black uppercase text-[10px] tracking-widest text-right">Actions</th>
                             </tr>
@@ -207,7 +198,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ currentUser }) => {
                                             <Users size={14} />
                                         </div>
                                         {u.username}
-                                        {u.id.toString() === currentUser.id.toString() && <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full ml-2">YOU</span>}
+                                        {u.id.toString() === currentUser.id.toString() && <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full ml-2 font-bold uppercase tracking-wider">YOU</span>}
                                     </td>
                                     <td className="p-4">
                                         <span className={`text-[10px] font-black px-2 py-1 rounded-md uppercase tracking-widest ${
@@ -217,14 +208,34 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ currentUser }) => {
                                             'bg-blue-100 text-blue-700'
                                         }`}>{u.role}</span>
                                     </td>
+                                    <td className="p-4 text-slate-700 font-bold">
+                                        {u.mobile_number ? (
+                                            <span className="flex items-center gap-1.5 font-mono text-xs">
+                                                <Phone size={12} className="text-slate-400" />
+                                                {u.mobile_number}
+                                            </span>
+                                        ) : (
+                                            <span className="text-slate-400 font-normal italic text-xs">Not set</span>
+                                        )}
+                                    </td>
                                     <td className="p-4 text-slate-500 font-mono text-xs">
                                         {new Date(u.created_at).toLocaleDateString()}
                                     </td>
                                     <td className="p-4 text-right space-x-2">
-                                        <button onClick={() => { setEditRoleUser(u); setUpdatedRole(u.role); }} className="p-2 text-slate-400 hover:text-amber-600 bg-slate-50 hover:bg-amber-50 rounded-lg transition-colors" title="Change Role"><Edit2 size={16} /></button>
-                                        <button onClick={() => setEditPasswordUser(u)} className="p-2 text-slate-400 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-lg transition-colors" title="Reset Password"><Key size={16} /></button>
+                                        <button 
+                                            onClick={() => { 
+                                                setEditUser(u); 
+                                                setUpdatedRole(u.role); 
+                                                setUpdatedMobileNumber(u.mobile_number || ''); 
+                                                setUpdatedPassword(''); 
+                                            }} 
+                                            className="p-2 text-slate-400 hover:text-amber-600 bg-slate-50 hover:bg-amber-50 rounded-lg transition-colors inline-flex items-center gap-1.5 text-xs font-bold" 
+                                            title="Edit Staff Access, Password & Mobile"
+                                        >
+                                            <Edit2 size={14} /> Edit Staff
+                                        </button>
                                         {u.id.toString() !== currentUser.id.toString() && (
-                                            <button onClick={() => handleDelete(u.id)} className="p-2 text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 rounded-lg transition-colors" title="Delete User"><Trash2 size={16} /></button>
+                                            <button onClick={() => handleDelete(u.id)} className="p-2 text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 rounded-lg transition-colors inline-flex items-center" title="Delete User"><Trash2 size={14} /></button>
                                         )}
                                     </td>
                                 </tr>
@@ -237,20 +248,24 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ currentUser }) => {
             {/* New User Modal */}
             {showNewUserModal && (
                 <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl">
+                    <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl animate-scaleIn">
                         <h3 className="text-xl font-black text-slate-800 mb-4">Create Staff Account</h3>
                         <form onSubmit={handleCreateUser} className="space-y-4">
                             <div>
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Username</label>
-                                <input required type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-slate-700 outline-none focus:border-amber-500" />
+                                <input required type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-slate-700 outline-none focus:border-amber-500 transition-all text-sm" placeholder="e.g. rahul_sales" />
                             </div>
                             <div>
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Temporary Password</label>
-                                <input required type="text" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-slate-700 outline-none focus:border-amber-500" />
+                                <input required type="text" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-slate-700 outline-none focus:border-amber-500 transition-all text-sm" placeholder="Min 4 characters" />
                             </div>
                             <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Role</label>
-                                <select value={newRole} onChange={e => setNewRole(e.target.value as UserRole)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-slate-700 outline-none focus:border-amber-500">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Mobile Number (Optional)</label>
+                                <input type="text" value={newMobileNumber} onChange={e => setNewMobileNumber(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-slate-700 outline-none focus:border-amber-500 transition-all text-sm" placeholder="e.g. +91 9876543210" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Role / Access Level</label>
+                                <select value={newRole} onChange={e => setNewRole(e.target.value as UserRole)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-slate-700 outline-none focus:border-amber-500 text-sm">
                                     <option value="SALES">Sales Agent (Basic Access)</option>
                                     <option value="MANAGER">Store Manager (Operations)</option>
                                     <option value="KARIGAR">Karigar (Workshop Only)</option>
@@ -266,43 +281,56 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ currentUser }) => {
                 </div>
             )}
 
-            {/* Edit Role Modal */}
-            {editRoleUser && (
+            {/* Edit Staff User Modal */}
+            {editUser && (
                 <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">
-                        <h3 className="text-xl font-black text-slate-800 mb-4">Change Role</h3>
-                        <p className="text-sm text-slate-500 mb-4">Update access level for <span className="font-bold text-slate-800">{editRoleUser.username}</span></p>
-                        <form onSubmit={handleUpdateRole} className="space-y-4">
+                    <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl animate-scaleIn">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center">
+                                <Users size={18} />
+                            </div>
                             <div>
-                                <select value={updatedRole} onChange={e => setUpdatedRole(e.target.value as UserRole)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-slate-700 outline-none focus:border-amber-500">
-                                    <option value="SALES">Sales Agent</option>
-                                    <option value="MANAGER">Store Manager</option>
-                                    <option value="KARIGAR">Karigar</option>
-                                    <option value="ADMIN">Administrator</option>
+                                <h3 className="text-xl font-black text-slate-800 leading-none mb-1">Edit Staff Profile</h3>
+                                <p className="text-xs text-slate-500 font-bold">Modifying credentials and roles for <span className="text-amber-600 font-black">{editUser.username}</span></p>
+                            </div>
+                        </div>
+
+                        <form onSubmit={handleUpdateUser} className="space-y-4">
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Staff Access Level</label>
+                                <select value={updatedRole} onChange={e => setUpdatedRole(e.target.value as UserRole)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-slate-700 outline-none focus:border-amber-500 text-sm">
+                                    <option value="SALES">Sales Agent (Basic Access)</option>
+                                    <option value="MANAGER">Store Manager (Operations)</option>
+                                    <option value="KARIGAR">Karigar (Workshop Only)</option>
+                                    <option value="ADMIN">Administrator (Full Access)</option>
                                 </select>
                             </div>
-                            <div className="pt-4 flex gap-3">
-                                <Button type="button" variant="ghost" onClick={() => setEditRoleUser(null)} className="flex-1">Cancel</Button>
-                                <Button type="submit" variant="primary" className="flex-1">Save Role</Button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Reset Password Modal */}
-            {editPasswordUser && (
-                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">
-                        <h3 className="text-xl font-black text-slate-800 mb-4">Reset Password</h3>
-                        <p className="text-sm text-slate-500 mb-4">Set a new password for <span className="font-bold text-slate-800">{editPasswordUser.username}</span></p>
-                        <form onSubmit={handleUpdatePassword} className="space-y-4">
+                            
                             <div>
-                                <input required type="text" placeholder="New Password" value={updatedPassword} onChange={e => setUpdatedPassword(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-slate-700 outline-none focus:border-amber-500" />
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Mobile Number</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="e.g. +91 9876543210" 
+                                    value={updatedMobileNumber} 
+                                    onChange={e => setUpdatedMobileNumber(e.target.value)} 
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-slate-700 outline-none focus:border-amber-500 text-sm" 
+                                />
                             </div>
+
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Change Password (Optional)</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="Leave blank to keep existing password" 
+                                    value={updatedPassword} 
+                                    onChange={e => setUpdatedPassword(e.target.value)} 
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-slate-700 outline-none focus:border-amber-500 text-sm" 
+                                />
+                            </div>
+
                             <div className="pt-4 flex gap-3">
-                                <Button type="button" variant="ghost" onClick={() => { setEditPasswordUser(null); setUpdatedPassword(''); }} className="flex-1">Cancel</Button>
-                                <Button type="submit" variant="primary" className="flex-1">Update Password</Button>
+                                <Button type="button" variant="ghost" onClick={() => setEditUser(null)} className="flex-1">Cancel</Button>
+                                <Button type="submit" variant="primary" className="flex-1">Save Profile</Button>
                             </div>
                         </form>
                     </div>

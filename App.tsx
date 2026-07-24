@@ -4,7 +4,7 @@ import {
   Plus, Home, ReceiptIndianRupee, Users, MessageSquare, 
   Menu, ArrowLeft, Cloud, Loader2, HardDrive, Settings as SettingsIcon,
   BrainCircuit, Calculator, FileText, ScrollText, Globe, Activity, ShoppingBag, BookOpen, X, RefreshCw, DownloadCloud, Zap,
-  History, Layout, PieChart, ShieldAlert, Hammer, LogOut, User, Shield
+  History, Layout, PieChart, ShieldAlert, Hammer, LogOut, User, Shield, TrendingUp
 } from 'lucide-react';
 import { io } from 'socket.io-client';
 
@@ -73,12 +73,13 @@ const KarigarManager = lazyRetry(() => import('./components/KarigarManager'), 'K
 const WebhookLogs = lazyRetry(() => import('./components/WebhookLogs'), 'Webhooks');
 
 const StaffManager = lazyRetry(() => import('./components/StaffManager').then(m => ({ default: m.StaffManager })), 'StaffManager');
+const DuesTracker = lazyRetry(() => import('./components/DuesTracker').then(m => ({ default: m.DuesTracker })), 'DuesTracker');
 
-type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW' | 'ARCHITECT' | 'KARIGAR_DESK' | 'WEBHOOKS' | 'STAFF_MANAGER';
+type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW' | 'ARCHITECT' | 'KARIGAR_DESK' | 'WEBHOOKS' | 'STAFF_MANAGER' | 'DUES_TRACKER';
 
 // --- ACCESS CONTROL LIST ---
 const ROLE_PERMISSIONS: Record<UserRole, MainView[]> = {
-    ADMIN: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'SYS_LOGS', 'SETTINGS', 'MENU', 'CUSTOMER_VIEW', 'ARCHITECT', 'KARIGAR_DESK', 'WEBHOOKS', 'STAFF_MANAGER'],
+    ADMIN: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'SYS_LOGS', 'SETTINGS', 'MENU', 'CUSTOMER_VIEW', 'ARCHITECT', 'KARIGAR_DESK', 'WEBHOOKS', 'STAFF_MANAGER', 'DUES_TRACKER'],
     MANAGER: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'MENU', 'KARIGAR_DESK'],
     SALES: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'MENU'],
     KARIGAR: ['KARIGAR_DESK']
@@ -383,6 +384,7 @@ const App = () => {
           case 'SYS_LOGS': return <ErrorLogPanel errors={systemErrors} activities={systemActivities} onClear={() => { errorService.clearErrors(); errorService.clearActivity(); }} />;
           case 'WEBHOOKS': return <WebhookLogs />;
           case 'STAFF_MANAGER': return user ? <StaffManager currentUser={user} /> : null;
+          case 'DUES_TRACKER': return <DuesTracker orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} />;
           case 'SETTINGS': return <Settings settings={settings} onUpdate={handleUpdateSettings} />;
           case 'ARCHITECT': return <SystemArchitect />;
           case 'KARIGAR_DESK': return <KarigarManager orders={orders} onUpdateItem={updateItemStatus} onOrderUpdate={updateOrder} settings={settings} />;
@@ -392,6 +394,7 @@ const App = () => {
                   {canAccess('KARIGAR_DESK') && <MenuItem onClick={() => setView('KARIGAR_DESK')} icon={<Hammer />} label="Karigar Desk" desc="Production Tracking" colorClass="bg-slate-800 text-white" />}
                   {canAccess('CUSTOMERS') && <MenuItem onClick={() => setView('CUSTOMERS')} icon={<Users />} label="Client Directory" desc="View customer profiles" colorClass="bg-emerald-50 text-emerald-600" />}
                   {canAccess('COLLECTIONS') && <MenuItem onClick={() => setView('COLLECTIONS')} icon={<ReceiptIndianRupee />} label="Payments" desc="Track cash flow" colorClass="bg-amber-50 text-amber-600" />}
+                  {canAccess('DUES_TRACKER') && <MenuItem onClick={() => setView('DUES_TRACKER')} icon={<TrendingUp />} label="Dues Dashboard" desc="Outstanding dues Aging" colorClass="bg-rose-50 text-rose-600" />}
                   {canAccess('WHATSAPP') && <MenuItem onClick={() => setView('WHATSAPP')} icon={<MessageSquare />} label="WhatsApp" desc="Connect with clients" colorClass="bg-teal-50 text-teal-600" />}
                   {canAccess('TEMPLATES') && <MenuItem onClick={() => setView('TEMPLATES')} icon={<Layout />} label="AI Templates" desc="Meta Architect Console" colorClass="bg-indigo-50 text-indigo-600" />}
                   {canAccess('LOGS') && <MenuItem onClick={() => setView('LOGS')} icon={<History />} label="Chat Logs" desc="Communication history" colorClass="bg-slate-50 text-slate-600" />}
@@ -451,6 +454,7 @@ const App = () => {
                  {(canAccess('CUSTOMERS') || canAccess('COLLECTIONS')) && <p className="px-4 text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Operations</p>}
                  {canAccess('CUSTOMERS') && <SidebarItem active={view === 'CUSTOMERS'} onClick={() => setView('CUSTOMERS')} icon={Users} label="Clients" />}
                  {canAccess('COLLECTIONS') && <SidebarItem active={view === 'COLLECTIONS'} onClick={() => setView('COLLECTIONS')} icon={ReceiptIndianRupee} label="Payments" />}
+                 {canAccess('DUES_TRACKER') && <SidebarItem active={view === 'DUES_TRACKER'} onClick={() => setView('DUES_TRACKER')} icon={TrendingUp} label="Dues Dashboard" />}
                  {canAccess('STRATEGY') && <SidebarItem active={view === 'STRATEGY'} onClick={() => setView('STRATEGY')} icon={BrainCircuit} label="Strategy Hub" />}
                  {canAccess('PLANS') && <SidebarItem active={view === 'PLANS'} onClick={() => setView('PLANS')} icon={FileText} label="Plan Manager" />}
                  

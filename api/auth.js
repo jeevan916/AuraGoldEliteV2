@@ -99,7 +99,7 @@ router.post('/auth/login', ensureDb, async (req, res) => {
 
 // Create User (Admin Only - simplified for initial setup, normally requires auth middleware)
 router.post('/auth/register', ensureDb, async (req, res) => {
-    const { username, password, role, adminSecret } = req.body;
+    const { username, password, role, mobile_number, adminSecret } = req.body;
 
     // Support both adminSecret (for initial setup) and JWT token (for UI)
     let isAuthorized = false;
@@ -138,8 +138,8 @@ router.post('/auth/register', ensureDb, async (req, res) => {
         const hash = await bcrypt.hash(password, 10);
         
         await connection.query(
-            "INSERT INTO app_users (username, password_hash, role) VALUES (?, ?, ?)",
-            [username, hash, role]
+            "INSERT INTO app_users (username, password_hash, role, mobile_number) VALUES (?, ?, ?, ?)",
+            [username, hash, role, mobile_number || '']
         );
         
         connection.release();
@@ -155,9 +155,41 @@ router.get('/auth/users', ensureDb, verifyAdmin, async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
-        const [rows] = await connection.query('SELECT id, username, role, created_at FROM app_users ORDER BY created_at DESC');
+        const [rows] = await connection.query('SELECT id, username, role, mobile_number, created_at FROM app_users ORDER BY created_at DESC');
         connection.release();
         res.json({ success: true, users: rows });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Unified route to update staff member details (role, mobile_number, and password if provided)
+router.put('/auth/users/:id', ensureDb, verifyAdmin, async (req, res) => {
+    const { role, mobile_number, password } = req.body;
+    
+    if (role && !['ADMIN', 'MANAGER', 'SALES', 'KARIGAR'].includes(role)) {
+        return res.status(400).json({ success: false, error: 'Invalid Role' });
+    }
+
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        
+        if (password && password.trim().length >= 4) {
+            const hash = await bcrypt.hash(password, 10);
+            await connection.query(
+                "UPDATE app_users SET role = ?, mobile_number = ?, password_hash = ? WHERE id = ?",
+                [role, mobile_number || '', hash, req.params.id]
+            );
+        } else {
+            await connection.query(
+                "UPDATE app_users SET role = ?, mobile_number = ? WHERE id = ?",
+                [role, mobile_number || '', req.params.id]
+            );
+        }
+        
+        connection.release();
+        res.json({ success: true, message: 'User updated successfully' });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
