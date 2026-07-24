@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   MessageSquare, Check, CheckCircle2, Clock, AlertCircle, 
   Search, Send, Smartphone, User, Paperclip, X,
-  FileText, Plus, RefreshCw, Zap, Lock, Sparkles, BrainCircuit
+  FileText, Plus, RefreshCw, Zap, Lock, Sparkles, BrainCircuit,
+  ArrowLeft
 } from 'lucide-react';
 import { WhatsAppLogEntry, MessageStatus, WhatsAppTemplate, Customer, AiChatInsight } from '../types';
 import { INITIAL_TEMPLATES, REQUIRED_SYSTEM_TEMPLATES } from '../constants';
@@ -251,7 +252,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
 
   return (
     <div className="flex h-[calc(100vh-140px)] bg-white rounded-3xl border shadow-xl overflow-hidden animate-fadeIn relative">
-      <div className="w-full md:w-80 bg-slate-50 border-r flex flex-col">
+      <div className={`w-full md:w-80 bg-slate-50 border-r flex flex-col ${selectedContact ? 'hidden md:flex' : 'flex'}`}>
         <div className="p-4 border-b bg-white">
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
@@ -289,11 +290,18 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col bg-[#f0f2f5] relative">
+      <div className={`flex-1 flex flex-col bg-[#f0f2f5] relative ${selectedContact ? 'flex' : 'hidden md:flex'}`}>
          {activeConversation ? (
             <>
                 <div className="bg-white p-4 border-b flex justify-between items-center z-10 shadow-sm">
                     <div className="flex items-center gap-3">
+                        <button 
+                            onClick={() => setSelectedContact(null)} 
+                            className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors flex items-center justify-center"
+                            title="Back to Chats"
+                        >
+                            <ArrowLeft size={20} />
+                        </button>
                         <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center text-slate-500">
                             <User size={20} />
                         </div>

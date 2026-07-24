@@ -1,5 +1,5 @@
 
-import { getPool } from './db.js';
+import { getPool, normalizePhone } from './db.js';
 import https from 'https';
 import http from 'http';
 import { sendWhatsAppMessage } from './whatsapp.js';
@@ -458,6 +458,14 @@ export async function checkRateBreaches(targetOrderId = null, forceTest = false)
             const customerName = orderData.customerName || "Customer";
             const customerPhone = order.customer_contact || orderData.customerContact || orderData.customerPhone;
             
+            // Collision Avoidance: Check for recent payment reminders (last 24 hours)
+            const normalizedPhone = normalizePhone(customerPhone);
+            const [reminderLogRows] = await connection.query(
+                "SELECT COUNT(*) as count FROM whatsapp_logs WHERE phone = ? AND (data LIKE '%auragold_gentle_reminder%' OR data LIKE '%auragold_payment_overdue_alert%' OR data LIKE '%auragold_payment_overdue%' OR data LIKE '%auragold_urgent_lapse%') AND timestamp > ?",
+                [normalizedPhone, new Date(now - 24 * 60 * 60 * 1000)]
+            );
+            const hasRecentReminder = reminderLogRows[0].count > 0;
+
             const components = [
                 {
                     type: "body",
@@ -473,6 +481,11 @@ export async function checkRateBreaches(targetOrderId = null, forceTest = false)
 
             if (forceTest || (isBreached && !orderData.isRateBreached)) {
                 // Potential breach
+                if (hasRecentReminder && !forceTest) {
+                    console.log(`[RateService] Skipping breach alert for ${customerPhone} due to recent payment reminder.`);
+                    continue;
+                }
+
                 if (forceTest || now - lastNotifiedAt > cooldownMs) {
                     const templateName = hasMissedMilestone ? 'auragold_rate_adjustment_liability' : 'auragold_rate_adjustment_alert';
                     
@@ -500,6 +513,11 @@ export async function checkRateBreaches(targetOrderId = null, forceTest = false)
                 }
             } else if (!isBreached && orderData.isRateBreached) {
                 // Rate stabilized
+                if (hasRecentReminder && !forceTest) {
+                    console.log(`[RateService] Skipping stabilized alert for ${customerPhone} due to recent payment reminder.`);
+                    continue;
+                }
+
                 if (forceTest || now - lastNotifiedAt > cooldownMs) {
                     try {
                         await sendWhatsAppMessage({

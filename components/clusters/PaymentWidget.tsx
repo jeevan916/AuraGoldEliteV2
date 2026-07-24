@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2, AlertCircle, RefreshCw, Calendar, Clock, CheckCircle2, History } from 'lucide-react';
+import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2, AlertCircle, RefreshCw, Calendar, Clock, CheckCircle2, History, Coins, Landmark } from 'lucide-react';
 import { Card, Button } from '../shared/BaseUI';
 import { Order, OrderStatus, WhatsAppLogEntry, Milestone } from '../../types';
 import { whatsappService } from '../../services/whatsappService';
 import { storageService } from '../../services/storageService';
 import { errorService } from '../../services/errorService';
+import { goldRateService } from '../../services/goldRateService';
 
 interface PaymentWidgetProps {
   order: Order;
@@ -24,6 +25,18 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
   const [showRawResponse, setShowRawResponse] = useState(false);
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
 
+  // Old Gold inputs state
+  const [goldWeight, setGoldWeight] = useState('');
+  const [goldPurity, setGoldPurity] = useState('22K');
+  const [customPurityPercent, setCustomPurityPercent] = useState('100');
+  const [goldRate, setGoldRate] = useState('');
+  const [liveRates, setLiveRates] = useState<{ k24: number, k22: number, k18: number, k14: number } | null>(null);
+
+  // Cheque inputs state
+  const [chequeNumber, setChequeNumber] = useState('');
+  const [chequeBank, setChequeBank] = useState('');
+  const [chequeDate, setChequeDate] = useState(new Date().toISOString().split('T')[0]);
+
   const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
   const remaining = order.totalAmount - totalPaid;
   
@@ -41,6 +54,46 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
   useEffect(() => {
       setErrorMsg(null);
   }, [activeTab]);
+
+  useEffect(() => {
+    const loadRates = async () => {
+      try {
+        const res = await goldRateService.fetchLiveRate();
+        if (res.success) {
+          const rates = {
+            k24: res.rate24K || 7500,
+            k22: res.rate22K || 6875,
+            k18: res.rate18K || 5625,
+            k14: Math.round((res.rate24K || 7500) * 0.585)
+          };
+          setLiveRates(rates);
+          setGoldRate(rates.k22.toString());
+        } else {
+          const rates = { k24: 7500, k22: 6875, k18: 5625, k14: 4375 };
+          setLiveRates(rates);
+          setGoldRate(rates.k22.toString());
+        }
+      } catch (err) {
+        const rates = { k24: 7500, k22: 6875, k18: 5625, k14: 4375 };
+        setLiveRates(rates);
+        setGoldRate(rates.k22.toString());
+      }
+    };
+    loadRates();
+  }, []);
+
+  const calculatedGoldValue = React.useMemo(() => {
+    const weight = parseFloat(goldWeight);
+    const rate = parseFloat(goldRate);
+    if (!weight || !rate || weight <= 0 || rate <= 0) return 0;
+    return Math.round(weight * rate);
+  }, [goldWeight, goldRate]);
+
+  useEffect(() => {
+    if (mode === 'OLD_GOLD') {
+      setAmount(calculatedGoldValue > 0 ? calculatedGoldValue.toString() : '');
+    }
+  }, [mode, calculatedGoldValue]);
 
   const updateOrderWithPayment = (val: number, method: string, notes: string, dateStr?: string) => {
       const newPayment = {
@@ -75,15 +128,50 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
   };
 
   const handleRecordPayment = async () => {
-    const val = parseFloat(amount);
-    if (!val || val <= 0) return;
+    let val = parseFloat(amount);
+    
+    if (mode === 'OLD_GOLD') {
+      val = calculatedGoldValue;
+    }
+
+    if (!val || val <= 0) {
+      setErrorMsg("Validation Error: Payment amount must be greater than zero.");
+      return;
+    }
+
+    if (mode === 'CHEQUE') {
+      if (!chequeNumber.trim() || !chequeBank.trim()) {
+        setErrorMsg("Validation Error: Please enter Cheque Number and Bank Name.");
+        return;
+      }
+    } else if (mode === 'OLD_GOLD') {
+      const weight = parseFloat(goldWeight);
+      const rate = parseFloat(goldRate);
+      if (!weight || weight <= 0) {
+        setErrorMsg("Validation Error: Please enter a valid Gold Weight.");
+        return;
+      }
+      if (!rate || rate <= 0) {
+        setErrorMsg("Validation Error: Please enter a valid Gold Rate.");
+        return;
+      }
+    }
+
     setLoading(true);
     setErrorMsg(null);
 
     try {
-      updateOrderWithPayment(val, mode, 'Manual Entry', paymentDate);
+      let note = 'Manual Entry';
+      if (mode === 'OLD_GOLD') {
+        note = `Old Gold: ${goldWeight}g (${goldPurity === 'CUSTOM' ? `${customPurityPercent}%` : goldPurity} @ ₹${parseFloat(goldRate).toLocaleString('en-IN')}/g)`;
+      } else if (mode === 'CHEQUE') {
+        note = `Cheque No: ${chequeNumber}, Bank: ${chequeBank}, Date: ${new Date(chequeDate).toLocaleDateString('en-IN')}`;
+      }
+
+      updateOrderWithPayment(val, mode, note, paymentDate);
 
       // SCENARIO 4: Store Payment Receipt
+      const friendlyMode = mode === 'OLD_GOLD' ? 'Old Gold' : (mode === 'CHEQUE' ? 'Cheque' : mode);
       const res = await whatsappService.sendTemplateMessage(
           order.customerContact,
           'auragold_payment_receipt_store',
@@ -91,7 +179,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           [
               order.customerName,
               val.toLocaleString(),
-              mode,
+              friendlyMode,
               order.id,
               (remaining - val).toLocaleString()
           ],
@@ -103,6 +191,9 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       }
 
       setAmount('');
+      setGoldWeight('');
+      setChequeNumber('');
+      setChequeBank('');
       setQrCodeUrl(null);
     } catch (e: any) {
       setErrorMsg("Failed to record payment locally.");
@@ -406,30 +497,170 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
         {activeTab === 'RECORD' && (
             <div className="animate-fadeIn">
-                <div className="flex gap-3 mb-6">
-                {['UPI', 'CASH', 'CARD'].map(m => (
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-6">
+                {['UPI', 'CASH', 'CARD', 'OLD_GOLD', 'CHEQUE'].map(m => (
                     <button 
                     key={m} 
                     onClick={() => setMode(m)}
-                    className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${mode === m ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                    className={`py-3 rounded-xl text-[10px] font-black uppercase transition-all ${mode === m ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                     >
-                    {m}
+                    {m.replace('_', ' ')}
                     </button>
                 ))}
                 </div>
+
+                {/* Conditional Fields based on Mode */}
+                {mode === 'OLD_GOLD' && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4 animate-fadeIn">
+                        <div>
+                            <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block ml-1">Gold Weight (Grams)</label>
+                            <input 
+                                type="number" 
+                                step="0.001"
+                                className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 font-bold text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400"
+                                value={goldWeight}
+                                onChange={e => setGoldWeight(e.target.value)}
+                                placeholder="e.g. 10.5"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block ml-1">Gold Purity</label>
+                            <select 
+                                className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 font-bold text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400 h-[46px]"
+                                value={goldPurity}
+                                onChange={e => {
+                                    const val = e.target.value;
+                                    setGoldPurity(val);
+                                    if (liveRates) {
+                                        if (val === '24K') setGoldRate(liveRates.k24.toString());
+                                        else if (val === '22K') setGoldRate(liveRates.k22.toString());
+                                        else if (val === '18K') setGoldRate(liveRates.k18.toString());
+                                        else if (val === '14K') setGoldRate(liveRates.k14.toString());
+                                        else if (val === 'CUSTOM') {
+                                            const pct = parseFloat(customPurityPercent) || 100;
+                                            setGoldRate(Math.round(liveRates.k24 * (pct / 100)).toString());
+                                        }
+                                    } else {
+                                        if (val === '24K') setGoldRate('7500');
+                                        else if (val === '22K') setGoldRate('6875');
+                                        else if (val === '18K') setGoldRate('5625');
+                                        else if (val === '14K') setGoldRate('4375');
+                                    }
+                                }}
+                            >
+                                <option value="24K">24K (99.9%)</option>
+                                <option value="22K">22K (91.6%)</option>
+                                <option value="18K">18K (75.0%)</option>
+                                <option value="14K">14K (58.5%)</option>
+                                <option value="CUSTOM">Custom Purity %</option>
+                            </select>
+                        </div>
+                        {goldPurity === 'CUSTOM' ? (
+                            <div>
+                                <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block ml-1">Purity (%)</label>
+                                <input 
+                                    type="number" 
+                                    min="1"
+                                    max="100"
+                                    className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 font-bold text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400"
+                                    value={customPurityPercent}
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        setCustomPurityPercent(val);
+                                        const pct = parseFloat(val) || 0;
+                                        if (liveRates) {
+                                            setGoldRate(Math.round(liveRates.k24 * (pct / 100)).toString());
+                                        }
+                                    }}
+                                    placeholder="e.g. 90"
+                                />
+                            </div>
+                        ) : (
+                            <div>
+                                <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block ml-1">Gold Rate (₹ / Gram)</label>
+                                <input 
+                                    type="number" 
+                                    className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 font-bold text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400"
+                                    value={goldRate}
+                                    onChange={e => setGoldRate(e.target.value)}
+                                    placeholder="Gold Rate"
+                                />
+                            </div>
+                        )}
+                        {goldPurity === 'CUSTOM' && (
+                            <div className="sm:col-span-3">
+                                <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block ml-1">Gold Rate (₹ / Gram)</label>
+                                <input 
+                                    type="number" 
+                                    className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 font-bold text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400"
+                                    value={goldRate}
+                                    onChange={e => setGoldRate(e.target.value)}
+                                    placeholder="Gold Rate"
+                                />
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {mode === 'CHEQUE' && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4 animate-fadeIn">
+                        <div>
+                            <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block ml-1">Cheque Number</label>
+                            <input 
+                                type="text" 
+                                className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 font-bold text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400"
+                                value={chequeNumber}
+                                onChange={e => setChequeNumber(e.target.value)}
+                                placeholder="6 digit number"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block ml-1">Bank Name</label>
+                            <input 
+                                type="text" 
+                                className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 font-bold text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400"
+                                value={chequeBank}
+                                onChange={e => setChequeBank(e.target.value)}
+                                placeholder="e.g. HDFC Bank"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block ml-1">Cheque Date</label>
+                            <input 
+                                type="date" 
+                                className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 font-bold text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400 h-[46px]"
+                                value={chequeDate}
+                                onChange={e => setChequeDate(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                )}
+
                 <div className="flex flex-col gap-4">
                     <div className="flex gap-3 items-end">
                         <div className="flex-1">
                             <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block ml-1">Payment Amount</label>
-                            <div className="relative">
-                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
-                                <input 
-                                    type="number" 
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-4 pl-9 font-black text-xl text-slate-800 outline-none focus:bg-white transition-all"
-                                    value={amount}
-                                    onChange={e => setAmount(e.target.value)}
-                                />
-                            </div>
+                            {mode === 'OLD_GOLD' ? (
+                                <div className="relative">
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                                    <input 
+                                        type="text" 
+                                        className="w-full bg-slate-100 border border-slate-200 rounded-xl py-4 pl-9 font-black text-xl text-slate-800 outline-none cursor-not-allowed"
+                                        value={calculatedGoldValue > 0 ? calculatedGoldValue.toLocaleString('en-IN') : '0'}
+                                        readOnly
+                                    />
+                                </div>
+                            ) : (
+                                <div className="relative">
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                                    <input 
+                                        type="number" 
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-4 pl-9 font-black text-xl text-slate-800 outline-none focus:bg-white transition-all"
+                                        value={amount}
+                                        onChange={e => setAmount(e.target.value)}
+                                    />
+                                </div>
+                            )}
                         </div>
                         <div className="flex-1">
                             <label className="text-[9px] font-black uppercase text-slate-400 mb-1 block ml-1">Payment Date</label>
@@ -441,7 +672,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                             />
                         </div>
                     </div>
-                    <Button onClick={handleRecordPayment} loading={loading} disabled={!amount} size="lg" className="w-full h-[60px]">
+                    <Button onClick={handleRecordPayment} loading={loading} disabled={mode === 'OLD_GOLD' ? calculatedGoldValue <= 0 : !amount} size="lg" className="w-full h-[60px]">
                         Save Payment
                     </Button>
                 </div>
@@ -584,7 +815,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                             <p className="text-[10px] text-slate-500 font-medium flex items-center gap-2 mt-1 mb-1.5">
                                 <span>{new Date(p.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
                                 <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                                <span className="uppercase font-bold tracking-wider">{p.method}</span>
+                                <span className="uppercase font-bold tracking-wider">{p.method?.replace('_', ' ')}</span>
                             </p>
                             {(p.reference || p.transactionId || p.payer) && (
                                 <div className="flex flex-wrap gap-2 mb-1">

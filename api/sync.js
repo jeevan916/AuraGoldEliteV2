@@ -163,7 +163,12 @@ router.post('/settings', ensureDb, async (req, res) => {
             gracePeriodHours: settings.gracePeriodHours,
             followUpIntervalDays: settings.followUpIntervalDays,
             goldRateFetchIntervalMinutes: settings.goldRateFetchIntervalMinutes,
-            preferredRateProvider: settings.preferredRateProvider // Persist Provider Preference
+            preferredRateProvider: settings.preferredRateProvider, // Persist Provider Preference
+            breachBufferMinutes: settings.breachBufferMinutes,
+            cooldownHours: settings.cooldownHours,
+            reminderScheduleDays: settings.reminderScheduleDays,
+            overdueFrequencyDays: settings.overdueFrequencyDays,
+            maxRemindersPerMilestone: settings.maxRemindersPerMilestone
         };
         await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['core_settings', JSON.stringify(coreConfig)]);
 
