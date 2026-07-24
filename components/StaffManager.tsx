@@ -179,69 +179,142 @@ export const StaffManager: React.FC<StaffManagerProps> = ({ currentUser }) => {
             {loading ? (
                 <div className="flex justify-center p-12"><Loader2 className="animate-spin text-amber-500" /></div>
             ) : (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-50 border-b border-slate-100 text-slate-500">
-                            <tr>
-                                <th className="p-4 font-black uppercase text-[10px] tracking-widest">Username</th>
-                                <th className="p-4 font-black uppercase text-[10px] tracking-widest">Role</th>
-                                <th className="p-4 font-black uppercase text-[10px] tracking-widest">Mobile Number</th>
-                                <th className="p-4 font-black uppercase text-[10px] tracking-widest">Created At</th>
-                                <th className="p-4 font-black uppercase text-[10px] tracking-widest text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {users.map(u => (
-                                <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                                    <td className="p-4 font-bold text-slate-800 flex items-center gap-2">
+                <div className="space-y-4">
+                    {/* Mobile Card List (Visible on Mobile) */}
+                    <div className="block md:hidden space-y-4">
+                        {users.map(u => (
+                            <div key={u.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
                                         <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
                                             <Users size={14} />
                                         </div>
-                                        {u.username}
-                                        {u.id.toString() === currentUser.id.toString() && <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full ml-2 font-bold uppercase tracking-wider">YOU</span>}
-                                    </td>
-                                    <td className="p-4">
-                                        <span className={`text-[10px] font-black px-2 py-1 rounded-md uppercase tracking-widest ${
-                                            u.role === 'ADMIN' ? 'bg-rose-100 text-rose-700' :
-                                            u.role === 'MANAGER' ? 'bg-amber-100 text-amber-700' :
-                                            u.role === 'KARIGAR' ? 'bg-stone-100 text-stone-700' :
-                                            'bg-blue-100 text-blue-700'
-                                        }`}>{u.role}</span>
-                                    </td>
-                                    <td className="p-4 text-slate-700 font-bold">
+                                        <div>
+                                            <span className="font-bold text-slate-800 text-sm flex items-center gap-1">
+                                                {u.username}
+                                                {u.id.toString() === currentUser.id.toString() && (
+                                                    <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">YOU</span>
+                                                )}
+                                            </span>
+                                            <span className="text-[10px] text-slate-400 font-mono block">
+                                                Joined {new Date(u.created_at).toLocaleDateString()}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-widest ${
+                                        u.role === 'ADMIN' ? 'bg-rose-100 text-rose-700' :
+                                        u.role === 'MANAGER' ? 'bg-amber-100 text-amber-700' :
+                                        u.role === 'KARIGAR' ? 'bg-stone-100 text-stone-700' :
+                                        'bg-blue-100 text-blue-700'
+                                    }`}>{u.role}</span>
+                                </div>
+
+                                <div className="border-t border-slate-50 pt-2 flex items-center justify-between text-xs">
+                                    <div className="text-slate-700 font-bold">
                                         {u.mobile_number ? (
-                                            <span className="flex items-center gap-1.5 font-mono text-xs">
+                                            <span className="flex items-center gap-1.5 font-mono">
                                                 <Phone size={12} className="text-slate-400" />
                                                 {u.mobile_number}
                                             </span>
                                         ) : (
-                                            <span className="text-slate-400 font-normal italic text-xs">Not set</span>
+                                            <span className="text-slate-400 font-normal italic">No mobile number</span>
                                         )}
-                                    </td>
-                                    <td className="p-4 text-slate-500 font-mono text-xs">
-                                        {new Date(u.created_at).toLocaleDateString()}
-                                    </td>
-                                    <td className="p-4 text-right space-x-2">
+                                    </div>
+                                </div>
+
+                                <div className="border-t border-slate-50 pt-2 flex gap-2">
+                                    <button 
+                                        onClick={() => { 
+                                            setEditUser(u); 
+                                            setUpdatedRole(u.role); 
+                                            setUpdatedMobileNumber(u.mobile_number || ''); 
+                                            setUpdatedPassword(''); 
+                                        }} 
+                                        className="flex-1 py-2 text-slate-600 hover:text-amber-700 bg-slate-50 hover:bg-amber-50 rounded-xl transition-colors inline-flex items-center justify-center gap-1.5 text-xs font-bold border border-slate-100"
+                                    >
+                                        <Edit2 size={13} /> Edit Staff
+                                    </button>
+                                    {u.id.toString() !== currentUser.id.toString() && (
                                         <button 
-                                            onClick={() => { 
-                                                setEditUser(u); 
-                                                setUpdatedRole(u.role); 
-                                                setUpdatedMobileNumber(u.mobile_number || ''); 
-                                                setUpdatedPassword(''); 
-                                            }} 
-                                            className="p-2 text-slate-400 hover:text-amber-600 bg-slate-50 hover:bg-amber-50 rounded-lg transition-colors inline-flex items-center gap-1.5 text-xs font-bold" 
-                                            title="Edit Staff Access, Password & Mobile"
+                                            onClick={() => handleDelete(u.id)} 
+                                            className="p-2 text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 rounded-xl transition-colors border border-slate-100" 
+                                            title="Delete User"
                                         >
-                                            <Edit2 size={14} /> Edit Staff
+                                            <Trash2 size={14} />
                                         </button>
-                                        {u.id.toString() !== currentUser.id.toString() && (
-                                            <button onClick={() => handleDelete(u.id)} className="p-2 text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 rounded-lg transition-colors inline-flex items-center" title="Delete User"><Trash2 size={14} /></button>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Desktop Table (Visible on Desktop/Tablet) */}
+                    <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-slate-50 border-b border-slate-100 text-slate-500">
+                                    <tr>
+                                        <th className="p-4 font-black uppercase text-[10px] tracking-widest">Username</th>
+                                        <th className="p-4 font-black uppercase text-[10px] tracking-widest">Role</th>
+                                        <th className="p-4 font-black uppercase text-[10px] tracking-widest">Mobile Number</th>
+                                        <th className="p-4 font-black uppercase text-[10px] tracking-widest">Created At</th>
+                                        <th className="p-4 font-black uppercase text-[10px] tracking-widest text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {users.map(u => (
+                                        <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                                            <td className="p-4 font-bold text-slate-800 flex items-center gap-2">
+                                                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+                                                    <Users size={14} />
+                                                </div>
+                                                {u.username}
+                                                {u.id.toString() === currentUser.id.toString() && <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full ml-2 font-bold uppercase tracking-wider">YOU</span>}
+                                            </td>
+                                            <td className="p-4">
+                                                <span className={`text-[10px] font-black px-2 py-1 rounded-md uppercase tracking-widest ${
+                                                    u.role === 'ADMIN' ? 'bg-rose-100 text-rose-700' :
+                                                    u.role === 'MANAGER' ? 'bg-amber-100 text-amber-700' :
+                                                    u.role === 'KARIGAR' ? 'bg-stone-100 text-stone-700' :
+                                                    'bg-blue-100 text-blue-700'
+                                                }`}>{u.role}</span>
+                                            </td>
+                                            <td className="p-4 text-slate-700 font-bold">
+                                                {u.mobile_number ? (
+                                                    <span className="flex items-center gap-1.5 font-mono text-xs">
+                                                        <Phone size={12} className="text-slate-400" />
+                                                        {u.mobile_number}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-slate-400 font-normal italic text-xs">Not set</span>
+                                                )}
+                                            </td>
+                                            <td className="p-4 text-slate-500 font-mono text-xs">
+                                                {new Date(u.created_at).toLocaleDateString()}
+                                            </td>
+                                            <td className="p-4 text-right space-x-2">
+                                                <button 
+                                                    onClick={() => { 
+                                                        setEditUser(u); 
+                                                        setUpdatedRole(u.role); 
+                                                        setUpdatedMobileNumber(u.mobile_number || ''); 
+                                                        setUpdatedPassword(''); 
+                                                    }} 
+                                                    className="p-2 text-slate-400 hover:text-amber-600 bg-slate-50 hover:bg-amber-50 rounded-lg transition-colors inline-flex items-center gap-1.5 text-xs font-bold" 
+                                                    title="Edit Staff Access, Password & Mobile"
+                                                >
+                                                    <Edit2 size={14} /> Edit Staff
+                                                </button>
+                                                {u.id.toString() !== currentUser.id.toString() && (
+                                                    <button onClick={() => handleDelete(u.id)} className="p-2 text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 rounded-lg transition-colors inline-flex items-center" title="Delete User"><Trash2 size={14} /></button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             )}
 

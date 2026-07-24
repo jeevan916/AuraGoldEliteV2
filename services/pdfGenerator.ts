@@ -136,45 +136,140 @@ export const generateOrderPDF = async (order: Order) => {
     yPos = (doc as any).lastAutoTable.finalY + 20;
   }
 
+  // Visual Specifications & Design Reference Gallery
+  const itemsWithPhotos = order.items.filter(item => item.photoUrls && item.photoUrls.length > 0);
+  if (itemsWithPhotos.length > 0) {
+    doc.addPage();
+    yPos = 20;
+
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(217, 119, 6); // Amber-600
+    doc.text("Visual Design Specifications & Gallery", margin, yPos);
+    yPos += 4;
+
+    doc.setDrawColor(230, 230, 230);
+    doc.line(margin, yPos, 195, yPos);
+    yPos += 8;
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100);
+    doc.text("The following images and reference designs represent the approved custom specifications for this order.", margin, yPos);
+    yPos += 10;
+
+    for (const item of itemsWithPhotos) {
+      if (yPos > 220) {
+        doc.addPage();
+        yPos = 20;
+      }
+
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(30, 41, 59); // Slate-800
+      doc.text(`${item.category} (${item.metalColor} ${item.purity})`, margin, yPos);
+      yPos += 5;
+
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(80);
+      doc.text(`Net Weight: ${item.netWeight}g | Making Charges: ₹${item.makingChargesPerGram}/g | VA%: ${item.wastagePercentage}%`, margin, yPos);
+      yPos += 4;
+
+      if (item.customizationDetails) {
+        const customText = `Customization: ${item.customizationDetails}`;
+        const splitCustomText = doc.splitTextToSize(customText, 180);
+        doc.text(splitCustomText, margin, yPos);
+        yPos += (splitCustomText.length * 4) + 2;
+      } else {
+        yPos += 2;
+      }
+
+      let xPos = margin;
+      const imgWidth = 40;
+      const imgHeight = 40;
+      const gap = 6;
+
+      for (const photo of item.photoUrls) {
+        if (xPos + imgWidth > 195) {
+          xPos = margin;
+          yPos += imgHeight + gap;
+          if (yPos > 220) {
+            doc.addPage();
+            yPos = 20;
+          }
+        }
+
+        try {
+          doc.addImage(photo, 'JPEG', xPos, yPos, imgWidth, imgHeight);
+          doc.setDrawColor(218, 218, 218);
+          doc.rect(xPos, yPos, imgWidth, imgHeight, 'S');
+        } catch (e) {
+          console.error("Failed to add image to PDF", e);
+          doc.setDrawColor(230);
+          doc.setFillColor(245, 245, 245);
+          doc.rect(xPos, yPos, imgWidth, imgHeight, 'FD');
+          doc.setFontSize(8);
+          doc.setTextColor(150);
+          doc.text("Image Error", xPos + 10, yPos + 22);
+        }
+
+        xPos += imgWidth + gap;
+      }
+
+      yPos += imgHeight + 12;
+    }
+  }
+
   // Terms & Legal
-  if (yPos > 240) {
+  if (yPos > 180) {
     doc.addPage();
     yPos = 20;
   }
 
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
-  doc.text("Terms & Conditions", margin, yPos);
-  yPos += 8;
+  doc.setTextColor(30, 41, 59);
+  doc.text("Terms & Conditions & Booking Policy", margin, yPos);
+  yPos += 6;
 
   doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(80);
 
   const terms = [
-    "1. Gold Rate Protection: Locked for the duration of the plan up to the cap limit.",
-    "2. Cancellations: Deduction on labor/making charges incurred.",
-    "3. Late Payments: Penalty may apply after 7 days overdue.",
-    "4. Delivery: Handed over only after 100% settlement.",
-    "5. Weight: Final weight may vary +/- 5%; differences adjusted in final payment."
+    "1. Gold Rate Protection & Lock: The booked gold rate of ₹" + Math.round(order.goldRateAtBooking).toLocaleString('en-IN') + "/g is fully locked and protected for the duration of this plan. To preserve this rate lock, you commit to paying each milestone on or before its due date.",
+    "2. Rate Protection Suspension: Failure to pay any installment on time (subject to a standard 24-hour grace period) compromises your rate lock. The remaining gold weight may immediately revert to current market rates or carry a market adjustment surcharge.",
+    "3. Late Fees & Volatility Surcharges: Unpaid milestones past their respective due dates trigger an active late fee of ₹250 per milestone to cover gold market volatility risk.",
+    "4. Workshop Production Hold: Since custom jewelry is crafted specifically for you, crafting and workshop labor will be paused immediately if any milestone payment remains overdue past 5 days.",
+    "5. Cancellations & Deduction Policy: Cancellation of this order at any point voids the gold rate lock. Cancellations are subject to a deduction fee of up to 10% of total order value to cover actual design labor, raw gold melting loss, and metal processing costs incurred.",
+    "6. Delivery & Actual Weight Settlement: Handover of completed custom jewelry will only occur after 100% plan settlement. The final weight of custom pieces may vary up to +/- 5% from estimated booking weights; any differences will be adjusted in the final settlement."
   ];
 
-  terms.forEach(term => {
-    doc.text(term, margin, yPos);
-    yPos += 5;
-  });
+  for (const term of terms) {
+    const splitTerm = doc.splitTextToSize(term, 180);
+    if (yPos + (splitTerm.length * 4) > 275) {
+      doc.addPage();
+      yPos = 20;
+    }
+    doc.text(splitTerm, margin, yPos);
+    yPos += (splitTerm.length * 4.5) + 2;
+  }
 
   // Signatures
-  yPos += 20;
+  yPos += 15;
   if (yPos > 260) {
     doc.addPage();
     yPos = 40;
   }
 
-  doc.setDrawColor(0);
+  doc.setDrawColor(200);
   doc.line(margin, yPos, margin + 60, yPos);
   doc.line(130, yPos, 190, yPos);
   
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(100);
   doc.text("Customer Signature", margin, yPos + 5);
   doc.text("Authorized Signatory (AuraGold)", 130, yPos + 5);
 
@@ -225,18 +320,7 @@ export const generateReceiptPDF = async (order: Order) => {
   doc.text(`Contact: ${order.customerContact}`, margin, yPos + 5);
   doc.text(`Email: ${order.customerEmail || 'N/A'}`, margin, yPos + 10);
 
-  yPos += 20;
-
-  // Photo
-  if (order.items.length > 0 && order.items[0].photoUrls && order.items[0].photoUrls.length > 0) {
-      const photo = order.items[0].photoUrls[0];
-      try {
-          doc.addImage(photo, 'JPEG', margin, yPos, 40, 40);
-          yPos += 45;
-      } catch (e) {
-          console.error("Failed to add image to PDF", e);
-      }
-  }
+  yPos += 15;
 
   // Cost Breakdown
   doc.setFontSize(12);
@@ -319,33 +403,125 @@ export const generateReceiptPDF = async (order: Order) => {
     yPos = (doc as any).lastAutoTable.finalY + 20;
   }
 
+  // Visual Specifications & Design Reference Gallery
+  const itemsWithPhotos = order.items.filter(item => item.photoUrls && item.photoUrls.length > 0);
+  if (itemsWithPhotos.length > 0) {
+    doc.addPage();
+    yPos = 20;
+
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(217, 119, 6); // Amber-600
+    doc.text("Visual Design Specifications & Gallery", margin, yPos);
+    yPos += 4;
+
+    doc.setDrawColor(230, 230, 230);
+    doc.line(margin, yPos, 195, yPos);
+    yPos += 8;
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100);
+    doc.text("The following images represent the approved custom specifications and design gallery associated with this order.", margin, yPos);
+    yPos += 10;
+
+    for (const item of itemsWithPhotos) {
+      if (yPos > 220) {
+        doc.addPage();
+        yPos = 20;
+      }
+
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(30, 41, 59); // Slate-800
+      doc.text(`${item.category} (${item.metalColor} ${item.purity})`, margin, yPos);
+      yPos += 5;
+
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(80);
+      doc.text(`Net Weight: ${item.netWeight}g | Making Charges: ₹${item.makingChargesPerGram}/g | VA%: ${item.wastagePercentage}%`, margin, yPos);
+      yPos += 4;
+
+      if (item.customizationDetails) {
+        const customText = `Customization: ${item.customizationDetails}`;
+        const splitCustomText = doc.splitTextToSize(customText, 180);
+        doc.text(splitCustomText, margin, yPos);
+        yPos += (splitCustomText.length * 4) + 2;
+      } else {
+        yPos += 2;
+      }
+
+      let xPos = margin;
+      const imgWidth = 40;
+      const imgHeight = 40;
+      const gap = 6;
+
+      for (const photo of item.photoUrls) {
+        if (xPos + imgWidth > 195) {
+          xPos = margin;
+          yPos += imgHeight + gap;
+          if (yPos > 220) {
+            doc.addPage();
+            yPos = 20;
+          }
+        }
+
+        try {
+          doc.addImage(photo, 'JPEG', xPos, yPos, imgWidth, imgHeight);
+          doc.setDrawColor(218, 218, 218);
+          doc.rect(xPos, yPos, imgWidth, imgHeight, 'S');
+        } catch (e) {
+          console.error("Failed to add image to PDF", e);
+          doc.setDrawColor(230);
+          doc.setFillColor(245, 245, 245);
+          doc.rect(xPos, yPos, imgWidth, imgHeight, 'FD');
+          doc.setFontSize(8);
+          doc.setTextColor(150);
+          doc.text("Image Error", xPos + 10, yPos + 22);
+        }
+
+        xPos += imgWidth + gap;
+      }
+
+      yPos += imgHeight + 12;
+    }
+  }
+
   // Terms & Legal
-  if (yPos > 240) {
+  if (yPos > 180) {
     doc.addPage();
     yPos = 20;
   }
 
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
-  doc.text("Terms & Conditions", margin, yPos);
-  yPos += 8;
+  doc.setTextColor(30, 41, 59);
+  doc.text("Terms & Conditions & Booking Policy", margin, yPos);
+  yPos += 6;
 
   doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(80);
 
   const terms = [
-    "1. Gold Rate Protection: Locked for the duration of the plan up to the cap limit.",
-    "2. Cancellations: Deduction on labor/making charges incurred.",
-    "3. Late Payments: Penalty may apply after 7 days overdue.",
-    "4. Delivery: Handed over only after 100% settlement.",
-    "5. Weight: Final weight may vary +/- 5%; differences adjusted in final payment."
+    "1. Gold Rate Protection & Lock: The booked gold rate of ₹" + Math.round(order.goldRateAtBooking).toLocaleString('en-IN') + "/g is fully locked and protected for the duration of this plan. To preserve this rate lock, you commit to paying each milestone on or before its due date.",
+    "2. Rate Protection Suspension: Failure to pay any installment on time (subject to a standard 24-hour grace period) compromises your rate lock. The remaining gold weight may immediately revert to current market rates or carry a market adjustment surcharge.",
+    "3. Late Fees & Volatility Surcharges: Unpaid milestones past their respective due dates trigger an active late fee of ₹250 per milestone to cover gold market volatility risk.",
+    "4. Workshop Production Hold: Since custom jewelry is crafted specifically for you, crafting and workshop labor will be paused immediately if any milestone payment remains overdue past 5 days.",
+    "5. Cancellations & Deduction Policy: Cancellation of this order at any point voids the gold rate lock. Cancellations are subject to a deduction fee of up to 10% of total order value to cover actual design labor, raw gold melting loss, and metal processing costs incurred.",
+    "6. Delivery & Actual Weight Settlement: Handover of completed custom jewelry will only occur after 100% plan settlement. The final weight of custom pieces may vary up to +/- 5% from estimated booking weights; any differences will be adjusted in the final settlement."
   ];
 
-  terms.forEach(term => {
-    doc.text(term, margin, yPos);
-    yPos += 5;
-  });
+  for (const term of terms) {
+    const splitTerm = doc.splitTextToSize(term, 180);
+    if (yPos + (splitTerm.length * 4) > 275) {
+      doc.addPage();
+      yPos = 20;
+    }
+    doc.text(splitTerm, margin, yPos);
+    yPos += (splitTerm.length * 4.5) + 2;
+  }
 
   // Printing directive
   doc.autoPrint();
