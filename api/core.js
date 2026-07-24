@@ -231,6 +231,7 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
                 whatsappPhoneNumberId: intMap.whatsapp?.phoneId, 
                 whatsappBusinessAccountId: intMap.whatsapp?.accountId, 
                 whatsappBusinessToken: intMap.whatsapp?.token,
+                whatsappVerifyToken: intMap.whatsapp?.verifyToken || process.env.WHATSAPP_VERIFY_TOKEN || "auragold_elite_secure_2025",
                 setuClientId: intMap.setu?.clientId,
                 setuSecret: intMap.setu?.secret,
                 setuSchemeId: intMap.setu?.schemeId,

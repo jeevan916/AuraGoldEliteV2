@@ -66,8 +66,23 @@ export async function sendWhatsAppMessage({ to, message, templateName, language,
 }
 
 // Webhook Verification
-router.get('/webhook', (req, res) => {
-    const verify_token = process.env.WHATSAPP_VERIFY_TOKEN || "auragold_elite_secure_2025";
+router.get('/webhook', async (req, res) => {
+    let verify_token = process.env.WHATSAPP_VERIFY_TOKEN || "auragold_elite_secure_2025";
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['whatsapp']);
+        connection.release();
+        if (rows.length > 0) {
+            const config = typeof rows[0].config === 'string' ? JSON.parse(rows[0].config) : rows[0].config;
+            if (config && config.verifyToken) {
+                verify_token = config.verifyToken;
+            }
+        }
+    } catch (e) {
+        console.error("Failed to fetch WhatsApp verify_token from DB, using fallback", e);
+    }
+
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];

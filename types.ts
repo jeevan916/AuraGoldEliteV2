@@ -166,6 +166,7 @@ export interface GlobalSettings {
   whatsappPhoneNumberId?: string;
   whatsappBusinessAccountId?: string;
   whatsappBusinessToken?: string;
+  whatsappVerifyToken?: string;
   razorpayKeyId?: string;
   razorpayKeySecret?: string;
   setuClientId?: string;

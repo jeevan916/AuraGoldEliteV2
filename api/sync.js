@@ -173,11 +173,12 @@ router.post('/settings', ensureDb, async (req, res) => {
         }
 
         // 2. Persist WhatsApp Credentials
-        if (settings.whatsappPhoneNumberId) {
+        if (settings.whatsappPhoneNumberId || settings.whatsappVerifyToken) {
             const waConfig = { 
                 phoneId: settings.whatsappPhoneNumberId, 
                 accountId: settings.whatsappBusinessAccountId, 
-                token: settings.whatsappBusinessToken 
+                token: settings.whatsappBusinessToken,
+                verifyToken: settings.whatsappVerifyToken
             };
             await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['whatsapp', JSON.stringify(waConfig)]);
         }

@@ -291,6 +291,31 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                                 <ConfigInput label="Phone Number ID" value={localSettings.whatsappPhoneNumberId} onChange={(v: string) => setLocalSettings({...localSettings, whatsappPhoneNumberId: v})} />
                                 <ConfigInput label="WABA ID" value={localSettings.whatsappBusinessAccountId} onChange={(v: string) => setLocalSettings({...localSettings, whatsappBusinessAccountId: v})} />
                                 <div className="md:col-span-2"><ConfigInput label="Permanent Access Token" value={localSettings.whatsappBusinessToken} onChange={(v: string) => setLocalSettings({...localSettings, whatsappBusinessToken: v})} type="password" /></div>
+                                <div className="md:col-span-2"><ConfigInput label="Webhook Verify Token" value={localSettings.whatsappVerifyToken || 'auragold_elite_secure_2025'} onChange={(v: string) => setLocalSettings({...localSettings, whatsappVerifyToken: v})} /></div>
+                            </div>
+                            <div className="bg-emerald-50/70 border border-emerald-200 text-emerald-900 p-4 rounded-xl text-xs font-bold leading-relaxed shadow-sm mt-4">
+                                <div className="flex items-start gap-2.5">
+                                    <span className="text-emerald-600 text-base">⚙️</span>
+                                    <div className="flex-1">
+                                        <h4 className="uppercase tracking-wider mb-1 text-emerald-800 text-xs">WhatsApp Webhook Callback Configuration</h4>
+                                        <p className="font-medium opacity-90 mb-2">Configure these settings under the **Webhooks** section in your Meta Developer Portal to receive customer messages and message status reports:</p>
+                                        <div className="space-y-3 mt-2">
+                                            <div>
+                                                <span className="text-[10px] text-emerald-700 block mb-0.5 uppercase tracking-wider font-extrabold">Callback URL</span>
+                                                <div className="font-mono bg-white text-slate-800 px-3 py-2 border border-emerald-200 rounded-lg select-all break-all shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]">
+                                                    {window.location.origin}/api/whatsapp/webhook
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <span className="text-[10px] text-emerald-700 block mb-0.5 uppercase tracking-wider font-extrabold">Verify Token</span>
+                                                <div className="font-mono bg-white text-slate-800 px-3 py-2 border border-emerald-200 rounded-lg select-all break-all shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]">
+                                                    {localSettings.whatsappVerifyToken || 'auragold_elite_secure_2025'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <p className="font-medium opacity-90 mt-3 text-[10px] text-emerald-800">Note: Ensure you subscribe to **messages** and **message_deliveries** webhook events in your Meta App WhatsApp configuration.</p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div className="p-5 rounded-2xl border border-slate-100 bg-slate-50/50">
