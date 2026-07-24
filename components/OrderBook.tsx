@@ -208,6 +208,14 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, settings, onViewOrder, on
                                         <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-600 uppercase">
                                             <Calendar size={10} /> {new Date(order.createdAt).toLocaleDateString('en-IN')}
                                         </span>
+                                        {order.createdBy && (
+                                            <>
+                                                <span>•</span>
+                                                <span className="bg-amber-50 text-amber-800 border border-amber-100 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider">
+                                                    By: {order.createdBy}
+                                                </span>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             </div>

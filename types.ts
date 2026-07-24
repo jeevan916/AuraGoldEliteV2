@@ -131,6 +131,7 @@ export interface Order {
   paymentPlan: PaymentPlan;
   status: OrderStatus;
   createdAt: string;
+  createdBy?: string;
   originalSnapshot?: OrderSnapshot;
   isRateBreached?: boolean;
   lastNotifiedAt?: number;

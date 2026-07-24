@@ -368,7 +368,7 @@ const App = () => {
               const res = await goldRateService.fetchLiveRate();
               if (res.success) setSettings({...settings, currentGoldRate24K: res.rate24K, currentGoldRate22K: res.rate22K, currentSilverRate: res.silver});
           }} activities={systemActivities} />;
-          case 'ORDER_NEW': return <OrderForm settings={settings} customers={derivedCustomers} planTemplates={planTemplates} onSubmit={(o) => { addOrder(o); setSelectedOrderId(o.id); setView('ORDER_DETAILS'); }} onCancel={() => setView('DASH')} />;
+          case 'ORDER_NEW': return <OrderForm settings={settings} customers={derivedCustomers} planTemplates={planTemplates} currentUser={user} onSubmit={(o) => { addOrder(o); setSelectedOrderId(o.id); setView('ORDER_DETAILS'); }} onCancel={() => setView('DASH')} />;
           case 'ORDER_BOOK': return <OrderBook orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onUpdateOrder={updateOrder} settings={settings} />;
           case 'ORDER_DETAILS': return selectedOrder ? <OrderDetails order={selectedOrder} settings={settings} onBack={() => setView('ORDER_BOOK')} onUpdateStatus={(itemId, status) => updateItemStatus(selectedOrder.id, itemId, { productionStatus: status })} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} onDeleteOrder={handleDeleteOrder} logs={logs} onAddLog={addLog} /> : <div className="text-center p-10">Order Not Found</div>;
           case 'CUSTOMERS': return <CustomerList customers={derivedCustomers} orders={orders} onSelectCustomer={(id) => { setSelectedCustomerId(id); setView('CUSTOMER_PROFILE'); }} onAddCustomer={(c) => { setManualCustomers(prev => { const next = [...prev, c]; storageService.setCustomers(next); return next; }); }} />;

@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { 
   Order, JewelryDetail, OrderStatus, GlobalSettings, 
-  ProductionStatus, Purity, ProtectionStatus, Milestone, PaymentPlan, PaymentPlanTemplate, Customer
+  ProductionStatus, Purity, ProtectionStatus, Milestone, PaymentPlan, PaymentPlanTemplate, Customer, AuthUser
 } from '../types';
 import { compressImage } from '../services/imageOptimizer';
 import { whatsappService } from '../services/whatsappService';
@@ -15,9 +15,10 @@ interface OrderFormProps {
   customers?: Customer[];
   onSubmit: (order: Order) => void;
   onCancel: () => void;
+  currentUser?: AuthUser | null;
 }
 
-const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], customers = [], onSubmit, onCancel }) => {
+const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], customers = [], onSubmit, onCancel, currentUser }) => {
   const [step, setStep] = useState(1);
   const [customer, setCustomer] = useState({ name: '', contact: '' });
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
@@ -317,6 +318,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
       goldRateAtBooking: orderRate, // This is the Base 22K Rate Reference
       status: OrderStatus.ACTIVE,
       createdAt: new Date().toISOString(),
+      createdBy: currentUser?.username || 'admin',
       paymentPlan: { 
         ...plan, 
         milestones, 

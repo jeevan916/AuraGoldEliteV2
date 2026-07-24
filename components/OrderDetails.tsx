@@ -593,6 +593,14 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                     <span>{order.customerContact}</span>
                     <span className="w-1 h-1 bg-slate-600 rounded-full shrink-0"></span>
                     <span className="shrink-0">{order.items.length} Items</span>
+                    {order.createdBy && (
+                        <>
+                            <span className="w-1 h-1 bg-slate-600 rounded-full shrink-0"></span>
+                            <span className="bg-white/10 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-white/20 shrink-0">
+                                Created By: {order.createdBy}
+                            </span>
+                        </>
+                    )}
                     {order.status === OrderStatus.DELIVERED && <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-emerald-500/30 shrink-0">Archived</span>}
                     {order.status === OrderStatus.CANCELLED && <span className="bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-rose-500/30 shrink-0">Cancelled</span>}
                 </p>
