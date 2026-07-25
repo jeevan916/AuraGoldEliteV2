@@ -115,14 +115,15 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
         // Gold Logic
         // If manual override is active, orderRate is the "Locked 22K Rate".
         // We must scale other purities relative to this locked 22K rate to maintain the booking contract logic.
+        const orderRateNum = parseFloat(orderRate as any) || 0;
         if (isRateManuallySet) {
-             if (currentItem.purity === '24K') rate = Math.round(orderRate * (99.9 / 91.6));
-             else if (currentItem.purity === '18K') rate = Math.round(orderRate * (75.0 / 91.6));
-             else rate = orderRate; // 22K
+             if (currentItem.purity === '24K') rate = Math.round(orderRateNum * (99.9 / 91.6));
+             else if (currentItem.purity === '18K') rate = Math.round(orderRateNum * (75.0 / 91.6));
+             else rate = orderRateNum; // 22K
         } else {
              // If live, use specific live rates for each purity
              rate = currentItem.purity === '24K' ? settings.currentGoldRate24K : 
-                    currentItem.purity === '18K' ? settings.currentGoldRate18K : orderRate;
+                    currentItem.purity === '18K' ? settings.currentGoldRate18K : orderRateNum;
         }
     }
 
@@ -191,13 +192,19 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
   const manualTotalScheduled = useMemo(() => manualMilestones.reduce((acc, m) => acc + (m.targetAmount || 0), 0), [manualMilestones]);
 
   const handleAddItem = () => {
-    if (!currentItem.netWeight || currentItem.netWeight <= 0) {
+    const netWtParsed = parseFloat(currentItem.netWeight as any) || 0;
+    if (netWtParsed <= 0) {
         alert("Net weight is required to generate a valid item quote.");
         return;
     }
     
     const item: JewelryDetail = {
       ...currentItem as any,
+      grossWeight: parseFloat(currentItem.grossWeight as any) || 0,
+      netWeight: netWtParsed,
+      stoneCharges: parseFloat(currentItem.stoneCharges as any) || 0,
+      wastagePercentage: parseFloat(currentItem.wastagePercentage as any) || 0,
+      makingChargesPerGram: parseFloat(currentItem.makingChargesPerGram as any) || 0,
       id: `ITEM-${Date.now()}`,
       baseMetalValue: pricing.metalValue,
       wastageValue: pricing.wastageValue,
@@ -397,9 +404,9 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
                  <input 
                    type="number" 
                    className={`bg-transparent text-3xl font-black outline-none w-36 border-b ${isRateManuallySet ? 'border-amber-500 text-amber-100' : 'border-white/10'}`}
-                   value={orderRate} 
+                   value={orderRate ?? ""} 
                    onChange={e => {
-                       setOrderRate(parseFloat(e.target.value) || 0);
+                       setOrderRate(e.target.value === "" ? "" : (parseFloat(e.target.value) || 0));
                        setIsRateManuallySet(true);
                    }} 
                  />
@@ -476,16 +483,16 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
                 <InputWrapper label="Gross Wt (g)">
                     <input 
                       type="number" step="0.001" className="w-full font-black text-lg bg-transparent" 
-                      value={currentItem.grossWeight || ''} 
-                      onChange={e => setCurrentItem({...currentItem, grossWeight: parseFloat(e.target.value) || 0})} 
+                      value={currentItem.grossWeight ?? ''} 
+                      onChange={e => setCurrentItem({...currentItem, grossWeight: e.target.value})} 
                       placeholder="0.000" 
                     />
                 </InputWrapper>
                 <InputWrapper label="Net Wt (g)">
                     <input 
                       type="number" step="0.001" className="w-full font-black text-lg bg-transparent text-emerald-700" 
-                      value={currentItem.netWeight || ''} 
-                      onChange={e => setCurrentItem({...currentItem, netWeight: parseFloat(e.target.value) || 0})} 
+                      value={currentItem.netWeight ?? ''} 
+                      onChange={e => setCurrentItem({...currentItem, netWeight: e.target.value})} 
                       placeholder="0.000" 
                     />
                 </InputWrapper>
@@ -509,7 +516,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
 
             <div className="grid grid-cols-2 gap-4">
                  <InputWrapper label="Stone Charges">
-                    <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.stoneCharges || ''} onChange={e => setCurrentItem({...currentItem, stoneCharges: parseFloat(e.target.value) || 0})} placeholder="0" />
+                    <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.stoneCharges ?? ''} onChange={e => setCurrentItem({...currentItem, stoneCharges: e.target.value})} placeholder="0" />
                 </InputWrapper>
                 <InputWrapper label="Stone Details">
                     <input type="text" className="w-full font-bold text-sm bg-transparent" value={currentItem.stoneDetails || ''} onChange={e => setCurrentItem({...currentItem, stoneDetails: e.target.value})} placeholder="Ex: 5pcs CZ / 0.10ct Diamond" />
@@ -518,7 +525,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
 
             <div className="grid grid-cols-1 gap-4">
                 <InputWrapper label="Making %">
-                    <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.wastagePercentage || ''} onChange={e => setCurrentItem({...currentItem, wastagePercentage: parseFloat(e.target.value) || 0})} placeholder="12" />
+                    <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.wastagePercentage ?? ''} onChange={e => setCurrentItem({...currentItem, wastagePercentage: e.target.value})} placeholder="12" />
                 </InputWrapper>
             </div>
 
@@ -726,22 +733,22 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
                             <InputWrapper label="Installment Period (Months)">
                                 <input 
                                 type="number" className="w-full font-black text-xl bg-transparent" 
-                                value={plan.months} 
-                                onChange={e => handleManualPlanChange('months', parseInt(e.target.value) || 1)} 
+                                value={plan.months ?? ""} 
+                                onChange={e => handleManualPlanChange('months', e.target.value === "" ? "" : (parseInt(e.target.value) || 1))} 
                                 />
                             </InputWrapper>
                             <InputWrapper label="Booking Advance %">
                                 <input 
                                 type="number" className="w-full font-black text-xl bg-transparent" 
-                                value={plan.advancePercentage} 
-                                onChange={e => handleManualPlanChange('advancePercentage', parseFloat(e.target.value) || 0)} 
+                                value={plan.advancePercentage ?? ""} 
+                                onChange={e => handleManualPlanChange('advancePercentage', e.target.value === "" ? "" : (parseFloat(e.target.value) || 0))} 
                                 />
                             </InputWrapper>
                             <InputWrapper label="Interest % (Flat)">
                                 <input 
                                 type="number" className="w-full font-black text-xl bg-transparent" 
-                                value={plan.interestPercentage || 0} 
-                                onChange={e => handleManualPlanChange('interestPercentage', parseFloat(e.target.value) || 0)} 
+                                value={plan.interestPercentage ?? ""} 
+                                onChange={e => handleManualPlanChange('interestPercentage', e.target.value === "" ? "" : (parseFloat(e.target.value) || 0))} 
                                 />
                             </InputWrapper>
                         </div>

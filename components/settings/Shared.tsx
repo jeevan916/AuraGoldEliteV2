@@ -9,8 +9,8 @@ export const PricingField = ({ label, value, onChange, isSilver = false }: any) 
             <input 
                 type="number" 
                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 pl-8 pr-4 font-black text-xl text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-amber-500 transition-all"
-                value={value}
-                onChange={e => onChange(parseFloat(e.target.value))}
+                value={value ?? ''}
+                onChange={e => onChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
             />
         </div>
     </div>

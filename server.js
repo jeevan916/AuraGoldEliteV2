@@ -21,6 +21,7 @@ import syncRouter from './api/sync.js';
 import coreRouter from './api/core.js';
 import architectRouter from './api/architect.js';
 import aiRouter from './api/ai.js';
+import backupsRouter, { initBackupScheduler } from './api/backups.js';
 
 // Background Services
 import { initRateService, setRateServiceIo, fetchAndSaveRate, initSocketRates } from './api/rateService.js';
@@ -139,6 +140,7 @@ app.use('/api/sync', syncRouter);
 app.use('/api', coreRouter);
 app.use('/api/architect', architectRouter);
 app.use('/api/ai', aiRouter);
+app.use('/api', backupsRouter);
 
 app.use('/api', (req, res) => res.status(404).json({ error: `API route ${req.originalUrl} not found.` }));
 
@@ -266,6 +268,7 @@ initDb().then((result) => {
         runPaymentReminders();
         setInterval(runPaymentReminders, 24 * 60 * 60 * 1000);
         startSetuPoller(io);
+        initBackupScheduler();
     } else {
         console.error(`[System] Database initialization failed: ${result.error}`);
     }

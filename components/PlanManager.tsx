@@ -31,15 +31,25 @@ const PlanManager: React.FC<PlanManagerProps> = ({ templates, onUpdate }) => {
   const handleSave = () => {
     if (!formData.name || !formData.months) return;
 
+    const finalMonths = parseInt(formData.months as any) || 1;
+    const finalInterest = parseFloat(formData.interestPercentage as any) || 0;
+    const finalAdvance = parseFloat(formData.advancePercentage as any) || 0;
+
     if (editingId) {
-      onUpdate(templates.map(t => t.id === editingId ? { ...t, ...formData } as PaymentPlanTemplate : t));
+      onUpdate(templates.map(t => t.id === editingId ? { 
+        ...t, 
+        ...formData,
+        months: finalMonths,
+        interestPercentage: finalInterest,
+        advancePercentage: finalAdvance
+      } as PaymentPlanTemplate : t));
     } else {
       const newPlan: PaymentPlanTemplate = {
         id: `tpl-${Date.now()}`,
         name: formData.name!,
-        months: formData.months || 1,
-        interestPercentage: formData.interestPercentage || 0,
-        advancePercentage: formData.advancePercentage || 0,
+        months: finalMonths,
+        interestPercentage: finalInterest,
+        advancePercentage: finalAdvance,
         enabled: true
       };
       onUpdate([...templates, newPlan]);
@@ -157,8 +167,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({ templates, onUpdate }) => {
                 <input 
                   type="number" 
                   className="w-full border-none rounded-xl p-3 mt-1 font-black text-slate-800 focus:ring-2 focus:ring-amber-500 outline-none"
-                  value={formData.months || ''}
-                  onChange={e => setFormData({ ...formData, months: parseInt(e.target.value) || 1 })}
+                  value={formData.months ?? ''}
+                  onChange={e => setFormData({ ...formData, months: e.target.value === '' ? '' : (parseInt(e.target.value) || 1) as any })}
                 />
               </div>
               <div>
@@ -166,8 +176,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({ templates, onUpdate }) => {
                 <input 
                   type="number" 
                   className="w-full border-none rounded-xl p-3 mt-1 font-black text-slate-800 focus:ring-2 focus:ring-amber-500 outline-none"
-                  value={formData.interestPercentage || 0}
-                  onChange={e => setFormData({ ...formData, interestPercentage: parseFloat(e.target.value) || 0 })}
+                  value={formData.interestPercentage ?? ''}
+                  onChange={e => setFormData({ ...formData, interestPercentage: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) as any })}
                 />
               </div>
             </div>
@@ -176,8 +186,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({ templates, onUpdate }) => {
               <input 
                 type="number" 
                 className="w-full border-none rounded-xl p-3 mt-1 font-black text-slate-800 focus:ring-2 focus:ring-amber-500 outline-none"
-                value={formData.advancePercentage || 0}
-                onChange={e => setFormData({ ...formData, advancePercentage: parseFloat(e.target.value) || 0 })}
+                value={formData.advancePercentage ?? ''}
+                onChange={e => setFormData({ ...formData, advancePercentage: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) as any })}
               />
             </div>
             <div className="pt-2">

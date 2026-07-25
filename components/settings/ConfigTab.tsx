@@ -8,6 +8,7 @@ import { GlobalSettings } from '../../types';
 import { goldRateService } from '../../services/goldRateService';
 import { storageService } from '../../services/storageService';
 import { PricingField, ConfigInput } from './Shared';
+import BackupSection from './BackupSection';
 
 interface ConfigTabProps {
     settings: GlobalSettings;
@@ -85,7 +86,22 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
     const handleUpdateSettings = async () => {
         setIsSaving(true);
         try {
-            await onUpdate(localSettings);
+            const parsedSettings = {
+                ...localSettings,
+                currentGoldRate24K: parseFloat(localSettings.currentGoldRate24K as any) || 0,
+                currentGoldRate22K: parseFloat(localSettings.currentGoldRate22K as any) || 0,
+                currentGoldRate18K: parseFloat(localSettings.currentGoldRate18K as any) || 0,
+                currentSilverRate: parseFloat(localSettings.currentSilverRate as any) || 0,
+                goldRateFetchIntervalMinutes: parseInt(localSettings.goldRateFetchIntervalMinutes as any) || 60,
+                goldRateProtectionMax: parseFloat(localSettings.goldRateProtectionMax as any) || 0,
+                gracePeriodHours: parseFloat(localSettings.gracePeriodHours as any) || 0,
+                followUpIntervalDays: parseFloat(localSettings.followUpIntervalDays as any) || 0,
+                breachBufferMinutes: parseFloat(localSettings.breachBufferMinutes as any) || 0,
+                cooldownHours: parseFloat(localSettings.cooldownHours as any) || 0,
+                overdueFrequencyDays: parseFloat(localSettings.overdueFrequencyDays as any) || 0,
+                maxRemindersPerMilestone: parseFloat(localSettings.maxRemindersPerMilestone as any) || 0,
+            };
+            await onUpdate(parsedSettings);
             setSaveSuccess(true);
             setTimeout(() => setSaveSuccess(false), 2000);
         } catch (e) {
@@ -203,7 +219,7 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                                 <ConfigInput 
                                     label="Server Fetch Interval (Minutes)" 
                                     value={localSettings.goldRateFetchIntervalMinutes} 
-                                    onChange={(v: string) => setLocalSettings({...localSettings, goldRateFetchIntervalMinutes: parseInt(v) || 60})} 
+                                    onChange={(v: string) => setLocalSettings({...localSettings, goldRateFetchIntervalMinutes: v})} 
                                     type="number" 
                                 />
                             </div>
@@ -395,6 +411,9 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                         </div>
                     </div>
                 </div>
+
+                {/* SYSTEM BACKUPS & DISASTER RECOVERY */}
+                <BackupSection />
             </div>
 
             <div className="lg:col-span-4 space-y-6">
@@ -449,14 +468,14 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                         <ShieldCheck size={16} className="text-slate-400" /> Protection Rules
                     </h3>
                     <div className="space-y-4">
-                        <ConfigInput label="Max Liability Limit (₹/g)" value={localSettings.goldRateProtectionMax} onChange={(v: string) => setLocalSettings({...localSettings, goldRateProtectionMax: parseFloat(v)})} type="number" />
-                        <ConfigInput label="Grace Period (Hours)" value={localSettings.gracePeriodHours} onChange={(v: string) => setLocalSettings({...localSettings, gracePeriodHours: parseFloat(v)})} type="number" />
-                        <ConfigInput label="Follow-Up Interval (Days)" value={localSettings.followUpIntervalDays} onChange={(v: string) => setLocalSettings({...localSettings, followUpIntervalDays: parseFloat(v)})} type="number" />
-                        <ConfigInput label="Breach Buffer (Minutes)" value={localSettings.breachBufferMinutes} onChange={(v: string) => setLocalSettings({...localSettings, breachBufferMinutes: parseFloat(v)})} type="number" />
-                        <ConfigInput label="Notification Cooldown (Hours)" value={localSettings.cooldownHours} onChange={(v: string) => setLocalSettings({...localSettings, cooldownHours: parseFloat(v)})} type="number" />
-                        <ConfigInput label="Reminder Schedule (Days Before, comma separated)" value={Array.isArray(localSettings.reminderScheduleDays) ? localSettings.reminderScheduleDays.join(',') : ''} onChange={(v: string) => setLocalSettings({...localSettings, reminderScheduleDays: v.split(',').map(Number)})} type="text" />
-                        <ConfigInput label="Overdue Reminder Frequency (Days)" value={localSettings.overdueFrequencyDays} onChange={(v: string) => setLocalSettings({...localSettings, overdueFrequencyDays: parseFloat(v)})} type="number" />
-                        <ConfigInput label="Max Reminders Per Milestone" value={localSettings.maxRemindersPerMilestone} onChange={(v: string) => setLocalSettings({...localSettings, maxRemindersPerMilestone: parseFloat(v)})} type="number" />
+                        <ConfigInput label="Max Liability Limit (₹/g)" value={localSettings.goldRateProtectionMax} onChange={(v: string) => setLocalSettings({...localSettings, goldRateProtectionMax: v})} type="number" />
+                        <ConfigInput label="Grace Period (Hours)" value={localSettings.gracePeriodHours} onChange={(v: string) => setLocalSettings({...localSettings, gracePeriodHours: v})} type="number" />
+                        <ConfigInput label="Follow-Up Interval (Days)" value={localSettings.followUpIntervalDays} onChange={(v: string) => setLocalSettings({...localSettings, followUpIntervalDays: v})} type="number" />
+                        <ConfigInput label="Breach Buffer (Minutes)" value={localSettings.breachBufferMinutes} onChange={(v: string) => setLocalSettings({...localSettings, breachBufferMinutes: v})} type="number" />
+                        <ConfigInput label="Notification Cooldown (Hours)" value={localSettings.cooldownHours} onChange={(v: string) => setLocalSettings({...localSettings, cooldownHours: v})} type="number" />
+                        <ConfigInput label="Reminder Schedule (Days Before, comma separated)" value={Array.isArray(localSettings.reminderScheduleDays) ? localSettings.reminderScheduleDays.join(',') : ''} onChange={(v: string) => setLocalSettings({...localSettings, reminderScheduleDays: v.split(',').map(n => parseInt(n.trim()) || 0).filter(Boolean)})} type="text" />
+                        <ConfigInput label="Overdue Reminder Frequency (Days)" value={localSettings.overdueFrequencyDays} onChange={(v: string) => setLocalSettings({...localSettings, overdueFrequencyDays: v})} type="number" />
+                        <ConfigInput label="Max Reminders Per Milestone" value={localSettings.maxRemindersPerMilestone} onChange={(v: string) => setLocalSettings({...localSettings, maxRemindersPerMilestone: v})} type="number" />
                     </div>
                 </div>
             </div>

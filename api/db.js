@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 
 let pool = null;
 export let isMock = false;
-const mockData = {
+export const mockData = {
     gold_rates: [],
     app_users: [{ id: 1, username: 'admin', password_hash: '$2a$10$8K1p/a06Ewe7SclT.8mS8uXvL0.X.X.X.X.X.X.X.X.X.X.X.X.X.X.', role: 'ADMIN', mobile_number: '' }], // Placeholder, will be fixed in auth
     integrations: [
@@ -118,6 +118,14 @@ export async function initDb() {
                 event_type VARCHAR(100),
                 payload LONGTEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`,
+            `CREATE TABLE IF NOT EXISTS system_backups (
+                id VARCHAR(100) PRIMARY KEY,
+                filename VARCHAR(255),
+                backup_type VARCHAR(50),
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                db_data LONGTEXT,
+                app_meta LONGTEXT
             )`
         ];
         for (const sql of tables) await connection.query(sql);

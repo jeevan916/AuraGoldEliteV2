@@ -15,16 +15,17 @@ const CatalogTab: React.FC<CatalogTabProps> = ({ catalog, setCatalog }) => {
     });
 
     const handleAddCatalogItem = () => {
-        if (!newItem.name || !newItem.makingChargesPerGram) return alert("Name and Charges are required");
+        const mcParsed = parseFloat(newItem.makingChargesPerGram as any) || 0;
+        if (!newItem.name || mcParsed <= 0) return alert("Name and Charges are required");
         const item: CatalogItem = {
             id: `cat-${Date.now()}`,
             category: newItem.category || 'Ring',
             name: newItem.name,
             metalColor: newItem.metalColor || 'Yellow Gold',
             purity: (newItem.purity || '22K') as any,
-            wastagePercentage: newItem.wastagePercentage || 0,
-            makingChargesPerGram: newItem.makingChargesPerGram,
-            stoneCharges: newItem.stoneCharges || 0
+            wastagePercentage: parseFloat(newItem.wastagePercentage as any) || 0,
+            makingChargesPerGram: mcParsed,
+            stoneCharges: parseFloat(newItem.stoneCharges as any) || 0
         };
         const updated = [...catalog, item];
         setCatalog(updated);
@@ -80,8 +81,8 @@ const CatalogTab: React.FC<CatalogTabProps> = ({ catalog, setCatalog }) => {
                           <input 
                               type="number"
                               className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold"
-                              value={newItem.wastagePercentage || ''}
-                              onChange={e => setNewItem({...newItem, wastagePercentage: parseFloat(e.target.value)})}
+                              value={newItem.wastagePercentage ?? ''}
+                              onChange={e => setNewItem({...newItem, wastagePercentage: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) as any})}
                               placeholder="12"
                           />
                         </div>
@@ -91,8 +92,8 @@ const CatalogTab: React.FC<CatalogTabProps> = ({ catalog, setCatalog }) => {
                           <input 
                               type="number"
                               className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold"
-                              value={newItem.makingChargesPerGram || ''}
-                              onChange={e => setNewItem({...newItem, makingChargesPerGram: parseFloat(e.target.value)})}
+                              value={newItem.makingChargesPerGram ?? ''}
+                              onChange={e => setNewItem({...newItem, makingChargesPerGram: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) as any})}
                               placeholder="450"
                           />
                     </div>

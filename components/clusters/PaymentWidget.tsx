@@ -44,12 +44,12 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
   const nextMilestone = order.paymentPlan.milestones.find(m => m.status !== 'PAID');
 
   useEffect(() => {
-      if (!amount && nextMilestone) {
+      if (nextMilestone) {
           setAmount(nextMilestone.targetAmount.toString());
-      } else if (!amount) {
+      } else {
           setAmount(remaining.toString());
       }
-  }, [nextMilestone, remaining, amount]);
+  }, [order.id, nextMilestone?.id]);
 
   useEffect(() => {
       setErrorMsg(null);
