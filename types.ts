@@ -176,6 +176,7 @@ export interface GlobalSettings {
   msg91AuthKey?: string;
   msg91SenderId?: string;
   isMockMode?: boolean;
+  whatsappEnabled?: boolean;
 }
 
 export type MessageStatus = 'SENT' | 'DELIVERED' | 'READ' | 'FAILED' | 'QUEUED';

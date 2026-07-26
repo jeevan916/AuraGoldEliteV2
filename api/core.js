@@ -233,6 +233,7 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
                 reminderScheduleDays: core.reminderScheduleDays || [15, 7, 3],
                 overdueFrequencyDays: core.overdueFrequencyDays !== undefined ? core.overdueFrequencyDays : 2,
                 maxRemindersPerMilestone: core.maxRemindersPerMilestone !== undefined ? core.maxRemindersPerMilestone : 5,
+                whatsappEnabled: core.whatsappEnabled !== undefined ? !!core.whatsappEnabled : true,
                 whatsappPhoneNumberId: intMap.whatsapp?.phoneId, 
                 whatsappBusinessAccountId: intMap.whatsapp?.accountId, 
                 whatsappBusinessToken: intMap.whatsapp?.token,

@@ -180,7 +180,8 @@ router.post('/settings', ensureDb, async (req, res) => {
             cooldownHours: settings.cooldownHours,
             reminderScheduleDays: settings.reminderScheduleDays,
             overdueFrequencyDays: settings.overdueFrequencyDays,
-            maxRemindersPerMilestone: settings.maxRemindersPerMilestone
+            maxRemindersPerMilestone: settings.maxRemindersPerMilestone,
+            whatsappEnabled: settings.whatsappEnabled !== undefined ? !!settings.whatsappEnabled : true
         };
         await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['core_settings', JSON.stringify(coreConfig)]);
 

@@ -100,6 +100,7 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                 cooldownHours: parseFloat(localSettings.cooldownHours as any) || 0,
                 overdueFrequencyDays: parseFloat(localSettings.overdueFrequencyDays as any) || 0,
                 maxRemindersPerMilestone: parseFloat(localSettings.maxRemindersPerMilestone as any) || 0,
+                whatsappEnabled: localSettings.whatsappEnabled !== false,
             };
             await onUpdate(parsedSettings);
             setSaveSuccess(true);
@@ -302,7 +303,29 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                     </h3>
                     <div className="space-y-6">
                         <div className="p-5 rounded-2xl border border-slate-100 bg-slate-50/50">
-                            <div className="flex items-center gap-3 mb-4"><MessageSquare className="text-emerald-600" /><h4 className="font-bold text-slate-700 text-sm">WhatsApp Business API</h4></div>
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-slate-100">
+                                <div className="flex items-center gap-3">
+                                    <MessageSquare className="text-emerald-600" />
+                                    <div>
+                                        <h4 className="font-bold text-slate-700 text-sm">WhatsApp Business API</h4>
+                                        <p className="text-[10px] text-slate-400 font-bold">Configure credentials and control messaging activation state.</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3 self-end sm:self-auto">
+                                    <span className={`text-[10px] font-black uppercase tracking-wider ${localSettings.whatsappEnabled !== false ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                        {localSettings.whatsappEnabled !== false ? 'System Messaging Active' : 'System Messaging OFF'}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setLocalSettings(prev => ({ ...prev, whatsappEnabled: prev.whatsappEnabled === false ? true : false }))}
+                                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${localSettings.whatsappEnabled !== false ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                                    >
+                                        <span
+                                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${localSettings.whatsappEnabled !== false ? 'translate-x-5' : 'translate-x-0'}`}
+                                        />
+                                    </button>
+                                </div>
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <ConfigInput label="Phone Number ID" value={localSettings.whatsappPhoneNumberId} onChange={(v: string) => setLocalSettings({...localSettings, whatsappPhoneNumberId: v})} />
                                 <ConfigInput label="WABA ID" value={localSettings.whatsappBusinessAccountId} onChange={(v: string) => setLocalSettings({...localSettings, whatsappBusinessAccountId: v})} />

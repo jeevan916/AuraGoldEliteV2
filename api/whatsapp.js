@@ -54,6 +54,33 @@ export async function sendWhatsAppMessage({ to, message, templateName, language,
         throw new Error("Missing WhatsApp Credentials");
     }
 
+    // Check if WhatsApp messages are globally enabled/disabled in settings
+    let whatsappEnabled = true;
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['core_settings']);
+        connection.release();
+        if (rows.length > 0) {
+            const config = typeof rows[0].config === 'string' ? JSON.parse(rows[0].config) : rows[0].config;
+            if (config && config.whatsappEnabled !== undefined) {
+                whatsappEnabled = !!config.whatsappEnabled;
+            }
+        }
+    } catch (e) {
+        console.error("[WhatsApp Guard] Failed to read whatsappEnabled from core_settings, defaulting to true:", e);
+    }
+
+    if (!whatsappEnabled) {
+        console.log(`[WhatsApp Guard] Bypassing message send because WhatsApp messaging is globally turned OFF in settings. Recipient: ${to}, Template: ${templateName || 'None'}`);
+        return { 
+            success: true, 
+            bypassed: true, 
+            message: "WhatsApp messaging is globally turned OFF in settings.",
+            data: { messages: [{ id: "bypassed_due_to_settings_off_" + Date.now() }] }
+        };
+    }
+
     let payload = { 
         messaging_product: "whatsapp", 
         recipient_type: "individual",
