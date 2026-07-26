@@ -40,9 +40,10 @@ export function useOrders() {
       let runningSum = 0;
       const updatedMilestones = o.paymentPlan.milestones.map(m => {
         runningSum += m.targetAmount;
+        // Use a 1 rupee tolerance to prevent any decimal/rounding issues
         return { 
           ...m, 
-          status: totalPaid >= runningSum ? 'PAID' as const : (totalPaid > (runningSum - m.targetAmount) ? 'PARTIAL' as const : 'PENDING' as const) 
+          status: totalPaid >= (runningSum - 1) ? 'PAID' as const : (totalPaid > (runningSum - m.targetAmount + 1) ? 'PARTIAL' as const : 'PENDING' as const) 
         };
       });
 

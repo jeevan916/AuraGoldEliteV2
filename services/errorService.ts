@@ -14,6 +14,7 @@ class ErrorService {
   private readonly MAX_ACTIVITIES = 500;
   private lastErrorMsg: string = '';
   private lastErrorTime: number = 0;
+  private initialized = false;
 
   constructor() {
     this.fetchErrorsFromDb();
@@ -38,7 +39,8 @@ class ErrorService {
           const res = await fetch('/api/logs/activities');
           const data = await res.json();
           if (data.success && Array.isArray(data.activities)) {
-              this.activities = data.activities;
+              const localInit = this.activities.find(act => act.id === 'INIT');
+              this.activities = localInit ? [localInit, ...data.activities] : data.activities;
               this.notify();
           }
       } catch (e) {
@@ -47,6 +49,9 @@ class ErrorService {
   }
 
   public initGlobalListeners() {
+    if (this.initialized) return;
+    this.initialized = true;
+
     window.addEventListener('error', (event) => {
       if (event.message?.includes('cdn.tailwindcss.com')) return;
       this.logError(
@@ -76,12 +81,14 @@ class ErrorService {
     });
 
     // We don't log this to DB to save noise, just local state for session
-    this.activities.unshift({
-        id: 'INIT',
-        actionType: 'STATUS_UPDATE',
-        details: 'Audit System Connected',
-        timestamp: new Date().toISOString()
-    });
+    if (!this.activities.some(act => act.id === 'INIT')) {
+        this.activities.unshift({
+            id: 'INIT',
+            actionType: 'STATUS_UPDATE',
+            details: 'Audit System Connected',
+            timestamp: new Date().toISOString()
+        });
+    }
     this.notify();
   }
 

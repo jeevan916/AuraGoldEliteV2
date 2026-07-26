@@ -3,6 +3,59 @@ import express from 'express';
 import { getPool, ensureDb } from './db.js';
 import { sendWhatsAppMessage } from './whatsapp.js';
 
+// Helper to obtain or refresh Setu OAuth token with auto-retry and cache handling
+async function getSetuToken(connection, config, forceRefresh = false) {
+    const now = Math.floor(Date.now() / 1000);
+    const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
+    const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
+
+    if (!forceRefresh && config.cachedToken && config.tokenExpiresAt && config.tokenExpiresAt > (now + 60)) {
+        return config.cachedToken;
+    }
+
+    console.log(`[Setu Token Manager] Fetching new OAuth token (Force refresh: ${forceRefresh})...`);
+    const tokenResponse = await fetch(`${baseUrl}/auth/token`, {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+        body: JSON.stringify({
+            clientID: config.clientId,
+            secret: config.secret
+        })
+    });
+
+    const tokenText = await tokenResponse.text();
+    let tokenData;
+    try {
+        tokenData = JSON.parse(tokenText);
+    } catch (e) {
+        throw {
+            message: "Setu Authentication returned non-JSON response",
+            response: { status: tokenResponse.status, data: tokenText.substring(0, 500) }
+        };
+    }
+
+    if (!tokenResponse.ok || !tokenData.success) {
+        throw {
+            message: "Setu Authentication Failed",
+            response: { status: tokenResponse.status, data: tokenData }
+        };
+    }
+
+    const token = tokenData.data.token;
+    const expiresIn = tokenData.data.expiresIn || 1800;
+    
+    config.cachedToken = token;
+    config.tokenExpiresAt = now + expiresIn;
+    
+    await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
+    console.log(`[Setu Token Manager] New token cached successfully. Expires in ${expiresIn}s`);
+    return token;
+}
+
 const router = express.Router();
 
 // Setu Payment Proxy
@@ -53,57 +106,13 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
         const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
 
-        // 2. Token Management (OAuth with Caching)
-        let token = config.cachedToken;
-        const now = Math.floor(Date.now() / 1000);
-        
-        // If no token or token expires in less than 60 seconds, fetch a new one
-        if (!token || !config.tokenExpiresAt || config.tokenExpiresAt < (now + 60)) {
-            console.log("[Setu] Token expired or missing. Fetching new OAuth token...");
-            const tokenResponse = await fetch(`${baseUrl}/auth/token`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                },
-                body: JSON.stringify({
-                    clientID: config.clientId,
-                    secret: config.secret
-                })
-            });
-
-            const tokenText = await tokenResponse.text();
-            let tokenData;
-            try {
-                tokenData = JSON.parse(tokenText);
-            } catch (e) {
-                connection.release();
-                throw {
-                    message: "Setu Authentication returned non-JSON response",
-                    response: { status: tokenResponse.status, data: tokenText.substring(0, 500) }
-                };
-            }
-
-            if (!tokenResponse.ok || !tokenData.success) {
-                connection.release();
-                throw {
-                    message: "Setu Authentication Failed",
-                    response: { status: tokenResponse.status, data: tokenData }
-                };
-            }
-
-            token = tokenData.data.token;
-            const expiresIn = tokenData.data.expiresIn || 1800;
-            
-            // Cache the token
-            config.cachedToken = token;
-            config.tokenExpiresAt = now + expiresIn;
-            
-            await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
-            console.log(`[Setu] New token cached. Expires in ${expiresIn}s`);
-        } else {
-            console.log("[Setu] Using cached OAuth token.");
+        // 2. Token Management using the helper function
+        let token;
+        try {
+            token = await getSetuToken(connection, config);
+        } catch (tokenErr) {
+            connection.release();
+            throw tokenErr;
         }
 
         connection.release();
@@ -228,29 +237,37 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
         const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
         const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
         
-        let token = config.cachedToken;
-        // In a real app we would refresh here if expired, but we can assume it's valid if they just created it.
-        const now = Math.floor(Date.now() / 1000);
-        if (!token || !config.tokenExpiresAt || config.tokenExpiresAt < now) {
-             const tokenResponse = await fetch(`${baseUrl}/auth/token`, {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                 body: JSON.stringify({ clientID: config.clientId, secret: config.secret })
-             });
-             const tokenData = await tokenResponse.json();
-             token = tokenData.data.token;
-             config.cachedToken = token;
-             config.tokenExpiresAt = now + (tokenData.data.expiresIn || 1800);
-             await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
+        let token;
+        try {
+            token = await getSetuToken(connection, config);
+        } catch (tokenErr) {
+            connection.release();
+            throw tokenErr;
         }
 
         const platformBillID = req.params.platformBillID;
-        const statusResponse = await fetch(`${baseUrl}/payment-links/${platformBillID}`, {
+        let statusResponse = await fetch(`${baseUrl}/payment-links/${platformBillID}`, {
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'X-Setu-Product-Instance-ID': config.schemeId
             }
         });
+        
+        // If the token was bad, let's force-refresh it and retry once!
+        if (statusResponse.status === 401 || statusResponse.status === 403) {
+            console.warn(`[Setu Status] Status check returned ${statusResponse.status}. Force refreshing token and retrying...`);
+            try {
+                token = await getSetuToken(connection, config, true);
+                statusResponse = await fetch(`${baseUrl}/payment-links/${platformBillID}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'X-Setu-Product-Instance-ID': config.schemeId
+                    }
+                });
+            } catch (retryErr) {
+                console.error("[Setu Status] Token refresh retry failed:", retryErr.message);
+            }
+        }
         
         const statusResponseText = await statusResponse.text();
         let statusData;
@@ -695,22 +712,35 @@ async function processSuccessfulPayment(orderId, amountPaid, upiTransactionID, p
             status: 'SUCCESS'
         });
         
-        let remaining = amountPaid;
+        const totalPaid = order.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+        let runningSum = 0;
+        let updatedMilestones = [];
         if (order.paymentPlan && Array.isArray(order.paymentPlan.milestones)) {
-            for (const milestone of order.paymentPlan.milestones) {
-                if (milestone.status !== 'PAID' && remaining > 0) {
-                    if (remaining >= milestone.targetAmount) {
-                        milestone.status = 'PAID';
-                        remaining -= milestone.targetAmount;
-                    } else {
-                        milestone.status = 'PARTIAL';
-                        remaining = 0;
-                    }
-                }
+            updatedMilestones = order.paymentPlan.milestones.map(m => {
+                runningSum += Number(m.targetAmount);
+                // Use a 1 rupee tolerance to prevent any decimal/rounding issues
+                const status = totalPaid >= (runningSum - 1) ? 'PAID' : (totalPaid > (runningSum - Number(m.targetAmount) + 1) ? 'PARTIAL' : 'PENDING');
+                return { ...m, status };
+            });
+            order.paymentPlan.milestones = updatedMilestones;
+        }
+
+        const isComplete = totalPaid >= (order.totalAmount || 0) - 1;
+        const hasOverdueMilestones = updatedMilestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date());
+        order.status = isComplete ? 'COMPLETED' : (hasOverdueMilestones ? 'OVERDUE' : 'ACTIVE');
+        
+        await connection.query('UPDATE orders SET status = ?, data = ? WHERE id = ?', [order.status, JSON.stringify(order), orderId]);
+
+        if (order.paymentPlan && Array.isArray(order.paymentPlan.milestones)) {
+            for (const m of order.paymentPlan.milestones) {
+                await connection.query(
+                    `INSERT INTO payment_schedules (id, orderId, dueDate, targetAmount, cumulativeTarget, status, warningCount) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?) 
+                     ON DUPLICATE KEY UPDATE dueDate=VALUES(dueDate), targetAmount=VALUES(targetAmount), cumulativeTarget=VALUES(cumulativeTarget), status=VALUES(status)`,
+                    [m.id, order.id, new Date(m.dueDate), m.targetAmount, m.cumulativeTarget, m.status, m.warningCount || 0]
+                );
             }
         }
-        
-        await connection.query('UPDATE orders SET data = ? WHERE id = ?', [JSON.stringify(order), orderId]);
         console.log(`Order ${orderId} updated with Setu payment ${upiTransactionID}`);
         
         if (req && req.io) {
@@ -780,10 +810,16 @@ export function startSetuPoller(io) {
             if (typeof config === 'string') config = typeof config === "string" ? JSON.parse(config) : config;
             const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
             const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
-            let token = config.cachedToken;
             
-            if (!token) { connection.release(); return; }
-
+            let token;
+            try {
+                token = await getSetuToken(connection, config);
+            } catch (tokenErr) {
+                console.error("[Setu Poller] Token acquisition failed:", tokenErr.message);
+                connection.release();
+                return;
+            }
+            
             const [orderRows] = await connection.query("SELECT id, data FROM orders");
             connection.release();
             
@@ -795,12 +831,31 @@ export function startSetuPoller(io) {
                         if (ageMs > 24 * 60 * 60 * 1000) continue; // skip older than 24 hours
                         
                         try {
-                            const statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
+                            let statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
                                 headers: {
                                     'Authorization': `Bearer ${token}`,
                                     'X-Setu-Product-Instance-ID': config.schemeId
                                 }
                             });
+                            
+                            if (statusResponse.status === 401 || statusResponse.status === 403) {
+                                console.warn(`[Setu Poller] Received ${statusResponse.status} for ${pending.platformBillID}. Attempting token refresh...`);
+                                try {
+                                    const refreshConn = await pool.getConnection();
+                                    token = await getSetuToken(refreshConn, config, true);
+                                    refreshConn.release();
+                                    
+                                    statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
+                                        headers: {
+                                            'Authorization': `Bearer ${token}`,
+                                            'X-Setu-Product-Instance-ID': config.schemeId
+                                        }
+                                    });
+                                } catch (refreshErr) {
+                                    console.error("[Setu Poller] Failed to refresh token during poll:", refreshErr.message);
+                                }
+                            }
+                            
                             const statusResponseText = await statusResponse.text();
                             if (!statusResponseText.trim().startsWith('{')) {
                                 console.error(`Error polling Setu for ${pending.platformBillID}: Received HTML/Invalid response with status ${statusResponse.status}`);

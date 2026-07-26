@@ -110,7 +110,8 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       let runningSum = 0;
       const updatedMilestones = order.paymentPlan.milestones.map(m => {
         runningSum += m.targetAmount;
-        const status = newTotalPaid >= runningSum ? 'PAID' : (newTotalPaid > (runningSum - m.targetAmount) ? 'PARTIAL' : 'PENDING');
+        // Use a 1 rupee tolerance to prevent any decimal/rounding issues
+        const status = newTotalPaid >= (runningSum - 1) ? 'PAID' : (newTotalPaid > (runningSum - m.targetAmount + 1) ? 'PARTIAL' : 'PENDING');
         return { ...m, status: status as any };
       });
 
