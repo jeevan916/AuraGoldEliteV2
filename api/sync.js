@@ -1,6 +1,6 @@
 
 import express from 'express';
-import { getPool, ensureDb } from './db.js';
+import { getPool, ensureDb, journalTransaction } from './db.js';
 import { refreshInterval } from './rateService.js';
 
 const router = express.Router();
@@ -11,6 +11,7 @@ router.post('/orders', ensureDb, async (req, res) => {
         const connection = await pool.getConnection();
         for (const order of req.body.orders) {
             await connection.query('INSERT INTO orders (id, customer_contact, status, created_at, share_token, data, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status=VALUES(status), share_token=VALUES(share_token), data=VALUES(data), updated_at=VALUES(updated_at)', [order.id, order.customerContact, order.status, new Date(order.createdAt), order.shareToken, JSON.stringify(order), Date.now()]);
+            await journalTransaction('ORDER', order.id, 'SYNC_WRITE', order, connection);
             
             // Explicitly sync Customer so they aren't lost if order is deleted
             if (order.customerContact) {
@@ -89,6 +90,16 @@ router.delete('/orders/:id', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
+        
+        // Fetch order details first so we have a restorable backup in the journal
+        const [rows] = await connection.query('SELECT data FROM orders WHERE id = ?', [req.params.id]);
+        if (rows.length > 0) {
+            const orderData = JSON.parse(rows[0].data);
+            await journalTransaction('ORDER', req.params.id, 'DELETE', orderData, connection);
+        } else {
+            await journalTransaction('ORDER', req.params.id, 'DELETE', { info: "Order data was not present in DB before deletion" }, connection);
+        }
+
         await connection.query('DELETE FROM payment_schedules WHERE orderId = ?', [req.params.id]);
         await connection.query('DELETE FROM orders WHERE id = ?', [req.params.id]);
         connection.release();
@@ -108,6 +119,7 @@ router.post('/customers', ensureDb, async (req, res) => {
         const connection = await pool.getConnection();
         for (const cust of req.body.customers) {
             await connection.query('INSERT INTO customers (id, contact, name, data, updated_at) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data), updated_at=VALUES(updated_at)', [cust.id, cust.contact, cust.name, JSON.stringify(cust), Date.now()]);
+            await journalTransaction('CUSTOMER', cust.id, 'SYNC_WRITE', cust, connection);
         }
         connection.release();
         res.json({ success: true });
@@ -204,6 +216,8 @@ router.post('/settings', ensureDb, async (req, res) => {
             const rzpConfig = { keyId: settings.razorpayKeyId, secret: settings.razorpayKeySecret };
             await connection.query("INSERT INTO integrations (provider, config) VALUES (?, ?) ON DUPLICATE KEY UPDATE config=VALUES(config)", ['razorpay', JSON.stringify(rzpConfig)]);
         }
+
+        await journalTransaction('SETTINGS', 'APPLICATION', 'SYNC_WRITE', settings, connection);
 
         connection.release();
         res.json({ success: true });

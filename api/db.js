@@ -1,6 +1,9 @@
 
 import mysql from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 
 let pool = null;
 export let isMock = false;
@@ -126,6 +129,15 @@ export async function initDb() {
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 db_data LONGTEXT,
                 app_meta LONGTEXT
+            )`,
+            `CREATE TABLE IF NOT EXISTS transaction_journal (
+                id VARCHAR(100) PRIMARY KEY,
+                entity_type VARCHAR(50),
+                entity_id VARCHAR(100),
+                action VARCHAR(50),
+                payload LONGTEXT,
+                checksum VARCHAR(64),
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )`
         ];
         for (const sql of tables) await connection.query(sql);
@@ -395,6 +407,25 @@ export const getPool = () => {
                         if (index > -1) mockData.whatsapp_logs[index].data = params[0];
                         return [{ affectedRows: 1 }];
                     }
+                    if (lowerSql.includes('select * from transaction_journal')) {
+                        const journal = mockData.transaction_journal || [];
+                        const sorted = [...journal].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                        return [sorted];
+                    }
+                    if (lowerSql.includes('insert into transaction_journal')) {
+                        const newEntry = {
+                            id: params[0],
+                            entity_type: params[1],
+                            entity_id: params[2],
+                            action: params[3],
+                            payload: params[4],
+                            checksum: params[5],
+                            timestamp: params[6] || new Date().toISOString()
+                        };
+                        if (!mockData.transaction_journal) mockData.transaction_journal = [];
+                        mockData.transaction_journal.push(newEntry);
+                        return [{ affectedRows: 1 }];
+                    }
                     return [[]];
                 },
                 release: () => {}
@@ -486,3 +517,59 @@ export const logDbActivity = async (actionType, details, metadata, req) => {
         console.error("Failed to log activity:", e.message);
     }
 };
+
+const JOURNAL_FILE_PATH = path.resolve(process.cwd(), 'backups', 'live_journal_mirror.log');
+
+export async function journalTransaction(entityType, entityId, action, payload, connection = null) {
+    const id = `TX-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+    const timestamp = new Date();
+    const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    
+    const checksum = crypto.createHash('sha256').update(payloadStr).digest('hex');
+    
+    const journalEntry = {
+        id,
+        entity_type: entityType,
+        entity_id: entityId,
+        action,
+        payload: payloadStr,
+        checksum,
+        timestamp: timestamp.toISOString()
+    };
+    
+    // 1. Dual-layer: Mirror to the physical local disk mirror log
+    try {
+        const backupsDir = path.resolve(process.cwd(), 'backups');
+        if (!fs.existsSync(backupsDir)) {
+            fs.mkdirSync(backupsDir, { recursive: true });
+        }
+        fs.appendFileSync(JOURNAL_FILE_PATH, JSON.stringify(journalEntry) + '\n', 'utf8');
+    } catch (err) {
+        console.error("[Journal] Local file mirroring failed:", err.message);
+    }
+    
+    // 2. Dual-layer: Write to relational database
+    try {
+        if (isMock) {
+            if (!mockData.transaction_journal) {
+                mockData.transaction_journal = [];
+            }
+            mockData.transaction_journal.push(journalEntry);
+        } else {
+            const activeConn = connection || await getPool().getConnection();
+            try {
+                await activeConn.query(
+                    `INSERT INTO transaction_journal (id, entity_type, entity_id, action, payload, checksum, timestamp) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [id, entityType, entityId, action, payloadStr, checksum, timestamp]
+                );
+            } finally {
+                if (!connection) activeConn.release();
+            }
+        }
+    } catch (err) {
+        console.error("[Journal] Relational table mirroring failed:", err.message);
+    }
+    
+    return journalEntry;
+}
