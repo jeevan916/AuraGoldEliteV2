@@ -179,7 +179,10 @@ router.post('/webhook', ensureDb, async (req, res) => {
             const fromFormatted = normalizePhone(msg.from);
             const msgBody = msg.text?.body || `[Media: ${msg.type}]`;
             const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
-            const contactName = change.contacts?.[0]?.profile?.name || "Customer";
+            let contactName = change.contacts?.[0]?.profile?.name || "Customer";
+            if (contactName.toLowerCase() === 'empty') {
+                contactName = "Customer";
+            }
             
             // Link to latest order if any
             const [ordersRows] = await connection.query("SELECT data FROM orders");
@@ -188,6 +191,24 @@ router.post('/webhook', ensureDb, async (req, res) => {
             if (customerOrders.length > 0) {
                 customerOrders.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
                 mostRecentOrderId = customerOrders[0].id;
+                if (customerOrders[0].customerName) {
+                    contactName = customerOrders[0].customerName;
+                }
+            } else {
+                // If no orders matched, query the customers table
+                try {
+                    const [custRows] = await connection.query("SELECT name FROM customers WHERE contact = ?", [msg.from]);
+                    if (custRows.length > 0 && custRows[0].name && custRows[0].name !== 'Unknown') {
+                        contactName = custRows[0].name;
+                    } else {
+                        const [custRows2] = await connection.query("SELECT name FROM customers WHERE contact LIKE ?", [`%${fromFormatted.slice(-10)}%`]);
+                        if (custRows2.length > 0 && custRows2[0].name && custRows2[0].name !== 'Unknown') {
+                            contactName = custRows2[0].name;
+                        }
+                    }
+                } catch (lookupErr) {
+                    console.error("[Webhook] Customer lookup error:", lookupErr);
+                }
             }
 
             const logEntry = { id: msg.id, customerName: contactName, phoneNumber: fromFormatted, message: msgBody, status: 'READ', timestamp, direction: 'inbound', type: 'INBOUND', orderId: mostRecentOrderId };
@@ -201,8 +222,12 @@ router.post('/webhook', ensureDb, async (req, res) => {
             const statusUpdate = change.statuses[0];
             const [rows] = await connection.query('SELECT data FROM whatsapp_logs WHERE id = ?', [statusUpdate.id]);
             if (rows.length > 0) {
-                const data = JSON.parse(rows[0].data);
+                let data = JSON.parse(rows[0].data);
                 data.status = statusUpdate.status.toUpperCase();
+                
+                // On-the-fly name resolution before save/emit
+                data = await resolveContactNames(data);
+                
                 await connection.query('UPDATE whatsapp_logs SET data = ? WHERE id = ?', [JSON.stringify(data), statusUpdate.id]);
                 
                 if (req.io) req.io.emit('whatsapp_update', data);
@@ -212,13 +237,56 @@ router.post('/webhook', ensureDb, async (req, res) => {
     } catch (e) { console.error(e); }
 });
 
+async function resolveContactNames(logsOrLog) {
+    if (!logsOrLog) return logsOrLog;
+    const isArray = Array.isArray(logsOrLog);
+    const logs = isArray ? logsOrLog : [logsOrLog];
+    if (logs.length === 0) return logsOrLog;
+    try {
+        const pool = getPool();
+        if (!pool) return logsOrLog;
+        const connection = await pool.getConnection();
+        const [customerRows] = await connection.query("SELECT contact, name FROM customers");
+        connection.release();
+        
+        const nameMap = {};
+        for (const r of customerRows) {
+            const cleanPhone = normalizePhone(r.contact);
+            if (cleanPhone && r.name && r.name !== 'Unknown') {
+                nameMap[cleanPhone] = r.name;
+            }
+        }
+        
+        const resolved = logs.map(log => {
+            if (!log) return log;
+            const cleanPhone = normalizePhone(log.phoneNumber || log.phone);
+            if (nameMap[cleanPhone]) {
+                if (!log.customerName || log.customerName === 'Customer' || log.customerName.toLowerCase() === 'empty' || log.customerName !== nameMap[cleanPhone]) {
+                    log.customerName = nameMap[cleanPhone];
+                }
+            } else if (log.customerName && log.customerName.toLowerCase() === 'empty') {
+                log.customerName = 'Customer';
+            }
+            return log;
+        });
+        return isArray ? resolved : resolved[0];
+    } catch (e) {
+        console.error("[WhatsApp] Name resolution error:", e);
+        return logsOrLog;
+    }
+}
+
 router.get('/logs/poll', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
         const [rows] = await connection.query('SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 150');
         connection.release();
-        res.json({ success: true, logs: rows.map(r => JSON.parse(r.data)) });
+        
+        let logs = rows.map(r => JSON.parse(r.data));
+        logs = await resolveContactNames(logs);
+        
+        res.json({ success: true, logs });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
