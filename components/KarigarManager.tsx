@@ -3,7 +3,8 @@ import React, { useState, useMemo } from 'react';
 import { 
   Hammer, Search, Calendar, User, Clock, 
   ChevronRight, Save, Camera, AlertCircle, CheckCircle2, 
-  ArrowRight, MessageSquare, Scale, ClipboardList, Filter
+  ArrowRight, MessageSquare, Scale, ClipboardList, Filter,
+  Download, Image as ImageIcon
 } from 'lucide-react';
 import { Order, JewelryDetail, ProductionStatus, OrderStatus, GlobalSettings } from '../types';
 import { whatsappService } from '../services/whatsappService';
@@ -176,22 +177,33 @@ const KarigarManager: React.FC<KarigarManagerProps> = ({ orders, onUpdateItem, o
       }
   };
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, orderId: string, item: JewelryDetail) => {
-      if (e.target.files && e.target.files[0]) {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, orderId: string, item: JewelryDetail, type: 'ordered' | 'ready' = 'ready') => {
+      if (e.target.files && e.target.files.length > 0) {
           setIsUploading(true);
           try {
-              const compressed = await compressImage(e.target.files[0]);
-              const updatedPhotos = [compressed, ...item.photoUrls];
-              onUpdateItem(orderId, item.id, { photoUrls: updatedPhotos });
+              const compressedList: string[] = [];
+              for (let i = 0; i < e.target.files.length; i++) {
+                  const compressed = await compressImage(e.target.files[i]);
+                  compressedList.push(compressed);
+              }
               
-              if (confirm("Item photo updated. Send 'Finished Product Showcase' to customer?")) {
+              if (type === 'ordered') {
+                  const updatedPhotos = [...(item.photoUrls || []), ...compressedList];
+                  onUpdateItem(orderId, item.id, { photoUrls: updatedPhotos });
+              } else {
+                  const updatedPhotos = [...(item.readyPhotoUrls || []), ...compressedList];
+                  onUpdateItem(orderId, item.id, { readyPhotoUrls: updatedPhotos });
+              }
+              
+              if (type === 'ready' && confirm("Ready photo updated. Send 'Finished Product Showcase' to customer via WhatsApp?")) {
+                  const ord = orders.find(o => o.id === orderId)!;
                   await whatsappService.sendTemplateMessage(
-                      orders.find(o => o.id === orderId)!.customerContact,
+                      ord.customerContact,
                       'auragold_finished_item_showcase',
                       'en_US',
-                      [orders.find(o => o.id === orderId)!.customerName, orderId],
-                      orders.find(o => o.id === orderId)!.customerName,
-                      orders.find(o => o.id === orderId)!.shareToken
+                      [ord.customerName, orderId],
+                      ord.customerName,
+                      ord.shareToken
                   );
               }
           } catch (e) {
@@ -267,15 +279,15 @@ const KarigarManager: React.FC<KarigarManagerProps> = ({ orders, onUpdateItem, o
                       <div className="p-6">
                           <div className="flex justify-between items-start mb-6">
                               <div className="flex gap-4">
-                                  <div className="w-16 h-16 bg-slate-100 rounded-2xl relative group overflow-hidden">
-                                      <img src={item.photoUrls[0]} className="w-full h-full object-cover" />
-                                      <label className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                                          <Camera size={20} className="text-white" />
-                                          <input type="file" accept="image/*" className="hidden" onChange={e => handlePhotoUpload(e, order.id, item)} />
-                                      </label>
-                                  </div>
                                   <div>
-                                      <h4 className="font-black text-slate-800 text-lg leading-tight">{item.category} • {item.netWeight}g</h4>
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                          <h4 className="font-black text-slate-800 text-lg leading-tight">{item.category} • {item.netWeight}g</h4>
+                                          {item.isReadyProduct ? (
+                                              <span className="text-blue-600 font-extrabold bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">Ready</span>
+                                          ) : (
+                                              <span className="text-amber-600 font-extrabold bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">To Make</span>
+                                          )}
+                                      </div>
                                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
                                           {order.id} | {order.customerName}
                                       </p>
@@ -290,6 +302,99 @@ const KarigarManager: React.FC<KarigarManagerProps> = ({ orders, onUpdateItem, o
                                   <div className={`flex items-center gap-1.5 justify-end ${isOverdue ? 'text-rose-600 animate-pulse' : 'text-slate-700'}`}>
                                       <Calendar size={14} />
                                       <span className="text-xs font-black">{item.promisedDate ? new Date(item.promisedDate).toLocaleDateString('en-IN') : 'Not Set'}</span>
+                                  </div>
+                              </div>
+                          </div>
+
+                          {/* Grid of Ordered and Ready Product Photos */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100/80 mb-4 text-xs">
+                              {/* Ordered reference pictures */}
+                              <div>
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+                                      <ImageIcon size={10} className="text-slate-500" /> Ordered Reference Images
+                                  </p>
+                                  <div className="flex flex-wrap gap-1.5 items-center">
+                                      {/* Capture / Upload Button */}
+                                      <div className="relative shrink-0 w-12 h-12 bg-white hover:bg-slate-100 border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center text-slate-400 transition-colors cursor-pointer shadow-sm">
+                                          <Camera size={14} />
+                                          <span className="text-[7px] font-bold mt-0.5 uppercase">Upload</span>
+                                          <input 
+                                              type="file" 
+                                              accept="image/*" 
+                                              multiple 
+                                              className="absolute inset-0 opacity-0 cursor-pointer" 
+                                              onChange={(e) => handlePhotoUpload(e, order.id, item, 'ordered')} 
+                                          />
+                                      </div>
+                                      {/* Render Images */}
+                                      {(!item.photoUrls || item.photoUrls.length === 0) ? (
+                                          <span className="text-[9px] text-slate-400 italic font-medium ml-1">No reference pictures</span>
+                                      ) : (
+                                          item.photoUrls.map((url, imgIdx) => (
+                                              <div key={imgIdx} className="relative w-12 h-12 group bg-white rounded-xl overflow-hidden border border-slate-200 shrink-0 shadow-sm">
+                                                  <img src={url} className="w-full h-full object-cover" />
+                                                  <button 
+                                                      onClick={() => {
+                                                          const link = document.createElement('a');
+                                                          link.href = url;
+                                                          link.download = `ordered-product-${item.id}-${imgIdx}.jpg`;
+                                                          document.body.appendChild(link);
+                                                          link.click();
+                                                          document.body.removeChild(link);
+                                                      }}
+                                                      className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white hover:bg-black/60"
+                                                      title="Download Image"
+                                                  >
+                                                      <Download size={12} />
+                                                  </button>
+                                              </div>
+                                          ))
+                                      )}
+                                  </div>
+                              </div>
+
+                              {/* Ready product showcase pictures */}
+                              <div>
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+                                      <CheckCircle2 size={10} className="text-emerald-500" /> Ready Product Images (Showcase)
+                                  </p>
+                                  <div className="flex flex-wrap gap-1.5 items-center">
+                                      {/* Capture / Upload Button */}
+                                      <div className="relative shrink-0 w-12 h-12 bg-white hover:bg-slate-100 border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center text-slate-400 transition-colors cursor-pointer shadow-sm">
+                                          <Camera size={14} />
+                                          <span className="text-[7px] font-bold mt-0.5 uppercase">Upload</span>
+                                          <input 
+                                              type="file" 
+                                              accept="image/*" 
+                                              multiple 
+                                              className="absolute inset-0 opacity-0 cursor-pointer" 
+                                              onChange={(e) => handlePhotoUpload(e, order.id, item, 'ready')} 
+                                          />
+                                      </div>
+                                      {/* Render Images */}
+                                      {(!item.readyPhotoUrls || item.readyPhotoUrls.length === 0) ? (
+                                          <span className="text-[9px] text-slate-400 italic font-medium ml-1">No final images yet</span>
+                                      ) : (
+                                          item.readyPhotoUrls.map((url, imgIdx) => (
+                                              <div key={imgIdx} className="relative w-12 h-12 group bg-white rounded-xl overflow-hidden border border-slate-200 shrink-0 shadow-sm">
+                                                  <img src={url} className="w-full h-full object-cover" />
+                                                  <button 
+                                                      onClick={() => {
+                                                          const link = document.createElement('a');
+                                                          link.href = url;
+                                                          link.download = `ready-product-${item.id}-${imgIdx}.jpg`;
+                                                          document.body.appendChild(link);
+                                                          link.click();
+                                                          document.body.removeChild(link);
+                                                      }}
+                                                      className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white hover:bg-black/60"
+                                                      title="Download Image"
+                                                  >
+                                                      <Download size={12} />
+                                                  </button>
+                                              </div>
+                                          ))
+                                      )}
                                   </div>
                               </div>
                           </div>

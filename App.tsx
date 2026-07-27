@@ -377,7 +377,7 @@ const App = () => {
           case 'COLLECTIONS': return <PaymentCollections orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onSendWhatsApp={() => {}} onAddLog={addLog} settings={settings} />;
           case 'WHATSAPP': return <WhatsAppPanel logs={logs} customers={derivedCustomers} onRefreshStatus={() => {}} templates={templates} onAddLog={addLog} initialContact={selectedChatPhone} />;
           case 'TEMPLATES': return <WhatsAppTemplates templates={templates} onUpdate={setTemplates} />;
-          case 'LOGS': return <WhatsAppLogs logs={logs} onViewChat={(phone) => { setSelectedChatPhone(phone); setView('WHATSAPP'); }} />;
+          case 'LOGS': return <WhatsAppLogs logs={logs} onViewChat={(phone) => { setSelectedChatPhone(phone); setView('WHATSAPP'); }} onAddLog={addLog} />;
           case 'PLANS': return <PlanManager templates={planTemplates} onUpdate={(tpls) => { setPlanTemplates(tpls); storageService.setPlanTemplates(tpls); }} />;
           case 'STRATEGY': return <NotificationCenter notifications={[]} customers={derivedCustomers} onSend={() => {}} onRefresh={() => {}} loading={false} />;
           case 'MARKET': return <MarketIntelligence orders={orders} settings={settings} />;

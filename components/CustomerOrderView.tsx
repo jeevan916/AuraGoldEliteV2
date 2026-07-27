@@ -4,7 +4,7 @@ import {
   CheckCircle2, Clock, MapPin, ShieldCheck, Box, CreditCard, 
   Smartphone, Lock, AlertCircle, ArrowRight, QrCode, CalendarDays, 
   LocateFixed, ReceiptIndianRupee, TrendingUp, ChevronDown, ChevronUp, Scale, Info, ShieldAlert, Sparkles,
-  Zap, Loader2
+  Zap, Loader2, Download, Image as ImageIcon
 } from 'lucide-react';
 import { Order, ProductionStatus, ProtectionStatus } from '../types';
 import { errorService } from '../services/errorService';
@@ -722,7 +722,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
              <div key={item.id} className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 transition-all">
                <div className="flex gap-4 items-start" onClick={() => setExpandedItem(isExpanded ? null : item.id)}>
                    <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-300 overflow-hidden shrink-0">
-                      {item.photoUrls?.[0] ? <img src={item.photoUrls[0]} className="w-full h-full object-cover" /> : <Box size={24} />}
+                      {(item.photoUrls?.[0] || item.readyPhotoUrls?.[0]) ? <img src={item.photoUrls?.[0] || item.readyPhotoUrls?.[0]} className="w-full h-full object-cover" /> : <Box size={24} />}
                    </div>
                    <div className="flex-1 min-w-0">
                      <div className="flex justify-between items-start">
@@ -748,6 +748,74 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                {/* Detailed Cost Table */}
                {isExpanded && (
                    <div className="mt-4 pt-4 border-t border-slate-100 animate-slideDown">
+                       {/* Grid of Ordered and Ready Product Photos */}
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100/80 mb-4 text-xs">
+                           {/* Ordered reference pictures */}
+                           <div>
+                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+                                   <ImageIcon size={10} className="text-slate-500" /> Ordered Reference Images
+                               </p>
+                               <div className="flex flex-wrap gap-1.5 items-center">
+                                   {(!item.photoUrls || item.photoUrls.length === 0) ? (
+                                       <span className="text-[9px] text-slate-400 italic font-medium">No reference pictures</span>
+                                   ) : (
+                                       item.photoUrls.map((url, imgIdx) => (
+                                           <div key={imgIdx} className="relative w-12 h-12 group bg-white rounded-xl overflow-hidden border border-slate-200 shrink-0 shadow-sm">
+                                               <img src={url} className="w-full h-full object-cover" />
+                                               <button 
+                                                   onClick={(e) => {
+                                                       e.stopPropagation();
+                                                       const link = document.createElement('a');
+                                                       link.href = url;
+                                                       link.download = `ordered-product-${item.id}-${imgIdx}.jpg`;
+                                                       document.body.appendChild(link);
+                                                       link.click();
+                                                       document.body.removeChild(link);
+                                                   }}
+                                                   className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white hover:bg-black/60"
+                                                   title="Download Image"
+                                               >
+                                                   <Download size={12} />
+                                               </button>
+                                           </div>
+                                       ))
+                                   )}
+                                </div>
+                            </div>
+
+                            {/* Ready product showcase pictures */}
+                            <div>
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+                                    <CheckCircle2 size={10} className="text-emerald-500" /> Ready Product Images (Showcase)
+                                </p>
+                                <div className="flex flex-wrap gap-1.5 items-center">
+                                    {(!item.readyPhotoUrls || item.readyPhotoUrls.length === 0) ? (
+                                        <span className="text-[9px] text-slate-400 italic font-medium">No final images yet</span>
+                                    ) : (
+                                        item.readyPhotoUrls.map((url, imgIdx) => (
+                                            <div key={imgIdx} className="relative w-12 h-12 group bg-white rounded-xl overflow-hidden border border-slate-200 shrink-0 shadow-sm">
+                                                <img src={url} className="w-full h-full object-cover" />
+                                                <button 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const link = document.createElement('a');
+                                                        link.href = url;
+                                                        link.download = `ready-product-${item.id}-${imgIdx}.jpg`;
+                                                        document.body.appendChild(link);
+                                                        link.click();
+                                                        document.body.removeChild(link);
+                                                    }}
+                                                    className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white hover:bg-black/60"
+                                                    title="Download Image"
+                                                >
+                                                    <Download size={12} />
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
                        <div className="bg-slate-50 rounded-xl p-3 grid grid-cols-2 gap-y-3 gap-x-4">
                            <div>
                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Rate Applied</p>
@@ -758,8 +826,8 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                                <p className="text-xs font-bold text-slate-700">₹{Math.round(item.baseMetalValue).toLocaleString()}</p>
                            </div>
                            <div>
-                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Making / VA</p>
-                               <p className="text-xs font-bold text-slate-700">₹{Math.round(item.wastageValue + item.totalLaborValue).toLocaleString()}</p>
+                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Making % Charged</p>
+                               <p className="text-xs font-bold text-slate-700">{item.wastagePercentage}% (₹{Math.round(item.wastageValue).toLocaleString()})</p>
                            </div>
                            <div>
                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Stone Charges</p>

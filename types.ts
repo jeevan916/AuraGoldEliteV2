@@ -90,6 +90,8 @@ export interface JewelryDetail {
   customizationDetails: string;
   productionStatus: ProductionStatus;
   photoUrls: string[];
+  readyPhotoUrls?: string[];
+  isReadyProduct?: boolean;
   huid?: string;
   size?: string;
   // --- KARIGAR TRACKING FIELDS ---
@@ -193,6 +195,8 @@ export interface WhatsAppLogEntry {
   context?: string;
   sentBy?: 'ADMIN' | 'STAFF' | 'SYSTEM';
   orderId?: string;
+  isEdited?: boolean;
+  editedAt?: string;
 }
 
 export type CollectionTone = 'POLITE' | 'FIRM' | 'URGENT' | 'ENCOURAGING';

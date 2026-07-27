@@ -457,6 +457,38 @@ export const whatsappService = {
     }
   },
 
+  async editMessage(messageId: string, text: string): Promise<WhatsAppResponse> {
+    const settings = this.getSettings();
+    const token = settings.whatsappBusinessToken?.trim();
+    if (!settings.whatsappPhoneNumberId || !token) return { success: false, error: "WhatsApp API Credentials Missing in Settings" };
+
+    try {
+      const response = await fetch(`${API_BASE}/api/whatsapp/edit`, {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'x-phone-id': settings.whatsappPhoneNumberId,
+            'x-auth-token': token
+        },
+        body: JSON.stringify({ messageId, text })
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+          const errDetail = data.error?.message || data.error || "Meta Edit Msg Error";
+          throw { message: errDetail, raw: data.raw };
+      }
+
+      return {
+        success: true,
+        messageId: messageId,
+        logEntry: data.logEntry
+      };
+    } catch (e: any) { 
+        return { success: false, error: e.message || "Edit Failed", raw: e.raw }; 
+    }
+  },
+
   async syncSystemTemplates(): Promise<{ success: boolean; error?: string }> {
     try {
         const existing = await this.fetchMetaTemplates();

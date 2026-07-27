@@ -59,6 +59,8 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
     wastagePercentage: 12, 
     makingChargesPerGram: 0, 
     photoUrls: [], 
+    readyPhotoUrls: [],
+    isReadyProduct: false,
     huid: '', 
     size: ''
   };
@@ -211,8 +213,10 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
       totalLaborValue: pricing.laborValue,
       taxAmount: pricing.tax,
       finalAmount: pricing.total,
-      productionStatus: ProductionStatus.DESIGNING,
-      photoUrls: currentItem.photoUrls || []
+      productionStatus: currentItem.isReadyProduct ? ProductionStatus.READY : ProductionStatus.DESIGNING,
+      photoUrls: currentItem.photoUrls || [],
+      readyPhotoUrls: currentItem.isReadyProduct ? (currentItem.photoUrls || []) : [],
+      isReadyProduct: currentItem.isReadyProduct || false
     };
     
     setCartItems([...cartItems, item]);
@@ -220,16 +224,21 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
+    if (e.target.files && e.target.files.length > 0) {
       setIsCompressing(true);
       try {
-        const compressed = await compressImage(e.target.files[0]);
+        const compressedList: string[] = [];
+        for (let i = 0; i < e.target.files.length; i++) {
+          const file = e.target.files[i];
+          const compressed = await compressImage(file);
+          compressedList.push(compressed);
+        }
         setCurrentItem(prev => ({
           ...prev,
-          photoUrls: [...(prev.photoUrls || []), compressed]
+          photoUrls: [...(prev.photoUrls || []), ...compressedList]
         }));
       } catch (error) {
-        alert("Failed to process image. Ensure file is a standard image format.");
+        alert("Failed to process one or more images. Ensure files are standard image formats.");
       } finally {
         setIsCompressing(false);
       }
@@ -435,7 +444,17 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
                 </h3>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <InputWrapper label="Item Type">
+                    <select 
+                      className="w-full font-bold bg-transparent outline-none text-slate-800" 
+                      value={currentItem.isReadyProduct ? 'READY' : 'TO_MAKE'} 
+                      onChange={e => setCurrentItem({...currentItem, isReadyProduct: e.target.value === 'READY'})}
+                    >
+                        <option value="TO_MAKE">To Be Made (Custom)</option>
+                        <option value="READY">Ready (In Stock)</option>
+                    </select>
+                </InputWrapper>
                 <InputWrapper label="Category">
                     <select 
                       className="w-full font-bold bg-transparent outline-none text-slate-800" 
@@ -534,7 +553,7 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
                 <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
                     <div className="relative shrink-0">
                         <input 
-                            type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                            type="file" accept="image/*" multiple className="absolute inset-0 opacity-0 cursor-pointer z-10"
                             onChange={handleImageUpload} disabled={isCompressing}
                         />
                         <div className="w-20 h-20 bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 hover:bg-slate-50 transition-colors">
@@ -587,7 +606,14 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
                                     {item.photoUrls?.[0] ? <img src={item.photoUrls[0]} className="w-full h-full object-cover" /> : <ImageIcon size={20} />}
                                   </div>
                                   <div>
-                                      <p className="font-black text-sm text-slate-800">{item.category} • {item.metalColor}</p>
+                                      <p className="font-black text-sm text-slate-800 flex items-center gap-2">
+                                          <span>{item.category} • {item.metalColor}</span>
+                                          {item.isReadyProduct ? (
+                                              <span className="text-blue-600 font-extrabold bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">Ready</span>
+                                          ) : (
+                                              <span className="text-amber-600 font-extrabold bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">To Make</span>
+                                          )}
+                                      </p>
                                       <p className="text-[10px] text-slate-400 uppercase font-bold">
                                           {item.purity} • {item.netWeight}g
                                           {item.huid && <span className="ml-2 text-emerald-600 font-mono tracking-tighter">[{item.huid}]</span>}

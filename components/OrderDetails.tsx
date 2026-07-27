@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 // Added CheckCheck to imports from lucide-react
-import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp, Plus, Edit2, Printer } from 'lucide-react';
+import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp, Plus, Edit2, Printer, Download, Image as ImageIcon } from 'lucide-react';
 import { Order, GlobalSettings, WhatsAppLogEntry, ProductionStatus, ProtectionStatus, OrderStatus, JewelryDetail } from '../types';
 import { generateOrderPDF, generateReceiptPDF } from '../services/pdfGenerator';
 import { whatsappService } from '../services/whatsappService';
@@ -428,15 +428,30 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       }
   };
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, itemId: string) => {
-      if (e.target.files && e.target.files[0]) {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, itemId: string, type: 'ordered' | 'ready' = 'ready') => {
+      if (e.target.files && e.target.files.length > 0) {
           try {
-              const compressed = await compressImage(e.target.files[0]);
-              const updatedItems = order.items.map(i => i.id === itemId ? { ...i, photoUrls: [compressed, ...i.photoUrls] } : i);
+              const compressedList: string[] = [];
+              for (let i = 0; i < e.target.files.length; i++) {
+                  const compressed = await compressImage(e.target.files[i]);
+                  compressedList.push(compressed);
+              }
+              
+              const updatedItems = order.items.map(i => {
+                  if (i.id === itemId) {
+                      if (type === 'ordered') {
+                          return { ...i, photoUrls: [...(i.photoUrls || []), ...compressedList] };
+                      } else {
+                          return { ...i, readyPhotoUrls: [...(i.readyPhotoUrls || []), ...compressedList] };
+                      }
+                  }
+                  return i;
+              });
+              
               const updatedOrder = { ...order, items: updatedItems };
               onOrderUpdate(updatedOrder as Order);
 
-              if (confirm("Send this photo to customer via WhatsApp?")) {
+              if (type === 'ready' && confirm("Send notification to customer via WhatsApp about finished product?")) {
                   // MAPPED CORRECTLY: 2 Body Variables, 1 Button Variable
                   await whatsappService.sendTemplateMessage(
                       order.customerContact, 
@@ -732,15 +747,18 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                const isExpanded = expandedItem === item.id;
 
                return (
-               <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 flex flex-col md:flex-row gap-4 relative transition-all">
-                  <div className="w-20 h-20 bg-slate-100 rounded-xl overflow-hidden shrink-0 relative group">
-                    <img src={item.photoUrls[0]} className="w-full h-full object-cover" />
-                    <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"><Camera size={16} className="text-white" /><input type="file" accept="image/*" className="hidden" onChange={(e) => handlePhotoUpload(e, item.id)} /></label>
-                  </div>
+               <div key={idx} className="bg-white p-5 rounded-3xl border border-slate-100 flex flex-col gap-4 relative transition-all">
                   <div className="flex-1">
                     <div className="flex justify-between items-start">
                         <div>
-                            <h3 className="font-bold text-slate-800">{item.category}</h3>
+                            <div className="flex items-center gap-2">
+                                <h3 className="font-bold text-slate-800">{item.category}</h3>
+                                {item.isReadyProduct ? (
+                                    <span className="text-blue-600 font-extrabold bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">Ready</span>
+                                ) : (
+                                    <span className="text-amber-600 font-extrabold bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">To Make</span>
+                                )}
+                            </div>
                             <p className="text-xs text-slate-500">{item.purity} • {item.netWeight}g <span className="text-emerald-600 font-bold ml-1">@ ₹{Math.round(appliedRate).toLocaleString('en-IN')}/g</span></p>
                         </div>
                         <div className="text-right">
@@ -763,6 +781,99 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                         </div>
                     </div>
                     
+                    {/* Grid of Ordered and Ready Product Photos */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100 mt-3">
+                        {/* Ordered reference pictures */}
+                        <div>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+                                <ImageIcon size={10} className="text-slate-500" /> Ordered Reference Images
+                            </p>
+                            <div className="flex flex-wrap gap-2 items-center">
+                                {/* Capture / Upload Button */}
+                                <div className="relative shrink-0 w-16 h-16 bg-white hover:bg-slate-100 border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center text-slate-400 transition-colors cursor-pointer shadow-sm">
+                                    <Camera size={16} />
+                                    <span className="text-[8px] font-bold mt-1 uppercase">Upload</span>
+                                    <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        multiple 
+                                        className="absolute inset-0 opacity-0 cursor-pointer" 
+                                        onChange={(e) => handlePhotoUpload(e, item.id, 'ordered')} 
+                                    />
+                                </div>
+                                {/* Render Images */}
+                                {(!item.photoUrls || item.photoUrls.length === 0) ? (
+                                    <span className="text-[10px] text-slate-400 italic font-medium ml-2">No reference pictures</span>
+                                ) : (
+                                    item.photoUrls.map((url, imgIdx) => (
+                                        <div key={imgIdx} className="relative w-16 h-16 group bg-white rounded-xl overflow-hidden border border-slate-200 shrink-0 shadow-sm">
+                                            <img src={url} className="w-full h-full object-cover" />
+                                            <button 
+                                                onClick={() => {
+                                                    const link = document.createElement('a');
+                                                    link.href = url;
+                                                    link.download = `ordered-product-${idx}-${imgIdx}.jpg`;
+                                                    document.body.appendChild(link);
+                                                    link.click();
+                                                    document.body.removeChild(link);
+                                                }}
+                                                className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white hover:bg-black/60"
+                                                title="Download Image"
+                                            >
+                                                <Download size={14} />
+                                            </button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Ready product showcase pictures */}
+                        <div>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+                                <CheckCircle2 size={10} className="text-emerald-500" /> Ready Product Images (Showcase)
+                            </p>
+                            <div className="flex flex-wrap gap-2 items-center">
+                                {/* Capture / Upload Button */}
+                                <div className="relative shrink-0 w-16 h-16 bg-white hover:bg-slate-100 border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center text-slate-400 transition-colors cursor-pointer shadow-sm">
+                                    <Camera size={16} />
+                                    <span className="text-[8px] font-bold mt-1 uppercase">Upload</span>
+                                    <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        multiple 
+                                        className="absolute inset-0 opacity-0 cursor-pointer" 
+                                        onChange={(e) => handlePhotoUpload(e, item.id, 'ready')} 
+                                    />
+                                </div>
+                                {/* Render Images */}
+                                {(!item.readyPhotoUrls || item.readyPhotoUrls.length === 0) ? (
+                                    <span className="text-[10px] text-slate-400 italic font-medium ml-2">No final images yet</span>
+                                ) : (
+                                    item.readyPhotoUrls.map((url, imgIdx) => (
+                                        <div key={imgIdx} className="relative w-16 h-16 group bg-white rounded-xl overflow-hidden border border-slate-200 shrink-0 shadow-sm">
+                                            <img src={url} className="w-full h-full object-cover" />
+                                            <button 
+                                                onClick={() => {
+                                                    const link = document.createElement('a');
+                                                    link.href = url;
+                                                    link.download = `ready-product-${idx}-${imgIdx}.jpg`;
+                                                    document.body.appendChild(link);
+                                                    link.click();
+                                                    document.body.removeChild(link);
+                                                }}
+                                                className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white hover:bg-black/60"
+                                                title="Download Image"
+                                            >
+                                                <Download size={14} />
+                                            </button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    
                     {/* Bill Breakdown Section */}
                     {isExpanded && (
                         <div className="mt-3 pt-3 border-t border-slate-100 text-[10px] grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-slate-500 bg-slate-50/50 p-3 rounded-xl animate-slideDown">
@@ -775,8 +886,8 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                                 <span className="font-mono text-slate-700">₹{Math.round(item.baseMetalValue).toLocaleString()}</span>
                             </div>
                             <div>
-                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Wastage (VA)</span>
-                                <span className="font-mono text-slate-700">₹{Math.round(item.wastageValue).toLocaleString()}</span>
+                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Making % Charged</span>
+                                <span className="font-mono text-amber-700 font-bold">{item.wastagePercentage}% (₹{Math.round(item.wastageValue).toLocaleString()})</span>
                             </div>
                             <div>
                                 <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Making (MC)</span>

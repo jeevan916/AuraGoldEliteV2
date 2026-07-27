@@ -2,19 +2,59 @@ import React, { useState, useMemo } from 'react';
 import { 
   Search, Filter, Smartphone, Calendar, CheckCircle2, 
   Clock, AlertCircle, MessageCircle, ArrowDownLeft, ArrowUpRight, 
-  ExternalLink, FileText, Check, User
+  ExternalLink, FileText, Check, User, Edit2, X
 } from 'lucide-react';
 import { WhatsAppLogEntry, MessageStatus } from '../types';
+import { whatsappService } from '../services/whatsappService';
 
 interface WhatsAppLogsProps {
   logs: WhatsAppLogEntry[];
   onViewChat: (phone: string) => void;
+  onAddLog?: (log: WhatsAppLogEntry) => void;
 }
 
-const WhatsAppLogs: React.FC<WhatsAppLogsProps> = ({ logs, onViewChat }) => {
+const WhatsAppLogs: React.FC<WhatsAppLogsProps> = ({ logs, onViewChat, onAddLog }) => {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'INBOUND' | 'OUTBOUND'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'READ' | 'DELIVERED' | 'SENT' | 'FAILED'>('ALL');
+
+  const [editingLog, setEditingLog] = useState<WhatsAppLogEntry | null>(null);
+  const [editText, setEditText] = useState('');
+  const [editError, setEditError] = useState('');
+  const [editSubmitting, setEditSubmitting] = useState(false);
+
+  const handleStartEdit = (log: WhatsAppLogEntry) => {
+    setEditingLog(log);
+    setEditText(log.message);
+    setEditError('');
+    setEditSubmitting(false);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingLog) return;
+    setEditSubmitting(true);
+    setEditError('');
+    try {
+      const res = await whatsappService.editMessage(editingLog.id, editText);
+      if (res.success) {
+        if (onAddLog) {
+          onAddLog({
+            ...editingLog,
+            message: editText,
+            isEdited: true,
+            editedAt: new Date().toISOString()
+          });
+        }
+        setEditingLog(null);
+      } else {
+        setEditError(res.error || "Failed to edit message");
+      }
+    } catch (e: any) {
+      setEditError(e.message || "An error occurred during editing");
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
 
   const filteredLogs = useMemo(() => {
     return logs.filter(log => {
@@ -180,6 +220,11 @@ const WhatsAppLogs: React.FC<WhatsAppLogsProps> = ({ logs, onViewChat }) => {
                                     <p className="text-sm text-slate-600 line-clamp-2 leading-relaxed italic">
                                         "{log.message}"
                                     </p>
+                                    {log.isEdited && (
+                                        <span className="inline-flex items-center gap-1 text-[9px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter border border-emerald-100 mt-1">
+                                            Edited
+                                        </span>
+                                    )}
                                 </div>
                             </td>
                             <td className="px-8 py-6">
@@ -194,13 +239,24 @@ const WhatsAppLogs: React.FC<WhatsAppLogsProps> = ({ logs, onViewChat }) => {
                                 <StatusBadge status={log.status} />
                             </td>
                             <td className="px-8 py-6 text-right">
-                                <button 
-                                    onClick={() => onViewChat(log.phoneNumber)}
-                                    className="p-2.5 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-amber-600 hover:border-amber-200 hover:bg-amber-50 transition-all shadow-sm group-hover:scale-110"
-                                    title="View Full Chat"
-                                >
-                                    <ExternalLink size={16} />
-                                </button>
+                                <div className="flex items-center justify-end gap-2">
+                                    {log.direction === 'outbound' && (
+                                        <button 
+                                            onClick={() => handleStartEdit(log)}
+                                            className="p-2.5 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50 transition-all shadow-sm group-hover:scale-110"
+                                            title="Edit Sent Message"
+                                        >
+                                            <Edit2 size={16} />
+                                        </button>
+                                    )}
+                                    <button 
+                                        onClick={() => onViewChat(log.phoneNumber)}
+                                        className="p-2.5 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-amber-600 hover:border-amber-200 hover:bg-amber-50 transition-all shadow-sm group-hover:scale-110"
+                                        title="View Full Chat"
+                                    >
+                                        <ExternalLink size={16} />
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     ))}
@@ -218,6 +274,79 @@ const WhatsAppLogs: React.FC<WhatsAppLogsProps> = ({ logs, onViewChat }) => {
             </table>
          </div>
       </div>
+
+      {editingLog && (
+        <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-fadeIn">
+            <div className="p-4 border-b flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <Edit2 size={16} className="text-emerald-600" />
+                Edit Sent WhatsApp Message
+              </h3>
+              <button onClick={() => setEditingLog(null)} className="text-slate-400 hover:text-rose-500">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs p-3.5 rounded-xl leading-relaxed">
+                <strong>Important Note:</strong> Editing sent messages updates the message body on the customer's WhatsApp device via Meta APIs. Best used to retract incorrect messages or fix minor typos.
+              </div>
+              
+              <div className="space-y-1">
+                <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                  Recipient
+                </label>
+                <p className="text-sm font-bold text-slate-700">
+                  {editingLog.customerName} ({editingLog.phoneNumber})
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                    Message Body
+                  </label>
+                  <button 
+                    type="button" 
+                    onClick={() => setEditText('This message was retracted.')}
+                    className="text-[10px] font-bold text-emerald-600 hover:underline lowercase"
+                  >
+                    Use Retraction Notice
+                  </button>
+                </div>
+                <textarea
+                  className="w-full h-32 border border-slate-200 rounded-xl p-3 text-sm focus:border-emerald-500 outline-none transition-colors leading-relaxed"
+                  value={editText}
+                  onChange={e => setEditText(e.target.value)}
+                  placeholder="Enter corrected message..."
+                />
+              </div>
+
+              {editError && (
+                <p className="text-xs font-semibold text-rose-500 bg-rose-50 border border-rose-100 p-2.5 rounded-lg">
+                  {editError}
+                </p>
+              )}
+            </div>
+            <div className="p-4 border-t bg-slate-50 flex gap-3">
+              <button
+                onClick={() => setEditingLog(null)}
+                className="flex-1 bg-white border border-slate-200 text-slate-700 py-3 rounded-xl font-bold text-sm hover:bg-slate-50 transition-colors"
+                disabled={editSubmitting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-emerald-700 disabled:opacity-50 shadow-lg transition-colors"
+                disabled={editSubmitting || !editText.trim()}
+              >
+                {editSubmitting ? 'Saving Changes...' : 'Save Overwrite'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

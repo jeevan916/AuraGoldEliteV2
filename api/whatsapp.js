@@ -400,6 +400,116 @@ router.post('/send', ensureDb, async (req, res) => {
     }
 });
 
+router.post('/edit', ensureDb, async (req, res) => {
+    const { messageId, text } = req.body;
+    const phoneId = req.headers['x-phone-id'];
+    const token = req.headers['x-auth-token'];
+
+    if (!phoneId || !token) {
+        return res.status(401).json({ success: false, error: "Missing WhatsApp Credentials on Server" });
+    }
+
+    if (!messageId || !text) {
+        return res.status(400).json({ success: false, error: "Missing messageId or text for editing" });
+    }
+
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query('SELECT data FROM whatsapp_logs WHERE id = ?', [messageId]);
+        
+        if (rows.length === 0) {
+            connection.release();
+            return res.status(404).json({ success: false, error: "Original message not found in system logs" });
+        }
+
+        const logData = JSON.parse(rows[0].data);
+        const recipientPhone = logData.phoneNumber || logData.phone;
+        const customerName = logData.customerName || "Customer";
+        const orderId = logData.orderId || null;
+
+        // 1. Update the log in our database
+        logData.message = text;
+        logData.isEdited = true;
+        logData.editedAt = new Date().toISOString();
+        await connection.query('UPDATE whatsapp_logs SET data = ? WHERE id = ?', [JSON.stringify(logData), messageId]);
+        
+        // Emit to frontend if socket exists
+        if (req.io) {
+            req.io.emit('whatsapp_update', logData);
+        }
+        connection.release();
+
+        // 2. Send a follow-up correction/retraction message via Meta's actual Cloud API
+        // since Meta's API does not support in-place editing of sent messages for business numbers.
+        let metaResponseData = null;
+        let bodyText = `*Correction:* ${text}`;
+        if (text.toLowerCase().includes('retracted')) {
+            bodyText = `*Notice:* ${text}`;
+        }
+
+        try {
+            const correctionPayload = {
+                messaging_product: "whatsapp",
+                recipient_type: "individual",
+                to: normalizePhone(recipientPhone),
+                type: "text",
+                text: {
+                    body: bodyText
+                }
+            };
+
+            const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${phoneId}/messages`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(correctionPayload)
+            });
+            metaResponseData = await r.json();
+
+            if (!r.ok || metaResponseData.error) {
+                console.warn("Meta correction message send failed:", JSON.stringify(metaResponseData?.error));
+            } else if (metaResponseData.messages && metaResponseData.messages[0]) {
+                // Log the correction/retraction message as a new outbound message in the database too
+                const correctionLogId = metaResponseData.messages[0].id;
+                const correctionLog = {
+                    id: correctionLogId,
+                    customerName,
+                    phoneNumber: normalizePhone(recipientPhone),
+                    message: bodyText,
+                    status: 'SENT',
+                    timestamp: new Date().toISOString(),
+                    direction: 'outbound',
+                    type: 'CUSTOM',
+                    sentBy: logData.sentBy || 'ADMIN',
+                    orderId
+                };
+                
+                const connection2 = await pool.getConnection();
+                await connection2.query('INSERT INTO whatsapp_logs (id, phone, order_id, direction, timestamp, data) VALUES (?, ?, ?, ?, ?, ?)', 
+                    [correctionLog.id, correctionLog.phoneNumber, orderId, 'outbound', new Date(), JSON.stringify(correctionLog)]);
+                connection2.release();
+
+                if (req.io) {
+                    req.io.emit('whatsapp_update', correctionLog);
+                }
+            }
+        } catch (sendErr) {
+            console.error("Failed to send Meta correction message:", sendErr);
+        }
+
+        await logDbActivity('WHATSAPP_EDITED', `Edited Sent Message: ${messageId}`, { messageId, text }, req);
+
+        res.json({ 
+            success: true, 
+            data: metaResponseData || { success: true, message: "Local log updated" }, 
+            logEntry: logData 
+        });
+    } catch (e) {
+        console.error("WhatsApp Message Edit Error:", e);
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+
 router.post('/test-breach/:orderId', ensureDb, async (req, res) => {
     const { orderId } = req.params;
     try {
