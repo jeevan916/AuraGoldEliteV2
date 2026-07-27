@@ -110,6 +110,22 @@ export const generateOrderPDF = async (originalOrder: Order) => {
     `₹${item.finalAmount.toLocaleString()}`
   ]);
 
+  const itemsSubtotal1 = order.items.reduce((s, i) => s + i.finalAmount, 0);
+  const discount1 = order.discountAmount || 0;
+  const netLateFee1 = Math.max(0, (order.lateFeeAmount || 0) - (order.lateFeeWaived || 0));
+  const grandTotal1 = Math.max(0, itemsSubtotal1 - discount1 + netLateFee1);
+
+  const footRows1: string[][] = [
+    ['', '', '', 'Subtotal:', `₹${Math.round(itemsSubtotal1).toLocaleString('en-IN')}`]
+  ];
+  if (discount1 > 0) {
+    footRows1.push(['', '', '', 'Discount:', `-₹${Math.round(discount1).toLocaleString('en-IN')}`]);
+  }
+  if (netLateFee1 > 0) {
+    footRows1.push(['', '', '', 'Late Fee / Overdue:', `+₹${Math.round(netLateFee1).toLocaleString('en-IN')}`]);
+  }
+  footRows1.push(['', '', '', 'GRAND TOTAL:', `₹${Math.round(grandTotal1).toLocaleString('en-IN')}`]);
+
   autoTable(doc, {
     startY: yPos,
     head: [['Item Description', 'Net Wt', 'VA%', 'Stone', 'Total Price']],
@@ -117,7 +133,7 @@ export const generateOrderPDF = async (originalOrder: Order) => {
     theme: 'grid',
     headStyles: { fillColor: [217, 119, 6], textColor: 255 },
     styles: { fontSize: 9 },
-    foot: [['', '', '', 'GRAND TOTAL:', `₹${order.totalAmount.toLocaleString()}`]],
+    foot: footRows1 as any,
     footStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold' }
   });
 
@@ -379,6 +395,22 @@ export const generateReceiptPDF = async (originalOrder: Order) => {
     `₹${Math.round(item.finalAmount).toLocaleString('en-IN')}`
   ]);
 
+  const itemsSubtotal2 = order.items.reduce((s, i) => s + i.finalAmount, 0);
+  const discount2 = order.discountAmount || 0;
+  const netLateFee2 = Math.max(0, (order.lateFeeAmount || 0) - (order.lateFeeWaived || 0));
+  const grandTotal2 = Math.max(0, itemsSubtotal2 - discount2 + netLateFee2);
+
+  const footRows2: string[][] = [
+    ['', '', '', 'Subtotal:', `₹${Math.round(itemsSubtotal2).toLocaleString('en-IN')}`]
+  ];
+  if (discount2 > 0) {
+    footRows2.push(['', '', '', 'Discount:', `-₹${Math.round(discount2).toLocaleString('en-IN')}`]);
+  }
+  if (netLateFee2 > 0) {
+    footRows2.push(['', '', '', 'Late Fee / Overdue:', `+₹${Math.round(netLateFee2).toLocaleString('en-IN')}`]);
+  }
+  footRows2.push(['', '', '', 'GRAND TOTAL:', `₹${Math.round(grandTotal2).toLocaleString('en-IN')}`]);
+
   autoTable(doc, {
     startY: yPos,
     head: [['Item Description', 'Net Wt', 'VA%', 'Stone', 'Total Price']],
@@ -386,7 +418,7 @@ export const generateReceiptPDF = async (originalOrder: Order) => {
     theme: 'grid',
     headStyles: { fillColor: [217, 119, 6], textColor: 255 },
     styles: { fontSize: 9 },
-    foot: [['', '', '', 'GRAND TOTAL:', `₹${Math.round(order.totalAmount).toLocaleString('en-IN')}`]],
+    foot: footRows2 as any,
     footStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold' }
   });
 

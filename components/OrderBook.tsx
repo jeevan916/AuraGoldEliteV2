@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Search, Package, CheckCircle2, Archive, Clock, ChevronRight, 
-  BookOpen, CheckCheck, Plus, AlertCircle, ShieldAlert, ShieldCheck, Calendar
+  BookOpen, CheckCheck, Plus, AlertCircle, ShieldAlert, ShieldCheck, Calendar, Sparkles
 } from 'lucide-react';
 import { Order, OrderStatus, ProductionStatus, GlobalSettings, ProtectionStatus } from '../types';
 
@@ -188,6 +188,13 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, settings, onViewOrder, on
                                         <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${getStatusColor(order.status)}`}>
                                             {order.status}
                                         </span>
+                                        {/* ACTIVE PLAN BADGE */}
+                                        {order.paymentPlan && order.paymentPlan.type === 'PRE_CREATED' && (
+                                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 flex items-center gap-1">
+                                                <Sparkles size={9} className="text-amber-500" />
+                                                {order.paymentPlan.planName || `${order.paymentPlan.months} Mo Plan`} ({order.paymentPlan.interestPercentage || 0}% Int)
+                                            </span>
+                                        )}
                                         {/* PROTECTION BADGES */}
                                         {isLapsed && (
                                             <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-600 text-white flex items-center gap-1">

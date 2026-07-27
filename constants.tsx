@@ -53,9 +53,105 @@ export const PRE_CREATED_PLANS = [
 ];
 
 export const INITIAL_PLAN_TEMPLATES: PaymentPlanTemplate[] = [
-  { id: 'p1', name: 'Short Term (3 Months)', months: 3, interestPercentage: 0, advancePercentage: 20, enabled: true },
-  { id: 'p2', name: 'Standard (6 Months)', months: 6, interestPercentage: 5, advancePercentage: 15, enabled: true },
-  { id: 'p3', name: 'Long Term (12 Months)', months: 12, interestPercentage: 8, advancePercentage: 10, enabled: true },
+  // Range: 10,000 to 50,000 (Subvented Starter Bracket)
+  { 
+    id: 'p1', 
+    name: 'Starter Zero-Cost (3 Months)', 
+    months: 3, 
+    interestPercentage: 0, 
+    advancePercentage: 10, 
+    minPurchaseAmount: 10000, 
+    maxPurchaseAmount: 50000, 
+    subventionPercentage: 3, 
+    subventionNote: 'Merchant Subvented Flow: 3% fee absorbed by merchant for low purchase segment',
+    enabled: true 
+  },
+  { 
+    id: 'p2', 
+    name: 'Budget Flex (6 Months)', 
+    months: 6, 
+    interestPercentage: 3, 
+    advancePercentage: 15, 
+    minPurchaseAmount: 10000, 
+    maxPurchaseAmount: 50000, 
+    subventionPercentage: 2, 
+    subventionNote: '2% Subvention Discount Applied',
+    enabled: true 
+  },
+  { 
+    id: 'p3', 
+    name: 'Easy Saver (9 Months)', 
+    months: 9, 
+    interestPercentage: 4, 
+    advancePercentage: 20, 
+    minPurchaseAmount: 10000, 
+    maxPurchaseAmount: 50000, 
+    subventionPercentage: 1.5, 
+    subventionNote: 'Subvented 1.5% for 9-month budget buyers',
+    enabled: true 
+  },
+  // Range: 50,001 to 1,20,000 (Mid-Range Jewelry Bracket)
+  { 
+    id: 'p4', 
+    name: 'Gold Value Special (6 Months)', 
+    months: 6, 
+    interestPercentage: 2, 
+    advancePercentage: 15, 
+    minPurchaseAmount: 50001, 
+    maxPurchaseAmount: 120000, 
+    subventionPercentage: 2, 
+    subventionNote: 'Mid-Tier Subvention Offer for Orders ₹50k - ₹120k',
+    enabled: true 
+  },
+  { 
+    id: 'p5', 
+    name: 'Standard Gold EMI (9 Months)', 
+    months: 9, 
+    interestPercentage: 3.5, 
+    advancePercentage: 20, 
+    minPurchaseAmount: 50001, 
+    maxPurchaseAmount: 120000, 
+    subventionPercentage: 1, 
+    subventionNote: '1% Merchant Subvention',
+    enabled: true 
+  },
+  { 
+    id: 'p6', 
+    name: 'Annual Gold Smart (12 Months)', 
+    months: 12, 
+    interestPercentage: 5, 
+    advancePercentage: 10, 
+    minPurchaseAmount: 50001, 
+    maxPurchaseAmount: 120000, 
+    subventionPercentage: 1.5, 
+    subventionNote: '1.5% Merchant Rate Support',
+    enabled: true 
+  },
+  // Range: 1,20,001+ (High Value VIP Segment)
+  { 
+    id: 'p7', 
+    name: 'VIP High-Value Royal (12 Months)', 
+    months: 12, 
+    interestPercentage: 4, 
+    advancePercentage: 10, 
+    minPurchaseAmount: 120001, 
+    maxPurchaseAmount: 0, 
+    subventionPercentage: 2.5, 
+    subventionNote: 'Exclusive VIP Subvention for Purchases > ₹1,20,000',
+    enabled: true 
+  },
+  { 
+    id: 'p8', 
+    name: 'Diamond Heritage Flex (18 Months)', 
+    months: 18, 
+    interestPercentage: 6, 
+    advancePercentage: 15, 
+    minPurchaseAmount: 120001, 
+    maxPurchaseAmount: 0, 
+    subventionPercentage: 2, 
+    subventionNote: 'Long-term High Ticket Subvention',
+    enabled: true 
+  }
 ];
 
 export const PSYCHOLOGICAL_TACTICS = [

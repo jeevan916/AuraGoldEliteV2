@@ -1,5 +1,74 @@
 import { Order } from '../types';
 
+export function reconcileOrderTotalsAndMilestones(order: Order): boolean {
+    if (!order) return false;
+    let changed = false;
+
+    if (!order.paymentPlan) {
+        order.paymentPlan = { milestones: [] } as any;
+        changed = true;
+    }
+    if (!order.paymentPlan.milestones) {
+        order.paymentPlan.milestones = [];
+        changed = true;
+    }
+
+    if (typeof order.lateFeeAmount !== 'number') { order.lateFeeAmount = 0; changed = true; }
+    if (typeof order.lateFeeWaived !== 'number') { order.lateFeeWaived = 0; changed = true; }
+    if (typeof order.discountAmount !== 'number') { order.discountAmount = 0; changed = true; }
+
+    const itemsTotal = (order.items || []).reduce((s, i) => s + (i.finalAmount || 0), 0);
+    const netLateFee = Math.max(0, order.lateFeeAmount - order.lateFeeWaived);
+    const expectedTotal = Math.max(0, itemsTotal - order.discountAmount + netLateFee);
+
+    if (Math.round(order.totalAmount || 0) !== Math.round(expectedTotal)) {
+        order.totalAmount = expectedTotal;
+        changed = true;
+    }
+
+    const milestones = order.paymentPlan.milestones;
+    if (milestones.length > 0) {
+        const currentSum = milestones.reduce((s, m) => s + (m.targetAmount || 0), 0);
+        const delta = expectedTotal - currentSum;
+
+        if (Math.abs(delta) >= 0.5) {
+            const pendingMilestones = milestones.filter(m => m.status !== 'PAID');
+            const targetMilestone = pendingMilestones.length > 0 
+                ? pendingMilestones[pendingMilestones.length - 1] 
+                : milestones[milestones.length - 1];
+
+            targetMilestone.targetAmount = Math.max(0, targetMilestone.targetAmount + delta);
+            if (delta > 0 && order.lateFeeAmount > 0 && targetMilestone.description) {
+                if (!targetMilestone.description.includes('Late Fee')) {
+                    targetMilestone.description += ' + Late Fee';
+                }
+            }
+            changed = true;
+        }
+
+        const totalPaid = (order.payments || []).reduce((s, p) => s + p.amount, 0);
+        let runningSum = 0;
+        milestones.forEach(m => {
+            runningSum += m.targetAmount;
+            m.cumulativeTarget = runningSum;
+
+            const prevStatus = m.status;
+            let newStatus = 'PENDING';
+            if (totalPaid >= runningSum - 1) {
+                newStatus = 'PAID';
+            } else if (totalPaid > runningSum - m.targetAmount + 1) {
+                newStatus = 'PARTIAL';
+            }
+            if (prevStatus !== newStatus) {
+                m.status = newStatus as any;
+                changed = true;
+            }
+        });
+    }
+
+    return changed;
+}
+
 export function applyLateFees(order: Order): boolean {
     let orderChanged = false;
     let addedLateFees = 0;
@@ -68,5 +137,7 @@ export function applyLateFees(order: Order): boolean {
         }
     }
     
-    return orderChanged;
+    const reconChanged = reconcileOrderTotalsAndMilestones(order);
+
+    return orderChanged || reconChanged;
 }

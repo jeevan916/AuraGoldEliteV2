@@ -162,6 +162,30 @@ router.post('/catalog', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+router.post('/plan-templates', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        
+        // Clear old templates and insert the complete current active set
+        await connection.query('DELETE FROM plan_templates');
+        
+        if (Array.isArray(req.body.planTemplates)) {
+            for (const tpl of req.body.planTemplates) {
+                await connection.query(
+                    'INSERT INTO plan_templates (id, name, data) VALUES (?, ?, ?)',
+                    [tpl.id, tpl.name, JSON.stringify(tpl)]
+                );
+            }
+        }
+        connection.release();
+        res.json({ success: true });
+    } catch (e) {
+        console.error("[API Plan Templates Sync Error]", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.post('/settings', ensureDb, async (req, res) => {
     try {
         const pool = getPool();

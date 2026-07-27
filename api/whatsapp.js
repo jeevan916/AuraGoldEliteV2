@@ -237,7 +237,7 @@ router.post('/webhook', ensureDb, async (req, res) => {
     } catch (e) { console.error(e); }
 });
 
-async function resolveContactNames(logsOrLog) {
+export async function resolveContactNames(logsOrLog) {
     if (!logsOrLog) return logsOrLog;
     const isArray = Array.isArray(logsOrLog);
     const logs = isArray ? logsOrLog : [logsOrLog];

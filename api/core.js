@@ -3,6 +3,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { getPool, ensureDb, logDbActivity, isMock, initDb } from './db.js';
+import { resolveContactNames } from './whatsapp.js';
 
 const router = express.Router();
 
@@ -198,8 +199,16 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
         const [logs] = await connection.query('SELECT data FROM whatsapp_logs ORDER BY timestamp DESC LIMIT 100');
         const [templates] = await connection.query('SELECT data FROM templates');
         const [catalog] = await connection.query('SELECT data FROM catalog');
+        const [planTemplates] = await connection.query('SELECT data FROM plan_templates');
         const [intRows] = await connection.query('SELECT * FROM integrations');
         connection.release();
+        
+        let parsedLogs = logs.map(r => JSON.parse(r.data));
+        try {
+            parsedLogs = await resolveContactNames(parsedLogs);
+        } catch (resolveErr) {
+            console.error("[Bootstrap] Failed to resolve contact names for logs:", resolveErr);
+        }
         
         const intMap = {}; 
         intRows.forEach(r => { 
@@ -215,9 +224,10 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
         res.json({ success: true, data: {
             orders: orders.map(r => JSON.parse(r.data)),
             customers: customers.map(r => JSON.parse(r.data)),
-            logs: logs.map(r => JSON.parse(r.data)),
+            logs: parsedLogs,
             templates: templates.map(r => JSON.parse(r.data)),
             catalog: catalog.map(r => JSON.parse(r.data)),
+            planTemplates: planTemplates.map(r => JSON.parse(r.data)),
             settings: { 
                 currentGoldRate24K: core.currentGoldRate24K || 7500,
                 currentGoldRate22K: core.currentGoldRate22K || 6870,

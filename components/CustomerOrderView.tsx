@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   CheckCircle2, Clock, MapPin, ShieldCheck, Box, CreditCard, 
   Smartphone, Lock, AlertCircle, ArrowRight, QrCode, CalendarDays, 
@@ -9,12 +9,21 @@ import {
 import { Order, ProductionStatus, ProtectionStatus } from '../types';
 import { errorService } from '../services/errorService';
 import { goldRateService } from '../services/goldRateService';
+import { applyLateFees, reconcileOrderTotalsAndMilestones } from '../services/orderUtils';
 
 interface CustomerOrderViewProps {
   order: Order;
 }
 
-const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
+const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }) => {
+  const order = useMemo(() => {
+    if (!rawOrder) return rawOrder;
+    const cloned = JSON.parse(JSON.stringify(rawOrder));
+    applyLateFees(cloned);
+    reconcileOrderTotalsAndMilestones(cloned);
+    return cloned;
+  }, [rawOrder]);
+
   const [showOriginal, setShowOriginal] = useState(false);
   const [locationStatus, setLocationStatus] = useState<'PENDING' | 'GRANTED' | 'DENIED'>('PENDING');
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
@@ -27,13 +36,13 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
   const [activePolicyTab, setActivePolicyTab] = useState<'PAYMENT' | 'CANCELLATION' | 'OVERDUE'>('PAYMENT');
   const loggedRef = useRef(false);
 
-  const totalPaid = Math.round(order.payments.reduce((acc, p) => acc + p.amount, 0));
+  const totalPaid = Math.round((order.payments || []).reduce((acc, p) => acc + (p.amount || 0), 0));
   const remaining = Math.max(0, Math.round(order.totalAmount - totalPaid));
-  const nextPayment = order.paymentPlan.milestones.find(m => m.status !== 'PAID');
+  const nextPayment = (order.paymentPlan?.milestones || []).find(m => m.status !== 'PAID');
 
-  const overdueMilestones = order.paymentPlan.milestones.filter(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date());
+  const overdueMilestones = (order.paymentPlan?.milestones || []).filter(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date());
   const hasOverdue = overdueMilestones.length > 0;
-  const overdueAmount = Math.round(overdueMilestones.reduce((acc, m) => acc + m.targetAmount, 0));
+  const overdueAmount = Math.round(overdueMilestones.reduce((acc, m) => acc + (m.targetAmount || 0), 0));
 
   let maxDaysOverdue = 0;
   if (hasOverdue) {
@@ -355,6 +364,91 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
             </div>
         )}
 
+        {/* ACTIVE PAYMENT PLAN & EMI BREAKDOWN CARD */}
+        {(() => {
+          const plan = order.paymentPlan;
+          if (!plan || plan.type === 'MANUAL') return null;
+          const totalVal = Math.round(order.totalAmount);
+          const advanceMilestone = plan.milestones.find(m => m.id === 'ADV' || m.description?.toLowerCase().includes('advance') || m.description?.toLowerCase().includes('down'));
+          const advanceAmount = advanceMilestone ? Math.round(advanceMilestone.targetAmount) : Math.round(totalVal * ((plan.advancePercentage || 0) / 100));
+          const principalFinanced = Math.max(0, totalVal - advanceAmount);
+          const interestPercentage = plan.interestPercentage || 0;
+          const months = plan.months || 1;
+          const estimatedInterestCharge = Math.round(principalFinanced * (interestPercentage / 100) * (months / 12));
+          
+          const emiMilestones = plan.milestones.filter(m => m.id !== 'ADV' && !m.description?.toLowerCase().includes('advance') && !m.description?.toLowerCase().includes('down'));
+          const emiAmount = emiMilestones.length > 0 
+            ? Math.round(emiMilestones[0].targetAmount) 
+            : (months > 0 ? Math.round((principalFinanced + estimatedInterestCharge) / months) : principalFinanced);
+
+          const planTitle = plan.planName || (plan.type === 'PRE_CREATED' ? `${months}-Month Installment Scheme` : `Custom ${months}-Month Payment Plan`);
+          const isZeroCost = interestPercentage === 0;
+
+          return (
+            <div className="bg-white rounded-3xl p-6 shadow-md border border-slate-200/80 space-y-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-3 border-b border-slate-100">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full">
+                      Active Payment Plan
+                    </span>
+                    {isZeroCost ? (
+                      <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                        <CheckCircle2 size={10} /> 0% Interest EMI
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full">
+                        {interestPercentage}% Interest Scheme
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="font-black text-slate-900 text-lg mt-1 flex items-center gap-2">
+                    <Sparkles className="text-amber-500" size={18} /> {planTitle}
+                  </h3>
+                </div>
+                <div className="bg-slate-900 text-white px-4 py-2.5 rounded-2xl text-right self-stretch sm:self-auto shadow-sm">
+                  <p className="text-[9px] font-black uppercase text-amber-400 tracking-widest">Monthly EMI</p>
+                  <p className="text-xl font-black">₹{emiAmount.toLocaleString('en-IN')}<span className="text-xs text-slate-300 font-medium">/mo</span></p>
+                </div>
+              </div>
+
+              {/* Breakdown Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Total Order</p>
+                  <p className="font-black text-slate-800 text-sm mt-0.5">₹{totalVal.toLocaleString('en-IN')}</p>
+                  <p className="text-[9px] text-slate-400 font-medium">Overall Value</p>
+                </div>
+                <div className="bg-amber-50/60 p-3 rounded-2xl border border-amber-100">
+                  <p className="text-[9px] font-black uppercase text-amber-800 tracking-widest">Down Payment</p>
+                  <p className="font-black text-amber-900 text-sm mt-0.5">₹{advanceAmount.toLocaleString('en-IN')}</p>
+                  <p className="text-[9px] text-amber-700/80 font-medium">{plan.advancePercentage}% Advance</p>
+                </div>
+                <div className="bg-indigo-50/50 p-3 rounded-2xl border border-indigo-100">
+                  <p className="text-[9px] font-black uppercase text-indigo-700 tracking-widest">Principal Financed</p>
+                  <p className="font-black text-indigo-900 text-sm mt-0.5">₹{principalFinanced.toLocaleString('en-IN')}</p>
+                  <p className="text-[9px] text-indigo-600/80 font-medium">{months} Monthly EMIs</p>
+                </div>
+                <div className={`p-3 rounded-2xl border ${isZeroCost ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-200'}`}>
+                  <p className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Interest Charge</p>
+                  <p className={`font-black text-sm mt-0.5 ${isZeroCost ? 'text-emerald-700' : 'text-amber-900'}`}>
+                    {isZeroCost ? '₹0 (0% Int)' : `₹${estimatedInterestCharge.toLocaleString('en-IN')}`}
+                  </p>
+                  <p className="text-[9px] text-slate-400 font-medium">{interestPercentage}% p.a. Interest</p>
+                </div>
+              </div>
+
+              {/* EMI Calculation Summary text */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-[11px] text-slate-600 font-medium flex items-center gap-2">
+                <ReceiptIndianRupee size={16} className="text-amber-600 shrink-0" />
+                <span>
+                  <strong>EMI Breakdown:</strong> Financed ₹{principalFinanced.toLocaleString('en-IN')} {interestPercentage > 0 ? `+ ₹${estimatedInterestCharge.toLocaleString('en-IN')} Interest` : ''} split into <strong>{months} monthly installments</strong> of <strong>₹{emiAmount.toLocaleString('en-IN')}</strong>.
+                </span>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* 2. PAYMENT */}
         {remaining > 0 && (
           <div className="bg-white p-6 rounded-3xl shadow-lg border border-amber-100 flex flex-col items-center">
@@ -490,12 +584,13 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
           <div className="space-y-4 relative before:absolute before:left-[19px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-100">
              {displayMilestones.map((m, i) => {
                const isPaid = m.status === 'PAID';
-               const isOverdue = m.status !== 'PAID' && new Date(m.dueDate) < new Date();
+               const isPartial = m.status === 'PARTIAL';
+               const isOverdue = m.status !== 'PAID' && m.status !== 'PARTIAL' && new Date(m.dueDate) < new Date();
                const isOriginalView = showOriginal;
                
                return (
                  <div key={i} className={`flex gap-4 relative ${isOriginalView ? 'opacity-70 grayscale' : ''}`}>
-                   <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-4 border-white z-10 ${isPaid && !isOriginalView ? 'bg-emerald-100 text-emerald-600' : isOverdue && !isOriginalView ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'}`}>
+                   <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-4 border-white z-10 ${isPaid && !isOriginalView ? 'bg-emerald-100 text-emerald-600' : isPartial && !isOriginalView ? 'bg-amber-100 text-amber-600' : isOverdue && !isOriginalView ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'}`}>
                       {isPaid && !isOriginalView ? <CheckCircle2 size={16} /> : <Clock size={16} />}
                    </div>
                    <div className="flex-1 bg-slate-50/50 p-3 rounded-xl border border-slate-100">
@@ -505,11 +600,11 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
                          <p className="text-[10px] text-slate-400 font-medium">{new Date(m.dueDate).toLocaleDateString('en-IN')}</p>
                        </div>
                        <div className="text-right">
-                         <p className={`text-sm font-black ${isPaid && !isOriginalView ? 'text-emerald-600' : 'text-slate-800'}`}>₹{Math.round(m.targetAmount).toLocaleString('en-IN')}</p>
+                         <p className={`text-sm font-black ${isPaid && !isOriginalView ? 'text-emerald-600' : isPartial && !isOriginalView ? 'text-amber-600' : 'text-slate-800'}`}>₹{Math.round(m.targetAmount).toLocaleString('en-IN')}</p>
                        </div>
                      </div>
-                     <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full inline-block ${isPaid && !isOriginalView ? 'bg-emerald-100 text-emerald-700' : isOverdue && !isOriginalView ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600'}`}>
-                        {isOriginalView ? 'Snapshot' : (isPaid ? 'Paid Successfully' : isOverdue ? 'Overdue' : 'Scheduled')}
+                     <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full inline-block ${isPaid && !isOriginalView ? 'bg-emerald-100 text-emerald-700' : isPartial && !isOriginalView ? 'bg-amber-100 text-amber-700' : isOverdue && !isOriginalView ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600'}`}>
+                        {isOriginalView ? 'Snapshot' : (isPaid ? 'Paid Successfully' : isPartial ? 'Partial Paid' : isOverdue ? 'Overdue' : 'Scheduled')}
                      </span>
                    </div>
                  </div>
@@ -853,7 +948,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order }) => {
               <div className="space-y-3 text-sm">
                   <div className="flex justify-between items-center text-slate-500 font-bold mb-3">
                       <span>Subtotal</span>
-                      <span>₹{Math.round(order.totalAmount + (order.discountAmount || 0) - ((order.lateFeeAmount || 0) - (order.lateFeeWaived || 0))).toLocaleString('en-IN')}</span>
+                      <span>₹{Math.round(order.items.reduce((s, i) => s + i.finalAmount, 0)).toLocaleString('en-IN')}</span>
                   </div>
                   {order.discountAmount ? (
                       <div className="flex justify-between items-center text-emerald-600 font-bold mb-3">

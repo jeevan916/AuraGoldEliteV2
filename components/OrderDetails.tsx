@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 // Added CheckCheck to imports from lucide-react
-import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp, Plus, Edit2, Printer, Download, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp, Plus, Edit2, Printer, Download, Image as ImageIcon, Sparkles, Calculator, Percent, Tag, ReceiptIndianRupee } from 'lucide-react';
 import { Order, GlobalSettings, WhatsAppLogEntry, ProductionStatus, ProtectionStatus, OrderStatus, JewelryDetail } from '../types';
 import { generateOrderPDF, generateReceiptPDF } from '../services/pdfGenerator';
 import { whatsappService } from '../services/whatsappService';
@@ -11,7 +11,7 @@ import { compressImage } from '../services/imageOptimizer';
 import { PaymentWidget } from './clusters/PaymentWidget';
 import { CommunicationWidget } from './clusters/CommunicationWidget';
 
-import { applyLateFees } from '../services/orderUtils';
+import { applyLateFees, reconcileOrderTotalsAndMilestones } from '../services/orderUtils';
 
 interface OrderDetailsProps {
   order: Order;
@@ -32,7 +32,9 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editItemForm, setEditItemForm] = useState({
       netWeight: '',
+      wastagePercentage: '',
       makingChargesPerGram: '',
+      stoneCharges: '',
       otherCharges: '',
       customizationDetails: '',
       backendNotes: ''
@@ -52,14 +54,17 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       if (!lateFeeCheckedRef.current) {
           lateFeeCheckedRef.current = true;
           const clonedOrder = JSON.parse(JSON.stringify(order));
-          const changed = applyLateFees(clonedOrder);
-          if (changed) {
+          const lateFeeChanged = applyLateFees(clonedOrder);
+          const reconChanged = reconcileOrderTotalsAndMilestones(clonedOrder);
+
+          if (lateFeeChanged || reconChanged) {
               onOrderUpdate(clonedOrder);
           }
       }
   }, [order, onOrderUpdate]);
 
   const handlePaymentUpdate = (updatedOrder: Order) => {
+    reconcileOrderTotalsAndMilestones(updatedOrder);
     onOrderUpdate(updatedOrder);
   };
 
@@ -171,7 +176,8 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           return { ...item, baseMetalValue: metalValue, wastageValue, totalLaborValue: laborValue, taxAmount: tax, finalAmount: subTotal + tax };
       });
 
-      const newTotal = Math.max(0, updatedItems.reduce((s, i) => s + i.finalAmount, 0) - (order.discountAmount || 0));
+      const netLateFee = Math.max(0, (order.lateFeeAmount || 0) - (order.lateFeeWaived || 0));
+      const newTotal = Math.max(0, updatedItems.reduce((s, i) => s + i.finalAmount, 0) - (order.discountAmount || 0) + netLateFee);
       const paid = order.payments.reduce((s, p) => s + p.amount, 0);
       const remaining = newTotal - paid;
 
@@ -230,8 +236,10 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
   };
 
   const handleUpdateItemDetails = async (itemId: string) => {
-      const w = parseFloat(editItemForm.netWeight);
+      const w = parseFloat(editItemForm.netWeight) || 0;
+      const wastagePct = parseFloat(editItemForm.wastagePercentage) || 0;
       const makingCharges = parseFloat(editItemForm.makingChargesPerGram) || 0;
+      const stoneChg = parseFloat(editItemForm.stoneCharges) || 0;
       const otherChg = parseFloat(editItemForm.otherCharges) || 0;
 
       if (!w || w <= 0) return alert("Invalid Weight");
@@ -245,16 +253,18 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       const effectiveRate = targetItem.netWeight > 0 ? (targetItem.baseMetalValue / targetItem.netWeight) : order.goldRateAtBooking;
       
       const metalValue = w * effectiveRate;
-      const wastageValue = metalValue * (targetItem.wastagePercentage / 100);
+      const wastageValue = metalValue * (wastagePct / 100);
       const laborValue = makingCharges * w;
-      const subTotal = metalValue + wastageValue + laborValue + targetItem.stoneCharges + otherChg;
+      const subTotal = metalValue + wastageValue + laborValue + stoneChg + otherChg;
       const tax = subTotal * (settings.defaultTaxRate / 100);
       const newFinalAmount = subTotal + tax;
 
       const updatedItems = order.items.map(i => i.id === itemId ? {
           ...i,
           netWeight: w,
+          wastagePercentage: wastagePct,
           makingChargesPerGram: makingCharges,
+          stoneCharges: stoneChg,
           otherCharges: otherChg,
           customizationDetails: editItemForm.customizationDetails,
           backendNotes: editItemForm.backendNotes,
@@ -265,15 +275,16 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           finalAmount: newFinalAmount
       } : i);
 
-      const newTotal = Math.max(0, updatedItems.reduce((s, i) => s + i.finalAmount, 0) - (order.discountAmount || 0));
+      const netLateFee = Math.max(0, (order.lateFeeAmount || 0) - (order.lateFeeWaived || 0));
+      const newTotal = Math.max(0, updatedItems.reduce((s, i) => s + i.finalAmount, 0) - (order.discountAmount || 0) + netLateFee);
       const valueChange = newTotal - oldTotal;
 
       const newMilestones = JSON.parse(JSON.stringify(order.paymentPlan.milestones));
       const last = newMilestones[newMilestones.length - 1];
-      if (last.status !== 'PAID') {
-          last.targetAmount += valueChange;
-          last.cumulativeTarget += valueChange;
-      } else {
+      if (last && last.status !== 'PAID') {
+          last.targetAmount = Math.max(0, last.targetAmount + valueChange);
+          last.cumulativeTarget = Math.max(0, last.cumulativeTarget + valueChange);
+      } else if (valueChange !== 0) {
           newMilestones.push({
               id: `ADJ-WT-${Date.now()}`,
               dueDate: new Date().toISOString().split('T')[0],
@@ -288,7 +299,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       // Preserve original milestones if not already saved
       const originalMilestones = order.paymentPlan.originalMilestones || JSON.parse(JSON.stringify(order.paymentPlan.milestones));
 
-      const updatedOrder = { 
+      const updatedOrder: Order = { 
           ...order, 
           items: updatedItems, 
           totalAmount: newTotal, 
@@ -311,9 +322,9 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           }
       } catch (e) {}
 
-      onOrderUpdate(updatedOrder as Order);
+      onOrderUpdate(updatedOrder);
       setEditingItemId(null);
-      alert("Item details updated successfully.");
+      alert("Item details updated successfully & order totals recalculated.");
   };
 
   const handleUpdateDiscount = () => {
@@ -321,16 +332,17 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       if (isNaN(discount) || discount < 0) return alert("Invalid discount amount");
 
       const oldTotal = order.totalAmount;
-      const oldDiscount = order.discountAmount || 0;
-      const newTotal = Math.max(0, order.items.reduce((s, i) => s + i.finalAmount, 0) - discount);
+      const itemsTotal = order.items.reduce((s, i) => s + i.finalAmount, 0);
+      const netLateFee = Math.max(0, (order.lateFeeAmount || 0) - (order.lateFeeWaived || 0));
+      const newTotal = Math.max(0, itemsTotal - discount + netLateFee);
       const valueChange = newTotal - oldTotal;
 
       const newMilestones = JSON.parse(JSON.stringify(order.paymentPlan.milestones));
       const last = newMilestones[newMilestones.length - 1];
-      if (last.status !== 'PAID') {
-          last.targetAmount += valueChange;
-          last.cumulativeTarget += valueChange;
-      } else if (valueChange > 0) {
+      if (last && last.status !== 'PAID') {
+          last.targetAmount = Math.max(0, last.targetAmount + valueChange);
+          last.cumulativeTarget = Math.max(0, last.cumulativeTarget + valueChange);
+      } else if (valueChange !== 0) {
           newMilestones.push({
               id: `ADJ-DISC-${Date.now()}`,
               dueDate: new Date().toISOString().split('T')[0],
@@ -355,6 +367,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           } 
       };
 
+      reconcileOrderTotalsAndMilestones(updatedOrder as Order);
       onOrderUpdate(updatedOrder as Order);
       setIsUpdatingDiscount(false);
       setNewDiscount('');
@@ -368,22 +381,24 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       const maxWaivable = order.lateFeeAmount || 0;
       if (waived > maxWaivable) return alert("Cannot waive more than accumulated late fee");
 
-      const oldWaived = order.lateFeeWaived || 0;
-      const amountChange = waived - oldWaived; // if waived goes up, total goes down (amountChange is positive)
-      
-      const newTotal = order.totalAmount - amountChange;
+      const oldTotal = order.totalAmount;
+      const itemsTotal = order.items.reduce((s, i) => s + i.finalAmount, 0);
+      const discount = order.discountAmount || 0;
+      const netLateFee = Math.max(0, (order.lateFeeAmount || 0) - waived);
+      const newTotal = Math.max(0, itemsTotal - discount + netLateFee);
+      const valueChange = newTotal - oldTotal;
 
       const newMilestones = JSON.parse(JSON.stringify(order.paymentPlan.milestones));
       const pendingMilestones = newMilestones.filter((m: any) => m.status !== 'PAID');
       
       if (pendingMilestones.length > 0) {
           const last = pendingMilestones[pendingMilestones.length - 1];
-          last.targetAmount -= amountChange;
-          last.cumulativeTarget -= amountChange;
+          last.targetAmount = Math.max(0, last.targetAmount + valueChange);
+          last.cumulativeTarget = Math.max(0, last.cumulativeTarget + valueChange);
       } else if (newMilestones.length > 0) {
           const last = newMilestones[newMilestones.length - 1];
-          last.targetAmount -= amountChange;
-          last.cumulativeTarget -= amountChange;
+          last.targetAmount = Math.max(0, last.targetAmount + valueChange);
+          last.cumulativeTarget = Math.max(0, last.cumulativeTarget + valueChange);
       }
 
       const updatedOrder = { 
@@ -396,6 +411,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           } 
       };
 
+      reconcileOrderTotalsAndMilestones(updatedOrder as Order);
       onOrderUpdate(updatedOrder as Order);
       setIsUpdatingWaiveLateFee(false);
       setNewWaiveLateFee('');
@@ -480,7 +496,8 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           return { ...item, baseMetalValue: metalValue, wastageValue, totalLaborValue: laborValue, taxAmount: tax, finalAmount: subTotal + tax };
       });
 
-      const newTotal = Math.max(0, updatedItems.reduce((s, i) => s + i.finalAmount, 0) - (order.discountAmount || 0));
+      const netLateFee = Math.max(0, (order.lateFeeAmount || 0) - (order.lateFeeWaived || 0));
+      const newTotal = Math.max(0, updatedItems.reduce((s, i) => s + i.finalAmount, 0) - (order.discountAmount || 0) + netLateFee);
       const totalPaid = order.payments.reduce((acc, p) => acc + p.amount, 0);
       const remainingBalance = Number((newTotal - totalPaid).toFixed(2));
 
@@ -670,6 +687,106 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                 </div>
             )}
             
+            {/* Active Payment Plan & EMI Calculation Breakdown */}
+            {(() => {
+              const plan = order.paymentPlan;
+              if (!plan || plan.type === 'MANUAL') return null;
+              const netOrderValue = order.totalAmount;
+              
+              const advanceMilestone = plan.milestones.find(m => m.id === 'ADV' || m.description?.toLowerCase().includes('advance') || m.description?.toLowerCase().includes('down'));
+              const advanceAmount = advanceMilestone ? Math.round(advanceMilestone.targetAmount) : Math.round(netOrderValue * ((plan.advancePercentage || 0) / 100));
+              
+              const principalFinanced = Math.max(0, netOrderValue - advanceAmount);
+              const interestPercentage = plan.interestPercentage || 0;
+              const months = plan.months || 1;
+              const estimatedInterestCharge = Math.round(principalFinanced * (interestPercentage / 100) * (months / 12));
+              
+              const emiMilestones = plan.milestones.filter(m => m.id !== 'ADV' && !m.description?.toLowerCase().includes('advance') && !m.description?.toLowerCase().includes('down'));
+              const emiAmount = emiMilestones.length > 0 
+                ? Math.round(emiMilestones[0].targetAmount) 
+                : (months > 0 ? Math.round((principalFinanced + estimatedInterestCharge) / months) : principalFinanced);
+
+              const planTitle = plan.planName || (plan.type === 'PRE_CREATED' ? `${months}-Month Pre-Created Scheme` : `Custom ${months}-Month Installment Plan`);
+              const isZeroCost = interestPercentage === 0;
+
+              return (
+                <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-6 rounded-[2rem] shadow-xl space-y-5 border border-indigo-900/50">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-white/10 pb-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-widest bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 rounded-full">
+                          Active Payment Plan
+                        </span>
+                        {isZeroCost ? (
+                          <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                            <CheckCircle2 size={10} /> 0% Interest Zero-Cost
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-black uppercase tracking-widest bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 px-2.5 py-0.5 rounded-full">
+                            {interestPercentage}% p.a. Interest Scheme
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-xl font-black text-white mt-1.5 flex items-center gap-2">
+                        <Sparkles className="text-amber-400" size={20} /> {planTitle}
+                      </h3>
+                      <p className="text-xs text-slate-300 font-medium mt-0.5">
+                        Tenure: <strong className="text-white">{months} Months</strong> • Down Payment: <strong className="text-white">{plan.advancePercentage}%</strong> ({plan.type === 'PRE_CREATED' ? 'Template Scheme' : 'Manual Plan'})
+                      </p>
+                    </div>
+                    <div className="bg-white/10 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/20 text-right self-stretch sm:self-auto">
+                      <p className="text-[9px] font-black uppercase text-amber-300 tracking-widest">Monthly EMI</p>
+                      <p className="text-2xl font-black text-white">₹{emiAmount.toLocaleString('en-IN')}<span className="text-xs text-slate-300 font-normal">/mo</span></p>
+                    </div>
+                  </div>
+
+                  {/* EMI & Interest Math Calculation Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-white/10 backdrop-blur-sm p-3.5 rounded-2xl border border-white/10">
+                      <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Order Total</p>
+                      <p className="text-base font-black text-white mt-0.5">₹{Math.round(netOrderValue).toLocaleString('en-IN')}</p>
+                      <p className="text-[10px] text-slate-400 font-medium">Net Order Value</p>
+                    </div>
+
+                    <div className="bg-white/10 backdrop-blur-sm p-3.5 rounded-2xl border border-white/10">
+                      <p className="text-[9px] font-black uppercase text-amber-300 tracking-widest">Advance Down Payment</p>
+                      <p className="text-base font-black text-amber-400 mt-0.5">₹{advanceAmount.toLocaleString('en-IN')}</p>
+                      <p className="text-[10px] text-amber-200/80 font-medium">{plan.advancePercentage}% Advance</p>
+                    </div>
+
+                    <div className="bg-white/10 backdrop-blur-sm p-3.5 rounded-2xl border border-white/10">
+                      <p className="text-[9px] font-black uppercase text-indigo-300 tracking-widest">Principal Financed</p>
+                      <p className="text-base font-black text-indigo-200 mt-0.5">₹{principalFinanced.toLocaleString('en-IN')}</p>
+                      <p className="text-[10px] text-slate-300 font-medium">Order - Advance</p>
+                    </div>
+
+                    <div className={`p-3.5 rounded-2xl border ${isZeroCost ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Interest Charge</p>
+                      <p className={`text-base font-black mt-0.5 ${isZeroCost ? 'text-emerald-300' : 'text-amber-300'}`}>
+                        {isZeroCost ? '₹0 (0% Int)' : `₹${estimatedInterestCharge.toLocaleString('en-IN')}`}
+                      </p>
+                      <p className="text-[10px] opacity-80 font-medium">Rate: {interestPercentage}% p.a.</p>
+                    </div>
+                  </div>
+
+                  {/* Formula & Explanation Callout */}
+                  <div className="bg-black/30 p-3.5 rounded-2xl border border-white/10 text-xs text-slate-300 flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                    <div className="flex items-center gap-2">
+                      <Calculator size={16} className="text-amber-400 shrink-0" />
+                      <span>
+                        <strong className="text-white">EMI Formula:</strong> [Financed (₹{principalFinanced.toLocaleString('en-IN')}) + Int (₹{estimatedInterestCharge.toLocaleString('en-IN')})] ÷ {months} Months = <strong className="text-amber-300">₹{emiAmount.toLocaleString('en-IN')}/mo</strong>
+                      </span>
+                    </div>
+                    {plan.subventionPercentage ? (
+                      <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/20 px-2.5 py-1 rounded-lg border border-emerald-500/30 shrink-0">
+                        Subvention Discount: {plan.subventionPercentage}%
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })()}
+
             <PaymentWidget order={order} onPaymentRecorded={handlePaymentUpdate} onAddLog={onAddLog} variant="FULL" />
             
             {/* Payment Schedule Visualization */}
@@ -768,12 +885,16 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                                     setEditingItemId(item.id);
                                     setEditItemForm({
                                         netWeight: item.netWeight.toString(),
-                                        makingChargesPerGram: item.makingChargesPerGram.toString(),
+                                        wastagePercentage: (item.wastagePercentage || 0).toString(),
+                                        makingChargesPerGram: (item.makingChargesPerGram || 0).toString(),
+                                        stoneCharges: (item.stoneCharges || 0).toString(),
                                         otherCharges: (item.otherCharges || 0).toString(),
                                         customizationDetails: item.customizationDetails || '',
                                         backendNotes: item.backendNotes || ''
                                     });
-                                }} className="text-[9px] font-bold text-blue-600 flex items-center gap-1"><Edit2 size={10} /> Edit Item</button>
+                                }} className="text-[9px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 bg-blue-50 px-2 py-1 rounded-md border border-blue-100 transition-colors">
+                                    <Edit2 size={10} /> Edit Item
+                                </button>
                                 <button onClick={() => setExpandedItem(isExpanded ? null : item.id)} className="text-[9px] font-bold text-slate-400 flex items-center gap-1">
                                     {isExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />} Breakdown
                                 </button>
@@ -886,15 +1007,15 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                                 <span className="font-mono text-slate-700">₹{Math.round(item.baseMetalValue).toLocaleString()}</span>
                             </div>
                             <div>
-                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Making % Charged</span>
+                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">VA / Wastage %</span>
                                 <span className="font-mono text-amber-700 font-bold">{item.wastagePercentage}% (₹{Math.round(item.wastageValue).toLocaleString()})</span>
                             </div>
                             <div>
-                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Making (MC)</span>
-                                <span className="font-mono text-slate-700">₹{Math.round(item.totalLaborValue).toLocaleString()}</span>
+                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Making Charges (₹/g)</span>
+                                <span className="font-mono text-indigo-700 font-bold">₹{item.makingChargesPerGram}/g (₹{Math.round(item.totalLaborValue).toLocaleString()})</span>
                             </div>
                             <div>
-                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Stone</span>
+                                <span className="block font-bold uppercase tracking-wider text-slate-400 text-[8px]">Stone Charges</span>
                                 <span className="font-mono text-slate-700">₹{Math.round(item.stoneCharges).toLocaleString('en-IN')}</span>
                             </div>
                             <div>
@@ -910,59 +1031,135 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
 
                     <div className="mt-3 flex gap-2 overflow-x-auto pb-1">{Object.values(ProductionStatus).map(s => <button key={s} onClick={() => handleStatusChange(item.id, s)} className={`text-[8px] font-black uppercase px-2 py-1 rounded border ${item.productionStatus === s ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-400'}`}>{s.replace('_', ' ')}</button>)}</div>
                     
-                    {editingItemId === item.id && (
-                        <div className="mt-3 bg-blue-50 p-4 rounded-xl flex flex-col gap-3 animate-slideDown">
-                            <div className="grid grid-cols-3 gap-3">
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500">Weight (g)</label>
-                                    <input type="number" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none" placeholder="Weight" value={editItemForm.netWeight} onChange={e => setEditItemForm({...editItemForm, netWeight: e.target.value})} />
+                    {editingItemId === item.id && (() => {
+                        const w = parseFloat(editItemForm.netWeight) || 0;
+                        const vaPct = parseFloat(editItemForm.wastagePercentage) || 0;
+                        const mcPerGram = parseFloat(editItemForm.makingChargesPerGram) || 0;
+                        const stone = parseFloat(editItemForm.stoneCharges) || 0;
+                        const other = parseFloat(editItemForm.otherCharges) || 0;
+                        const effRate = item.netWeight > 0 ? (item.baseMetalValue / item.netWeight) : order.goldRateAtBooking;
+
+                        const metalVal = w * effRate;
+                        const wastageVal = metalVal * (vaPct / 100);
+                        const laborVal = mcPerGram * w;
+                        const subT = metalVal + wastageVal + laborVal + stone + other;
+                        const taxVal = subT * (settings.defaultTaxRate / 100);
+                        const calculatedTotal = subT + taxVal;
+
+                        return (
+                            <div className="mt-3 bg-blue-50/80 border border-blue-200 p-4 rounded-xl flex flex-col gap-3 animate-slideDown shadow-sm">
+                                <div className="flex items-center justify-between border-b border-blue-200/60 pb-2">
+                                    <span className="text-xs font-black uppercase text-blue-900 tracking-wider flex items-center gap-1.5">
+                                        <Edit2 size={13} className="text-blue-600" /> Edit Item Specifications & Calculations
+                                    </span>
+                                    <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
+                                        Applied Rate: ₹{Math.round(effRate).toLocaleString('en-IN')}/g
+                                    </span>
                                 </div>
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500">Making (₹/g)</label>
-                                    <input type="number" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none" placeholder="Making/g" value={editItemForm.makingChargesPerGram} onChange={e => setEditItemForm({...editItemForm, makingChargesPerGram: e.target.value})} />
+
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-600 block mb-1">Net Wt (g)</label>
+                                        <input type="number" step="0.001" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-400" placeholder="0.000" value={editItemForm.netWeight} onChange={e => setEditItemForm({...editItemForm, netWeight: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-amber-700 block mb-1">VA / Wastage (%)</label>
+                                        <input type="number" step="0.1" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none text-amber-800 focus:ring-2 focus:ring-amber-400" placeholder="VA %" value={editItemForm.wastagePercentage} onChange={e => setEditItemForm({...editItemForm, wastagePercentage: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-indigo-700 block mb-1">Making (₹/g)</label>
+                                        <input type="number" step="1" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none text-indigo-800 focus:ring-2 focus:ring-indigo-400" placeholder="Making ₹/g" value={editItemForm.makingChargesPerGram} onChange={e => setEditItemForm({...editItemForm, makingChargesPerGram: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-600 block mb-1">Stone Charges (₹)</label>
+                                        <input type="number" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-400" placeholder="Stone ₹" value={editItemForm.stoneCharges} onChange={e => setEditItemForm({...editItemForm, stoneCharges: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-600 block mb-1">Other Charges (₹)</label>
+                                        <input type="number" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-400" placeholder="Other ₹" value={editItemForm.otherCharges} onChange={e => setEditItemForm({...editItemForm, otherCharges: e.target.value})} />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500">Other Charges (₹)</label>
-                                    <input type="number" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs font-bold outline-none" placeholder="Other" value={editItemForm.otherCharges} onChange={e => setEditItemForm({...editItemForm, otherCharges: e.target.value})} />
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-600 block mb-1">Customer Notes / Customization</label>
+                                        <input type="text" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs outline-none focus:ring-2 focus:ring-blue-400" placeholder="Notes for customer" value={editItemForm.customizationDetails} onChange={e => setEditItemForm({...editItemForm, customizationDetails: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-600 block mb-1">Karigar Internal Notes</label>
+                                        <input type="text" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs outline-none focus:ring-2 focus:ring-blue-400" placeholder="Internal instructions" value={editItemForm.backendNotes} onChange={e => setEditItemForm({...editItemForm, backendNotes: e.target.value})} />
+                                    </div>
+                                </div>
+
+                                {/* Live Calculation Breakdown Box */}
+                                <div className="bg-white/90 border border-blue-200/80 p-3 rounded-lg text-xs space-y-1.5">
+                                    <div className="flex justify-between items-center text-slate-600 font-medium">
+                                        <span>Metal Value ({w}g × ₹{Math.round(effRate).toLocaleString('en-IN')}):</span>
+                                        <span className="font-mono font-bold text-slate-800">₹{Math.round(metalVal).toLocaleString('en-IN')}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-amber-700 font-medium">
+                                        <span>VA / Wastage ({vaPct}% of metal):</span>
+                                        <span className="font-mono font-bold text-amber-800">+₹{Math.round(wastageVal).toLocaleString('en-IN')}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-indigo-700 font-medium">
+                                        <span>Making Charges ({mcPerGram} ₹/g × {w}g):</span>
+                                        <span className="font-mono font-bold text-indigo-800">+₹{Math.round(laborVal).toLocaleString('en-IN')}</span>
+                                    </div>
+                                    {(stone > 0 || other > 0) && (
+                                        <div className="flex justify-between items-center text-slate-600 font-medium">
+                                            <span>Stone & Other Charges:</span>
+                                            <span className="font-mono font-bold text-slate-800">+₹{Math.round(stone + other).toLocaleString('en-IN')}</span>
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between items-center text-slate-500 font-medium border-t border-slate-100 pt-1">
+                                        <span>GST Tax ({settings.defaultTaxRate}%):</span>
+                                        <span className="font-mono font-bold text-slate-700">+₹{Math.round(taxVal).toLocaleString('en-IN')}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-slate-900 font-black border-t border-blue-200 pt-1.5 text-sm">
+                                        <span>Recalculated Item Total:</span>
+                                        <span className="font-mono text-emerald-700 text-base">₹{Math.round(calculatedTotal).toLocaleString('en-IN')}</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-2 justify-end pt-1">
+                                    <button onClick={() => setEditingItemId(null)} className="text-slate-500 hover:text-slate-700 font-bold text-[10px] uppercase px-3 py-2 border border-slate-200 rounded-lg bg-white">Cancel</button>
+                                    <button onClick={() => handleUpdateItemDetails(item.id)} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-[10px] font-black uppercase shadow-md transition-colors">Save & Recalculate</button>
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500">Customer Notes</label>
-                                    <input type="text" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs outline-none" placeholder="Notes for customer" value={editItemForm.customizationDetails} onChange={e => setEditItemForm({...editItemForm, customizationDetails: e.target.value})} />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500">Karigar Notes</label>
-                                    <input type="text" className="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs outline-none" placeholder="Internal notes" value={editItemForm.backendNotes} onChange={e => setEditItemForm({...editItemForm, backendNotes: e.target.value})} />
-                                </div>
-                            </div>
-                            <div className="flex gap-2 justify-end">
-                                <button onClick={() => setEditingItemId(null)} className="text-slate-400 font-bold text-[10px] uppercase px-3 py-2">Cancel</button>
-                                <button onClick={() => handleUpdateItemDetails(item.id)} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase">Save & Recalculate</button>
-                            </div>
-                        </div>
-                    )}
+                        );
+                    })()}
                   </div>
                </div>
              )})}
              
              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 mt-6">
-                 <div className="space-y-2 text-sm">
+                 <div className="space-y-3 text-sm">
                      <div className="flex justify-between items-center text-slate-500 font-bold">
-                         <span>Subtotal</span>
-                         <span>₹{Math.round(order.totalAmount + (order.discountAmount || 0) - ((order.lateFeeAmount || 0) - (order.lateFeeWaived || 0))).toLocaleString('en-IN')}</span>
+                         <span>Items Subtotal (Incl. GST)</span>
+                         <span>₹{Math.round(order.items.reduce((s, i) => s + i.finalAmount, 0)).toLocaleString('en-IN')}</span>
                      </div>
                      {order.discountAmount ? (
-                         <div className="flex justify-between items-center text-emerald-600 font-bold group">
+                         <div className="flex justify-between items-center text-emerald-700 font-bold bg-emerald-50/80 p-2.5 rounded-xl border border-emerald-100">
                              <div className="flex items-center gap-2">
-                                 <span>Discount</span>
-                                 <button onClick={() => { setIsUpdatingDiscount(true); setNewDiscount(order.discountAmount?.toString() || ''); }} className="opacity-0 group-hover:opacity-100 text-blue-500 hover:text-blue-700 transition-opacity"><Edit2 size={12} /></button>
+                                 <span>Order Discount</span>
+                                 <button 
+                                     onClick={() => { setIsUpdatingDiscount(true); setNewDiscount(order.discountAmount?.toString() || ''); }} 
+                                     className="text-blue-600 hover:text-blue-800 bg-white border border-blue-200 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm transition-all"
+                                 >
+                                     <Edit2 size={10} /> Edit Discount
+                                 </button>
                              </div>
-                             <span>-₹{Math.round(order.discountAmount).toLocaleString('en-IN')}</span>
+                             <span className="text-emerald-800 text-base font-black">-₹{Math.round(order.discountAmount).toLocaleString('en-IN')}</span>
                          </div>
                      ) : (
-                         <div className="flex justify-between items-center text-slate-400 font-bold">
-                             <button onClick={() => { setIsUpdatingDiscount(true); setNewDiscount(''); }} className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1"><Plus size={12} /> Add Discount</button>
+                         <div className="flex justify-between items-center text-slate-500 font-bold bg-slate-100/70 p-2.5 rounded-xl border border-slate-200">
+                             <span>Order Discount</span>
+                             <button 
+                                 onClick={() => { setIsUpdatingDiscount(true); setNewDiscount(''); }} 
+                                 className="text-xs bg-blue-600 text-white hover:bg-blue-700 px-3 py-1 rounded-lg font-bold flex items-center gap-1 shadow-sm transition-all"
+                             >
+                                 <Plus size={12} /> Add Discount
+                             </button>
                          </div>
                      )}
                      
@@ -997,8 +1194,8 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                      )}
 
                      <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-lg font-black text-slate-900">
-                         <span>Total Amount</span>
-                         <span>₹{Math.round(order.totalAmount).toLocaleString('en-IN')}</span>
+                         <span>Grand Total (Total Payable)</span>
+                         <span>₹{Math.round(Math.max(0, order.items.reduce((s, i) => s + i.finalAmount, 0) - (order.discountAmount || 0) + Math.max(0, (order.lateFeeAmount || 0) - (order.lateFeeWaived || 0)))).toLocaleString('en-IN')}</span>
                      </div>
                  </div>
              </div>

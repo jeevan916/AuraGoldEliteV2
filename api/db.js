@@ -9,6 +9,7 @@ let pool = null;
 export let isMock = false;
 export const mockData = {
     gold_rates: [],
+    plan_templates: [],
     app_users: [{ id: 1, username: 'admin', password_hash: '$2a$10$8K1p/a06Ewe7SclT.8mS8uXvL0.X.X.X.X.X.X.X.X.X.X.X.X.X.X.', role: 'ADMIN', mobile_number: '' }], // Placeholder, will be fixed in auth
     integrations: [
         { 
@@ -405,6 +406,17 @@ export const getPool = () => {
                     if (lowerSql.includes('update whatsapp_logs set data = ? where id = ?')) {
                         const index = mockData.whatsapp_logs.findIndex(l => l.id === params[1]);
                         if (index > -1) mockData.whatsapp_logs[index].data = params[0];
+                        return [{ affectedRows: 1 }];
+                    }
+                    if (lowerSql.includes('select data from plan_templates') || lowerSql.includes('select * from plan_templates')) {
+                        return [mockData.plan_templates || []];
+                    }
+                    if (lowerSql.includes('delete from plan_templates')) {
+                        mockData.plan_templates = [];
+                        return [{ affectedRows: 1 }];
+                    }
+                    if (lowerSql.includes('insert into plan_templates')) {
+                        mockData.plan_templates.push({ id: params[0], name: params[1], data: params[params.length - 1] });
                         return [{ affectedRows: 1 }];
                     }
                     if (lowerSql.includes('select * from transaction_journal')) {

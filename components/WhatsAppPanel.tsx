@@ -105,7 +105,13 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
       
       const logConvos = Object.entries(grouped).map(([key, msgs]) => {
           const sortedMsgs = msgs.sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-          const name = msgs.find(m => m.customerName !== 'Customer' && m.customerName !== 'New Chat')?.customerName || msgs[0].customerName;
+          const name = msgs.find(m => 
+              m.customerName && 
+              m.customerName !== 'Customer' && 
+              m.customerName !== 'New Chat' && 
+              m.customerName.toLowerCase() !== 'empty' && 
+              m.customerName.toLowerCase() !== 'unknown'
+          )?.customerName || msgs[0].customerName;
           
           return {
               key,

@@ -152,6 +152,9 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
           ...plan,
           type: 'PRE_CREATED',
           templateId: t.id,
+          planName: t.name,
+          subventionPercentage: t.subventionPercentage,
+          subventionNote: t.subventionNote,
           months: t.months,
           advancePercentage: t.advancePercentage,
           interestPercentage: t.interestPercentage,
@@ -542,9 +545,12 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
                 </InputWrapper>
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
-                <InputWrapper label="Making %">
-                    <input type="number" className="w-full font-black text-lg bg-transparent" value={currentItem.wastagePercentage ?? ''} onChange={e => setCurrentItem({...currentItem, wastagePercentage: e.target.value})} placeholder="12" />
+            <div className="grid grid-cols-2 gap-4">
+                <InputWrapper label="VA / Wastage %">
+                    <input type="number" step="0.1" className="w-full font-black text-lg bg-transparent text-amber-700" value={currentItem.wastagePercentage ?? ''} onChange={e => setCurrentItem({...currentItem, wastagePercentage: e.target.value})} placeholder="12" />
+                </InputWrapper>
+                <InputWrapper label="Making Charges (₹/g)">
+                    <input type="number" step="1" className="w-full font-black text-lg bg-transparent text-indigo-700" value={currentItem.makingChargesPerGram ?? ''} onChange={e => setCurrentItem({...currentItem, makingChargesPerGram: e.target.value})} placeholder="0" />
                 </InputWrapper>
             </div>
 
@@ -628,17 +634,27 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
                           </div>
                       ))}
                   </div>
-                  <div className="bg-slate-50 p-4 border-t flex justify-between items-center">
-                      <p className="text-xs font-black uppercase text-slate-500">Discount Amount</p>
-                      <div className="flex items-center gap-2">
-                          <span className="text-slate-400 font-bold">₹</span>
-                          <input 
-                              type="number" 
-                              className="w-24 text-right font-black text-slate-800 bg-white border border-slate-200 rounded-lg p-1 outline-none focus:border-amber-500"
-                              value={discountAmount || ''}
-                              onChange={e => setDiscountAmount(Number(e.target.value))}
-                              placeholder="0"
-                          />
+                  <div className="bg-slate-50 p-4 border-t space-y-2">
+                      <div className="flex justify-between items-center text-xs font-bold text-slate-500">
+                          <span>Cart Subtotal</span>
+                          <span className="font-mono text-slate-800">₹{Math.round(cartItems.reduce((s, i) => s + i.finalAmount, 0)).toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                          <p className="text-xs font-black uppercase text-slate-500">Discount Amount</p>
+                          <div className="flex items-center gap-2">
+                              <span className="text-slate-400 font-bold">₹</span>
+                              <input 
+                                  type="number" 
+                                  className="w-24 text-right font-black text-slate-800 bg-white border border-slate-200 rounded-lg p-1 outline-none focus:border-amber-500"
+                                  value={discountAmount || ''}
+                                  onChange={e => setDiscountAmount(Number(e.target.value))}
+                                  placeholder="0"
+                              />
+                          </div>
+                      </div>
+                      <div className="flex justify-between items-center text-sm font-black text-slate-900 border-t pt-2">
+                          <span>Order Total</span>
+                          <span className="font-mono text-amber-600">₹{Math.round(cartTotal).toLocaleString('en-IN')}</span>
                       </div>
                   </div>
               </div>
@@ -722,29 +738,75 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
             {planMode === 'AUTO' && (
                 <>
                     <div>
-                        <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                            <Sparkles size={16} /> Select Plan Template
-                        </h3>
+                        <div className="flex justify-between items-center mb-3">
+                            <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                <Sparkles size={16} /> Select Plan Template
+                            </h3>
+                            {cartTotal > 0 && (
+                                <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">
+                                    Order Value: ₹{Math.round(cartTotal).toLocaleString('en-IN')}
+                                </span>
+                            )}
+                        </div>
+
                         <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
-                            {planTemplates.map(t => (
-                                <div 
-                                    key={t.id} 
-                                    onClick={() => handleApplyTemplate(t)}
-                                    className={`min-w-[180px] p-4 rounded-2xl border cursor-pointer transition-all ${
-                                        plan.templateId === t.id ? 'bg-slate-900 text-white border-slate-900 shadow-xl scale-105' : 'bg-white text-slate-600 border-slate-200 hover:border-amber-400'
-                                    }`}
-                                >
-                                    <div className="flex justify-between items-start mb-2">
-                                        <span className="font-black text-xs uppercase tracking-wide opacity-80">{t.months} Months</span>
-                                        {plan.templateId === t.id && <CheckCircle2 size={16} className="text-emerald-400" />}
+                            {planTemplates.map(t => {
+                                const minAmt = t.minPurchaseAmount || 0;
+                                const maxAmt = t.maxPurchaseAmount || 0;
+                                const matchesCart = cartTotal > 0 && 
+                                    (minAmt === 0 || cartTotal >= minAmt) && 
+                                    (maxAmt === 0 || cartTotal <= maxAmt);
+
+                                const rangeText = minAmt > 0 || maxAmt > 0 
+                                    ? (maxAmt > 0 ? `₹${(minAmt/1000).toFixed(0)}k - ₹${(maxAmt/1000).toFixed(0)}k` : `> ₹${(minAmt/1000).toFixed(0)}k`)
+                                    : 'All Amounts';
+
+                                return (
+                                    <div 
+                                        key={t.id} 
+                                        onClick={() => handleApplyTemplate(t)}
+                                        className={`min-w-[210px] p-4 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between ${
+                                            plan.templateId === t.id 
+                                                ? 'bg-slate-900 text-white border-slate-900 shadow-xl scale-105' 
+                                                : matchesCart 
+                                                    ? 'bg-amber-50/60 text-slate-800 border-amber-300 ring-2 ring-amber-200/50 hover:border-amber-400' 
+                                                    : 'bg-white text-slate-600 border-slate-200 hover:border-amber-300'
+                                        }`}
+                                    >
+                                        <div>
+                                            <div className="flex justify-between items-start mb-2">
+                                                <span className={`font-black text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full ${plan.templateId === t.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>
+                                                    {t.months} Months
+                                                </span>
+                                                {plan.templateId === t.id ? (
+                                                    <CheckCircle2 size={16} className="text-emerald-400" />
+                                                ) : matchesCart ? (
+                                                    <span className="text-[9px] font-black uppercase text-amber-800 bg-amber-200/80 px-2 py-0.5 rounded-md">
+                                                        Recommended
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                            <h4 className="font-bold text-sm leading-tight mb-2">{t.name}</h4>
+                                            
+                                            <div className="text-[10px] font-bold opacity-80 space-y-0.5 mb-2">
+                                                <div>Range: <span className="font-black">{rangeText}</span></div>
+                                                <div>Interest: {t.interestPercentage}% | Advance: {t.advancePercentage}%</div>
+                                                {Boolean(t.subventionPercentage) && (
+                                                    <div className="text-emerald-600 font-black">
+                                                        Subvention: {t.subventionPercentage}% Discount
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {matchesCart && plan.templateId !== t.id && (
+                                            <div className="text-[10px] font-black text-amber-800 border-t border-amber-200/60 pt-2 mt-1">
+                                                Eligible for Order Value ₹{Math.round(cartTotal).toLocaleString('en-IN')}
+                                            </div>
+                                        )}
                                     </div>
-                                    <h4 className="font-bold text-sm leading-tight mb-2">{t.name}</h4>
-                                    <div className="text-[10px] font-bold opacity-70">
-                                        <div>Interest: {t.interestPercentage}%</div>
-                                        <div>Advance: {t.advancePercentage}%</div>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                             {planTemplates.length === 0 && <div className="text-xs text-slate-400 italic p-4">No templates found. Configure manually.</div>}
                         </div>
                     </div>

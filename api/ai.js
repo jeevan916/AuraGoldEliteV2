@@ -225,11 +225,11 @@ router.post('/generatePaymentPlan', async (req, res) => {
     try {
         const { prompt } = req.body;
         const ai = getAI();
-        if (!ai) return res.json({ name: "Manual Plan", months: 6 });
+        if (!ai) return res.json({ name: "Manual Plan", months: 6, minPurchaseAmount: 10000, maxPurchaseAmount: 50000, subventionPercentage: 2, subventionNote: "Default Subvented Scheme" });
 
         const response = await ai.models.generateContent({
             model: FLASH_MODEL,
-            contents: `Create jewelry payment scheme: ${prompt}`,
+            contents: `Create a gold jewelry payment scheme based on purchase amount range and subvention rules: ${prompt}`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -238,7 +238,11 @@ router.post('/generatePaymentPlan', async (req, res) => {
                         name: { type: Type.STRING },
                         months: { type: Type.NUMBER },
                         interestPercentage: { type: Type.NUMBER },
-                        advancePercentage: { type: Type.NUMBER }
+                        advancePercentage: { type: Type.NUMBER },
+                        minPurchaseAmount: { type: Type.NUMBER },
+                        maxPurchaseAmount: { type: Type.NUMBER },
+                        subventionPercentage: { type: Type.NUMBER },
+                        subventionNote: { type: Type.STRING }
                     },
                     required: ["name", "months", "interestPercentage", "advancePercentage"]
                 }

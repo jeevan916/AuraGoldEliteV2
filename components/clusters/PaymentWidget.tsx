@@ -427,7 +427,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                 )}
             </div>
             <p className="font-black text-slate-900 text-base">
-              {targetMilestone ? `₹${targetMilestone.targetAmount.toLocaleString()}` : 'No Dues'}
+              {targetMilestone ? `₹${Math.round(targetMilestone.targetAmount).toLocaleString('en-IN')}` : 'No Dues'}
             </p>
           </div>
         </div>
@@ -443,11 +443,11 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       <div className="grid grid-cols-2 gap-4">
         <Card className="p-5 bg-white border-l-4 border-l-emerald-500">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Paid</p>
-          <p className="text-2xl font-black text-emerald-600">₹{totalPaid.toLocaleString()}</p>
+          <p className="text-2xl font-black text-emerald-600">₹{Math.round(totalPaid).toLocaleString('en-IN')}</p>
         </Card>
         <Card className="p-5 bg-white border-l-4 border-l-rose-500">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Balance Due</p>
-          <p className="text-2xl font-black text-rose-500">₹{remaining.toLocaleString()}</p>
+          <p className="text-2xl font-black text-rose-500">₹{Math.round(Math.max(0, remaining)).toLocaleString('en-IN')}</p>
         </Card>
       </div>
 
@@ -810,7 +810,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                     <div key={p.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-start shadow-sm">
                         <div className="flex-1 pr-4">
                             <div className="flex items-center gap-2">
-                                <p className="text-sm font-bold text-slate-800">₹{p.amount.toLocaleString()}</p>
+                                <p className="text-sm font-bold text-slate-800">₹{Math.round(p.amount).toLocaleString('en-IN')}</p>
                                 <span className="text-[8px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full">{p.status || 'PAID'}</span>
                             </div>
                             <p className="text-[10px] text-slate-500 font-medium flex items-center gap-2 mt-1 mb-1.5">

@@ -57,6 +57,9 @@ export interface Milestone {
 export interface PaymentPlan {
   type: 'PRE_CREATED' | 'MANUAL';
   templateId?: string;
+  planName?: string;
+  subventionPercentage?: number;
+  subventionNote?: string;
   months: number;
   interestPercentage: number;
   advancePercentage: number;
@@ -306,6 +309,10 @@ export interface PaymentPlanTemplate {
   interestPercentage: number;
   advancePercentage: number;
   enabled: boolean;
+  minPurchaseAmount?: number;
+  maxPurchaseAmount?: number;
+  subventionPercentage?: number;
+  subventionNote?: string;
 }
 
 export interface AiChatInsight {

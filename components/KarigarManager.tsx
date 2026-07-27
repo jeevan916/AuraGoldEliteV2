@@ -113,7 +113,8 @@ const KarigarManager: React.FC<KarigarManagerProps> = ({ orders, onUpdateItem, o
               finalAmount: newFinalAmount
           } : i);
 
-          const newTotal = Math.max(0, updatedItems.reduce((s, i) => s + i.finalAmount, 0) - (order.discountAmount || 0));
+          const netLateFee = Math.max(0, (order.lateFeeAmount || 0) - (order.lateFeeWaived || 0));
+          const newTotal = Math.max(0, updatedItems.reduce((s, i) => s + i.finalAmount, 0) - (order.discountAmount || 0) + netLateFee);
           const valueChange = newTotal - oldTotal;
 
           const newMilestones = JSON.parse(JSON.stringify(order.paymentPlan.milestones));
