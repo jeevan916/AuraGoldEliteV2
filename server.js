@@ -14,6 +14,7 @@ import { initDb } from './api/db.js';
 
 // Route Modules
 import authRouter from './api/auth.js';
+import { migrateExistingDbImages } from './api/imageStore.js';
 import ratesRouter from './api/rates.js';
 import paymentsRouter, { startSetuPoller } from './api/payments.js';
 import whatsappRouter from './api/whatsapp.js';
@@ -102,6 +103,13 @@ app.use((req, res, next) => {
     req.io = io;
     next();
 });
+
+// Serve physical uploaded files from the server drive
+const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Debug Routes (Before other API routes)
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
@@ -262,13 +270,18 @@ if (!useVite && finalDistPath) {
     });
 }
 
-initDb().then((result) => {
+initDb().then(async (result) => {
     if (result.success) {
         initRateService();
         runPaymentReminders();
         setInterval(runPaymentReminders, 24 * 60 * 60 * 1000);
         startSetuPoller(io);
         initBackupScheduler();
+        
+        // Asynchronously run DB image analysis and migration
+        migrateExistingDbImages().catch(err => {
+            console.error("[System] Startup image migration failed:", err.message);
+        });
     } else {
         console.error(`[System] Database initialization failed: ${result.error}`);
     }

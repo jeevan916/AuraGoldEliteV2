@@ -2,6 +2,7 @@
 import express from 'express';
 import { getPool, ensureDb, journalTransaction } from './db.js';
 import { refreshInterval } from './rateService.js';
+import { processOrderImages } from './imageStore.js';
 
 const router = express.Router();
 
@@ -9,7 +10,10 @@ router.post('/orders', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
-        for (const order of req.body.orders) {
+        for (let order of req.body.orders) {
+            // Intercept and extract any base64 images, saving them on the server drive
+            order = processOrderImages(order);
+
             await connection.query('INSERT INTO orders (id, customer_contact, status, created_at, share_token, data, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status=VALUES(status), share_token=VALUES(share_token), data=VALUES(data), updated_at=VALUES(updated_at)', [order.id, order.customerContact, order.status, new Date(order.createdAt), order.shareToken, JSON.stringify(order), Date.now()]);
             await journalTransaction('ORDER', order.id, 'SYNC_WRITE', order, connection);
             

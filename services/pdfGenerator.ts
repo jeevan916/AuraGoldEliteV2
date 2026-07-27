@@ -3,7 +3,49 @@ import autoTable from 'jspdf-autotable';
 import QRCode from 'qrcode';
 import { Order } from '../types';
 
-export const generateOrderPDF = async (order: Order) => {
+const fetchImageAsBase64 = async (url: string): Promise<string> => {
+  if (!url) return '';
+  if (url.startsWith('data:')) return url; // Already base64
+  try {
+    const absoluteUrl = url.startsWith('http') ? url : `${window.location.origin}${url}`;
+    const response = await fetch(absoluteUrl);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.error("Failed to fetch image as base64:", e);
+    return url; // fallback
+  }
+};
+
+const ensureBase64Photos = async (order: Order): Promise<Order> => {
+  try {
+    const cloned = JSON.parse(JSON.stringify(order)) as Order;
+    if (cloned.items) {
+      for (const item of cloned.items) {
+        if (item.photoUrls && Array.isArray(item.photoUrls)) {
+          const promises = item.photoUrls.map(url => fetchImageAsBase64(url));
+          item.photoUrls = await Promise.all(promises);
+        }
+        if (item.readyPhotoUrls && Array.isArray(item.readyPhotoUrls)) {
+          const promises = item.readyPhotoUrls.map(url => fetchImageAsBase64(url));
+          item.readyPhotoUrls = await Promise.all(promises);
+        }
+      }
+    }
+    return cloned;
+  } catch (err) {
+    console.error("Error in ensureBase64Photos:", err);
+    return order;
+  }
+};
+
+export const generateOrderPDF = async (originalOrder: Order) => {
+  const order = await ensureBase64Photos(originalOrder);
   const doc = new jsPDF();
   const margin = 15;
   let yPos = 20;
@@ -276,7 +318,8 @@ export const generateOrderPDF = async (order: Order) => {
   doc.save(`AuraGold_Agreement_${order.id}.pdf`);
 };
 
-export const generateReceiptPDF = async (order: Order) => {
+export const generateReceiptPDF = async (originalOrder: Order) => {
+  const order = await ensureBase64Photos(originalOrder);
   const doc = new jsPDF();
   const margin = 15;
   let yPos = 20;
