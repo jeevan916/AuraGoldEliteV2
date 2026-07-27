@@ -816,12 +816,16 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                 <div className="space-y-3 relative before:absolute before:left-[19px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-100">
                     {displayMilestones.map((m, i) => {
                         const isPaid = m.status === 'PAID';
-                        const isOverdue = m.status !== 'PAID' && new Date(m.dueDate) < new Date();
+                        const isPartial = m.status === 'PARTIAL';
+                        const isOverdue = m.status !== 'PAID' && m.status !== 'PARTIAL' && new Date(m.dueDate) < new Date();
                         const isOriginalView = showOriginalSchedule;
+                        const totalPaid = (order.payments || []).reduce((s, p) => s + p.amount, 0);
+                        const partialPaidAmount = isPartial ? Math.max(0, totalPaid - (m.cumulativeTarget - m.targetAmount)) : 0;
+                        const partialDueAmount = isPartial ? Math.max(0, m.targetAmount - partialPaidAmount) : 0;
 
                         return (
                             <div key={i} className={`flex gap-4 relative ${isOriginalView ? 'opacity-70 grayscale' : ''}`}>
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-4 border-white z-10 ${isPaid && !isOriginalView ? 'bg-emerald-100 text-emerald-600' : isOverdue && !isOriginalView ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'}`}>
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-4 border-white z-10 ${isPaid && !isOriginalView ? 'bg-emerald-100 text-emerald-600' : isPartial && !isOriginalView ? 'bg-amber-100 text-amber-600' : isOverdue && !isOriginalView ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'}`}>
                                     {isPaid && !isOriginalView ? <CheckCircle2 size={16} /> : <Clock size={16} />}
                                 </div>
                                 <div className="flex-1 bg-slate-50/50 p-3 rounded-xl border border-slate-100 flex justify-between items-center">
@@ -830,10 +834,17 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                                         <p className="text-[10px] text-slate-400 font-medium">{new Date(m.dueDate).toLocaleDateString('en-IN')}</p>
                                     </div>
                                     <div className="text-right">
-                                        <p className={`text-sm font-black ${isPaid && !isOriginalView ? 'text-emerald-600' : 'text-slate-800'}`}>₹{Math.round(m.targetAmount).toLocaleString('en-IN')}</p>
-                                        <span className={`text-[8px] font-black uppercase ${isPaid && !isOriginalView ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                            {isOriginalView ? 'Snapshot' : m.status}
-                                        </span>
+                                        <p className={`text-sm font-black ${isPaid && !isOriginalView ? 'text-emerald-600' : isPartial && !isOriginalView ? 'text-amber-600' : 'text-slate-800'}`}>₹{Math.round(m.targetAmount).toLocaleString('en-IN')}</p>
+                                        <div className="flex items-center justify-end gap-1 flex-wrap">
+                                            <span className={`text-[8px] font-black uppercase ${isPaid && !isOriginalView ? 'text-emerald-600' : isPartial && !isOriginalView ? 'text-amber-600' : 'text-slate-400'}`}>
+                                                {isOriginalView ? 'Snapshot' : m.status}
+                                            </span>
+                                            {isPartial && !isOriginalView && (
+                                                <span className="text-[9px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                                    ₹{Math.round(partialPaidAmount).toLocaleString('en-IN')} paid • ₹{Math.round(partialDueAmount).toLocaleString('en-IN')} due
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>

@@ -15,7 +15,7 @@ export interface AppState {
 }
 
 const STORAGE_KEY = 'aura_gold_app_state';
-const API_BASE = process.env.VITE_API_BASE_URL || '';
+const API_BASE = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) || (typeof process !== 'undefined' && process.env?.VITE_API_BASE_URL) || '';
 
 const DEFAULT_STATE: AppState = {
   orders: [],

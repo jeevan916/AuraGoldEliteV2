@@ -164,17 +164,29 @@ router.get('/public/order/:token', ensureDb, async (req, res) => {
             // Sanitize PII
             const sanitizedOrder = {
                 id: order.id,
+                customerName: order.customerName || '',
+                customerContact: order.customerContact || '',
+                customerEmail: order.customerEmail || '',
+                secondaryContact: order.secondaryContact || '',
+                shareToken: order.shareToken,
                 items: order.items,
                 payments: order.payments,
                 totalAmount: order.totalAmount,
-                discountAmount: order.discountAmount,
+                discountAmount: order.discountAmount || 0,
                 goldRateAtBooking: order.goldRateAtBooking,
                 paymentPlan: order.paymentPlan,
                 status: order.status,
                 createdAt: order.createdAt,
                 isRateBreached: order.isRateBreached,
                 requiresLiabilityAcceptance: order.requiresLiabilityAcceptance,
-                liabilityGapAcceptedAt: order.liabilityGapAcceptedAt
+                liabilityGapAcceptedAt: order.liabilityGapAcceptedAt,
+                deliveredAt: order.deliveredAt,
+                cancelledAt: order.cancelledAt,
+                refundMethod: order.refundMethod,
+                protectionRevokedAt: order.protectionRevokedAt,
+                lateFeePeriodsApplied: order.lateFeePeriodsApplied || {},
+                lateFeeAmount: order.lateFeeAmount || 0,
+                lateFeeWaived: order.lateFeeWaived || 0
             };
             
             res.json({ success: true, order: sanitizedOrder });

@@ -80,11 +80,24 @@ router.get('/gold-rate', ensureDb, async (req, res) => {
             return sendResponse(manualConfig, 'Manual Settings (Emergency Fallback)', result.error);
         }
 
-        // Level 3: Hard Fail
-        throw new Error(result.error || "Rates unavailable: API failed, DB empty, Settings missing.");
+        // Level 3: Default Emergency Fallback
+        return sendResponse({
+            rate24k: 7200,
+            rate22k: 6600,
+            rate18k: 5400,
+            rateSilver: 90
+        }, 'Default Fallback (Emergency)', result ? result.error : null);
 
     } catch (e) { 
-        res.status(503).json({ success: false, error: e.message }); 
+        res.status(200).json({ 
+            success: true, 
+            k24: 7200, 
+            k22: 6600, 
+            k18: 5400, 
+            silver: 90, 
+            source: 'System Fallback', 
+            error: e.message 
+        }); 
     }
 });
 

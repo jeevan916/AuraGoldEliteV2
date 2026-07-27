@@ -250,6 +250,11 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
           <div className="text-center">
             <p className="text-[10px] font-black uppercase opacity-50 tracking-widest mb-2">Total Order Value</p>
             <p className="text-5xl font-black text-white">₹{Math.round(order.totalAmount).toLocaleString('en-IN')}</p>
+            {(order.lateFeeAmount || 0) > (order.lateFeeWaived || 0) && (
+              <p className="text-[10px] font-bold text-amber-400 mt-1">
+                Includes +₹{Math.round((order.lateFeeAmount || 0) - (order.lateFeeWaived || 0)).toLocaleString('en-IN')} Overdue Charges
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -588,6 +593,9 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
                const isOverdue = m.status !== 'PAID' && m.status !== 'PARTIAL' && new Date(m.dueDate) < new Date();
                const isOriginalView = showOriginal;
                
+               const partialPaidAmount = isPartial ? Math.max(0, totalPaid - (m.cumulativeTarget - m.targetAmount)) : 0;
+               const partialDueAmount = isPartial ? Math.max(0, m.targetAmount - partialPaidAmount) : 0;
+               
                return (
                  <div key={i} className={`flex gap-4 relative ${isOriginalView ? 'opacity-70 grayscale' : ''}`}>
                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-4 border-white z-10 ${isPaid && !isOriginalView ? 'bg-emerald-100 text-emerald-600' : isPartial && !isOriginalView ? 'bg-amber-100 text-amber-600' : isOverdue && !isOriginalView ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'}`}>
@@ -603,9 +611,16 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
                          <p className={`text-sm font-black ${isPaid && !isOriginalView ? 'text-emerald-600' : isPartial && !isOriginalView ? 'text-amber-600' : 'text-slate-800'}`}>₹{Math.round(m.targetAmount).toLocaleString('en-IN')}</p>
                        </div>
                      </div>
-                     <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full inline-block ${isPaid && !isOriginalView ? 'bg-emerald-100 text-emerald-700' : isPartial && !isOriginalView ? 'bg-amber-100 text-amber-700' : isOverdue && !isOriginalView ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600'}`}>
-                        {isOriginalView ? 'Snapshot' : (isPaid ? 'Paid Successfully' : isPartial ? 'Partial Paid' : isOverdue ? 'Overdue' : 'Scheduled')}
-                     </span>
+                     <div className="flex items-center justify-between flex-wrap gap-1">
+                       <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full inline-block ${isPaid && !isOriginalView ? 'bg-emerald-100 text-emerald-700' : isPartial && !isOriginalView ? 'bg-amber-100 text-amber-700' : isOverdue && !isOriginalView ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600'}`}>
+                          {isOriginalView ? 'Snapshot' : (isPaid ? 'Paid Successfully' : isPartial ? 'Partial Paid' : isOverdue ? 'Overdue' : 'Scheduled')}
+                       </span>
+                       {isPartial && !isOriginalView && (
+                         <span className="text-[10px] text-amber-700 font-extrabold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                           ₹{Math.round(partialPaidAmount).toLocaleString('en-IN')} paid • ₹{Math.round(partialDueAmount).toLocaleString('en-IN')} due
+                         </span>
+                       )}
+                     </div>
                    </div>
                  </div>
                );

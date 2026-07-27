@@ -20,7 +20,7 @@ import { Order, GlobalSettings, NotificationTrigger, PaymentPlanTemplate, AppErr
 import { ErrorBoundary } from './components/ErrorBoundary';
 import Login from './components/Login';
 
-const API_BASE = process.env.VITE_API_BASE_URL || '';
+const API_BASE = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) || (typeof process !== 'undefined' && process.env?.VITE_API_BASE_URL) || '';
 
 // --- STABLE LAZY LOADER ---
 const lazyRetry = (importFn: () => Promise<any>, moduleName: string) => {
