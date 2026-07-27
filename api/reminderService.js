@@ -1,140 +1,222 @@
-import { getPool, normalizePhone } from './db.js';
+import { getPool, isMock, normalizePhone } from './db.js';
 import { sendWhatsAppMessage } from './whatsapp.js';
 
-export async function runPaymentReminders() {
-    console.log("[ReminderService] Starting daily payment reminder check...");
+export async function runPaymentReminders(specificOrderId = null) {
+    console.log("[ReminderService] Starting payment reminder check...", specificOrderId ? `For Order ${specificOrderId}` : "For all active orders");
+    const results = {
+        processedOrders: 0,
+        schedulesChecked: 0,
+        remindersSent: 0,
+        skipped: 0,
+        details: []
+    };
+
     try {
+        if (isMock) {
+            console.log("[ReminderService] Running in Mock DB mode. Skipping actual DB query.");
+            return results;
+        }
+
         const pool = getPool();
+        if (!pool) {
+            console.warn("[ReminderService] DB pool not initialized.");
+            return results;
+        }
+
         const connection = await pool.getConnection();
 
-        // Fetch settings
-        const [settingsRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['core_settings']);
-        const config = settingsRows.length > 0 ? typeof settingsRows[0].config === "string" ? JSON.parse(settingsRows[0].config) : settingsRows[0].config : {};
-        const reminderScheduleDays = config.reminderScheduleDays || [15, 7, 3];
-        const overdueFrequencyDays = config.overdueFrequencyDays || 2;
+        // 1. Fetch Core Settings
+        let config = {};
+        try {
+            const [settingsRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['core_settings']);
+            if (settingsRows.length > 0) {
+                config = typeof settingsRows[0].config === "string" ? JSON.parse(settingsRows[0].config) : settingsRows[0].config;
+            }
+        } catch (e) {
+            console.warn("[ReminderService] Warning loading core_settings:", e.message);
+        }
+
+        // Global WhatsApp toggle check
+        if (config.whatsappEnabled === false) {
+            console.log("[ReminderService] WhatsApp messaging is globally turned OFF in settings. Aborting reminder run.");
+            connection.release();
+            return results;
+        }
+
+        const reminderScheduleDays = config.reminderScheduleDays || [15, 7, 3, 1];
+        const overdueFrequencyDays = config.overdueFrequencyDays || 1;
         const maxRemindersPerMilestone = config.maxRemindersPerMilestone || 5;
 
-        // Fetch WhatsApp credentials
-        const [whatsappRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['whatsapp']);
-        const whatsappConfig = whatsappRows.length > 0 ? typeof whatsappRows[0].config === "string" ? JSON.parse(whatsappRows[0].config) : whatsappRows[0].config : {};
-        const { phoneId, token } = whatsappConfig;
+        // 2. Fetch WhatsApp Credentials with robust fallback
+        let whatsappConfig = {};
+        try {
+            const [whatsappRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['whatsapp']);
+            if (whatsappRows.length > 0) {
+                whatsappConfig = typeof whatsappRows[0].config === "string" ? JSON.parse(whatsappRows[0].config) : whatsappRows[0].config;
+            }
+        } catch (e) {
+            console.warn("[ReminderService] Warning loading whatsapp integration:", e.message);
+        }
 
-        // Fetch orders and their payment schedules
-        const [schedules] = await connection.query("SELECT ps.*, o.data as orderData FROM payment_schedules ps JOIN orders o ON ps.orderId = o.id WHERE ps.status = 'PENDING' AND o.status IN ('ACTIVE', 'OVERDUE')");
+        const phoneId = whatsappConfig.phoneId || whatsappConfig.phone_number_id || whatsappConfig.phoneNumberId || process.env.WHATSAPP_PHONE_ID;
+        const token = whatsappConfig.token || whatsappConfig.accessToken || whatsappConfig.access_token || whatsappConfig.system_token || process.env.WHATSAPP_TOKEN;
+
+        if (!phoneId || !token) {
+            console.warn("[ReminderService] Missing WhatsApp Phone ID or Token. Cannot dispatch automated reminders.");
+            connection.release();
+            return results;
+        }
+
+        // 3. Query Active Orders
+        let orderQuery = "SELECT id, customer_contact, status, data, share_token FROM orders WHERE status NOT IN ('DELIVERED', 'CANCELLED', 'REFUNDED')";
+        let queryParams = [];
+        if (specificOrderId) {
+            orderQuery += " AND id = ?";
+            queryParams.push(specificOrderId);
+        }
+
+        const [orderRows] = await connection.query(orderQuery, queryParams);
+        results.processedOrders = orderRows.length;
 
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-        // Check if the custom auragold_payment_overdue_alert template exists in the database
-        const [overdueAlertRows] = await connection.query("SELECT id FROM templates WHERE name = ?", ["auragold_payment_overdue_alert"]);
-        const useOverdueAlert = overdueAlertRows.length > 0;
-
-        // Sort reminder schedule days descending to dynamically map templates (furthest -> closest)
-        const sortedScheduleDays = [...reminderScheduleDays].sort((a, b) => b - a);
-
-        for (const schedule of schedules) {
-            const orderData = JSON.parse(schedule.orderData);
-            const customerName = orderData.customerName;
-            const customerPhone = orderData.customerContact || orderData.customerPhone;
-            
-            // Normalize dueDate and today to midnight to avoid hours/minutes/seconds offset issues
-            const dueDateRaw = new Date(schedule.dueDate);
-            const dueDate = new Date(dueDateRaw.getFullYear(), dueDateRaw.getMonth(), dueDateRaw.getDate());
-            
-            const diffTime = dueDate.getTime() - today.getTime();
-            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-            
-            console.log(`[ReminderService] Checking schedule ${schedule.id} for ${customerName}. Due in ${diffDays} days.`);
-
-            let templateName = null;
-            let tone = null;
-
-            if (diffDays > 0 && reminderScheduleDays.includes(diffDays)) {
-                // Upcoming Reminder stage mapping
-                const dayIndex = sortedScheduleDays.indexOf(diffDays);
-                if (dayIndex === 0) {
-                    // Furthest scheduled day
-                    templateName = 'auragold_gentle_reminder';
-                    tone = 'POLITE';
-                } else if (dayIndex === sortedScheduleDays.length - 1) {
-                    // Closest scheduled day
-                    templateName = 'auragold_urgent_lapse';
-                    tone = 'FIRM';
-                } else {
-                    // Intermediate scheduled days
-                    templateName = useOverdueAlert ? 'auragold_payment_overdue_alert' : 'auragold_payment_overdue';
-                    tone = 'ENCOURAGING';
-                }
-            } else if (diffDays <= 0 && (Math.abs(diffDays) % overdueFrequencyDays === 0)) {
-                // Overdue Reminder
-                templateName = 'auragold_urgent_lapse';
-                tone = 'URGENT';
+        for (const orderRow of orderRows) {
+            let orderData;
+            try {
+                orderData = typeof orderRow.data === 'string' ? JSON.parse(orderRow.data) : orderRow.data;
+            } catch (e) {
+                console.error(`[ReminderService] Invalid JSON for order ${orderRow.id}`);
+                continue;
             }
 
-            if (templateName) {
-                // Collision Avoidance: Check for recent rate breach alerts (last 24 hours)
-                const normalizedPhone = normalizePhone(customerPhone);
-                const [breachLogRows] = await connection.query(
-                    "SELECT COUNT(*) as count FROM whatsapp_logs WHERE phone = ? AND (data LIKE '%auragold_rate_adjustment_alert%' OR data LIKE '%auragold_rate_stabilized%') AND timestamp > ?",
-                    [normalizedPhone, new Date(now.getTime() - 24 * 60 * 60 * 1000)]
-                );
+            if (!orderData || !orderData.paymentPlan || !Array.isArray(orderData.paymentPlan.milestones)) {
+                continue;
+            }
 
-                if (breachLogRows[0].count > 0) {
-                    console.log(`[ReminderService] Skipping reminder for ${customerPhone} due to recent rate breach alert.`);
-                    continue;
+            const customerName = orderData.customerName || "Customer";
+            const customerPhone = orderData.customerContact || orderData.customerPhone || orderRow.customer_contact;
+            if (!customerPhone) continue;
+
+            const normalizedPhone = normalizePhone(customerPhone);
+            const shareToken = orderData.shareToken || orderRow.share_token || "";
+            const paymentLink = `https://order.auragoldelite.com/?token=${shareToken}`;
+            const totalPaid = (orderData.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+
+            // Check collision avoidance: Skip if recent rate breach alert sent in last 24h
+            const [breachLogRows] = await connection.query(
+                "SELECT COUNT(*) as count FROM whatsapp_logs WHERE phone = ? AND (data LIKE '%auragold_rate_adjustment_alert%' OR data LIKE '%auragold_rate_stabilized%') AND timestamp > ?",
+                [normalizedPhone, new Date(now.getTime() - 24 * 60 * 60 * 1000)]
+            );
+            if (breachLogRows[0]?.count > 0) {
+                console.log(`[ReminderService] Skipping order ${orderData.id} due to recent rate breach alert.`);
+                results.skipped++;
+                continue;
+            }
+
+            for (const milestone of orderData.paymentPlan.milestones) {
+                results.schedulesChecked++;
+                if (milestone.status === 'PAID') continue;
+
+                const dueDateRaw = new Date(milestone.dueDate);
+                if (isNaN(dueDateRaw.getTime())) continue;
+                const dueDate = new Date(dueDateRaw.getFullYear(), dueDateRaw.getMonth(), dueDateRaw.getDate());
+
+                // diffDays > 0 => Due in future
+                // diffDays = 0 => Due TODAY
+                // diffDays < 0 => Overdue / Breached promise date
+                const diffTime = dueDate.getTime() - today.getTime();
+                const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+                let templateName = null;
+                let tone = null;
+
+                if (diffDays > 0 && reminderScheduleDays.includes(diffDays)) {
+                    // Soft Upcoming Reminder
+                    templateName = 'auragold_gentle_reminder';
+                    tone = 'UPCOMING_REMINDER';
+                } else if (diffDays === 0) {
+                    // Due Today Soft Reminder
+                    templateName = 'auragold_gentle_reminder';
+                    tone = 'DUE_TODAY';
+                } else if (diffDays < 0) {
+                    // Overdue Payment / Breached Promise Date
+                    const overdueDays = Math.abs(diffDays);
+                    // Trigger on day 1 overdue or according to overdueFrequencyDays
+                    if (overdueDays === 1 || (overdueDays % overdueFrequencyDays === 0)) {
+                        if (overdueDays <= 3) {
+                            templateName = 'auragold_payment_overdue';
+                            tone = 'OVERDUE_ALERT';
+                        } else {
+                            templateName = 'auragold_urgent_lapse';
+                            tone = 'URGENT_LAPSE';
+                        }
+                    }
                 }
 
-                // Strictly limit reminders to at most one per schedule milestone per calendar day (prevent server restart duplicate spam)
+                if (!templateName) continue;
+
+                // Daily duplicate check: Avoid sending multiple reminders for the same milestone on the same day
                 const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                 const [dailyLogRows] = await connection.query(
-                    "SELECT COUNT(*) as count FROM whatsapp_logs WHERE data LIKE ? AND timestamp >= ?",
-                    [`%${schedule.id}%`, startOfToday]
+                    "SELECT COUNT(*) as count FROM whatsapp_logs WHERE phone = ? AND data LIKE ? AND timestamp >= ?",
+                    [normalizedPhone, `%${milestone.id}%`, startOfToday]
                 );
 
-                if (dailyLogRows[0].count > 0) {
-                    console.log(`[ReminderService] Already sent a reminder for schedule ${schedule.id} today. Skipping duplicate.`);
+                if (dailyLogRows[0]?.count > 0) {
+                    console.log(`[ReminderService] Already sent a reminder for milestone ${milestone.id} today. Skipping.`);
+                    results.skipped++;
                     continue;
                 }
 
-                // Check total warning limit over the milestone lifetime
+                // Check total warning count over milestone lifetime
                 const [totalLogRows] = await connection.query(
-                    "SELECT COUNT(*) as count FROM whatsapp_logs WHERE data LIKE ?",
-                    [`%${schedule.id}%`]
+                    "SELECT COUNT(*) as count FROM whatsapp_logs WHERE phone = ? AND data LIKE ?",
+                    [normalizedPhone, `%${milestone.id}%`]
                 );
-                if (totalLogRows[0].count >= maxRemindersPerMilestone) {
-                    console.log(`[ReminderService] Max reminders (${maxRemindersPerMilestone}) reached for schedule ${schedule.id}. Skipping.`);
+                if (totalLogRows[0]?.count >= maxRemindersPerMilestone) {
+                    console.log(`[ReminderService] Max reminders (${maxRemindersPerMilestone}) reached for milestone ${milestone.id}. Skipping.`);
+                    results.skipped++;
                     continue;
                 }
 
-                // Fetch order to get shareToken
-                const shareToken = orderData.shareToken || "";
-                const paymentLink = `https://order.auragoldelite.com/?token=${shareToken}`;
-                const amountStr = `₹${schedule.targetAmount.toLocaleString()}`;
+                // Calculate remaining balance for partial vs pending milestones
+                const milestoneIndex = orderData.paymentPlan.milestones.findIndex(m => m.id === milestone.id);
+                const previousTargets = orderData.paymentPlan.milestones
+                    .slice(0, milestoneIndex)
+                    .reduce((sum, m) => sum + m.targetAmount, 0);
+                const paidTowardsThis = Math.max(0, totalPaid - previousTargets);
+                const dueAmount = Math.max(0, milestone.targetAmount - paidTowardsThis);
+                const amountStr = `₹${Math.round(dueAmount).toLocaleString('en-IN')}`;
 
                 let parameters = [];
                 if (templateName === 'auragold_gentle_reminder') {
+                    // Dear {{1}}, reminder that your installment of {{2}} for order {{3}} is due. Pay here: {{4}}
                     parameters = [
-                        { type: "text", text: customerName || "Customer" },
+                        { type: "text", text: customerName },
                         { type: "text", text: amountStr },
-                        { type: "text", text: schedule.orderId },
+                        { type: "text", text: orderData.id },
+                        { type: "text", text: paymentLink }
+                    ];
+                } else if (templateName === 'auragold_payment_overdue') {
+                    // Dear {{1}}, we noticed your payment of {{2}} is overdue. Clear dues via: {{3}}
+                    parameters = [
+                        { type: "text", text: customerName },
+                        { type: "text", text: amountStr },
                         { type: "text", text: paymentLink }
                     ];
                 } else if (templateName === 'auragold_payment_overdue_alert') {
+                    // Dear {{1}}, your payment of {{2}} for Order {{3}} is overdue.
                     parameters = [
-                        { type: "text", text: customerName || "Customer" },
+                        { type: "text", text: customerName },
                         { type: "text", text: amountStr },
-                        { type: "text", text: schedule.orderId }
-                    ];
-                } else if (templateName === 'auragold_payment_overdue') {
-                    parameters = [
-                        { type: "text", text: customerName || "Customer" },
-                        { type: "text", text: amountStr },
-                        { type: "text", text: paymentLink }
+                        { type: "text", text: orderData.id }
                     ];
                 } else if (templateName === 'auragold_urgent_lapse') {
+                    // URGENT {{1}}: Your Gold Rate Protection for order {{2}} expires in 24 hours. Pay {{3}} immediately: {{4}}
                     parameters = [
-                        { type: "text", text: customerName || "Customer" },
-                        { type: "text", text: schedule.orderId },
+                        { type: "text", text: customerName },
+                        { type: "text", text: orderData.id },
                         { type: "text", text: amountStr },
                         { type: "text", text: paymentLink }
                     ];
@@ -143,24 +225,53 @@ export async function runPaymentReminders() {
                 const components = parameters.length > 0 ? [{ type: "body", parameters }] : [];
 
                 try {
-                    await sendWhatsAppMessage({
+                    const sendRes = await sendWhatsAppMessage({
                         to: customerPhone,
                         templateName,
                         components,
-                        customerName: customerName,
+                        customerName,
                         phoneId,
                         token,
-                        metadata: { scheduleId: schedule.id },
-                        orderId: schedule.orderId
+                        sentBy: 'SYSTEM_REMINDER',
+                        metadata: { scheduleId: milestone.id, tone, diffDays },
+                        orderId: orderData.id
                     });
-                    console.log(`[ReminderService] Sent ${tone} reminder for schedule ${schedule.id} (${templateName})`);
-                } catch (err) {
-                    console.error(`[ReminderService] Failed to send ${templateName} to ${customerPhone}:`, err.message);
+
+                    results.remindersSent++;
+                    results.details.push({
+                        orderId: orderData.id,
+                        customerName,
+                        customerPhone,
+                        milestoneId: milestone.id,
+                        templateName,
+                        tone,
+                        diffDays,
+                        status: 'SENT',
+                        res: sendRes
+                    });
+                    console.log(`[ReminderService] Successfully sent ${tone} reminder to ${customerPhone} (${templateName})`);
+                } catch (sendErr) {
+                    console.error(`[ReminderService] Failed to send ${templateName} to ${customerPhone}:`, sendErr.message);
+                    results.details.push({
+                        orderId: orderData.id,
+                        customerName,
+                        customerPhone,
+                        milestoneId: milestone.id,
+                        templateName,
+                        tone,
+                        diffDays,
+                        status: 'FAILED',
+                        error: sendErr.message
+                    });
                 }
             }
         }
+
         connection.release();
+        return results;
     } catch (e) {
-        console.error("[ReminderService] Error:", e);
+        console.error("[ReminderService] Fatal Error in runPaymentReminders:", e);
+        results.error = e.message;
+        return results;
     }
 }

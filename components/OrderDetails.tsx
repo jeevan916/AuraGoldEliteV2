@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 // Added CheckCheck to imports from lucide-react
-import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp, Plus, Edit2, Printer, Download, Image as ImageIcon, Sparkles, Calculator, Percent, Tag, ReceiptIndianRupee } from 'lucide-react';
+import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp, Plus, Edit2, Printer, Download, Image as ImageIcon, Sparkles, Calculator, Percent, Tag, ReceiptIndianRupee, Bell } from 'lucide-react';
 import { Order, GlobalSettings, WhatsAppLogEntry, ProductionStatus, ProtectionStatus, OrderStatus, JewelryDetail } from '../types';
 import { generateOrderPDF, generateReceiptPDF } from '../services/pdfGenerator';
 import { whatsappService } from '../services/whatsappService';
@@ -598,6 +598,15 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           <ArrowLeft size={20} /> Back
         </button>
         <div className="flex gap-2">
+           <Button size="sm" variant="secondary" onClick={async () => {
+                if(!confirm("Send automated payment reminder / overdue notification for this order?")) return;
+                try {
+                    const res = await fetch(`/api/whatsapp/send-reminder/${order.id}`, { method: 'POST' });
+                    const data = await res.json();
+                    if (data.success) alert(data.message || "Payment reminder processed successfully!");
+                    else alert("Failed: " + data.error);
+                } catch(e: any) { alert("Error: " + e.message); }
+            }}><Bell size={14} /> Send Reminder</Button>
            <Button size="sm" variant="secondary" onClick={async () => {
                 if(!confirm("Trigger test breach check for this order?")) return;
                 try {

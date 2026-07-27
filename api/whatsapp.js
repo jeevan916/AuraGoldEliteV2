@@ -2,6 +2,7 @@
 import express from 'express';
 import { getPool, ensureDb, normalizePhone, logDbActivity } from './db.js';
 import { checkRateBreaches } from './rateService.js';
+import { runPaymentReminders } from './reminderService.js';
 
 const router = express.Router();
 const META_API_VERSION = "v20.0";
@@ -18,6 +19,7 @@ const SYSTEM_TEMPLATES = {
   auragold_finished_item_showcase: "Great news, {{1}}! Your custom jewelry piece is finally ready. We are excited to share the finished look for your Order {{2}}. The item has passed our quality checks and we are now ready for the final handover. Please review the details.",
   auragold_gentle_reminder: "Hello {{1}}, a gentle reminder that your installment of {{2}} for order {{3}} is due. Please pay here: {{4}} to avoid delays.",
   auragold_payment_overdue: "Dear {{1}}, we noticed your payment of {{2}} is overdue. To maintain your gold rate protection, please clear the dues via: {{3}} today.",
+  auragold_payment_overdue_alert: "Dear {{1}}, your payment of {{2}} for Order {{3}} is overdue. Please clear your dues immediately to maintain your gold rate protection.",
   auragold_urgent_lapse: "URGENT {{1}}: Your Gold Rate Protection for order {{2}} expires in 24 hours. Pay {{3}} immediately to save your booked rate: {{4}}",
   auragold_rate_adjustment_liability: "URGENT notice for {{1}}: Due to a missed payment milestone, your rate protection for Order {{3}} has lapsed. A market adjustment surcharge of ₹{{2}} has been applied. The new base rate is now ₹{{4}}/g. Please review and accept the new terms here: https://order.auragoldelite.com/?token={{5}}"
 };
@@ -583,6 +585,31 @@ router.post('/test-breach/:orderId', ensureDb, async (req, res) => {
     try {
         await checkRateBreaches(orderId, true);
         res.status(200).json({ success: true, message: `Breach check triggered for order ${orderId}` });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+router.post('/trigger-reminders', ensureDb, async (req, res) => {
+    try {
+        const results = await runPaymentReminders();
+        res.status(200).json({ success: true, message: `Processed ${results.processedOrders || 0} orders. Sent ${results.remindersSent || 0} payment reminders.`, results });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+router.post('/send-reminder/:orderId', ensureDb, async (req, res) => {
+    const { orderId } = req.params;
+    try {
+        const results = await runPaymentReminders(orderId);
+        if (results.remindersSent > 0) {
+            res.status(200).json({ success: true, message: `Payment reminder sent successfully for order ${orderId}!`, results });
+        } else if (results.skipped > 0) {
+            res.status(200).json({ success: true, message: `Reminder skipped (already sent today or max limit reached).`, results });
+        } else {
+            res.status(200).json({ success: true, message: `No pending or overdue milestones found requiring a reminder today.`, results });
+        }
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
