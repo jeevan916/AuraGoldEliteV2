@@ -188,11 +188,11 @@ export const ExternalPaymentLedger: React.FC = () => {
 
       const res = await whatsappService.sendTemplateMessage(
         record.customerContact,
-        'payment_link_request',
+        'auragold_setu_payment',
         'en_US',
-        [record.customerName, refNote, `₹${record.amount.toLocaleString('en-IN')}`],
+        [record.customerName, record.amount.toLocaleString('en-IN')],
         record.customerName,
-        payLink,
+        record.shareToken || record.shortLink || payLink,
         undefined,
         'ADMIN'
       );
