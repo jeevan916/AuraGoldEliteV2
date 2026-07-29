@@ -162,6 +162,28 @@ router.post('/catalog', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+router.post('/external-payments', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        if (Array.isArray(req.body.externalPayments)) {
+            for (const item of req.body.externalPayments) {
+                await connection.query(
+                    `INSERT INTO external_payments (id, customer_contact, status, created_at, share_token, data, updated_at) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?) 
+                     ON DUPLICATE KEY UPDATE status=VALUES(status), share_token=VALUES(share_token), data=VALUES(data), updated_at=VALUES(updated_at)`,
+                    [item.id, item.customerContact || '', item.status || 'PENDING', new Date(item.createdAt || Date.now()), item.shareToken || '', JSON.stringify(item), Date.now()]
+                );
+            }
+        }
+        connection.release();
+        if (req.io) {
+            req.io.emit('external_payments_sync', req.body.externalPayments);
+        }
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.post('/plan-templates', ensureDb, async (req, res) => {
     try {
         const pool = getPool();

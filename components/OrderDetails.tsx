@@ -592,12 +592,12 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       : order.paymentPlan.milestones;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-20 animate-fadeIn">
-      <div className="flex justify-between items-center">
-        <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors font-bold text-sm">
+    <div className="max-w-5xl mx-auto space-y-6 pb-20 animate-fadeIn overflow-x-hidden">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 w-full">
+        <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors font-bold text-sm shrink-0">
           <ArrowLeft size={20} /> Back
         </button>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2 max-w-full">
            <Button size="sm" variant="secondary" onClick={async () => {
                 if(!confirm("Send automated payment reminder / overdue notification for this order?")) return;
                 try {
@@ -626,7 +626,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
         </div>
       </div>
 
-      <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start gap-6">
+      <div className="bg-slate-900 rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start gap-6">
          <div className="relative z-10 flex-1 min-w-0">
             <h1 className="text-3xl font-black tracking-tight mb-1 break-words leading-tight">{order.customerName}</h1>
             <div className="space-y-2">

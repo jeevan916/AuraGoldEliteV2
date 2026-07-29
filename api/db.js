@@ -10,6 +10,7 @@ export let isMock = false;
 export const mockData = {
     gold_rates: [],
     plan_templates: [],
+    external_payments: [],
     app_users: [{ id: 1, username: 'admin', password_hash: '$2a$10$8K1p/a06Ewe7SclT.8mS8uXvL0.X.X.X.X.X.X.X.X.X.X.X.X.X.X.', role: 'ADMIN', mobile_number: '' }], // Placeholder, will be fixed in auth
     integrations: [
         { 
@@ -139,6 +140,15 @@ export async function initDb() {
                 payload LONGTEXT,
                 checksum VARCHAR(64),
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`,
+            `CREATE TABLE IF NOT EXISTS external_payments (
+                id VARCHAR(100) PRIMARY KEY,
+                customer_contact VARCHAR(50),
+                status VARCHAR(50),
+                created_at DATETIME,
+                share_token VARCHAR(100),
+                data LONGTEXT,
+                updated_at BIGINT
             )`
         ];
         for (const sql of tables) await connection.query(sql);

@@ -1,5 +1,5 @@
 
-import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate, Customer, CatalogItem } from '../types';
+import { Order, WhatsAppLogEntry, WhatsAppTemplate, GlobalSettings, PaymentPlanTemplate, Customer, CatalogItem, ExternalPaymentRecord } from '../types';
 import { INITIAL_SETTINGS, INITIAL_PLAN_TEMPLATES, INITIAL_TEMPLATES, REQUIRED_SYSTEM_TEMPLATES } from '../constants';
 import { io, Socket } from 'socket.io-client';
 
@@ -11,6 +11,7 @@ export interface AppState {
   settings: GlobalSettings;
   customers: Customer[];
   catalog: CatalogItem[];
+  externalPayments: ExternalPaymentRecord[];
   lastUpdated: number;
 }
 
@@ -25,6 +26,7 @@ const DEFAULT_STATE: AppState = {
   settings: INITIAL_SETTINGS,
   customers: [],
   catalog: [],
+  externalPayments: [],
   lastUpdated: Date.now()
 };
 
@@ -46,6 +48,7 @@ class StorageService {
         const parsed = JSON.parse(saved);
         if (!parsed.customers) parsed.customers = [];
         if (!parsed.catalog) parsed.catalog = [];
+        if (!parsed.externalPayments) parsed.externalPayments = [];
         this.state = parsed;
       }
     } catch (e) {
@@ -215,6 +218,7 @@ class StorageService {
               logs: dbData.logs || [],
               planTemplates: (dbData.planTemplates && dbData.planTemplates.length > 0) ? dbData.planTemplates : INITIAL_PLAN_TEMPLATES,
               catalog: dbData.catalog || [],
+              externalPayments: dbData.externalPayments || [],
               lastUpdated: Date.now()
           } as any;
 
@@ -292,6 +296,30 @@ class StorageService {
   public setCustomers(customers: Customer[]) {
       this.state.customers = customers;
       this.pushEntity('customers', { customers });
+  }
+
+  public getExternalPayments(): ExternalPaymentRecord[] {
+    return this.state.externalPayments || [];
+  }
+
+  public setExternalPayments(externalPayments: ExternalPaymentRecord[]) {
+    this.state.externalPayments = externalPayments;
+    this.pushEntity('external-payments', { externalPayments });
+  }
+
+  public addExternalPayment(record: ExternalPaymentRecord) {
+    const list = [record, ...(this.state.externalPayments || [])];
+    this.setExternalPayments(list);
+  }
+
+  public updateExternalPayment(id: string, updates: Partial<ExternalPaymentRecord>) {
+    const list = (this.state.externalPayments || []).map(p => p.id === id ? { ...p, ...updates } : p);
+    this.setExternalPayments(list);
+  }
+
+  public deleteExternalPayment(id: string) {
+    const list = (this.state.externalPayments || []).filter(p => p.id !== id);
+    this.setExternalPayments(list);
   }
 
   public subscribe(cb: () => void) {

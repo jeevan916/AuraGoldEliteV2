@@ -256,6 +256,7 @@ export interface ActivityLogEntry {
 
 export interface NotificationTrigger {
   id: string;
+  orderId?: string;
   customerName: string;
   customerContact: string; 
   type: 'UPCOMING' | 'OVERDUE' | 'SYSTEM';
@@ -266,12 +267,45 @@ export interface NotificationTrigger {
   strategyReasoning?: string;
   aiRecommendedTemplateId?: string;
   aiRecommendedVariables?: string[];
+  dueAmount?: number;
+  breachDays?: number;
+  milestoneId?: string;
+  milestoneTitle?: string;
+  templateName?: string;
+  shareToken?: string;
 }
 
 export type PsychologicalTactic = 'LOSS_AVERSION' | 'SOCIAL_PROOF' | 'AUTHORITY' | 'RECIPROCITY' | 'URGENCY' | 'EMPATHY';
 export type RiskProfile = 'VIP' | 'REGULAR' | 'FORGETFUL' | 'HIGH_RISK';
 export type MetaCategory = 'UTILITY' | 'MARKETING' | 'AUTHENTICATION';
 export type AppTemplateGroup = 'PAYMENT_COLLECTION' | 'ORDER_STATUS' | 'MARKETING_PROMO' | 'GENERAL_SUPPORT' | 'SYSTEM_NOTIFICATIONS' | 'SETU_PAYMENT' | 'UNCATEGORIZED';
+
+export type ExternalPaymentStatus = 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+
+export interface ExternalPaymentRecord {
+  id: string; // e.g. "EXT-PAY-1001"
+  customerName: string;
+  customerContact: string;
+  amount: number;
+  description: string;
+  referenceNote: string; // Reference tag e.g. "External payment request"
+  status: ExternalPaymentStatus;
+  createdAt: string;
+  dueDate: string;
+  paidAt?: string;
+  paymentMode?: 'SETU_UPI' | 'CASH' | 'BANK_TRANSFER' | 'POS' | 'OTHER';
+  txnId?: string;
+  platformBillID?: string;
+  shortLink?: string;
+  upiIntentLink?: string;
+  shareToken: string;
+  notes?: string;
+  history?: {
+    date: string;
+    action: string;
+    details?: string;
+  }[];
+}
 
 export interface WhatsAppTemplate {
   id: string;

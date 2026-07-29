@@ -5,6 +5,7 @@ import {
   MetaCategory, AppTemplateGroup, PsychologicalTactic, 
   PaymentPlanTemplate, RiskProfile 
 } from "../types";
+import { strategyEngine } from "./strategyEngine";
 
 export const geminiService = {
   async diagnoseError(message: string, source: string, stack?: string, rawContext?: any): Promise<{ 
@@ -73,13 +74,18 @@ export const geminiService = {
       variables: string[], 
       message: string 
   }> {
-    const response = await fetch('/api/ai/generateStrategicNotification', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order, type, goldRate, riskProfile })
-    });
-    if (!response.ok) throw new Error("AI Offline");
-    return await response.json();
+    try {
+      const response = await fetch('/api/ai/generateStrategicNotification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order, type, goldRate, riskProfile })
+      });
+      if (!response.ok) throw new Error("AI Endpoint Unavailable");
+      return await response.json();
+    } catch (e) {
+      console.info("[GeminiService] AI service offline/error. Fallback to Inbuilt Strategy Engine.");
+      return strategyEngine.generateInbuiltStrategy(order, type, goldRate, riskProfile);
+    }
   },
 
   async fixRejectedTemplate(template: Partial<WhatsAppTemplate>): Promise<{ 

@@ -74,14 +74,16 @@ const WebhookLogs = lazyRetry(() => import('./components/WebhookLogs'), 'Webhook
 
 const StaffManager = lazyRetry(() => import('./components/StaffManager').then(m => ({ default: m.StaffManager })), 'StaffManager');
 const DuesTracker = lazyRetry(() => import('./components/DuesTracker').then(m => ({ default: m.DuesTracker })), 'DuesTracker');
+const ExternalPaymentLedger = lazyRetry(() => import('./components/ExternalPaymentLedger'), 'ExternalPaymentLedger');
+const ExternalPaymentCustomerView = lazyRetry(() => import('./components/ExternalPaymentCustomerView'), 'ExternalPaymentCustomerView');
 
-type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW' | 'ARCHITECT' | 'KARIGAR_DESK' | 'WEBHOOKS' | 'STAFF_MANAGER' | 'DUES_TRACKER';
+type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW' | 'ARCHITECT' | 'KARIGAR_DESK' | 'WEBHOOKS' | 'STAFF_MANAGER' | 'DUES_TRACKER' | 'EXTERNAL_PAYMENTS' | 'EXTERNAL_CUSTOMER_VIEW';
 
 // --- ACCESS CONTROL LIST ---
 const ROLE_PERMISSIONS: Record<UserRole, MainView[]> = {
-    ADMIN: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'SYS_LOGS', 'SETTINGS', 'MENU', 'CUSTOMER_VIEW', 'ARCHITECT', 'KARIGAR_DESK', 'WEBHOOKS', 'STAFF_MANAGER', 'DUES_TRACKER'],
-    MANAGER: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'MENU', 'KARIGAR_DESK'],
-    SALES: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'MENU'],
+    ADMIN: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'SYS_LOGS', 'SETTINGS', 'MENU', 'CUSTOMER_VIEW', 'ARCHITECT', 'KARIGAR_DESK', 'WEBHOOKS', 'STAFF_MANAGER', 'DUES_TRACKER', 'EXTERNAL_PAYMENTS'],
+    MANAGER: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'MENU', 'KARIGAR_DESK', 'EXTERNAL_PAYMENTS'],
+    SALES: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'MENU', 'EXTERNAL_PAYMENTS'],
     KARIGAR: ['KARIGAR_DESK']
 };
 
@@ -157,6 +159,7 @@ const App = () => {
   
   // Public & Auth State
   const [publicOrder, setPublicOrder] = useState<Order | null>(null);
+  const [publicExtToken, setPublicExtToken] = useState<string | null>(null);
   const [isPublicMode, setIsPublicMode] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
 
@@ -173,10 +176,16 @@ const App = () => {
   useEffect(() => {
     // 1. CHECK FOR PUBLIC LINK FIRST
     const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
+    const token = params.get('token') || params.get('ext_token');
 
     if (token) {
         setIsPublicMode(true);
+        if (token.startsWith('ext_') || token.startsWith('EXT-') || params.get('ext_token')) {
+            setPublicExtToken(token);
+            setView('EXTERNAL_CUSTOMER_VIEW');
+            return;
+        }
+
         setView('CUSTOMER_VIEW');
         
         let alertShown = false;
@@ -363,8 +372,13 @@ const App = () => {
               return publicOrder 
                 ? <CustomerOrderView order={publicOrder} /> 
                 : <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-amber-500" /></div>;
+          case 'EXTERNAL_CUSTOMER_VIEW':
+              return publicExtToken
+                ? <ExternalPaymentCustomerView token={publicExtToken} />
+                : <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-amber-500" /></div>;
 
           // --- ADMIN VIEWS ---
+          case 'EXTERNAL_PAYMENTS': return <ExternalPaymentLedger />;
           case 'DASH': return <Dashboard orders={orders} currentRates={{k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K, silver: settings.currentSilverRate}} onRefreshRates={async () => {
               const res = await goldRateService.fetchLiveRate();
               if (res.success) setSettings({...settings, currentGoldRate24K: res.rate24K, currentGoldRate22K: res.rate22K, currentSilverRate: res.silver});
@@ -379,7 +393,7 @@ const App = () => {
           case 'TEMPLATES': return <WhatsAppTemplates templates={templates} onUpdate={setTemplates} />;
           case 'LOGS': return <WhatsAppLogs logs={logs} onViewChat={(phone) => { setSelectedChatPhone(phone); setView('WHATSAPP'); }} onAddLog={addLog} />;
           case 'PLANS': return <PlanManager templates={planTemplates} onUpdate={(tpls) => { setPlanTemplates(tpls); storageService.setPlanTemplates(tpls); }} />;
-          case 'STRATEGY': return <NotificationCenter notifications={[]} customers={derivedCustomers} onSend={() => {}} onRefresh={() => {}} loading={false} />;
+          case 'STRATEGY': return <NotificationCenter customers={derivedCustomers} onRefresh={() => {}} onSend={(id) => addLog({ id: `log_${Date.now()}`, customerName: 'Customer', phoneNumber: id, message: 'Automated Strategy Trigger Dispatched', status: 'DELIVERED', timestamp: new Date().toISOString(), direction: 'outbound', type: 'TEMPLATE', sentBy: 'SYSTEM' })} />;
           case 'MARKET': return <MarketIntelligence orders={orders} settings={settings} />;
           case 'SYS_LOGS': return <ErrorLogPanel errors={systemErrors} activities={systemActivities} onClear={() => { errorService.clearErrors(); errorService.clearActivity(); }} />;
           case 'WEBHOOKS': return <WebhookLogs />;
@@ -394,6 +408,7 @@ const App = () => {
                   {canAccess('KARIGAR_DESK') && <MenuItem onClick={() => setView('KARIGAR_DESK')} icon={<Hammer />} label="Karigar Desk" desc="Production Tracking" colorClass="bg-slate-800 text-white" />}
                   {canAccess('CUSTOMERS') && <MenuItem onClick={() => setView('CUSTOMERS')} icon={<Users />} label="Client Directory" desc="View customer profiles" colorClass="bg-emerald-50 text-emerald-600" />}
                   {canAccess('COLLECTIONS') && <MenuItem onClick={() => setView('COLLECTIONS')} icon={<ReceiptIndianRupee />} label="Payments" desc="Track cash flow" colorClass="bg-amber-50 text-amber-600" />}
+                  {canAccess('EXTERNAL_PAYMENTS') && <MenuItem onClick={() => setView('EXTERNAL_PAYMENTS')} icon={<ReceiptIndianRupee />} label="External Ledger" desc="Offline order payments" colorClass="bg-amber-100 text-amber-700" />}
                   {canAccess('DUES_TRACKER') && <MenuItem onClick={() => setView('DUES_TRACKER')} icon={<TrendingUp />} label="Dues Dashboard" desc="Outstanding dues Aging" colorClass="bg-rose-50 text-rose-600" />}
                   {canAccess('WHATSAPP') && <MenuItem onClick={() => setView('WHATSAPP')} icon={<MessageSquare />} label="WhatsApp" desc="Connect with clients" colorClass="bg-teal-50 text-teal-600" />}
                   {canAccess('TEMPLATES') && <MenuItem onClick={() => setView('TEMPLATES')} icon={<Layout />} label="AI Templates" desc="Meta Architect Console" colorClass="bg-indigo-50 text-indigo-600" />}
@@ -454,6 +469,7 @@ const App = () => {
                  {(canAccess('CUSTOMERS') || canAccess('COLLECTIONS')) && <p className="px-4 text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Operations</p>}
                  {canAccess('CUSTOMERS') && <SidebarItem active={view === 'CUSTOMERS'} onClick={() => setView('CUSTOMERS')} icon={Users} label="Clients" />}
                  {canAccess('COLLECTIONS') && <SidebarItem active={view === 'COLLECTIONS'} onClick={() => setView('COLLECTIONS')} icon={ReceiptIndianRupee} label="Payments" />}
+                 {canAccess('EXTERNAL_PAYMENTS') && <SidebarItem active={view === 'EXTERNAL_PAYMENTS'} onClick={() => setView('EXTERNAL_PAYMENTS')} icon={ReceiptIndianRupee} label="External Ledger" highlight />}
                  {canAccess('DUES_TRACKER') && <SidebarItem active={view === 'DUES_TRACKER'} onClick={() => setView('DUES_TRACKER')} icon={TrendingUp} label="Dues Dashboard" />}
                  {canAccess('STRATEGY') && <SidebarItem active={view === 'STRATEGY'} onClick={() => setView('STRATEGY')} icon={BrainCircuit} label="Strategy Hub" />}
                  {canAccess('PLANS') && <SidebarItem active={view === 'PLANS'} onClick={() => setView('PLANS')} icon={FileText} label="Plan Manager" />}
@@ -512,7 +528,7 @@ const App = () => {
         </div>
 
         <div className="flex-1 overflow-hidden relative flex flex-col">
-            <main className="flex-1 overflow-y-auto p-4 lg:p-8 pt-20 lg:pt-8 pb-32 lg:pb-8">
+            <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 lg:p-8 pt-20 lg:pt-8 pb-32 lg:pb-8">
                <Suspense fallback={<LoadingScreen />}>
                   {renderContent()}
                </Suspense>

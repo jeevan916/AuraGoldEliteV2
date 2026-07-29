@@ -91,7 +91,7 @@ const router = express.Router();
 
 // Setu Payment Proxy
 router.post('/setu/create-link', ensureDb, async (req, res) => {
-    let { amount, billerBillID, customerID, name, orderId } = req.body;
+    let { amount, billerBillID, customerID, name, orderId, externalPaymentId } = req.body;
     
     // 1. Guideline Compliance: Validate Required Fields
     if (!amount || amount <= 0) {
@@ -102,13 +102,20 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         const pool = getPool();
         const connection = await pool.getConnection();
 
-        // If customerID or name is missing, try to fetch from order
+        // If customerID or name is missing, try to fetch from order or external payment request
         if ((!customerID || !name) && orderId) {
             const [orderRows] = await connection.query("SELECT data FROM orders WHERE id = ?", [orderId]);
             if (orderRows.length > 0) {
                 const orderData = JSON.parse(orderRows[0].data);
                 customerID = customerID || orderData.customerContact;
                 name = name || orderData.customerName;
+            }
+        } else if ((!customerID || !name) && externalPaymentId) {
+            const [extRows] = await connection.query("SELECT data FROM external_payments WHERE id = ?", [externalPaymentId]);
+            if (extRows.length > 0) {
+                const extData = JSON.parse(extRows[0].data);
+                customerID = customerID || extData.customerContact;
+                name = name || extData.customerName;
             }
         }
 
@@ -148,9 +155,9 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
 
         connection.release();
 
-        const uniqueBillId = billerBillID || (orderId ? `${orderId}_${Date.now()}` : `bill_${Date.now()}`);
+        const uniqueBillId = billerBillID || (externalPaymentId ? `${externalPaymentId}_${Date.now()}` : (orderId ? `${orderId}_${Date.now()}` : `bill_${Date.now()}`));
         const safeName = name ? name.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Customer';
-        const safeNote = orderId ? `Order ${orderId}`.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Payment';
+        const safeNote = externalPaymentId ? `External Pay ${externalPaymentId}`.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : (orderId ? `Order ${orderId}`.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Payment');
 
         // Helper to generate mock link inline
         const triggerMockLink = async () => {
@@ -165,7 +172,7 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                 }
             };
 
-            // Save platformBillID to order for background recovery checking
+            // Save platformBillID to order or external payment for background recovery checking
             if (orderId) {
                 const processConn = await pool.getConnection();
                 try {
@@ -183,6 +190,29 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                     }
                 } catch (err) {
                     console.error("Failed to save pending Setu payment:", err);
+                } finally {
+                    processConn.release();
+                }
+            } else if (externalPaymentId) {
+                const processConn = await pool.getConnection();
+                try {
+                    const [extRows] = await processConn.query('SELECT data FROM external_payments WHERE id = ?', [externalPaymentId]);
+                    if (extRows.length > 0) {
+                        const extRecord = JSON.parse(extRows[0].data);
+                        extRecord.platformBillID = platformBillID;
+                        extRecord.shortLink = mockLinkData.paymentLink.shortUrl;
+                        extRecord.upiIntentLink = mockLinkData.paymentLink.upiID;
+                        if (!extRecord.pendingSetuPayments) extRecord.pendingSetuPayments = [];
+                        extRecord.pendingSetuPayments.push({
+                            platformBillID: platformBillID,
+                            amount: amount,
+                            createdAt: new Date().toISOString()
+                        });
+                        await processConn.query('UPDATE external_payments SET data = ?, updated_at = ? WHERE id = ?', [JSON.stringify(extRecord), Date.now(), externalPaymentId]);
+                        await journalTransaction('EXTERNAL_PAYMENT', externalPaymentId, 'PENDING_UPI_CREATE', extRecord, processConn);
+                    }
+                } catch (err) {
+                    console.error("Failed to save pending Setu external payment:", err);
                 } finally {
                     processConn.release();
                 }
@@ -248,7 +278,7 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
             };
         }
 
-        // Save platformBillID to order for background recovery checking
+        // Save platformBillID to order or external payment for background recovery checking
         if (orderId && linkData.data && linkData.data.platformBillID) {
             const processConn = await pool.getConnection();
             try {
@@ -266,6 +296,31 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                 }
             } catch (err) {
                 console.error("Failed to save pending Setu payment:", err);
+            } finally {
+                processConn.release();
+            }
+        } else if (externalPaymentId && linkData.data && linkData.data.platformBillID) {
+            const processConn = await pool.getConnection();
+            try {
+                const [extRows] = await processConn.query('SELECT data FROM external_payments WHERE id = ?', [externalPaymentId]);
+                if (extRows.length > 0) {
+                    const extRecord = JSON.parse(extRows[0].data);
+                    extRecord.platformBillID = linkData.data.platformBillID;
+                    if (linkData.data.paymentLink) {
+                        extRecord.shortLink = linkData.data.paymentLink.shortUrl;
+                        extRecord.upiIntentLink = linkData.data.paymentLink.upiID;
+                    }
+                    if (!extRecord.pendingSetuPayments) extRecord.pendingSetuPayments = [];
+                    extRecord.pendingSetuPayments.push({
+                        platformBillID: linkData.data.platformBillID,
+                        amount: amount,
+                        createdAt: new Date().toISOString()
+                    });
+                    await processConn.query('UPDATE external_payments SET data = ?, updated_at = ? WHERE id = ?', [JSON.stringify(extRecord), Date.now(), externalPaymentId]);
+                    await journalTransaction('EXTERNAL_PAYMENT', externalPaymentId, 'PENDING_UPI_CREATE', extRecord, processConn);
+                }
+            } catch (err) {
+                console.error("Failed to save pending Setu external payment:", err);
             } finally {
                 processConn.release();
             }
@@ -938,6 +993,66 @@ async function processSuccessfulPayment(orderId, amountPaid, upiTransactionID, p
     }
 }
 
+// Helper to record External Payment Request success
+async function processSuccessfulExternalPayment(externalId, amountPaid, upiTransactionID, payerVpa, req) {
+    const pool = getPool();
+    if (!pool) return;
+    const connection = await pool.getConnection();
+
+    try {
+        const [rows] = await connection.query('SELECT data FROM external_payments WHERE id=?', [externalId]);
+        if (rows.length === 0) return;
+        
+        const record = JSON.parse(rows[0].data);
+        if (record.status === 'PAID') return;
+
+        record.status = 'PAID';
+        record.paidAt = new Date().toISOString();
+        record.paymentMode = 'SETU_UPI';
+        record.txnId = upiTransactionID;
+        if (!record.history) record.history = [];
+        record.history.push({
+            date: new Date().toISOString(),
+            action: 'SETU_UPI_PAYMENT_SUCCESS',
+            details: `Received ₹${amountPaid} via Setu UPI (Ref: ${upiTransactionID}, Payer: ${payerVpa || 'UPI User'}). Reference: External payment request`
+        });
+
+        await connection.query('UPDATE external_payments SET status = ?, data = ?, updated_at = ? WHERE id = ?', ['PAID', JSON.stringify(record), Date.now(), externalId]);
+        await journalTransaction('EXTERNAL_PAYMENT', externalId, 'PAYMENT_RECEIVE', record, connection);
+
+        console.log(`External Payment Request ${externalId} updated with Setu payment ${upiTransactionID}`);
+        
+        if (req && req.io) {
+            req.io.emit('external_payments_sync', [record]);
+        }
+
+        try {
+            const [whatsappRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['whatsapp']);
+            const whatsappConfig = whatsappRows.length > 0 ? (typeof whatsappRows[0].config === "string" ? JSON.parse(whatsappRows[0].config) : whatsappRows[0].config) : {};
+            const { phoneId, token } = whatsappConfig;
+            
+            if (phoneId && token && record.customerContact) {
+                const { sendWhatsAppMessage } = await import('./whatsapp.js');
+                await sendWhatsAppMessage({
+                    to: record.customerContact,
+                    message: `Dear ${record.customerName}, thank you for your payment! We have received ₹${amountPaid} via Setu UPI for your External Payment Request (Ref: ${record.referenceNote || 'External payment request'}). Transaction ID: ${upiTransactionID}.`,
+                    customerName: record.customerName,
+                    phoneId,
+                    token,
+                    sentBy: 'SYSTEM',
+                    metadata: { type: 'EXTERNAL_PAYMENT_RECEIPT', externalId }
+                });
+            }
+        } catch (waErr) {
+            console.error("WhatsApp Receipt error for External Payment:", waErr);
+        }
+    } catch (err) {
+        console.error("Failed to process successful external payment:", err);
+    } finally {
+        connection.release();
+    }
+}
+
 // Background poller
 let pollerActive = false;
 export function startSetuPoller(io) {
@@ -972,8 +1087,53 @@ export function startSetuPoller(io) {
             }
             
             const [orderRows] = await connection.query("SELECT id, data FROM orders");
+            const [extRows] = await connection.query("SELECT id, data FROM external_payments WHERE status != 'PAID'");
             connection.release();
             
+            for (const row of extRows) {
+                try {
+                    const extRecord = JSON.parse(row.data);
+                    const pendings = extRecord.pendingSetuPayments || (extRecord.platformBillID ? [{ platformBillID: extRecord.platformBillID, amount: extRecord.amount, createdAt: extRecord.createdAt }] : []);
+                    for (const pending of pendings) {
+                        const ageMs = Date.now() - new Date(pending.createdAt || Date.now()).getTime();
+                        if (ageMs > 24 * 60 * 60 * 1000) continue;
+                        const isMockBill = (pending.platformBillID && pending.platformBillID.startsWith('mock_'));
+                        if (isMock || isMockBill) {
+                            if (ageMs > 15 * 1000) {
+                                try {
+                                    await processSuccessfulExternalPayment(extRecord.id, pending.amount, pending.platformBillID, "customer@upi", { io });
+                                } catch (mockErr) {
+                                    console.error("[Setu Poller Mock] Failed to process mock external payment:", mockErr.message);
+                                }
+                            }
+                            continue;
+                        }
+                        if (token && token.startsWith('mock_setu_')) continue;
+                        try {
+                            let statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
+                                headers: {
+                                    'Authorization': `Bearer ${token}`,
+                                    'X-Setu-Product-Instance-ID': config.schemeId
+                                }
+                            });
+                            const statusResponseText = await statusResponse.text();
+                            if (!statusResponseText.trim().startsWith('{')) continue;
+                            const statusData = JSON.parse(statusResponseText);
+                            if (statusData.success && statusData.data && statusData.data.status === 'PAYMENT_SUCCESSFUL') {
+                                const amountPaid = (statusData.data.amountPaid?.value / 100) || (statusData.data.amount?.value / 100) || pending.amount; 
+                                const upiTransactionID = statusData.data.paymentLink?.platformBillID || statusData.data.platformBillID || pending.platformBillID;
+                                const payerVpa = statusData.data.payerVpa || null;
+                                await processSuccessfulExternalPayment(extRecord.id, amountPaid, upiTransactionID, payerVpa, { io });
+                            }
+                        } catch (extPollErr) {
+                            console.error(`Error polling Setu for external payment ${pending.platformBillID}:`, extPollErr.message);
+                        }
+                    }
+                } catch (parseErr) {
+                    console.error("Failed to parse ext record in poller:", parseErr);
+                }
+            }
+
             for (const row of orderRows) {
                 const order = JSON.parse(row.data);
                 if (order.pendingSetuPayments && order.pendingSetuPayments.length > 0) {
@@ -1053,5 +1213,5 @@ export function startSetuPoller(io) {
     }, 60 * 1000);
 }
 
-export { processSuccessfulPayment };
+export { processSuccessfulPayment, processSuccessfulExternalPayment };
 export default router;

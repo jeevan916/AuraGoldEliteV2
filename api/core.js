@@ -200,7 +200,28 @@ router.get('/public/order/:token', ensureDb, async (req, res) => {
     }
 });
 
-
+// --- PUBLIC EXTERNAL PAYMENT ACCESS ---
+router.get('/public/external-payment/:token', ensureDb, async (req, res) => {
+    try {
+        const token = req.params.token;
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        
+        const [rows] = await connection.query('SELECT data FROM external_payments WHERE share_token = ? OR id = ?', [token, token]);
+        connection.release();
+        
+        const record = rows.length > 0 ? JSON.parse(rows[0].data) : null;
+        
+        if (record) {
+            await logDbActivity('LINK_OPENED', `Customer viewed External Payment Request ${record.id}`, { recordId: record.id, customer: record.customerName }, req);
+            res.json({ success: true, record });
+        } else {
+            res.status(404).json({ success: false, error: "Invalid or Expired External Payment Request Link" });
+        }
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
 
 router.get('/bootstrap', ensureDb, async (req, res) => {
     try {
@@ -212,6 +233,7 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
         const [templates] = await connection.query('SELECT data FROM templates');
         const [catalog] = await connection.query('SELECT data FROM catalog');
         const [planTemplates] = await connection.query('SELECT data FROM plan_templates');
+        const [externalPayments] = await connection.query('SELECT data FROM external_payments');
         const [intRows] = await connection.query('SELECT * FROM integrations');
         connection.release();
         
@@ -240,6 +262,7 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
             templates: templates.map(r => JSON.parse(r.data)),
             catalog: catalog.map(r => JSON.parse(r.data)),
             planTemplates: planTemplates.map(r => JSON.parse(r.data)),
+            externalPayments: externalPayments.map(r => JSON.parse(r.data)),
             settings: { 
                 currentGoldRate24K: core.currentGoldRate24K || 7500,
                 currentGoldRate22K: core.currentGoldRate22K || 6870,

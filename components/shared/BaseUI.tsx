@@ -52,7 +52,7 @@ export interface ButtonProps {
 export const Button: React.FC<ButtonProps> = ({ 
   children, onClick, variant = 'primary', disabled, loading, className = '', size = 'md' 
 }) => {
-  const base = "font-black uppercase tracking-widest rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100";
+  const base = "font-black uppercase tracking-widest rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 whitespace-nowrap shrink-0";
   
   const variants = {
     primary: "bg-slate-900 text-white shadow-lg shadow-slate-900/20 hover:bg-slate-800",
