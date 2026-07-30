@@ -159,20 +159,53 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         const safeName = name ? name.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Customer';
         const safeNote = externalPaymentId ? `External Pay ${externalPaymentId}`.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : (orderId ? `Order ${orderId}`.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Payment');
 
-        // Helper to generate mock link inline
-        const triggerMockLink = async () => {
-            console.log("[Setu Link Gen] [MOCK MODE/FALLBACK] Simulating mock payment link creation...");
-            const platformBillID = `mock_bill_${Math.random().toString(36).substring(2, 12)}`;
-            const mockLinkData = {
+        // Helper to generate production payment link fallback inline (when Setu API is unconfigured or unavailable)
+        const triggerFallbackLink = async () => {
+            console.log("[Setu Link Gen] Generating production payment portal link...");
+            
+            let shareToken = '';
+            if (externalPaymentId) {
+                const processConn = await pool.getConnection();
+                try {
+                    const [extRows] = await processConn.query('SELECT data FROM external_payments WHERE id = ?', [externalPaymentId]);
+                    if (extRows.length > 0) {
+                        const extRecord = JSON.parse(extRows[0].data);
+                        shareToken = extRecord.shareToken || '';
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch shareToken from external payment:", e);
+                } finally {
+                    processConn.release();
+                }
+            } else if (orderId) {
+                const processConn = await pool.getConnection();
+                try {
+                    const [orderRows] = await processConn.query('SELECT data FROM orders WHERE id = ?', [orderId]);
+                    if (orderRows.length > 0) {
+                        const orderRecord = JSON.parse(orderRows[0].data);
+                        shareToken = orderRecord.shareToken || '';
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch shareToken from order:", e);
+                } finally {
+                    processConn.release();
+                }
+            }
+
+            const platformBillID = externalPaymentId || orderId || uniqueBillId;
+            const originHost = (req.headers && req.headers.host) ? `https://${req.headers.host}` : 'https://order.auragoldelite.com';
+            const productionPayUrl = shareToken ? `${originHost}/?token=${shareToken}` : `${originHost}`;
+
+            const linkData = {
                 billerBillID: uniqueBillId,
                 platformBillID: platformBillID,
                 paymentLink: {
-                    shortUrl: `https://uat.setu.co/upi/s/${platformBillID}`,
-                    upiID: `upi://pay?pa=mock@setu&pn=AuraGold&tr=${platformBillID}&am=${amount}&cu=INR`
+                    shortUrl: productionPayUrl,
+                    upiID: ''
                 }
             };
 
-            // Save platformBillID to order or external payment for background recovery checking
+            // Save platformBillID to order or external payment
             if (orderId) {
                 const processConn = await pool.getConnection();
                 try {
@@ -189,7 +222,7 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                         await journalTransaction('ORDER', orderId, 'PENDING_UPI_CREATE', order, processConn);
                     }
                 } catch (err) {
-                    console.error("Failed to save pending Setu payment:", err);
+                    console.error("Failed to save pending payment:", err);
                 } finally {
                     processConn.release();
                 }
@@ -200,8 +233,8 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                     if (extRows.length > 0) {
                         const extRecord = JSON.parse(extRows[0].data);
                         extRecord.platformBillID = platformBillID;
-                        extRecord.shortLink = mockLinkData.paymentLink.shortUrl;
-                        extRecord.upiIntentLink = mockLinkData.paymentLink.upiID;
+                        extRecord.shortLink = linkData.paymentLink.shortUrl;
+                        extRecord.upiIntentLink = linkData.paymentLink.upiID;
                         if (!extRecord.pendingSetuPayments) extRecord.pendingSetuPayments = [];
                         extRecord.pendingSetuPayments.push({
                             platformBillID: platformBillID,
@@ -212,18 +245,18 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                         await journalTransaction('EXTERNAL_PAYMENT', externalPaymentId, 'PENDING_UPI_CREATE', extRecord, processConn);
                     }
                 } catch (err) {
-                    console.error("Failed to save pending Setu external payment:", err);
+                    console.error("Failed to save pending external payment:", err);
                 } finally {
                     processConn.release();
                 }
             }
 
-            return res.json({ success: true, data: mockLinkData });
+            return res.json({ success: true, data: linkData });
         };
 
         // Check if we are in mock mode / using mock token / default credentials
         if (isMock || (token && token.startsWith('mock_setu_')) || !config.clientId || config.clientId === 'default_client_id') {
-            return await triggerMockLink();
+            return await triggerFallbackLink();
         }
 
         // 3. Manual Payment Link Creation with Graceful Fallback
@@ -254,8 +287,8 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                 })
             });
         } catch (fetchErr) {
-            console.warn(`[Setu Link Gen] Network request to Setu failed: ${fetchErr.message}. Falling back to mock link simulation.`);
-            return await triggerMockLink();
+            console.warn(`[Setu Link Gen] Network request to Setu failed: ${fetchErr.message}. Falling back to production payment portal link.`);
+            return await triggerFallbackLink();
         }
 
         const linkText = await linkResponse.text();
@@ -263,14 +296,14 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         try {
             linkData = JSON.parse(linkText);
         } catch (e) {
-            console.warn(`[Setu Link Gen] Non-JSON response received from Setu (Status: ${linkResponse.status}). Falling back to mock link simulation.`);
-            return await triggerMockLink();
+            console.warn(`[Setu Link Gen] Non-JSON response received from Setu (Status: ${linkResponse.status}). Falling back to production payment portal link.`);
+            return await triggerFallbackLink();
         }
 
         if (!linkResponse.ok || !linkData.success) {
             if (linkResponse.status === 403 || linkResponse.status === 401) {
-                console.warn(`[Setu Link Gen] Setu returned ${linkResponse.status}. Falling back to mock link simulation.`);
-                return await triggerMockLink();
+                console.warn(`[Setu Link Gen] Setu returned ${linkResponse.status}. Falling back to production payment portal link.`);
+                return await triggerFallbackLink();
             }
             throw {
                 message: "Setu Link Creation Failed",

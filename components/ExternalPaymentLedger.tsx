@@ -178,12 +178,21 @@ export const ExternalPaymentLedger: React.FC = () => {
     triggerNotification('success', `External Payment Request ${newRecord.id} created successfully!`);
   };
 
+  // Helper to determine valid pay link (falls back to public token URL if Setu is in mock mode)
+  const getValidPayLink = (record: ExternalPaymentRecord) => {
+    const publicPayUrl = `${window.location.origin}/?token=${record.shareToken}`;
+    if (!record.shortLink || record.shortLink.includes('mock_bill') || record.shortLink.includes('uat.setu.co')) {
+      return publicPayUrl;
+    }
+    return record.shortLink;
+  };
+
   // Dispatch WhatsApp Message
   const dispatchWaLink = async (record: ExternalPaymentRecord) => {
     setIsSendingWa(true);
     try {
       const publicPayUrl = `${window.location.origin}/?token=${record.shareToken}`;
-      const payLink = record.shortLink || publicPayUrl;
+      const validPayLink = getValidPayLink(record);
       const refNote = record.referenceNote || 'External payment request';
 
       const res = await whatsappService.sendTemplateMessage(
@@ -192,7 +201,7 @@ export const ExternalPaymentLedger: React.FC = () => {
         'en_US',
         [record.customerName, record.amount.toLocaleString('en-IN')],
         record.customerName,
-        record.shareToken || record.shortLink || payLink,
+        record.shareToken || validPayLink,
         undefined,
         'ADMIN'
       );
@@ -792,26 +801,28 @@ export const ExternalPaymentLedger: React.FC = () => {
             </div>
 
             <div className="space-y-2 text-left bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs my-4">
-              <div className="flex justify-between text-slate-600">
+              <div className="flex justify-between items-center text-slate-600">
                 <span>Setu Bill ID:</span>
-                <span className="font-mono font-bold text-slate-900">{showQrModal.platformBillID || 'N/A'}</span>
+                <span className="font-mono font-bold text-slate-900 flex items-center gap-1.5">
+                  {showQrModal.platformBillID || showQrModal.id}
+                </span>
               </div>
               <div className="flex justify-between text-slate-600">
-                <span>Short Pay Link:</span>
+                <span>Pay Link:</span>
                 <a
-                  href={showQrModal.shortLink || `${window.location.origin}/?token=${showQrModal.shareToken}`}
+                  href={getValidPayLink(showQrModal)}
                   target="_blank"
                   rel="noreferrer"
                   className="font-mono text-amber-600 font-bold truncate max-w-[180px] hover:underline"
                 >
-                  {showQrModal.shortLink || `${window.location.origin}/?token=${showQrModal.shareToken}`}
+                  {getValidPayLink(showQrModal)}
                 </a>
               </div>
             </div>
 
             <div className="flex gap-2">
               <button
-                onClick={() => copyToClipboard(showQrModal.shortLink || `${window.location.origin}/?token=${showQrModal.shareToken}`, 'Setu payment URL', showQrModal.id)}
+                onClick={() => copyToClipboard(getValidPayLink(showQrModal), 'Payment URL', showQrModal.id)}
                 className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-2xl transition-all flex items-center justify-center gap-2"
               >
                 <Copy size={14} /> Copy Pay Link
