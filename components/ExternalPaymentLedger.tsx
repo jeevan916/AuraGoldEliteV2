@@ -16,8 +16,6 @@ export const ExternalPaymentLedger: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<ExternalPaymentRecord | null>(null);
   const [showQrModal, setShowQrModal] = useState<ExternalPaymentRecord | null>(null);
-  const [showRawResponseInQr, setShowRawResponseInQr] = useState(false);
-  const [showRawResponseInAudit, setShowRawResponseInAudit] = useState(false);
   const [showManualPayModal, setShowManualPayModal] = useState<ExternalPaymentRecord | null>(null);
   const [manualPayMethod, setManualPayMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'POS' | 'OTHER'>('CASH');
   const [manualTxnId, setManualTxnId] = useState('');
@@ -141,16 +139,11 @@ export const ExternalPaymentLedger: React.FC = () => {
       });
 
       const setuData = await setuRes.json();
-      newRecord.rawSetuResponse = setuData.rawResponse || setuData.data || setuData;
       if (setuData.success && setuData.data) {
         newRecord.platformBillID = setuData.data.platformBillID;
         if (setuData.data.paymentLink) {
-          const pl = setuData.data.paymentLink;
-          newRecord.shortLink = pl.shortURL || pl.shortUrl;
-          newRecord.upiIntentLink = pl.upiLink || pl.upiID;
-        } else if (setuData.data.shortURL || setuData.data.shortUrl) {
-          newRecord.shortLink = setuData.data.shortURL || setuData.data.shortUrl;
-          newRecord.upiIntentLink = setuData.data.upiLink || setuData.data.upiID;
+          newRecord.shortLink = setuData.data.paymentLink.shortUrl;
+          newRecord.upiIntentLink = setuData.data.paymentLink.upiID;
         }
         newRecord.history?.push({
           date: new Date().toISOString(),
@@ -185,11 +178,22 @@ export const ExternalPaymentLedger: React.FC = () => {
     triggerNotification('success', `External Payment Request ${newRecord.id} created successfully!`);
   };
 
+  // Helper to determine valid pay link (falls back to public token URL if Setu is in mock mode)
+  const getValidPayLink = (record: ExternalPaymentRecord) => {
+    const publicPayUrl = `${window.location.origin}/?token=${record.shareToken}`;
+    if (!record.shortLink || record.shortLink.includes('mock_bill') || record.shortLink.includes('uat.setu.co')) {
+      return publicPayUrl;
+    }
+    return record.shortLink;
+  };
+
   // Dispatch WhatsApp Message
   const dispatchWaLink = async (record: ExternalPaymentRecord) => {
     setIsSendingWa(true);
     try {
-      const payLink = record.shortLink || record.upiIntentLink || (record.platformBillID ? `https://setu.co/upi/s/${record.platformBillID}` : record.shareToken);
+      const publicPayUrl = `${window.location.origin}/?token=${record.shareToken}`;
+      const validPayLink = getValidPayLink(record);
+      const refNote = record.referenceNote || 'External payment request';
 
       const res = await whatsappService.sendTemplateMessage(
         record.customerContact,
@@ -197,7 +201,7 @@ export const ExternalPaymentLedger: React.FC = () => {
         'en_US',
         [record.customerName, record.amount.toLocaleString('en-IN')],
         record.customerName,
-        record.shareToken || payLink,
+        record.shareToken || validPayLink,
         undefined,
         'ADMIN'
       );
@@ -806,67 +810,19 @@ export const ExternalPaymentLedger: React.FC = () => {
               <div className="flex justify-between text-slate-600">
                 <span>Pay Link:</span>
                 <a
-                  href={showQrModal.shortLink || `${window.location.origin}/?token=${showQrModal.shareToken}`}
+                  href={getValidPayLink(showQrModal)}
                   target="_blank"
                   rel="noreferrer"
                   className="font-mono text-amber-600 font-bold truncate max-w-[180px] hover:underline"
                 >
-                  {showQrModal.shortLink || `${window.location.origin}/?token=${showQrModal.shareToken}`}
+                  {getValidPayLink(showQrModal)}
                 </a>
               </div>
-
-              {/* Toggle Raw API Response */}
-              <div className="pt-2 border-t border-slate-200 flex justify-between items-center">
-                <span className="font-bold text-slate-700">Setu Raw API Response:</span>
-                <button
-                  type="button"
-                  onClick={() => setShowRawResponseInQr(!showRawResponseInQr)}
-                  className="text-[11px] font-black uppercase tracking-wider text-blue-600 hover:text-blue-800"
-                >
-                  {showRawResponseInQr ? 'Hide JSON' : 'Show JSON'}
-                </button>
-              </div>
-
-              {showRawResponseInQr && (
-                <div className="mt-2 bg-slate-900 rounded-xl p-3 text-left overflow-hidden border border-slate-800">
-                  <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Setu API Response Payload</span>
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(JSON.stringify(showQrModal.rawSetuResponse || {
-                        id: showQrModal.id,
-                        platformBillID: showQrModal.platformBillID,
-                        shortLink: showQrModal.shortLink,
-                        upiIntentLink: showQrModal.upiIntentLink,
-                        amount: showQrModal.amount,
-                        status: showQrModal.status,
-                        customerName: showQrModal.customerName,
-                        referenceNote: showQrModal.referenceNote
-                      }, null, 2), 'Raw API Response', 'raw_qr_' + showQrModal.id)}
-                      className="text-[10px] text-amber-400 hover:underline font-bold"
-                    >
-                      Copy JSON
-                    </button>
-                  </div>
-                  <pre className="text-[10px] font-mono text-emerald-400 overflow-x-auto whitespace-pre-wrap max-h-56">
-                    {JSON.stringify(showQrModal.rawSetuResponse || {
-                      id: showQrModal.id,
-                      platformBillID: showQrModal.platformBillID,
-                      shortLink: showQrModal.shortLink,
-                      upiIntentLink: showQrModal.upiIntentLink,
-                      amount: showQrModal.amount,
-                      status: showQrModal.status,
-                      customerName: showQrModal.customerName,
-                      referenceNote: showQrModal.referenceNote
-                    }, null, 2)}
-                  </pre>
-                </div>
-              )}
             </div>
 
             <div className="flex gap-2">
               <button
-                onClick={() => copyToClipboard(showQrModal.shortLink || (showQrModal.platformBillID ? `https://setu.co/upi/s/${showQrModal.platformBillID}` : `${window.location.origin}/?token=${showQrModal.shareToken}`), 'Payment URL', showQrModal.id)}
+                onClick={() => copyToClipboard(getValidPayLink(showQrModal), 'Payment URL', showQrModal.id)}
                 className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-2xl transition-all flex items-center justify-center gap-2"
               >
                 <Copy size={14} /> Copy Pay Link
@@ -1020,55 +976,6 @@ export const ExternalPaymentLedger: React.FC = () => {
                     </div>
                   ))}
                 </div>
-              </div>
-
-              {/* Setu UPI Raw Response Payload Inspector */}
-              <div className="pt-3 border-t border-slate-200">
-                <div className="flex justify-between items-center mb-2">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">Setu UPI Raw Response Payload</h4>
-                  <button
-                    type="button"
-                    onClick={() => setShowRawResponseInAudit(!showRawResponseInAudit)}
-                    className="text-[11px] font-black uppercase tracking-wider text-blue-600 hover:text-blue-800"
-                  >
-                    {showRawResponseInAudit ? 'Hide JSON' : 'Show JSON'}
-                  </button>
-                </div>
-                {showRawResponseInAudit && (
-                  <div className="bg-slate-900 rounded-xl p-3 text-left overflow-hidden">
-                    <div className="flex justify-between items-center mb-1.5">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Setu API Response Data</span>
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(JSON.stringify(selectedRecord.rawSetuResponse || {
-                          id: selectedRecord.id,
-                          platformBillID: selectedRecord.platformBillID,
-                          shortLink: selectedRecord.shortLink,
-                          upiIntentLink: selectedRecord.upiIntentLink,
-                          amount: selectedRecord.amount,
-                          status: selectedRecord.status,
-                          customerName: selectedRecord.customerName,
-                          referenceNote: selectedRecord.referenceNote
-                        }, null, 2), 'Audit Raw Response', 'audit_raw_' + selectedRecord.id)}
-                        className="text-[10px] text-amber-400 hover:underline font-bold"
-                      >
-                        Copy JSON
-                      </button>
-                    </div>
-                    <pre className="text-[10px] font-mono text-emerald-400 overflow-x-auto whitespace-pre-wrap max-h-52">
-                      {JSON.stringify(selectedRecord.rawSetuResponse || {
-                        id: selectedRecord.id,
-                        platformBillID: selectedRecord.platformBillID,
-                        shortLink: selectedRecord.shortLink,
-                        upiIntentLink: selectedRecord.upiIntentLink,
-                        amount: selectedRecord.amount,
-                        status: selectedRecord.status,
-                        customerName: selectedRecord.customerName,
-                        referenceNote: selectedRecord.referenceNote
-                      }, null, 2)}
-                    </pre>
-                  </div>
-                )}
               </div>
             </div>
 

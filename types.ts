@@ -299,7 +299,6 @@ export interface ExternalPaymentRecord {
   shortLink?: string;
   upiIntentLink?: string;
   shareToken: string;
-  rawSetuResponse?: any;
   notes?: string;
   history?: {
     date: string;
