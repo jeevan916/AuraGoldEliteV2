@@ -6,15 +6,19 @@ import { sendWhatsAppMessage } from './whatsapp.js';
 // Helper to obtain or refresh Setu OAuth token with auto-retry and cache handling
 async function getSetuToken(connection, config, forceRefresh = false) {
     const now = Math.floor(Date.now() / 1000);
-    const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
+    const mode = (config.mode || 'PRODUCTION').toUpperCase();
+    const isProduction = mode === 'PRODUCTION' || mode === 'PROD';
     const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
 
     if (!forceRefresh && config.cachedToken && config.tokenExpiresAt && config.tokenExpiresAt > (now + 60)) {
         return config.cachedToken;
     }
 
+    const clientId = config.clientId || config.clientID || config.client_id;
+    const secret = config.secret || config.clientSecret || config.client_secret;
+
     // Handle mock mode or default/unconfigured credentials to prevent WAF / 403 / non-JSON responses from Setu
-    const isDefaultConfig = !config.clientId || config.clientId === 'default_client_id' || config.clientId.includes('mock') || !config.secret || config.secret === 'default_secret';
+    const isDefaultConfig = !clientId || clientId === 'default_client_id' || clientId.includes('mock') || !secret || secret === 'default_secret';
     if (isMock || isDefaultConfig) {
         console.log("[Setu Token Manager] [MOCK MODE] Simulating mock token generation...");
         const mockToken = "mock_setu_token_" + Math.random().toString(36).substring(2);
@@ -35,8 +39,8 @@ async function getSetuToken(connection, config, forceRefresh = false) {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             },
             body: JSON.stringify({
-                clientID: config.clientId,
-                secret: config.secret
+                clientID: clientId,
+                secret: secret
             })
         });
     } catch (fetchErr) {
@@ -53,7 +57,7 @@ async function getSetuToken(connection, config, forceRefresh = false) {
     try {
         tokenData = JSON.parse(tokenText);
     } catch (e) {
-        console.warn(`[Setu Token Manager] Non-JSON response received from Setu (Status: ${tokenResponse.status}). This often happens in restricted network environments like AI Studio (WAF / 403 / Cloudflare). Falling back to mock token simulation.`);
+        console.warn(`[Setu Token Manager] Non-JSON response received from Setu (Status: ${tokenResponse.status}). Falling back to mock token simulation.`);
         const mockToken = "mock_setu_token_fallback_" + Math.random().toString(36).substring(2);
         config.cachedToken = mockToken;
         config.tokenExpiresAt = now + 1800;
@@ -256,7 +260,10 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         };
 
         // Check if we are in mock mode / using mock token / default credentials
-        if (isMock || (token && token.startsWith('mock_setu_')) || !config.clientId || config.clientId === 'default_client_id') {
+        const clientId = config.clientId || config.clientID || config.client_id;
+        const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
+
+        if (isMock || (token && token.startsWith('mock_setu_')) || !clientId || clientId === 'default_client_id') {
             return await triggerFallbackLink();
         }
 
@@ -269,7 +276,8 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
                     'Authorization': `Bearer ${token}`,
-                    'X-Setu-Product-Instance-ID': config.schemeId,
+                    'X-Setu-Product-Instance-ID': schemeId,
+                    'x-product-instance-id': schemeId,
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 },
                 body: JSON.stringify({
@@ -283,7 +291,9 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                     transactionNote: safeNote,
                     expiryDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
                     additionalInfo: {
-                        orderId: orderId || ""
+                        orderId: orderId || "",
+                        externalPaymentId: externalPaymentId || "",
+                        customerID: customerID || ""
                     }
                 })
             });
@@ -484,10 +494,13 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
             });
         }
 
+        const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
+
         let statusResponse = await fetch(`${baseUrl}/payment-links/${platformBillID}`, {
             headers: {
                 'Authorization': `Bearer ${token}`,
-                'X-Setu-Product-Instance-ID': config.schemeId
+                'X-Setu-Product-Instance-ID': schemeId,
+                'x-product-instance-id': schemeId
             }
         });
         
@@ -499,7 +512,8 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
                 statusResponse = await fetch(`${baseUrl}/payment-links/${platformBillID}`, {
                     headers: {
                         'Authorization': `Bearer ${token}`,
-                        'X-Setu-Product-Instance-ID': config.schemeId
+                        'X-Setu-Product-Instance-ID': schemeId,
+                        'x-product-instance-id': schemeId
                     }
                 });
             } catch (retryErr) {
@@ -518,7 +532,7 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
         }
         connection.release();
         
-        if (statusData.success && statusData.data && statusData.data.status === 'PAYMENT_SUCCESSFUL') {
+        if (statusData.success && statusData.data && ['PAYMENT_SUCCESSFUL', 'SUCCESS', 'BILL_FULFILLED', 'CREDIT_RECEIVED'].includes(statusData.data.status)) {
             const data = statusData.data;
             // Now record the payment exactly as the webhook would!
             const billerBillID = data.billerBillID;
@@ -536,6 +550,118 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
         res.json(statusData);
     } catch (e) {
         console.error("Setu Poll Error:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Setu Expire Payment Link (Manual / On Demand)
+router.post('/setu/expire-link/:platformBillID', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
+        if (rows.length === 0) {
+            connection.release();
+            return res.status(400).json({ success: false, error: "Setu Integration not configured." });
+        }
+
+        let config = rows[0].config;
+        if (typeof config === 'string') config = typeof config === "string" ? JSON.parse(config) : config;
+        
+        const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
+        const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
+        const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
+
+        let token = await getSetuToken(connection, config);
+        connection.release();
+
+        const platformBillID = req.params.platformBillID;
+
+        const response = await fetch(`${baseUrl}/payment-links/${platformBillID}/expire`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'X-Setu-Product-Instance-ID': schemeId,
+                'x-product-instance-id': schemeId,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const text = await response.text();
+        try {
+            const data = JSON.parse(text);
+            return res.status(response.status).json(data);
+        } catch (e) {
+            return res.status(response.status).send(text);
+        }
+    } catch (e) {
+        console.error("Setu Expire Link Error:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Setu Refund Payment Link
+router.post('/setu/refund', ensureDb, async (req, res) => {
+    try {
+        const { platformBillID, amount } = req.body;
+        if (!platformBillID) {
+            return res.status(400).json({ success: false, error: "platformBillID is required for refund" });
+        }
+
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
+        if (rows.length === 0) {
+            connection.release();
+            return res.status(400).json({ success: false, error: "Setu Integration not configured." });
+        }
+
+        let config = rows[0].config;
+        if (typeof config === 'string') config = typeof config === "string" ? JSON.parse(config) : config;
+        
+        const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
+        const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
+        const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
+
+        let token = await getSetuToken(connection, config);
+        connection.release();
+
+        const refundPayload = {
+            refund: {
+                type: amount ? "PARTIAL" : "FULL",
+                parameter: {
+                    refId: platformBillID
+                }
+            }
+        };
+
+        if (amount) {
+            refundPayload.refund.amount = {
+                value: Math.round(amount * 100),
+                currencyCode: "INR"
+            };
+        }
+
+        const response = await fetch(`${baseUrl}/payment-links/refund`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'X-Setu-Product-Instance-ID': schemeId,
+                'x-product-instance-id': schemeId,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(refundPayload)
+        });
+
+        const text = await response.text();
+        try {
+            const data = JSON.parse(text);
+            return res.status(response.status).json(data);
+        } catch (e) {
+            return res.status(response.status).send(text);
+        }
+    } catch (e) {
+        console.error("Setu Refund Error:", e);
         res.status(500).json({ success: false, error: e.message });
     }
 });
@@ -1110,6 +1236,7 @@ export function startSetuPoller(io) {
             if (typeof config === 'string') config = typeof config === "string" ? JSON.parse(config) : config;
             const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
             const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
+            const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
             
             let token;
             try {
@@ -1147,13 +1274,14 @@ export function startSetuPoller(io) {
                             let statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
                                 headers: {
                                     'Authorization': `Bearer ${token}`,
-                                    'X-Setu-Product-Instance-ID': config.schemeId
+                                    'X-Setu-Product-Instance-ID': schemeId,
+                                    'x-product-instance-id': schemeId
                                 }
                             });
                             const statusResponseText = await statusResponse.text();
                             if (!statusResponseText.trim().startsWith('{')) continue;
                             const statusData = JSON.parse(statusResponseText);
-                            if (statusData.success && statusData.data && statusData.data.status === 'PAYMENT_SUCCESSFUL') {
+                            if (statusData.success && statusData.data && ['PAYMENT_SUCCESSFUL', 'SUCCESS', 'BILL_FULFILLED', 'CREDIT_RECEIVED'].includes(statusData.data.status)) {
                                 const amountPaid = (statusData.data.amountPaid?.value / 100) || (statusData.data.amount?.value / 100) || pending.amount; 
                                 const upiTransactionID = statusData.data.paymentLink?.platformBillID || statusData.data.platformBillID || pending.platformBillID;
                                 const payerVpa = statusData.data.payerVpa || null;
@@ -1175,12 +1303,8 @@ export function startSetuPoller(io) {
                         const ageMs = Date.now() - new Date(pending.createdAt).getTime();
                         if (ageMs > 24 * 60 * 60 * 1000) continue; // skip older than 24 hours
                         
-                        // Mock Mode: Auto-complete payment for test flow after a short delay (e.g. 15s) without querying external Setu API
-                        // ONLY auto-complete if in mock mode OR if the bill itself is explicitly a mock bill.
-                        // Never auto-complete real bills using mock token fallback!
                         const isMockBill = (pending.platformBillID && pending.platformBillID.startsWith('mock_'));
                         if (isMock || isMockBill) {
-                            console.log(`[Setu Poller] [MOCK MODE] Auto-completing payment for mock bill ${pending.platformBillID}`);
                             if (ageMs > 15 * 1000) {
                                 try {
                                     await processSuccessfulPayment(order.id, pending.amount, pending.platformBillID, "customer@upi", { io });
@@ -1191,9 +1315,7 @@ export function startSetuPoller(io) {
                             continue;
                         }
 
-                        // If we are using a mock token fallback but it's a real bill, skip polling!
                         if (token && token.startsWith('mock_setu_')) {
-                            console.log(`[Setu Poller] Skipping poll for real bill ${pending.platformBillID} because only mock Setu token is available.`);
                             continue;
                         }
 
@@ -1201,7 +1323,8 @@ export function startSetuPoller(io) {
                             let statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
                                 headers: {
                                     'Authorization': `Bearer ${token}`,
-                                    'X-Setu-Product-Instance-ID': config.schemeId
+                                    'X-Setu-Product-Instance-ID': schemeId,
+                                    'x-product-instance-id': schemeId
                                 }
                             });
                             
@@ -1215,7 +1338,8 @@ export function startSetuPoller(io) {
                                     statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
                                         headers: {
                                             'Authorization': `Bearer ${token}`,
-                                            'X-Setu-Product-Instance-ID': config.schemeId
+                                            'X-Setu-Product-Instance-ID': schemeId,
+                                            'x-product-instance-id': schemeId
                                         }
                                     });
                                 } catch (refreshErr) {
@@ -1225,11 +1349,10 @@ export function startSetuPoller(io) {
                             
                             const statusResponseText = await statusResponse.text();
                             if (!statusResponseText.trim().startsWith('{')) {
-                                console.warn(`[Setu Poller] Non-JSON response received for bill ${pending.platformBillID} (Status: ${statusResponse.status}). This often happens in restricted network environments like AI Studio (WAF / 403). Skipping.`);
                                 continue;
                             }
                             const statusData = JSON.parse(statusResponseText);
-                            if (statusData.success && statusData.data && statusData.data.status === 'PAYMENT_SUCCESSFUL') {
+                            if (statusData.success && statusData.data && ['PAYMENT_SUCCESSFUL', 'SUCCESS', 'BILL_FULFILLED', 'CREDIT_RECEIVED'].includes(statusData.data.status)) {
                                 const amountPaid = (statusData.data.amountPaid?.value / 100) || (statusData.data.amount?.value / 100) || 0; 
                                 const upiTransactionID = statusData.data.paymentLink?.platformBillID || statusData.data.platformBillID || pending.platformBillID;
                                 const payerVpa = statusData.data.payerVpa || null;
