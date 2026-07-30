@@ -206,7 +206,11 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                 platformBillID: platformBillID,
                 paymentLink: {
                     shortUrl: productionPayUrl,
-                    upiID: upiPayUrl
+                    shortURL: productionPayUrl,
+                    shortLink: productionPayUrl,
+                    upiID: upiPayUrl,
+                    upiLink: upiPayUrl,
+                    upiIntentLink: upiPayUrl
                 }
             };
 
@@ -320,6 +324,19 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                 message: "Setu Link Creation Failed",
                 response: { status: linkResponse.status, data: linkData }
             };
+        }
+
+        // Normalize paymentLink fields so all aliases exist (shortUrl, shortURL, shortLink, upiID, upiLink, upiIntentLink)
+        const setuPayload = linkData.data || linkData;
+        if (setuPayload && setuPayload.paymentLink) {
+            const pl = setuPayload.paymentLink;
+            const url = pl.shortUrl || pl.shortURL || pl.shortLink || pl.url || '';
+            pl.shortUrl = url;
+            pl.shortURL = url;
+            pl.shortLink = url;
+            pl.upiID = pl.upiID || pl.upiId || pl.vpa || '';
+            pl.upiLink = pl.upiLink || pl.upiIntentLink || pl.upiID || '';
+            pl.upiIntentLink = pl.upiLink || pl.upiIntentLink || '';
         }
 
         // Save platformBillID to order or external payment for background recovery checking
