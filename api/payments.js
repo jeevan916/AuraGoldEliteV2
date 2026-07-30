@@ -161,19 +161,50 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
 
         // Helper to generate Setu UPI payment link fallback inline (when Setu API is unconfigured or in preview mode)
         const triggerFallbackLink = async () => {
-            console.log("[Setu Link Gen] Generating Setu UPI payment link...");
+            console.log("[Setu Link Gen] Generating Setu UPI payment link fallback...");
             
+            let shareToken = '';
+            if (externalPaymentId) {
+                const processConn = await pool.getConnection();
+                try {
+                    const [extRows] = await processConn.query('SELECT data FROM external_payments WHERE id = ?', [externalPaymentId]);
+                    if (extRows.length > 0) {
+                        const extRecord = JSON.parse(extRows[0].data);
+                        shareToken = extRecord.shareToken || '';
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch shareToken from external payment:", e);
+                } finally {
+                    processConn.release();
+                }
+            } else if (orderId) {
+                const processConn = await pool.getConnection();
+                try {
+                    const [orderRows] = await processConn.query('SELECT data FROM orders WHERE id = ?', [orderId]);
+                    if (orderRows.length > 0) {
+                        const orderRecord = JSON.parse(orderRows[0].data);
+                        shareToken = orderRecord.shareToken || '';
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch shareToken from order:", e);
+                } finally {
+                    processConn.release();
+                }
+            }
+
             const platformBillID = externalPaymentId || orderId || uniqueBillId;
-            const setuHost = isProduction ? 'setu.co' : 'uat.setu.co';
-            const setuShortUrl = `https://${setuHost}/upi/s/${platformBillID}`;
+            const originHost = (req.headers && req.headers.host) ? `https://${req.headers.host}` : 'https://order.auragoldelite.com';
+            
+            // For fallback links, point shortUrl to customer portal link with shareToken
+            const fallbackPayUrl = shareToken ? `${originHost}/?token=${shareToken}` : `${originHost}`;
             const setuUpiIntent = `upi://pay?pa=setu.auragold@icici&pn=AuraGold%20Jewellers&tr=${platformBillID}&am=${amount}&cu=INR`;
 
             const linkData = {
                 billerBillID: uniqueBillId,
                 platformBillID: platformBillID,
                 paymentLink: {
-                    shortUrl: setuShortUrl,
-                    shortURL: setuShortUrl,
+                    shortUrl: fallbackPayUrl,
+                    shortURL: fallbackPayUrl,
                     upiID: setuUpiIntent,
                     upiLink: setuUpiIntent
                 }
@@ -207,8 +238,10 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                     if (extRows.length > 0) {
                         const extRecord = JSON.parse(extRows[0].data);
                         extRecord.platformBillID = platformBillID;
-                        extRecord.shortLink = linkData.paymentLink.shortUrl;
-                        extRecord.upiIntentLink = linkData.paymentLink.upiID;
+                        const pl = linkData.paymentLink || {};
+                        extRecord.shortLink = pl.shortURL || pl.shortUrl;
+                        extRecord.upiIntentLink = pl.upiLink || pl.upiID;
+                        extRecord.rawSetuResponse = linkData;
                         if (!extRecord.pendingSetuPayments) extRecord.pendingSetuPayments = [];
                         extRecord.pendingSetuPayments.push({
                             platformBillID: platformBillID,
@@ -313,9 +346,11 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                 if (extRows.length > 0) {
                     const extRecord = JSON.parse(extRows[0].data);
                     extRecord.platformBillID = linkData.data.platformBillID;
+                    extRecord.rawSetuResponse = linkData;
                     if (linkData.data.paymentLink) {
-                        extRecord.shortLink = linkData.data.paymentLink.shortUrl;
-                        extRecord.upiIntentLink = linkData.data.paymentLink.upiID;
+                        const pl = linkData.data.paymentLink;
+                        extRecord.shortLink = pl.shortURL || pl.shortUrl;
+                        extRecord.upiIntentLink = pl.upiLink || pl.upiID;
                     }
                     if (!extRecord.pendingSetuPayments) extRecord.pendingSetuPayments = [];
                     extRecord.pendingSetuPayments.push({
@@ -596,27 +631,77 @@ router.get(['/setu/pay/:encodedIntent', '/setu/pay'], async (req, res) => {
             // Ignore base64 decode errors
         }
 
-        // If it wasn't a valid base64 upi/https link, assume it's a raw Setu link suffix
-        if (!intent) {
-            if (/^[a-zA-Z0-9_-]+$/.test(encodedIntent)) {
-                // Fetch settings to determine mode
-                const pool = getPool();
-                const connection = await pool.getConnection();
-                const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
-                connection.release();
+        const originHost = (req.headers && req.headers.host) ? `https://${req.headers.host}` : 'https://order.auragoldelite.com';
+
+        // Extract bill/token candidate
+        let candidateId = encodedIntent;
+        if (intent && intent.includes('setu.co/upi/s/')) {
+            const parts = intent.split('setu.co/upi/s/');
+            if (parts[1]) candidateId = parts[1].split('?')[0].split('#')[0];
+        }
+
+        // DB lookup to resolve fallback links or shareTokens to avoid Setu 404 errors
+        const pool = getPool();
+        if (pool && candidateId) {
+            try {
+                const conn = await pool.getConnection();
                 
-                let mode = 'PRODUCTION';
-                if (rows.length > 0) {
-                    let config = rows[0].config;
-                    if (typeof config === 'string') config = typeof config === "string" ? JSON.parse(config) : config;
-                    mode = config.mode || 'PRODUCTION';
+                // 1. Check external_payments
+                const [extRows] = await conn.query(
+                    'SELECT data FROM external_payments WHERE id = ? OR shareToken = ? OR JSON_UNQUOTE(JSON_EXTRACT(data, "$.shareToken")) = ? OR JSON_UNQUOTE(JSON_EXTRACT(data, "$.platformBillID")) = ?',
+                    [candidateId, candidateId, candidateId, candidateId]
+                );
+
+                if (extRows.length > 0) {
+                    const extRecord = JSON.parse(extRows[0].data);
+                    // If there is a real Setu link (numeric platform bill ID from real Setu API), keep it
+                    if (extRecord.shortLink && extRecord.shortLink.includes('setu.co') && !extRecord.shortLink.includes('ext_pay_') && !extRecord.shortLink.includes('mock_')) {
+                        intent = extRecord.shortLink;
+                    } else if (extRecord.shareToken) {
+                        intent = `${originHost}/?token=${extRecord.shareToken}`;
+                    }
+                } else {
+                    // 2. Check orders
+                    const [orderRows] = await conn.query(
+                        'SELECT data FROM orders WHERE id = ? OR shareToken = ? OR JSON_UNQUOTE(JSON_EXTRACT(data, "$.shareToken")) = ? OR JSON_UNQUOTE(JSON_EXTRACT(data, "$.platformBillID")) = ?',
+                        [candidateId, candidateId, candidateId, candidateId]
+                    );
+                    if (orderRows.length > 0) {
+                        const orderRecord = JSON.parse(orderRows[0].data);
+                        if (orderRecord.shareToken) {
+                            intent = `${originHost}/?token=${orderRecord.shareToken}`;
+                        }
+                    }
                 }
-                
-                const setuHost = mode === 'SANDBOX' ? 'uat.setu.co' : 'setu.co';
-                intent = `https://${setuHost}/upi/s/${encodedIntent}`;
-            } else {
-                return res.status(400).send("Invalid payment intent. Link must start with upi:// or https://, or be a valid Setu link ID.");
+                conn.release();
+            } catch (dbErr) {
+                console.error("Error resolving payment intent in DB:", dbErr);
             }
+        }
+
+        // Fallback resolution if intent is still unset or contains non-Setu local IDs
+        if (!intent) {
+            if (/^[0-9]+$/.test(candidateId)) {
+                // Real numeric Setu Bill ID
+                let mode = 'PRODUCTION';
+                if (pool) {
+                    const conn = await pool.getConnection();
+                    const [rows] = await conn.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
+                    conn.release();
+                    if (rows.length > 0) {
+                        let config = rows[0].config;
+                        if (typeof config === 'string') config = JSON.parse(config);
+                        mode = config.mode || 'PRODUCTION';
+                    }
+                }
+                const setuHost = mode === 'SANDBOX' ? 'uat.setu.co' : 'setu.co';
+                intent = `https://${setuHost}/upi/s/${candidateId}`;
+            } else {
+                // For any local/custom ID, default to the portal home/order link to prevent 404
+                intent = originHost;
+            }
+        } else if (intent.includes('setu.co/upi/s/') && (intent.includes('ext_pay_') || intent.includes('mock_') || intent.includes('ORD-') || intent.includes('bill_'))) {
+            intent = originHost;
         }
 
         // Return a simple HTML that redirects
