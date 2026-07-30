@@ -169,10 +169,10 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
 
       // Setu Bridge v2 response structure
       const payload = result.data?.data || result.data;
-      const platformBillID = payload?.platformBillID || payload?.id;
-      const shortLink = payload?.paymentLink?.shortUrl || payload?.paymentLink?.shortURL || payload?.paymentLink?.shortLink || payload?.shortUrl || payload?.shortURL || payload?.shortLink || payload?.url || payload?.paymentLink?.url || (platformBillID ? `${window.location.origin}/api/setu/pay/${platformBillID}` : '');
-      const upiID = payload?.paymentLink?.upiID || payload?.paymentLink?.upiId || payload?.upiID || payload?.vpa;
-      let upiIntentLink = payload?.paymentLink?.upiLink || payload?.paymentLink?.upiIntentLink || payload?.upiLink || payload?.upiIntentLink;
+      const shortLink = payload?.paymentLink?.shortURL || payload?.shortURL || payload?.shortLink;
+      const upiID = payload?.paymentLink?.upiID || payload?.upiID;
+      let upiIntentLink = payload?.paymentLink?.upiIntentLink || payload?.upiIntentLink || payload?.upiLink;
+      const platformBillID = payload?.platformBillID;
 
       if (!shortLink && !upiIntentLink) {
         throw new Error("Payment link not received from gateway");

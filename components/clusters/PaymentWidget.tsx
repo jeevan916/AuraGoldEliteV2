@@ -307,10 +307,10 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           }
 
           const payload = responseBody.data?.data || responseBody.data;
-          const platformBillID = payload?.platformBillID || payload?.id;
-          const shortLink = payload?.paymentLink?.shortUrl || payload?.paymentLink?.shortURL || payload?.paymentLink?.shortLink || payload?.shortUrl || payload?.shortURL || payload?.shortLink || payload?.url || payload?.paymentLink?.url || (platformBillID ? `${window.location.origin}/api/setu/pay/${platformBillID}` : '');
-          const upiID = payload?.paymentLink?.upiID || payload?.paymentLink?.upiId || payload?.upiID || payload?.vpa;
+          const shortLink = payload?.paymentLink?.shortURL || payload?.shortURL || payload?.shortLink;
+          const upiID = payload?.paymentLink?.upiID || payload?.upiID;
           let upiIntentLink = payload?.paymentLink?.upiLink || payload?.paymentLink?.upiIntentLink || payload?.upiLink || payload?.upiIntentLink;
+          const platformBillID = payload?.platformBillID;
 
           if (!shortLink) {
               errorService.logError(
