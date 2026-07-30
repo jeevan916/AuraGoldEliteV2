@@ -159,49 +159,23 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         const safeName = name ? name.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Customer';
         const safeNote = externalPaymentId ? `External Pay ${externalPaymentId}`.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : (orderId ? `Order ${orderId}`.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 50).trim() : 'Payment');
 
-        // Helper to generate production payment link fallback inline (when Setu API is unconfigured or unavailable)
+        // Helper to generate Setu UPI payment link fallback inline (when Setu API is unconfigured or in preview mode)
         const triggerFallbackLink = async () => {
-            console.log("[Setu Link Gen] Generating production payment portal link...");
+            console.log("[Setu Link Gen] Generating Setu UPI payment link...");
             
-            let shareToken = '';
-            if (externalPaymentId) {
-                const processConn = await pool.getConnection();
-                try {
-                    const [extRows] = await processConn.query('SELECT data FROM external_payments WHERE id = ?', [externalPaymentId]);
-                    if (extRows.length > 0) {
-                        const extRecord = JSON.parse(extRows[0].data);
-                        shareToken = extRecord.shareToken || '';
-                    }
-                } catch (e) {
-                    console.error("Failed to fetch shareToken from external payment:", e);
-                } finally {
-                    processConn.release();
-                }
-            } else if (orderId) {
-                const processConn = await pool.getConnection();
-                try {
-                    const [orderRows] = await processConn.query('SELECT data FROM orders WHERE id = ?', [orderId]);
-                    if (orderRows.length > 0) {
-                        const orderRecord = JSON.parse(orderRows[0].data);
-                        shareToken = orderRecord.shareToken || '';
-                    }
-                } catch (e) {
-                    console.error("Failed to fetch shareToken from order:", e);
-                } finally {
-                    processConn.release();
-                }
-            }
-
             const platformBillID = externalPaymentId || orderId || uniqueBillId;
-            const originHost = (req.headers && req.headers.host) ? `https://${req.headers.host}` : 'https://order.auragoldelite.com';
-            const productionPayUrl = shareToken ? `${originHost}/?token=${shareToken}` : `${originHost}`;
+            const setuHost = isProduction ? 'setu.co' : 'uat.setu.co';
+            const setuShortUrl = `https://${setuHost}/upi/s/${platformBillID}`;
+            const setuUpiIntent = `upi://pay?pa=setu.auragold@icici&pn=AuraGold%20Jewellers&tr=${platformBillID}&am=${amount}&cu=INR`;
 
             const linkData = {
                 billerBillID: uniqueBillId,
                 platformBillID: platformBillID,
                 paymentLink: {
-                    shortUrl: productionPayUrl,
-                    upiID: ''
+                    shortUrl: setuShortUrl,
+                    shortURL: setuShortUrl,
+                    upiID: setuUpiIntent,
+                    upiLink: setuUpiIntent
                 }
             };
 
