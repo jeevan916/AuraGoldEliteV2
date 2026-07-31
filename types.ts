@@ -300,6 +300,14 @@ export interface ExternalPaymentRecord {
   upiIntentLink?: string;
   shareToken: string;
   notes?: string;
+  rawSetuResponse?: any;
+  debugLogs?: {
+    timestamp: string;
+    stage: string;
+    payload?: any;
+    response?: any;
+    error?: string;
+  }[];
   history?: {
     date: string;
     action: string;

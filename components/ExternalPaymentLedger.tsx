@@ -3,7 +3,8 @@ import {
   Plus, Search, ReceiptIndianRupee, QrCode, MessageSquare, Share2, 
   CheckCircle2, Clock, XCircle, AlertTriangle, CreditCard, Copy, 
   ExternalLink, Trash2, Filter, Calendar, DollarSign, Check, Send, 
-  Download, RefreshCw, X, ShieldCheck, ArrowUpRight, HelpCircle
+  Download, RefreshCw, X, ShieldCheck, ArrowUpRight, HelpCircle,
+  Code, Terminal, Bug, FileText, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { ExternalPaymentRecord, ExternalPaymentStatus } from '../types';
 import { storageService } from '../services/storageService';
@@ -15,7 +16,9 @@ export const ExternalPaymentLedger: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<ExternalPaymentRecord | null>(null);
+  const [activeDetailTab, setActiveDetailTab] = useState<'OVERVIEW' | 'RAW_DEBUG'>('OVERVIEW');
   const [showQrModal, setShowQrModal] = useState<ExternalPaymentRecord | null>(null);
+  const [showQrRawDebug, setShowQrRawDebug] = useState(false);
   const [showManualPayModal, setShowManualPayModal] = useState<ExternalPaymentRecord | null>(null);
   const [manualPayMethod, setManualPayMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'POS' | 'OTHER'>('CASH');
   const [manualTxnId, setManualTxnId] = useState('');
@@ -95,6 +98,92 @@ export const ExternalPaymentLedger: React.FC = () => {
     });
   }, [records, searchTerm, statusFilter]);
 
+  // Helper to generate or re-generate Setu UPI link with full raw response and debug logs
+  const handleGenerateSetuLink = async (record: ExternalPaymentRecord) => {
+    setIsGeneratingSetu(true);
+    const timestamp = new Date().toISOString();
+    const payload = {
+      amount: record.amount,
+      customerID: record.customerContact,
+      name: record.customerName,
+      externalPaymentId: record.id
+    };
+
+    let setuData: any = null;
+    let rawResponse: any = null;
+    let errorMsg: string | undefined = undefined;
+
+    try {
+      const res = await fetch('/api/setu/create-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      setuData = await res.json();
+      rawResponse = setuData.rawSetuResponse || setuData.data || setuData;
+
+      if (!res.ok || !setuData.success) {
+        errorMsg = setuData.error || `HTTP ${res.status}: ${setuData.message || 'Setu Link Generation Failed'}`;
+      }
+    } catch (err: any) {
+      errorMsg = `Network Error: ${err.message}`;
+      rawResponse = { error: err.message };
+    }
+
+    const debugEntry = {
+      timestamp,
+      stage: 'SETU_LINK_CREATION',
+      payload,
+      response: rawResponse,
+      error: errorMsg
+    };
+
+    const updatedDebugLogs = [...(record.debugLogs || []), debugEntry];
+    const updatedHistory = [...(record.history || [])];
+
+    const updates: Partial<ExternalPaymentRecord> = {
+      rawSetuResponse: rawResponse,
+      debugLogs: updatedDebugLogs,
+      history: updatedHistory
+    };
+
+    if (!errorMsg && setuData && setuData.success && setuData.data) {
+      updates.platformBillID = setuData.data.platformBillID;
+      if (setuData.data.paymentLink) {
+        updates.shortLink = setuData.data.paymentLink.shortUrl;
+        updates.upiIntentLink = setuData.data.paymentLink.upiID;
+      }
+      updatedHistory.push({
+        date: timestamp,
+        action: 'SETU_LINK_GENERATED',
+        details: `Setu UPI Link generated (Bill ID: ${setuData.data.platformBillID})`
+      });
+      triggerNotification('success', `Setu UPI link generated for ${record.customerName}!`);
+    } else {
+      updatedHistory.push({
+        date: timestamp,
+        action: 'SETU_LINK_ERROR',
+        details: `Setu Link Failed: ${errorMsg}`
+      });
+      triggerNotification('error', `Setu Link Generation Failed: ${errorMsg}`);
+    }
+
+    storageService.updateExternalPayment(record.id, updates);
+
+    const updatedRecord: ExternalPaymentRecord = { ...record, ...updates };
+
+    if (selectedRecord && selectedRecord.id === record.id) {
+      setSelectedRecord(updatedRecord);
+    }
+    if (showQrModal && showQrModal.id === record.id) {
+      setShowQrModal(updatedRecord);
+    }
+
+    setIsGeneratingSetu(false);
+    return updatedRecord;
+  };
+
   // Create Request Handler
   const handleCreateRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,45 +213,15 @@ export const ExternalPaymentLedger: React.FC = () => {
       }]
     };
 
-    setIsGeneratingSetu(true);
-    try {
-      // Create Setu UPI Payment Link on server
-      const setuRes = await fetch('/api/setu/create-link', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: newRecord.amount,
-          customerID: newRecord.customerContact,
-          name: newRecord.customerName,
-          externalPaymentId: newRecord.id
-        })
-      });
-
-      const setuData = await setuRes.json();
-      if (setuData.success && setuData.data) {
-        newRecord.platformBillID = setuData.data.platformBillID;
-        if (setuData.data.paymentLink) {
-          newRecord.shortLink = setuData.data.paymentLink.shortUrl;
-          newRecord.upiIntentLink = setuData.data.paymentLink.upiID;
-        }
-        newRecord.history?.push({
-          date: new Date().toISOString(),
-          action: 'SETU_LINK_GENERATED',
-          details: `Setu UPI Link generated (Bill ID: ${setuData.data.platformBillID})`
-        });
-      }
-    } catch (err: any) {
-      console.warn("Setu Link Auto-Gen Warning:", err.message);
-    } finally {
-      setIsGeneratingSetu(false);
-    }
-
-    // Save record to storage and DB
+    // Save initial record to storage
     storageService.addExternalPayment(newRecord);
+
+    // Generate Setu UPI link with raw response and debug log capture
+    const updatedRecord = await handleGenerateSetuLink(newRecord);
 
     // Optionally dispatch WhatsApp Payment Link
     if (formData.dispatchWaImmediately) {
-      dispatchWaLink(newRecord);
+      dispatchWaLink(updatedRecord || newRecord);
     }
 
     setShowCreateModal(false);
@@ -178,21 +237,29 @@ export const ExternalPaymentLedger: React.FC = () => {
     triggerNotification('success', `External Payment Request ${newRecord.id} created successfully!`);
   };
 
+  // Helper to determine valid Setu UPI payment link or fallback UPI link
+  const getValidPayLink = (record: ExternalPaymentRecord) => {
+    if (record.shortLink && !record.shortLink.includes('token=')) {
+      return record.shortLink;
+    }
+    const upiUrl = record.upiIntentLink || `upi://pay?pa=auragoldelite@upi&pn=AuraGold%20Jewellers&tr=${record.id}&am=${record.amount}&cu=INR`;
+    const base64Upi = btoa(unescape(encodeURIComponent(upiUrl))).replace(/\+/g, '-').replace(/\//g, '_');
+    return `${window.location.origin}/api/setu/pay/${base64Upi}`;
+  };
+
   // Dispatch WhatsApp Message
   const dispatchWaLink = async (record: ExternalPaymentRecord) => {
     setIsSendingWa(true);
     try {
-      const publicPayUrl = `${window.location.origin}/?token=${record.shareToken}`;
-      const payLink = record.shortLink || publicPayUrl;
-      const refNote = record.referenceNote || 'External payment request';
+      const validPayLink = getValidPayLink(record);
 
       const res = await whatsappService.sendTemplateMessage(
         record.customerContact,
-        'payment_link_request',
+        'auragold_setu_payment',
         'en_US',
-        [record.customerName, refNote, `₹${record.amount.toLocaleString('en-IN')}`],
+        [record.customerName, record.amount.toLocaleString('en-IN')],
         record.customerName,
-        payLink,
+        validPayLink,
         undefined,
         'ADMIN'
       );
@@ -576,9 +643,24 @@ export const ExternalPaymentLedger: React.FC = () => {
                             </button>
                           )}
 
+                          {/* Raw Response & Debug View */}
+                          <button
+                            onClick={() => {
+                              setSelectedRecord(r);
+                              setActiveDetailTab('RAW_DEBUG');
+                            }}
+                            title="View Raw Setu Response & Debug Logs"
+                            className="p-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl transition-all border border-purple-200 active:scale-95"
+                          >
+                            <Code size={14} />
+                          </button>
+
                           {/* View Details / History */}
                           <button
-                            onClick={() => setSelectedRecord(r)}
+                            onClick={() => {
+                              setSelectedRecord(r);
+                              setActiveDetailTab('OVERVIEW');
+                            }}
                             title="View Audit Details"
                             className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-all active:scale-95"
                           >
@@ -759,9 +841,12 @@ export const ExternalPaymentLedger: React.FC = () => {
       {/* SETU UPI QR & PAYMENT INFO MODAL */}
       {showQrModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 relative text-center animate-scaleUp">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 relative text-center animate-scaleUp max-h-[90vh] overflow-y-auto">
             <button
-              onClick={() => setShowQrModal(null)}
+              onClick={() => {
+                setShowQrModal(null);
+                setShowQrRawDebug(false);
+              }}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100"
             >
               <X size={18} />
@@ -792,26 +877,28 @@ export const ExternalPaymentLedger: React.FC = () => {
             </div>
 
             <div className="space-y-2 text-left bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs my-4">
-              <div className="flex justify-between text-slate-600">
+              <div className="flex justify-between items-center text-slate-600">
                 <span>Setu Bill ID:</span>
-                <span className="font-mono font-bold text-slate-900">{showQrModal.platformBillID || 'N/A'}</span>
+                <span className="font-mono font-bold text-slate-900 flex items-center gap-1.5">
+                  {showQrModal.platformBillID || showQrModal.id}
+                </span>
               </div>
               <div className="flex justify-between text-slate-600">
-                <span>Short Pay Link:</span>
+                <span>Pay Link:</span>
                 <a
-                  href={showQrModal.shortLink || `${window.location.origin}/?token=${showQrModal.shareToken}`}
+                  href={getValidPayLink(showQrModal)}
                   target="_blank"
                   rel="noreferrer"
                   className="font-mono text-amber-600 font-bold truncate max-w-[180px] hover:underline"
                 >
-                  {showQrModal.shortLink || `${window.location.origin}/?token=${showQrModal.shareToken}`}
+                  {getValidPayLink(showQrModal)}
                 </a>
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 mb-3">
               <button
-                onClick={() => copyToClipboard(showQrModal.shortLink || `${window.location.origin}/?token=${showQrModal.shareToken}`, 'Setu payment URL', showQrModal.id)}
+                onClick={() => copyToClipboard(getValidPayLink(showQrModal), 'Payment URL', showQrModal.id)}
                 className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-2xl transition-all flex items-center justify-center gap-2"
               >
                 <Copy size={14} /> Copy Pay Link
@@ -822,6 +909,39 @@ export const ExternalPaymentLedger: React.FC = () => {
               >
                 <MessageSquare size={14} /> Send WhatsApp
               </button>
+            </div>
+
+            {/* Toggle Raw Debug JSON Button */}
+            <div className="border-t border-slate-200 pt-3 text-left">
+              <button
+                onClick={() => setShowQrRawDebug(!showQrRawDebug)}
+                className="w-full py-2 px-3 bg-slate-900 text-slate-200 rounded-xl font-mono text-[11px] font-bold flex items-center justify-between hover:bg-slate-800 transition-all"
+              >
+                <span className="flex items-center gap-2">
+                  <Terminal size={14} className="text-amber-400" />
+                  View Raw Setu Response & Debug JSON
+                </span>
+                {showQrRawDebug ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+
+              {showQrRawDebug && (
+                <div className="mt-3 space-y-3 animate-fadeIn">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-slate-700">Setu API Response Payload:</span>
+                    <button
+                      onClick={() => handleGenerateSetuLink(showQrModal)}
+                      disabled={isGeneratingSetu}
+                      className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-lg text-[10px] font-bold flex items-center gap-1"
+                    >
+                      <RefreshCw size={10} className={isGeneratingSetu ? 'animate-spin' : ''} />
+                      Regenerate
+                    </button>
+                  </div>
+                  <pre className="bg-slate-950 text-emerald-400 p-3 rounded-xl font-mono text-[11px] overflow-x-auto border border-slate-800 max-h-56 leading-snug">
+                    {JSON.stringify(showQrModal.rawSetuResponse || { message: "No raw response captured yet. Click Regenerate." }, null, 2)}
+                  </pre>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -911,10 +1031,10 @@ export const ExternalPaymentLedger: React.FC = () => {
         </div>
       )}
 
-      {/* VIEW AUDIT DETAILS MODAL */}
+      {/* VIEW AUDIT DETAILS & RAW RESPONSE DEBUG MODAL */}
       {selectedRecord && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 md:p-8 shadow-2xl border border-slate-200 relative animate-scaleUp">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 md:p-8 shadow-2xl border border-slate-200 relative animate-scaleUp max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setSelectedRecord(null)}
               className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100"
@@ -922,51 +1042,171 @@ export const ExternalPaymentLedger: React.FC = () => {
               <X size={18} />
             </button>
 
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
                 <ReceiptIndianRupee size={20} />
               </div>
               <div>
                 <h2 className="text-lg font-black text-slate-900">{selectedRecord.id} Details</h2>
-                <p className="text-xs text-slate-500">Audit History & Remote Ledger Payload</p>
+                <p className="text-xs text-slate-500">Audit History & Setu UPI Remote Link Payload Debug</p>
               </div>
             </div>
 
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
-                <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Customer</span>
-                  <span className="font-bold text-slate-900">{selectedRecord.customerName}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Phone</span>
-                  <span className="font-mono text-slate-900">{selectedRecord.customerContact}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Amount</span>
-                  <span className="font-black text-emerald-600 text-sm">₹{selectedRecord.amount.toLocaleString('en-IN')}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Reference Tag</span>
-                  <span className="font-bold text-amber-700">{selectedRecord.referenceNote}</span>
-                </div>
-              </div>
+            {/* Modal Tabs */}
+            <div className="flex border-b border-slate-200 mb-4 gap-2">
+              <button
+                onClick={() => setActiveDetailTab('OVERVIEW')}
+                className={`pb-2.5 px-3 text-xs font-bold transition-all flex items-center gap-1.5 border-b-2 ${
+                  activeDetailTab === 'OVERVIEW'
+                    ? 'border-amber-500 text-amber-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <ReceiptIndianRupee size={14} /> Overview & History
+              </button>
+              <button
+                onClick={() => setActiveDetailTab('RAW_DEBUG')}
+                className={`pb-2.5 px-3 text-xs font-bold transition-all flex items-center gap-1.5 border-b-2 ${
+                  activeDetailTab === 'RAW_DEBUG'
+                    ? 'border-amber-500 text-amber-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Code size={14} /> Raw Setu API & Debug Logs
+                {selectedRecord.rawSetuResponse && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                )}
+              </button>
+            </div>
 
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">Activity History Log</h4>
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                  {(selectedRecord.history || []).map((h, i) => (
-                    <div key={i} className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-[11px]">
-                      <div className="flex justify-between font-bold text-slate-800 mb-1">
-                        <span>{h.action}</span>
-                        <span className="text-[10px] font-normal text-slate-400">{new Date(h.date).toLocaleString('en-IN')}</span>
+            {/* TAB 1: OVERVIEW & HISTORY */}
+            {activeDetailTab === 'OVERVIEW' && (
+              <div className="space-y-4 animate-fadeIn">
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Customer</span>
+                    <span className="font-bold text-slate-900">{selectedRecord.customerName}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Phone</span>
+                    <span className="font-mono text-slate-900">{selectedRecord.customerContact}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Amount</span>
+                    <span className="font-black text-emerald-600 text-sm">₹{selectedRecord.amount.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Reference Tag</span>
+                    <span className="font-bold text-amber-700">{selectedRecord.referenceNote}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Setu Bill ID</span>
+                    <span className="font-mono font-bold text-slate-900">{selectedRecord.platformBillID || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Status</span>
+                    <span className="font-bold uppercase text-amber-600">{selectedRecord.status}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">Activity History Log</h4>
+                  <div className="space-y-2 max-h-52 overflow-y-auto pr-2">
+                    {(selectedRecord.history || []).map((h, i) => (
+                      <div key={i} className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-[11px]">
+                        <div className="flex justify-between font-bold text-slate-800 mb-1">
+                          <span>{h.action}</span>
+                          <span className="text-[10px] font-normal text-slate-400">{new Date(h.date).toLocaleString('en-IN')}</span>
+                        </div>
+                        <p className="text-slate-600 leading-snug">{h.details}</p>
                       </div>
-                      <p className="text-slate-600 leading-snug">{h.details}</p>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
+
+            {/* TAB 2: RAW SETU RESPONSE & DEBUG LOGS */}
+            {activeDetailTab === 'RAW_DEBUG' && (
+              <div className="space-y-4 animate-fadeIn">
+                <div className="flex items-center justify-between bg-slate-900 p-3 rounded-2xl text-white">
+                  <div className="flex items-center gap-2">
+                    <Terminal size={16} className="text-amber-400" />
+                    <span className="text-xs font-bold font-mono">Setu Link Debug Inspector</span>
+                  </div>
+                  <button
+                    onClick={() => handleGenerateSetuLink(selectedRecord)}
+                    disabled={isGeneratingSetu}
+                    className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 transition-all shadow"
+                  >
+                    <RefreshCw size={12} className={isGeneratingSetu ? 'animate-spin' : ''} />
+                    {isGeneratingSetu ? 'Generating...' : 'Re-test Setu Link'}
+                  </button>
+                </div>
+
+                {/* Raw Setu API Response JSON */}
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <Code size={12} /> Raw Setu API JSON Response
+                    </span>
+                    {selectedRecord.rawSetuResponse && (
+                      <button
+                        onClick={() => copyToClipboard(JSON.stringify(selectedRecord.rawSetuResponse, null, 2), 'Raw Setu JSON', selectedRecord.id)}
+                        className="text-[11px] font-bold text-amber-600 hover:underline flex items-center gap-1"
+                      >
+                        <Copy size={11} /> Copy JSON
+                      </button>
+                    )}
+                  </div>
+                  <pre className="bg-slate-950 text-emerald-400 p-4 rounded-2xl font-mono text-[11px] overflow-x-auto border border-slate-800 max-h-60 leading-relaxed shadow-inner">
+                    {selectedRecord.rawSetuResponse
+                      ? JSON.stringify(selectedRecord.rawSetuResponse, null, 2)
+                      : '// No raw Setu API response captured yet.\n// Click "Re-test Setu Link" above to send live request.'}
+                  </pre>
+                </div>
+
+                {/* Debug Logs Timeline */}
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2 flex items-center gap-1.5">
+                    <Bug size={12} /> Debug Logs Timeline
+                  </h4>
+                  {(!selectedRecord.debugLogs || selectedRecord.debugLogs.length === 0) ? (
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-400 text-center font-mono">
+                      No debug entries logged yet. Click "Re-test Setu Link" to record step-by-step logs.
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-48 overflow-y-auto pr-2">
+                      {selectedRecord.debugLogs.map((log, idx) => (
+                        <div key={idx} className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-2">
+                          <div className="flex justify-between items-center font-bold">
+                            <span className="px-2 py-0.5 bg-slate-900 text-amber-300 font-mono text-[10px] rounded-lg uppercase">
+                              {log.stage}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              {new Date(log.timestamp).toLocaleTimeString('en-IN')}
+                            </span>
+                          </div>
+
+                          {log.error && (
+                            <div className="p-2 bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-bold rounded-xl">
+                              ⚠️ {log.error}
+                            </div>
+                          )}
+
+                          <div className="text-[11px]">
+                            <span className="text-slate-400 font-bold block mb-0.5">Payload sent:</span>
+                            <pre className="bg-white p-2 rounded-xl border border-slate-200 font-mono text-[10px] text-slate-800">
+                              {JSON.stringify(log.payload, null, 2)}
+                            </pre>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="mt-6 pt-4 border-t border-slate-100 text-right">
               <button

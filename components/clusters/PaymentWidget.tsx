@@ -307,10 +307,10 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           }
 
           const payload = responseBody.data?.data || responseBody.data;
-          const shortLink = payload?.paymentLink?.shortURL || payload?.shortURL || payload?.shortLink;
-          const upiID = payload?.paymentLink?.upiID || payload?.upiID;
+          const platformBillID = payload?.platformBillID || payload?.id;
+          const shortLink = payload?.paymentLink?.shortUrl || payload?.paymentLink?.shortURL || payload?.paymentLink?.shortLink || payload?.shortUrl || payload?.shortURL || payload?.shortLink || payload?.url || payload?.paymentLink?.url || (platformBillID ? `${window.location.origin}/api/setu/pay/${platformBillID}` : '');
+          const upiID = payload?.paymentLink?.upiID || payload?.paymentLink?.upiId || payload?.upiID || payload?.vpa;
           let upiIntentLink = payload?.paymentLink?.upiLink || payload?.paymentLink?.upiIntentLink || payload?.upiLink || payload?.upiIntentLink;
-          const platformBillID = payload?.platformBillID;
 
           if (!shortLink) {
               errorService.logError(
@@ -341,15 +341,13 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           });
           setQrCodeUrl(`https://quickchart.io/qr?text=${encodeURIComponent(shortLink)}&margin=2&size=300`);
 
-          // Use base64 encoded shortLink for WhatsApp button
+          // Use base64 encoded target link for WhatsApp button
+          const targetLink = upiIntentLink || shortLink || `upi://pay?pa=auragoldelite@upi&pn=AuraGold%20Jewellers&tr=${platformBillID || order.id}&am=${val}&cu=INR`;
           let buttonVariable = '';
-          if (shortLink) {
-              try {
-                  // Safe base64 encoding for potentially non-latin1 strings
-                  buttonVariable = btoa(unescape(encodeURIComponent(shortLink))).replace(/\+/g, '-').replace(/\//g, '_');
-              } catch (e) {
-                  buttonVariable = btoa(shortLink).replace(/\+/g, '-').replace(/\//g, '_');
-              }
+          try {
+              buttonVariable = btoa(unescape(encodeURIComponent(targetLink))).replace(/\+/g, '-').replace(/\//g, '_');
+          } catch (e) {
+              buttonVariable = btoa(targetLink).replace(/\+/g, '-').replace(/\//g, '_');
           }
 
           if (!buttonVariable) {

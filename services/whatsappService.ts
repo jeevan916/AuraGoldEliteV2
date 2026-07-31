@@ -331,13 +331,21 @@ export const whatsappService = {
         }
 
         if (buttonVariable) {
+            let processedVar = buttonVariable.trim();
+            if (processedVar.startsWith('http://') || processedVar.startsWith('https://') || processedVar.startsWith('upi://')) {
+                try {
+                    processedVar = btoa(unescape(encodeURIComponent(processedVar))).replace(/\+/g, '-').replace(/\//g, '_');
+                } catch (e) {
+                    processedVar = btoa(processedVar).replace(/\+/g, '-').replace(/\//g, '_');
+                }
+            }
             components.push({ 
                 type: "button", 
                 sub_type: "url", 
                 index: 0, 
                 parameters: [{ 
                     type: "text", 
-                    text: sanitizeForMeta(buttonVariable) 
+                    text: sanitizeForMeta(processedVar) 
                 }] 
             });
         }
@@ -352,7 +360,7 @@ export const whatsappService = {
             orderId
         };
 
-        const response = await fetch(`${API_BASE}/api/whatsapp/send`, {
+        let response = await fetch(`${API_BASE}/api/whatsapp/send`, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
@@ -362,8 +370,54 @@ export const whatsappService = {
             body: JSON.stringify(payload)
         });
 
-        const data = await response.json();
+        let data = await response.json();
         
+        // --- FALLBACK 1: Language Retry (e.g., en_US <-> en) on #132001 error ---
+        const isTranslationErr = (err: any) => {
+            const str = typeof err === 'string' ? err : JSON.stringify(err || {});
+            return str.includes('132001') || str.includes('does not exist in the translation');
+        };
+
+        if (!data.success && isTranslationErr(data.error || data.raw)) {
+            const fallbackLang = languageCode === 'en_US' ? 'en' : 'en_US';
+            console.warn(`[WhatsApp] Template ${safeTemplateName} failed with ${languageCode} (#132001). Retrying with language ${fallbackLang}...`);
+            
+            const fallbackPayload = { ...payload, language: fallbackLang };
+            const fallbackResponse = await fetch(`${API_BASE}/api/whatsapp/send`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'x-phone-id': settings.whatsappPhoneNumberId,
+                    'x-auth-token': token
+                },
+                body: JSON.stringify(fallbackPayload)
+            });
+            const fallbackData = await fallbackResponse.json();
+            if (fallbackData.success) {
+                data = fallbackData;
+            }
+        }
+
+        // --- FALLBACK 2: Direct Text Message Fallback if Template is Missing / Rejected (#132001) ---
+        if (!data.success && isTranslationErr(data.error || data.raw)) {
+            console.warn(`[WhatsApp] Template ${safeTemplateName} missing on Meta WABA. Falling back to direct text message dispatch...`);
+            
+            const sysTpl = REQUIRED_SYSTEM_TEMPLATES.find(t => t.name === safeTemplateName);
+            let fallbackBody = sysTpl ? sysTpl.content : `Dear {{1}}, please pay {{2}} securely.`;
+            bodyVariables.forEach((val, idx) => {
+                fallbackBody = fallbackBody.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), val.toString());
+            });
+            if (buttonVariable) {
+                const linkUrl = buttonVariable.startsWith('http') ? buttonVariable : `${window.location.origin}/?token=${buttonVariable}`;
+                fallbackBody += `\n\nPay / View Link:\n${linkUrl}`;
+            }
+
+            const txtRes = await this.sendMessage(recipient, fallbackBody, customerName, actualSentBy, orderId);
+            if (txtRes.success) {
+                return txtRes;
+            }
+        }
+
         if (!data.success) {
             const errDetail = data.error?.message || data.error || "Meta API Error";
             errorService.logError('WhatsApp_Send', `Failed to send ${safeTemplateName}: ${errDetail}`, 'HIGH', undefined, undefined, data);
