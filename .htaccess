@@ -12,10 +12,8 @@ RewriteRule \.(ts|tsx|jsx|env|config|json|lock|git|yml)$ - [F,L]
 # ----------------------------------------------------------------------
 # Hostinger Node.js Proxy Configuration
 # ----------------------------------------------------------------------
-# 1. Forward to Node.js application if ENV:PORT is explicitly defined as a numeric port
+# Forward requests to backend Node.js application ONLY if ENV:PORT is explicitly set as a numeric port (e.g., SetEnv PORT 3000).
+# This prevents Apache/LiteSpeed from proxying to an unassigned port 3000, which causes HTTP 503 Service Unavailable errors on Passenger deployments.
 RewriteCond %{ENV:PORT} ^[0-9]+$
 RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]
 
-# 2. Fallback: Proxy to default Node.js port 3000 if ENV:PORT is not set in Apache environment
-RewriteCond %{ENV:PORT} !^[0-9]+$
-RewriteRule ^(.*)$ http://127.0.0.1:3000/$1 [P,L]
