@@ -69,8 +69,7 @@ process.on('unhandledRejection', (reason) => {
 
 const app = express();
 const httpServer = createServer(app);
-const rawPort = process.env.APPLET_ID ? 3000 : (process.env.PORT || 3000);
-const PORT = rawPort;
+const PORT = process.env.PORT || 3000;
 
 const io = new Server(httpServer, {
     cors: {
@@ -290,6 +289,25 @@ initDb().then(async (result) => {
 });
 
 const isSocketPath = typeof PORT === 'string' && (PORT.startsWith('/') || PORT.startsWith('\\\\') || isNaN(Number(PORT)));
+
+httpServer.on('error', (err) => {
+    console.error('[Server Error]', err?.message || err);
+    if (err?.code === 'EADDRINUSE') {
+        if (isSocketPath) {
+            console.warn(`[Server] Socket ${PORT} is in use. Unlinking stale socket...`);
+            try {
+                if (fs.existsSync(PORT)) {
+                    fs.unlinkSync(PORT);
+                }
+                httpServer.listen(PORT);
+            } catch (unlinkErr) {
+                console.error(`[Server] Failed to unlink socket ${PORT}:`, unlinkErr?.message);
+            }
+        } else {
+            console.error(`[Server] Port ${PORT} is already in use.`);
+        }
+    }
+});
 
 if (isSocketPath) {
     httpServer.listen(PORT, () => {
