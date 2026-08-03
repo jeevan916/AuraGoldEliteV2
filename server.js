@@ -195,28 +195,24 @@ const getValidDistPath = () => {
 };
 
 const finalDistPath = getValidDistPath();
-
-let useVite = false;
-// Only use Vite if explicitly in development
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = process.env.NODE_ENV !== 'production';
 
 if (isDev) {
-    import('vite').then(async ({ createServer: createViteServer }) => {
-        try {
-            const vite = await createViteServer({
-                server: { middlewareMode: true },
-                appType: 'spa',
-            });
-            app.use(vite.middlewares);
-            console.log("[System] Vite middleware integrated for development.");
-        } catch (e) {
-            console.warn("[System] Vite integration failed, falling back to static serving.", e.message);
+    try {
+        const { createServer: createViteServer } = await import('vite');
+        const vite = await createViteServer({
+            server: { middlewareMode: true },
+            appType: 'spa',
+        });
+        app.use(vite.middlewares);
+        console.log("[System] Vite middleware integrated for development.");
+    } catch (e) {
+        console.warn("[System] Vite integration failed, falling back to static serving:", e.message);
+        if (finalDistPath) {
+            app.use(express.static(finalDistPath));
         }
-    }).catch(e => console.warn("[System] Failed to import vite:", e.message));
-    useVite = true;
-}
-
-if (!useVite && finalDistPath) {
+    }
+} else if (finalDistPath) {
     console.log(`[System] Static serving enabled for: ${finalDistPath}`);
     app.use(express.static(finalDistPath));
     
@@ -255,16 +251,14 @@ if (!useVite && finalDistPath) {
             res.status(404).send("Application Index Not Found. Please run 'npm run build'.");
         }
     });
-} else if (!useVite) {
+} else {
     console.error("[System] Critical Error: No index.html found in 'dist' or root. Static serving disabled.");
     
-    // Fallback root route for health checks
     app.get('/', (req, res) => {
         res.status(200).send(`
             <div style="font-family: sans-serif; padding: 2rem; text-align: center;">
                 <h1>AuraGold Elite - Server Running</h1>
                 <p>The backend is operational, but the frontend build (dist/index.html) is missing.</p>
-                <p>Hostinger Health Check: OK</p>
             </div>
         `);
     });

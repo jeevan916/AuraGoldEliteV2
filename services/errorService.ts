@@ -73,6 +73,8 @@ class ErrorService {
           msg = reason.message;
           raw = reason;
       }
+
+      if (msg.includes('ResizeObserver') || msg.includes('Failed to fetch DB status')) return;
       
       if (msg.includes('generativelanguage')) source = 'Gemini AI API';
       if (msg.includes('facebook') || msg.includes('whatsapp')) source = 'Meta WhatsApp API';

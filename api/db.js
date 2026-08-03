@@ -7,11 +7,15 @@ import path from 'path';
 
 let pool = null;
 export let isMock = false;
+const envAdminUsername = process.env.APP_ADMIN || 'admin';
+const initialAdminPassword = process.env.APP_PASSWORD || process.env.ADMIN_INITIAL_PASSWORD || 'admin123';
+const initialAdminHash = bcrypt.hashSync(initialAdminPassword, 10);
+
 export const mockData = {
     gold_rates: [],
     plan_templates: [],
     external_payments: [],
-    app_users: [{ id: 1, username: 'admin', password_hash: '$2a$10$8K1p/a06Ewe7SclT.8mS8uXvL0.X.X.X.X.X.X.X.X.X.X.X.X.X.X.', role: 'ADMIN', mobile_number: '' }], // Placeholder, will be fixed in auth
+    app_users: [{ id: 1, username: envAdminUsername, password_hash: initialAdminHash, role: 'ADMIN', mobile_number: '' }],
     integrations: [
         { 
             provider: 'core_settings', 
@@ -266,13 +270,15 @@ export async function initDb() {
         }
 
         // --- SEED DEFAULT ADMIN ---
-        const [users] = await connection.query("SELECT * FROM app_users WHERE username = 'admin'");
+        const adminUsername = process.env.APP_ADMIN || 'admin';
+        const adminPassword = process.env.APP_PASSWORD || process.env.ADMIN_INITIAL_PASSWORD || 'admin123';
+        const [users] = await connection.query("SELECT * FROM app_users WHERE username = ?", [adminUsername]);
         if (users.length === 0) {
-            console.log("[DB] Seeding default admin user...");
-            const hash = await bcrypt.hash('admin123', 10);
+            console.log(`[DB] Seeding admin user (${adminUsername})...`);
+            const hash = await bcrypt.hash(adminPassword, 10);
             await connection.query(
                 "INSERT INTO app_users (username, password_hash, role) VALUES (?, ?, ?)",
-                ['admin', hash, 'ADMIN']
+                [adminUsername, hash, 'ADMIN']
             );
         }
 

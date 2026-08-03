@@ -12,8 +12,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), tailwindcss()],
-    // Relative base is most reliable for Hostinger shared/VPS hosting
-    base: './', 
+    // Base path: '/' in development for Vite middleware mode, relative './' for production static builds
+    base: mode === 'development' ? '/' : './', 
     define: {
       'process.env.VITE_API_BASE_URL': JSON.stringify(''),
     },

@@ -332,7 +332,10 @@ export const whatsappService = {
 
         if (buttonVariable) {
             let processedVar = buttonVariable.trim();
-            if (processedVar.startsWith('http://') || processedVar.startsWith('https://') || processedVar.startsWith('upi://')) {
+            if (processedVar.includes('/setu/pay/')) {
+                const parts = processedVar.split('/setu/pay/');
+                processedVar = parts[parts.length - 1];
+            } else if (processedVar.startsWith('http://') || processedVar.startsWith('https://') || processedVar.startsWith('upi://')) {
                 try {
                     processedVar = btoa(unescape(encodeURIComponent(processedVar))).replace(/\+/g, '-').replace(/\//g, '_');
                 } catch (e) {

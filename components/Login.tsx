@@ -17,15 +17,21 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     useEffect(() => {
         // Fetch DB status on mount
         fetch('/api/debug/db')
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.json();
+            })
             .then(data => {
                 setDbStatus({
-                    isMock: data.config?.isMockMode || false,
-                    host: data.config?.host || 'Unknown',
-                    status: data.status || 'Unknown'
+                    isMock: data?.config?.isMockMode || false,
+                    host: data?.config?.host || 'Unknown',
+                    status: data?.status || 'Unknown'
                 });
             })
-            .catch(err => console.error("Failed to fetch DB status", err));
+            .catch(err => {
+                console.warn("[Login] DB status offline/mock:", err.message);
+                setDbStatus({ isMock: true, host: 'Local/Mock', status: 'Mock DB' });
+            });
     }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -113,7 +119,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                                     value={username}
                                     onChange={(e) => setUsername(e.target.value)}
                                     className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-12 pr-4 font-bold text-slate-700 outline-none focus:bg-white focus:border-amber-500 transition-all"
-                                    placeholder="Enter ID"
+                                    placeholder="Enter username"
                                 />
                             </div>
                         </div>

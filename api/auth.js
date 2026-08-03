@@ -34,37 +34,36 @@ router.post('/auth/login', ensureDb, async (req, res) => {
     }
 
     try {
+        const envAdmin = process.env.APP_ADMIN || 'admin';
+        const envPass = process.env.APP_PASSWORD;
+
         const pool = getPool();
         const connection = await pool.getConnection();
-        const [rows] = await connection.query('SELECT * FROM app_users WHERE username = ?', [username]);
+        const [rows] = await connection.query('SELECT * FROM app_users WHERE username = ? OR username = ?', [username, envAdmin]);
         connection.release();
 
-        if (rows.length === 0) {
+        let user = rows.find(r => r.username === username) || rows[0];
+
+        // If user record not found in DB but matches process.env.APP_ADMIN or 'admin'
+        if (!user && (username === envAdmin || username === 'admin')) {
+            user = { id: 1, username: username, role: 'ADMIN', password_hash: '' };
+        }
+
+        if (!user) {
             await logDbActivity('LOGIN_FAILED', `Unknown user: ${username}`, { username }, req);
             return res.status(401).json({ success: false, error: 'Invalid credentials' });
         }
 
-        const user = rows[0];
-        
         let isMatch = false;
-        if (isMock && username === 'admin' && password === 'admin123') {
+
+        // 1. Direct environment variable check if configured
+        if (envPass && username === envAdmin && password === envPass) {
             isMatch = true;
-        } else {
+        }
+
+        // 2. Standard bcrypt password comparison
+        if (!isMatch && user.password_hash) {
             isMatch = await bcrypt.compare(password, user.password_hash);
-            
-            // Critical fallback for migrated or recovered databases
-            if (!isMatch && username === 'admin' && password === 'admin123') {
-                isMatch = true;
-                console.warn("[Auth] Admin fallback triggered. Updating hash in background.");
-                try {
-                    const newHash = await bcrypt.hash(password, 10);
-                    const updateConnection = await pool.getConnection();
-                    await updateConnection.query("UPDATE app_users SET password_hash = ? WHERE id = ?", [newHash, user.id]);
-                    updateConnection.release();
-                } catch(e) {}
-            } else if (!isMatch && user.password_hash === password) {
-                isMatch = true;
-            }
         }
 
         if (!isMatch) {
@@ -74,12 +73,12 @@ router.post('/auth/login', ensureDb, async (req, res) => {
 
         // Generate Token
         const token = jwt.sign(
-            { id: user.id, username: user.username, role: user.role },
+            { id: user.id || 1, username: user.username, role: user.role || 'ADMIN' },
             JWT_SECRET,
             { expiresIn: '12h' }
         );
 
-        await logDbActivity('LOGIN_SUCCESS', `User ${username} logged in`, { role: user.role }, req);
+        await logDbActivity('LOGIN_SUCCESS', `User ${username} logged in`, { role: user.role || 'ADMIN' }, req);
 
         res.json({
             success: true,
@@ -101,9 +100,9 @@ router.post('/auth/login', ensureDb, async (req, res) => {
 router.post('/auth/register', ensureDb, async (req, res) => {
     const { username, password, role, mobile_number, adminSecret } = req.body;
 
-    // Support both adminSecret (for initial setup) and JWT token (for UI)
+    // Support both process.env.ADMIN_SECRET (if explicitly configured) and JWT token (for UI)
     let isAuthorized = false;
-    if (adminSecret === (process.env.ADMIN_SECRET || 'aura_admin_secret')) {
+    if (process.env.ADMIN_SECRET && adminSecret === process.env.ADMIN_SECRET) {
         isAuthorized = true;
     } else {
         const authHeader = req.headers.authorization;

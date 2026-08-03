@@ -10,15 +10,20 @@ async function getSetuToken(connection, config, forceRefresh = false) {
     const isProduction = mode === 'PRODUCTION' || mode === 'PROD';
     const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
 
-    if (!forceRefresh && config.cachedToken && config.tokenExpiresAt && config.tokenExpiresAt > (now + 60)) {
-        return config.cachedToken;
-    }
-
     const clientId = config.clientId || config.clientID || config.client_id;
     const secret = config.secret || config.clientSecret || config.client_secret;
 
-    if (!clientId || !secret) {
-        throw new Error("Setu Client ID and Secret are required in Settings -> Setu Integration.");
+    const isInvalidCredential = (val) => !val || typeof val !== 'string' || val.trim() === '' || val.includes('default') || val.includes('YOUR_SETU');
+    if (isInvalidCredential(clientId) || isInvalidCredential(secret) || config.enabled === false) {
+        throw new Error("Setu Integration is not configured with valid credentials in Settings.");
+    }
+
+    if (config.wafBlockedUntil && Date.now() < config.wafBlockedUntil) {
+        throw new Error("Setu API endpoint temporarily back-off active due to WAF rate limits. Retrying later.");
+    }
+
+    if (!forceRefresh && config.cachedToken && config.tokenExpiresAt && config.tokenExpiresAt > (now + 60)) {
+        return config.cachedToken;
     }
 
     console.log(`[Setu Token Manager] Fetching new OAuth token from ${baseUrl} (Force refresh: ${forceRefresh})...`);
@@ -37,17 +42,27 @@ async function getSetuToken(connection, config, forceRefresh = false) {
             })
         });
     } catch (fetchErr) {
-        console.error(`[Setu Token Manager] Network request to Setu failed: ${fetchErr.message}`);
+        console.warn(`[Setu Token Manager] Network request to Setu failed: ${fetchErr.message}`);
         throw new Error(`Setu network request failed: ${fetchErr.message}`);
     }
 
     const tokenText = await tokenResponse.text();
-    console.log(`[Setu Token Manager] Raw Setu Auth Response (Status ${tokenResponse.status}):`, tokenText);
     let tokenData;
     try {
         tokenData = JSON.parse(tokenText);
     } catch (e) {
-        const isHtml = tokenText.trim().toLowerCase().startsWith('<!doctype') || tokenText.trim().toLowerCase().startsWith('<html');
+        const isHtml = tokenText.trim().toLowerCase().startsWith('<!doctype') || 
+                      tokenText.trim().toLowerCase().startsWith('<html') ||
+                      tokenText.includes('<!-- a padding to disable MSIE');
+        
+        // Temporarily back off for 15 minutes if Setu edge returned WAF block or HTML error
+        config.wafBlockedUntil = Date.now() + 15 * 60 * 1000;
+        if (connection) {
+            try {
+                await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
+            } catch (dbErr) {}
+        }
+
         const summary = isHtml ? "HTML Error Page (Cloudflare/WAF block or invalid endpoint)" : tokenText.substring(0, 150);
         console.warn(`[Setu Token Manager] Setu returned HTTP ${tokenResponse.status}: ${summary}`);
         throw {
@@ -58,7 +73,7 @@ async function getSetuToken(connection, config, forceRefresh = false) {
     }
 
     if (!tokenResponse.ok || !tokenData.success) {
-        console.error(`[Setu Token Manager] Error Response (Status ${tokenResponse.status}):`, tokenText);
+        console.warn(`[Setu Token Manager] Auth Response Error (Status ${tokenResponse.status}):`, tokenData.error?.message || tokenText);
         throw {
             message: tokenData.error?.message || tokenData.error?.detail || tokenData.message || "Setu Authentication Failed",
             response: { status: tokenResponse.status, data: tokenData },
@@ -72,8 +87,13 @@ async function getSetuToken(connection, config, forceRefresh = false) {
     
     config.cachedToken = token;
     config.tokenExpiresAt = now + expiresIn;
+    delete config.wafBlockedUntil;
     
-    await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
+    if (connection) {
+        try {
+            await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
+        } catch (dbErr) {}
+    }
     console.log(`[Setu Token Manager] New token cached successfully. Expires in ${expiresIn}s`);
     return token;
 }
@@ -554,57 +574,92 @@ router.post('/setu/test-connection', ensureDb, async (req, res) => {
 
 /**
  * Setu UPI Redirector
- * Decodes a base64 UPI intent and redirects to it.
+ * Decodes a base64 UPI intent, unwraps nested links, and redirects to it.
  * This is used to bypass Meta's restriction on non-http schemes in URL buttons.
  */
+function resolvePaymentIntent(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    let curr = raw.trim();
+
+    for (let depth = 0; depth < 5; depth++) {
+        if (!curr) break;
+
+        // Strip leading/trailing slashes
+        curr = curr.replace(/^\/+|\/+$/g, '');
+
+        // Direct target match
+        if (curr.startsWith('upi://') || curr.startsWith('https://setu.co') || curr.startsWith('https://uat.setu.co')) {
+            return curr;
+        }
+
+        // If it contains /setu/pay/
+        if (curr.includes('/setu/pay/')) {
+            const parts = curr.split('/setu/pay/');
+            const suffix = parts[parts.length - 1];
+            if (suffix && suffix !== curr) {
+                curr = suffix;
+                continue;
+            }
+        }
+
+        // Try base64 decoding
+        try {
+            const normalized = curr.replace(/-/g, '+').replace(/_/g, '/');
+            const decoded = Buffer.from(normalized, 'base64').toString('utf8');
+            if (decoded && decoded !== curr && (
+                decoded.startsWith('upi://') || 
+                decoded.startsWith('https://') || 
+                decoded.startsWith('http://') || 
+                decoded.includes('/setu/pay/')
+            )) {
+                curr = decoded;
+                continue;
+            }
+        } catch (e) {
+            // Not base64
+        }
+
+        break;
+    }
+
+    return curr;
+}
+
 router.get(['/setu/pay/:encodedIntent', '/setu/pay'], async (req, res) => {
     try {
-        const encodedIntent = req.params.encodedIntent || req.query.intent || req.query.s;
+        let rawIntent = req.params.encodedIntent || req.query.intent || req.query.s || '';
+        if (!rawIntent) {
+            const sub = req.path.replace(/^\/setu\/pay\/?/, '');
+            if (sub) rawIntent = sub;
+        }
         
-        if (!encodedIntent) {
+        if (!rawIntent) {
             return res.status(400).send("Missing payment intent.");
         }
 
+        const resolved = resolvePaymentIntent(rawIntent);
+
         let intent = '';
-        
-        if (encodedIntent.startsWith('upi://') || encodedIntent.startsWith('https://setu.co') || encodedIntent.startsWith('https://uat.setu.co')) {
-            intent = encodedIntent;
+        if (resolved.startsWith('upi://') || resolved.startsWith('https://') || resolved.startsWith('http://')) {
+            intent = resolved;
+        } else if (/^[a-zA-Z0-9_-]+$/.test(resolved)) {
+            // Assume it's a raw Setu link suffix
+            const pool = getPool();
+            const connection = await pool.getConnection();
+            const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
+            connection.release();
+            
+            let mode = 'PRODUCTION';
+            if (rows.length > 0) {
+                let config = rows[0].config;
+                if (typeof config === 'string') config = typeof config === "string" ? JSON.parse(config) : config;
+                mode = config.mode || 'PRODUCTION';
+            }
+            
+            const setuHost = mode === 'SANDBOX' ? 'uat.setu.co' : 'setu.co';
+            intent = `https://${setuHost}/upi/s/${resolved}`;
         } else {
-            // Normalize URL-safe base64 if needed
-            const normalized = encodedIntent.replace(/-/g, '+').replace(/_/g, '/');
-
-            // Try decoding as base64 first
-            try {
-                const decoded = Buffer.from(normalized, 'base64').toString('utf8');
-                if ((decoded.startsWith('upi://') || decoded.startsWith('https://')) && !decoded.includes('/api/setu/pay')) {
-                    intent = decoded;
-                }
-            } catch (e) {
-                // Ignore base64 decode errors
-            }
-        }
-
-        // If it wasn't a valid base64 upi/https link, assume it's a raw Setu link suffix
-        if (!intent) {
-            if (/^[a-zA-Z0-9_-]+$/.test(encodedIntent)) {
-                // Fetch settings to determine mode
-                const pool = getPool();
-                const connection = await pool.getConnection();
-                const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
-                connection.release();
-                
-                let mode = 'PRODUCTION';
-                if (rows.length > 0) {
-                    let config = rows[0].config;
-                    if (typeof config === 'string') config = typeof config === "string" ? JSON.parse(config) : config;
-                    mode = config.mode || 'PRODUCTION';
-                }
-                
-                const setuHost = mode === 'SANDBOX' ? 'uat.setu.co' : 'setu.co';
-                intent = `https://${setuHost}/upi/s/${encodedIntent}`;
-            } else {
-                return res.status(400).send("Invalid payment intent. Link must start with upi:// or https://, or be a valid Setu link ID.");
-            }
+            return res.status(400).send("Invalid payment intent. Link must start with upi:// or https://, or be a valid Setu link ID.");
         }
 
         // Return a simple HTML that redirects
@@ -1069,6 +1124,22 @@ export function startSetuPoller(io) {
             
             let config = setuRows[0].config;
             if (typeof config === 'string') config = typeof config === "string" ? JSON.parse(config) : config;
+            
+            // Check if Setu has valid, non-placeholder credentials
+            const clientId = config.clientId || config.clientID || config.client_id;
+            const secret = config.secret || config.clientSecret || config.client_secret;
+            const isInvalidCredential = (val) => !val || typeof val !== 'string' || val.trim() === '' || val.includes('default') || val.includes('YOUR_SETU');
+
+            if (isInvalidCredential(clientId) || isInvalidCredential(secret) || config.enabled === false) {
+                connection.release();
+                return;
+            }
+
+            if (config.wafBlockedUntil && Date.now() < config.wafBlockedUntil) {
+                connection.release();
+                return;
+            }
+
             const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
             const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
             const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
@@ -1120,7 +1191,7 @@ export function startSetuPoller(io) {
             try {
                 token = await getSetuToken(connection, config);
             } catch (tokenErr) {
-                console.warn("[Setu Poller] Token acquisition failed, skipping poll iteration:", tokenErr.message);
+                console.info("[Setu Poller] Token acquisition deferred:", tokenErr.message);
                 connection.release();
                 return;
             }
@@ -1191,7 +1262,7 @@ export function startSetuPoller(io) {
                                         }
                                     });
                                 } catch (refreshErr) {
-                                    console.error("[Setu Poller] Failed to refresh token during poll:", refreshErr.message);
+                                    console.info("[Setu Poller] Token refresh deferred during poll:", refreshErr.message);
                                 }
                             }
                             
