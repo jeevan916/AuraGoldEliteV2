@@ -18,8 +18,9 @@ async function getSetuToken(connection, config, forceRefresh = false) {
         throw new Error("Setu Integration is not configured with valid credentials in Settings.");
     }
 
-    if (config.wafBlockedUntil && Date.now() < config.wafBlockedUntil) {
-        throw new Error("Setu API endpoint temporarily back-off active due to WAF rate limits. Retrying later.");
+    if (!forceRefresh && config.wafBlockedUntil && Date.now() < config.wafBlockedUntil) {
+        const remainingSec = Math.ceil((config.wafBlockedUntil - Date.now()) / 1000);
+        throw new Error(`Setu API endpoint temporarily back-off active due to WAF rate limits (${remainingSec}s remaining). Retry later or force refresh.`);
     }
 
     if (!forceRefresh && config.cachedToken && config.tokenExpiresAt && config.tokenExpiresAt > (now + 60)) {
@@ -34,7 +35,7 @@ async function getSetuToken(connection, config, forceRefresh = false) {
             headers: { 
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'AuraGold-Server/2.0'
             },
             body: JSON.stringify({
                 clientID: clientId,
@@ -55,8 +56,8 @@ async function getSetuToken(connection, config, forceRefresh = false) {
                       tokenText.trim().toLowerCase().startsWith('<html') ||
                       tokenText.includes('<!-- a padding to disable MSIE');
         
-        // Temporarily back off for 15 minutes if Setu edge returned WAF block or HTML error
-        config.wafBlockedUntil = Date.now() + 15 * 60 * 1000;
+        // Temporarily back off for 30 seconds if Setu edge returned WAF block or HTML error
+        config.wafBlockedUntil = Date.now() + 30 * 1000;
         if (connection) {
             try {
                 await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
@@ -158,10 +159,20 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         // 2. Token Management using the helper function
         let token;
         try {
-            token = await getSetuToken(connection, config);
+            const shouldForce = req.body.forceRefresh === true || req.body.force === true;
+            token = await getSetuToken(connection, config, shouldForce);
         } catch (tokenErr) {
-            connection.release();
-            throw tokenErr;
+            if (!req.body.forceRefresh && (tokenErr.message?.includes('back-off') || tokenErr.status === 401)) {
+                try {
+                    token = await getSetuToken(connection, config, true);
+                } catch (retryErr) {
+                    connection.release();
+                    throw retryErr;
+                }
+            } else {
+                connection.release();
+                throw tokenErr;
+            }
         }
 
         connection.release();
@@ -183,7 +194,7 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                     'Authorization': `Bearer ${token}`,
                     'X-Setu-Product-Instance-ID': schemeId,
                     'x-product-instance-id': schemeId,
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    'User-Agent': 'AuraGold-Server/2.0'
                 },
                 body: JSON.stringify({
                     billerBillID: uniqueBillId,
@@ -530,7 +541,7 @@ router.post('/setu/test-connection', ensureDb, async (req, res) => {
             headers: { 
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'AuraGold-Server/2.0'
             },
             body: JSON.stringify({
                 clientID: clientId,

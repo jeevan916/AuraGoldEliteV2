@@ -106,7 +106,8 @@ export const ExternalPaymentLedger: React.FC = () => {
       amount: record.amount,
       customerID: record.customerContact,
       name: record.customerName,
-      externalPaymentId: record.id
+      externalPaymentId: record.id,
+      forceRefresh: true
     };
 
     let setuData: any = null;

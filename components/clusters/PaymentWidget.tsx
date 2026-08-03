@@ -289,7 +289,8 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                   amount: val,
                   customerID: order.customerContact, 
                   name: order.customerName,
-                  orderId: order.id
+                  orderId: order.id,
+                  forceRefresh: true
               })
           });
 

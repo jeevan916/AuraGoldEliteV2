@@ -158,7 +158,8 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
           amount: amountToPay,
           customerID: order.customerContact,
           name: order.customerName,
-          orderId: order.id
+          orderId: order.id,
+          forceRefresh: true
         })
       });
 
