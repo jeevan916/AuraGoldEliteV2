@@ -12,5 +12,7 @@ RewriteRule \.(ts|tsx|jsx|env|config|json|lock|git|yml)$ - [F,L]
 # ----------------------------------------------------------------------
 # Hostinger Node.js Proxy Configuration
 # ----------------------------------------------------------------------
-# This rule forwards ALL other requests to the Node.js application.
+# Forward requests to Node.js application ONLY if ENV:PORT is explicitly defined as a numeric port.
+# Prevents Apache proxying to invalid http://127.0.0.1:/ (which triggers HTTP 503 Service Unavailable).
+RewriteCond %{ENV:PORT} ^[0-9]+$
 RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]

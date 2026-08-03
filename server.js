@@ -60,9 +60,17 @@ const loadEnv = () => {
 };
 loadEnv();
 
+process.on('uncaughtException', (err) => {
+    console.error('[System] Uncaught Exception:', err?.message || err);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('[System] Unhandled Rejection:', reason?.message || reason);
+});
+
 const app = express();
 const httpServer = createServer(app);
-const PORT = process.env.APPLET_ID ? 3000 : (process.env.PORT || 3000);
+const rawPort = process.env.APPLET_ID ? 3000 : (process.env.PORT || 3000);
+const PORT = rawPort;
 
 const io = new Server(httpServer, {
     cors: {
@@ -195,7 +203,7 @@ const getValidDistPath = () => {
 };
 
 const finalDistPath = getValidDistPath();
-const isDev = process.env.NODE_ENV !== 'production';
+const isDev = (process.env.NODE_ENV === 'development' || (process.env.APPLET_ID && !finalDistPath)) && process.env.NODE_ENV !== 'production';
 
 if (isDev) {
     try {
@@ -281,7 +289,17 @@ initDb().then(async (result) => {
     }
 });
 
-httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Server] Operational on port ${PORT}`);
-    console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
-});
+const isSocketPath = typeof PORT === 'string' && (PORT.startsWith('/') || PORT.startsWith('\\\\') || isNaN(Number(PORT)));
+
+if (isSocketPath) {
+    httpServer.listen(PORT, () => {
+        console.log(`[Server] Operational on socket: ${PORT}`);
+        console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
+    });
+} else {
+    const numericPort = Number(PORT);
+    httpServer.listen(numericPort, '0.0.0.0', () => {
+        console.log(`[Server] Operational on port ${numericPort}`);
+        console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
+    });
+}
