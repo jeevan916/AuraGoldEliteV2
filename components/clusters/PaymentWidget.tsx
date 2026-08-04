@@ -311,7 +311,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           const platformBillID = payload?.platformBillID || payload?.id;
           const shortLink = payload?.paymentLink?.shortUrl || payload?.paymentLink?.shortURL || payload?.paymentLink?.shortLink || payload?.shortUrl || payload?.shortURL || payload?.shortLink || payload?.url || payload?.paymentLink?.url || (platformBillID ? `${window.location.origin}/api/setu/pay/${platformBillID}` : '');
           const upiID = payload?.paymentLink?.upiID || payload?.paymentLink?.upiId || payload?.upiID || payload?.vpa;
-          let upiIntentLink = payload?.paymentLink?.upiLink || payload?.paymentLink?.upiIntentLink || payload?.upiLink || payload?.upiIntentLink;
+          let upiIntentLink = payload?.paymentLink?.upiURL || payload?.paymentLink?.upiLink || payload?.paymentLink?.upiIntentLink || payload?.upiURL || payload?.upiLink || payload?.upiIntentLink;
 
           if (!shortLink) {
               errorService.logError(
@@ -323,9 +323,9 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
               throw new Error("Payment link was not returned by the gateway. This has been logged for engineering review.");
           }
 
-          if (!upiIntentLink && upiID) {
+          if (!upiIntentLink && upiID && upiID.includes('@')) {
               // Construct the intent link manually ONLY if Setu didn't return it
-              const payeeName = encodeURIComponent("Sanghavi Jewellers");
+              const payeeName = encodeURIComponent("AuraGold Jewellers");
               const transactionNote = encodeURIComponent(`Order ${order.id}`);
               upiIntentLink = `upi://pay?pa=${upiID}&pn=${payeeName}&tr=${order.id}&am=${val}&cu=INR&tn=${transactionNote}`;
           } else if (!upiIntentLink) {
@@ -342,8 +342,8 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
           });
           setQrCodeUrl(`https://quickchart.io/qr?text=${encodeURIComponent(shortLink)}&margin=2&size=300`);
 
-          // Use base64 encoded target link for WhatsApp button
-          const targetLink = upiIntentLink || shortLink || `upi://pay?pa=auragoldelite@upi&pn=AuraGold%20Jewellers&tr=${platformBillID || order.id}&am=${val}&cu=INR`;
+          // Prefer shortLink for WhatsApp button URL so Setu landing handles redirect
+          const targetLink = shortLink || upiIntentLink || (platformBillID ? `${window.location.origin}/api/setu/pay/${platformBillID}` : '');
           let buttonVariable = '';
           try {
               buttonVariable = btoa(unescape(encodeURIComponent(targetLink))).replace(/\+/g, '-').replace(/\//g, '_');

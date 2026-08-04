@@ -173,7 +173,11 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
       const platformBillID = payload?.platformBillID || payload?.id;
       const shortLink = payload?.paymentLink?.shortUrl || payload?.paymentLink?.shortURL || payload?.paymentLink?.shortLink || payload?.shortUrl || payload?.shortURL || payload?.shortLink || payload?.url || payload?.paymentLink?.url || (platformBillID ? `${window.location.origin}/api/setu/pay/${platformBillID}` : '');
       const upiID = payload?.paymentLink?.upiID || payload?.paymentLink?.upiId || payload?.upiID || payload?.vpa;
-      let upiIntentLink = payload?.paymentLink?.upiLink || payload?.paymentLink?.upiIntentLink || payload?.upiLink || payload?.upiIntentLink;
+      let upiIntentLink = payload?.paymentLink?.upiURL || payload?.paymentLink?.upiLink || payload?.paymentLink?.upiIntentLink || payload?.upiURL || payload?.upiLink || payload?.upiIntentLink;
+
+      if (!upiIntentLink && upiID && upiID.includes('@')) {
+        upiIntentLink = `upi://pay?pa=${upiID}&pn=AuraGold%20Jewellers&tr=${order.id}&am=${amountToPay}&cu=INR`;
+      }
 
       if (!shortLink && !upiIntentLink) {
         throw new Error("Payment link not received from gateway");
@@ -182,7 +186,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
       if (platformBillID) setActivePaymentPlatformId(platformBillID);
 
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      if (isMobile && upiIntentLink) {
+      if (isMobile && upiIntentLink && upiIntentLink.startsWith('upi://')) {
           window.location.href = upiIntentLink;
       } else if (shortLink) {
           // Open Setu Bridge in a new tab if possible so we can poll in background

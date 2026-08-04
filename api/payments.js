@@ -250,21 +250,35 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
             pl.shortUrl = url;
             pl.shortURL = url;
             pl.shortLink = url;
-            pl.upiID = pl.upiID || pl.upiId || pl.vpa || '';
-            pl.upiLink = pl.upiLink || pl.upiIntentLink || pl.upiID || '';
-            pl.upiIntentLink = pl.upiLink || pl.upiIntentLink || '';
+            
+            const rawVpa = pl.upiID || pl.upiId || pl.vpa || '';
+            pl.upiID = rawVpa;
+
+            let intentUrl = pl.upiURL || pl.upiLink || pl.upiIntentLink || '';
+            if (!intentUrl && rawVpa && rawVpa.includes('@')) {
+                intentUrl = `upi://pay?pa=${rawVpa}&pn=AuraGold%20Jewellers&tr=${setuPayload.platformBillID || orderId || externalPaymentId || ''}&am=${amount || ''}&cu=INR`;
+            }
+            pl.upiURL = intentUrl;
+            pl.upiLink = intentUrl;
+            pl.upiIntentLink = intentUrl;
         }
 
         // Save platformBillID to order or external payment for background recovery checking
-        if (orderId && linkData.data && linkData.data.platformBillID) {
+        const billID = setuPayload?.platformBillID || linkData?.data?.platformBillID || linkData?.platformBillID;
+        if (orderId && billID) {
             const processConn = await pool.getConnection();
             try {
                 const [orderRows] = await processConn.query('SELECT data FROM orders WHERE id = ?', [orderId]);
                 if (orderRows.length > 0) {
                     const order = JSON.parse(orderRows[0].data);
+                    order.platformBillID = billID;
+                    if (setuPayload?.paymentLink) {
+                        order.shortLink = setuPayload.paymentLink.shortUrl;
+                        order.upiIntentLink = setuPayload.paymentLink.upiIntentLink || setuPayload.paymentLink.upiURL || setuPayload.paymentLink.upiLink;
+                    }
                     if (!order.pendingSetuPayments) order.pendingSetuPayments = [];
                     order.pendingSetuPayments.push({
-                        platformBillID: linkData.data.platformBillID,
+                        platformBillID: billID,
                         amount: amount,
                         createdAt: new Date().toISOString()
                     });
@@ -276,20 +290,20 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
             } finally {
                 processConn.release();
             }
-        } else if (externalPaymentId && linkData.data && linkData.data.platformBillID) {
+        } else if (externalPaymentId && billID) {
             const processConn = await pool.getConnection();
             try {
                 const [extRows] = await processConn.query('SELECT data FROM external_payments WHERE id = ?', [externalPaymentId]);
                 if (extRows.length > 0) {
                     const extRecord = JSON.parse(extRows[0].data);
-                    extRecord.platformBillID = linkData.data.platformBillID;
-                    if (linkData.data.paymentLink) {
-                        extRecord.shortLink = linkData.data.paymentLink.shortUrl;
-                        extRecord.upiIntentLink = linkData.data.paymentLink.upiID;
+                    extRecord.platformBillID = billID;
+                    if (setuPayload?.paymentLink) {
+                        extRecord.shortLink = setuPayload.paymentLink.shortUrl;
+                        extRecord.upiIntentLink = setuPayload.paymentLink.upiIntentLink || setuPayload.paymentLink.upiURL || setuPayload.paymentLink.upiLink;
                     }
                     if (!extRecord.pendingSetuPayments) extRecord.pendingSetuPayments = [];
                     extRecord.pendingSetuPayments.push({
-                        platformBillID: linkData.data.platformBillID,
+                        platformBillID: billID,
                         amount: amount,
                         createdAt: new Date().toISOString()
                     });
@@ -653,6 +667,9 @@ router.get(['/setu/pay/:encodedIntent', '/setu/pay'], async (req, res) => {
         let intent = '';
         if (resolved.startsWith('upi://') || resolved.startsWith('https://') || resolved.startsWith('http://')) {
             intent = resolved;
+        } else if (resolved.includes('@') && !resolved.includes('://')) {
+            // Raw VPA passed
+            intent = `upi://pay?pa=${encodeURIComponent(resolved)}&pn=AuraGold%20Jewellers&cu=INR`;
         } else if (/^[a-zA-Z0-9_-]+$/.test(resolved)) {
             // Assume it's a raw Setu link suffix
             const pool = getPool();

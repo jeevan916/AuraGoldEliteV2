@@ -69,7 +69,22 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
     );
   }
 
-  const upiPayLink = record.upiIntentLink || record.shortLink || `upi://pay?pa=auragold@upi&pn=AuraGold&am=${record.amount}&cu=INR&tn=${record.id}`;
+  const getPayLink = () => {
+    if (record.shortLink && (record.shortLink.startsWith('http://') || record.shortLink.startsWith('https://'))) {
+      return record.shortLink;
+    }
+    if (record.upiIntentLink && record.upiIntentLink.startsWith('upi://')) {
+      return record.upiIntentLink;
+    }
+    if (record.upiIntentLink && record.upiIntentLink.includes('@')) {
+      return `upi://pay?pa=${record.upiIntentLink}&pn=AuraGold%20Jewellers&am=${record.amount}&cu=INR&tn=${encodeURIComponent(record.id)}`;
+    }
+    if (record.platformBillID) {
+      return `/api/setu/pay/${record.platformBillID}`;
+    }
+    return record.shortLink || '';
+  };
+  const upiPayLink = getPayLink();
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 md:p-6 relative overflow-hidden font-sans">

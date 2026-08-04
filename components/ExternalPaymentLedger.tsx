@@ -149,16 +149,18 @@ export const ExternalPaymentLedger: React.FC = () => {
       history: updatedHistory
     };
 
-    if (!errorMsg && setuData && setuData.success && setuData.data) {
-      updates.platformBillID = setuData.data.platformBillID;
-      if (setuData.data.paymentLink) {
-        updates.shortLink = setuData.data.paymentLink.shortUrl;
-        updates.upiIntentLink = setuData.data.paymentLink.upiID;
+    const resData = setuData?.data?.data || setuData?.data || setuData;
+    if (!errorMsg && setuData && setuData.success && resData) {
+      updates.platformBillID = resData.platformBillID || resData.id;
+      if (resData.paymentLink) {
+        const pl = resData.paymentLink;
+        updates.shortLink = pl.shortUrl || pl.shortURL || pl.shortLink || pl.url;
+        updates.upiIntentLink = pl.upiIntentLink || pl.upiURL || pl.upiLink || (pl.upiID && pl.upiID.includes('@') ? `upi://pay?pa=${pl.upiID}&pn=AuraGold%20Jewellers&am=${record.amount}&cu=INR` : undefined);
       }
       updatedHistory.push({
         date: timestamp,
         action: 'SETU_LINK_GENERATED',
-        details: `Setu UPI Link generated (Bill ID: ${setuData.data.platformBillID})`
+        details: `Setu UPI Link generated (Bill ID: ${updates.platformBillID})`
       });
       triggerNotification('success', `Setu UPI link generated for ${record.customerName}!`);
     } else {
@@ -240,12 +242,21 @@ export const ExternalPaymentLedger: React.FC = () => {
 
   // Helper to determine valid Setu UPI payment link or fallback UPI link
   const getValidPayLink = (record: ExternalPaymentRecord) => {
-    if (record.shortLink && !record.shortLink.includes('token=')) {
+    if (record.shortLink && (record.shortLink.startsWith('http://') || record.shortLink.startsWith('https://')) && !record.shortLink.includes('token=')) {
       return record.shortLink;
     }
-    const upiUrl = record.upiIntentLink || `upi://pay?pa=auragoldelite@upi&pn=AuraGold%20Jewellers&tr=${record.id}&am=${record.amount}&cu=INR`;
-    const base64Upi = btoa(unescape(encodeURIComponent(upiUrl))).replace(/\+/g, '-').replace(/\//g, '_');
-    return `${window.location.origin}/api/setu/pay/${base64Upi}`;
+    let upiUrl = record.upiIntentLink && record.upiIntentLink.startsWith('upi://') ? record.upiIntentLink : null;
+    if (!upiUrl && record.upiIntentLink && record.upiIntentLink.includes('@')) {
+      upiUrl = `upi://pay?pa=${record.upiIntentLink}&pn=AuraGold%20Jewellers&tr=${record.id}&am=${record.amount}&cu=INR`;
+    }
+    if (upiUrl) {
+      const base64Upi = btoa(unescape(encodeURIComponent(upiUrl))).replace(/\+/g, '-').replace(/\//g, '_');
+      return `${window.location.origin}/api/setu/pay/${base64Upi}`;
+    }
+    if (record.platformBillID) {
+      return `${window.location.origin}/api/setu/pay/${record.platformBillID}`;
+    }
+    return `${window.location.origin}/?token=${record.shareToken}`;
   };
 
   // Dispatch WhatsApp Message
