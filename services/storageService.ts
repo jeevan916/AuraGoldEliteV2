@@ -99,6 +99,14 @@ class StorageService {
           this.handleIncomingOrders(incomingOrders);
       });
 
+      // Listen for real-time External Payment updates
+      this.socket.on('external_payments_sync', (incomingRecords: ExternalPaymentRecord[]) => {
+          console.log("[Storage] Received Real-Time External Payments Sync", incomingRecords?.length);
+          if (Array.isArray(incomingRecords)) {
+              this.handleIncomingExternalPayments(incomingRecords);
+          }
+      });
+
       // Listen for real-time Order deletions
       this.socket.on('order_deleted', (orderId: string) => {
           console.log("[Storage] Received Real-Time Order Deletion", orderId);
@@ -166,6 +174,28 @@ class StorageService {
       this.state.orders = this.state.orders.filter(o => o.id !== orderId);
       
       if (this.state.orders.length !== initialLength) {
+          this.saveToLocal();
+          this.notify();
+      }
+  }
+
+  private handleIncomingExternalPayments(newRecords: ExternalPaymentRecord[]) {
+      const currentRecords = [...(this.state.externalPayments || [])];
+      let hasChanges = false;
+      newRecords.forEach(incoming => {
+          const index = currentRecords.findIndex(r => r.id === incoming.id);
+          if (index >= 0) {
+              if (JSON.stringify(currentRecords[index]) !== JSON.stringify(incoming)) {
+                  currentRecords[index] = { ...currentRecords[index], ...incoming };
+                  hasChanges = true;
+              }
+          } else {
+              currentRecords.unshift(incoming);
+              hasChanges = true;
+          }
+      });
+      if (hasChanges) {
+          this.state.externalPayments = currentRecords;
           this.saveToLocal();
           this.notify();
       }

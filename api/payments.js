@@ -335,6 +335,100 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
 });
 
 // Setu Status Polling
+// Centralized helper to process successful Setu payments for either External Payments or Orders
+async function handleSetuPaymentSuccess(data, req) {
+    if (!data) return;
+    const paymentLinkData = data.paymentLink || data.bill || {};
+    const billerBillID = data.billerBillID || data.paymentLinkID || paymentLinkData.billerBillID;
+    const platformBillID = data.platformBillID || paymentLinkData.platformBillID || data.transactionId;
+    
+    let rawAmount = data.amountPaid?.value || data.amount?.value || data.amountPaid || data.amount;
+    if (typeof rawAmount === 'number' && rawAmount > 1000) {
+        rawAmount = rawAmount / 100;
+    }
+    const amountPaid = Number(rawAmount) || 0;
+    const upiTransactionID = data.transactionId || data.platformBillID || paymentLinkData.platformBillID || data.bankReferenceNumber || `setu_${Date.now()}`;
+    const payerVpa = data.payerVpa || data.sourceAccount?.number || null;
+
+    let externalPaymentId = data.additionalInfo?.externalPaymentId || data.additionalInfo?.externalPaymentID || paymentLinkData.additionalInfo?.externalPaymentId || paymentLinkData.additionalInfo?.externalPaymentID;
+    let orderId = data.additionalInfo?.orderId || data.additionalInfo?.orderID || paymentLinkData.additionalInfo?.orderId || paymentLinkData.additionalInfo?.orderID;
+
+    const pool = getPool();
+    if (!pool) return;
+    const connection = await pool.getConnection();
+
+    try {
+        let matchedExtId = externalPaymentId;
+        
+        if (!matchedExtId && billerBillID && billerBillID.startsWith('EXT')) {
+            matchedExtId = billerBillID.split('_')[0];
+        }
+        if (!matchedExtId) {
+            const note = data.transactionNote || paymentLinkData.transactionNote || '';
+            const match = note.match(/EXT[A-Za-z0-9]+/i);
+            if (match) matchedExtId = match[0];
+        }
+
+        if (matchedExtId) {
+            const [extRows] = await connection.query('SELECT id FROM external_payments WHERE id = ?', [matchedExtId]);
+            if (extRows.length > 0) {
+                connection.release();
+                await processSuccessfulExternalPayment(matchedExtId, amountPaid, upiTransactionID, payerVpa, req);
+                return;
+            }
+        }
+
+        if (platformBillID) {
+            const [extRows] = await connection.query("SELECT id, data FROM external_payments WHERE status != 'PAID'");
+            for (const row of extRows) {
+                try {
+                    const rec = JSON.parse(row.data);
+                    if (rec.platformBillID === platformBillID || (rec.pendingSetuPayments && rec.pendingSetuPayments.some(p => p.platformBillID === platformBillID))) {
+                        connection.release();
+                        await processSuccessfulExternalPayment(row.id, amountPaid, upiTransactionID, payerVpa, req);
+                        return;
+                    }
+                } catch(e) {}
+            }
+        }
+
+        let matchedOrderId = orderId;
+        if (!matchedOrderId && billerBillID) {
+            matchedOrderId = billerBillID.split('_')[0];
+        }
+        if (matchedOrderId) {
+            const [orderRows] = await connection.query('SELECT id FROM orders WHERE id = ?', [matchedOrderId]);
+            if (orderRows.length > 0) {
+                connection.release();
+                await processSuccessfulPayment(matchedOrderId, amountPaid, upiTransactionID, payerVpa, req);
+                return;
+            }
+        }
+
+        if (platformBillID) {
+            const [orderRows] = await connection.query("SELECT id, data FROM orders WHERE status != 'COMPLETED'");
+            for (const row of orderRows) {
+                try {
+                    const rec = JSON.parse(row.data);
+                    if (rec.platformBillID === platformBillID || (rec.pendingSetuPayments && rec.pendingSetuPayments.some(p => p.platformBillID === platformBillID))) {
+                        connection.release();
+                        await processSuccessfulPayment(row.id, amountPaid, upiTransactionID, payerVpa, req);
+                        return;
+                    }
+                } catch(e) {}
+            }
+        }
+
+        console.warn("Could not match Setu payment to any external payment or order:", data);
+    } catch (err) {
+        console.error("Error matching Setu payment:", err);
+    } finally {
+        if (connection && !connection._released) {
+            try { connection.release(); } catch(e) {}
+        }
+    }
+}
+
 router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
@@ -406,18 +500,7 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
         connection.release();
         
         if (statusData.success && statusData.data && ['PAYMENT_SUCCESSFUL', 'SUCCESS', 'BILL_FULFILLED', 'CREDIT_RECEIVED'].includes(statusData.data.status)) {
-            const data = statusData.data;
-            // Now record the payment exactly as the webhook would!
-            const billerBillID = data.billerBillID;
-            const amountPaid = (data.amountPaid?.value / 100) || (data.amount?.value / 100) || 0; 
-            const upiTransactionID = data.paymentLink?.platformBillID || data.platformBillID || `setu_poll_${Date.now()}`;
-            
-            let orderId = data.additionalInfo?.orderId || data.additionalInfo?.orderID;
-            if (!orderId && billerBillID) orderId = billerBillID.split('_')[0];
-            
-            if (orderId && amountPaid > 0) {
-                await processSuccessfulPayment(orderId, amountPaid, upiTransactionID, data.payerVpa || null, req);
-            }
+            await handleSetuPaymentSuccess(statusData.data, req);
         }
 
         res.json(statusData);
@@ -871,30 +954,7 @@ router.post(['/setu/notifications', '/setu/webhook', '/webhooks/setu'], express.
             );
 
             if (isSuccess) {
-                const data = event.data;
-                
-                // Allow nested objects
-                const paymentLinkData = data.paymentLink || data.bill || {};
-                
-                const billerBillID = data.billerBillID || data.paymentLinkID || paymentLinkData.billerBillID; // Try fallback IDs
-                const rawAmount = data.amountPaid?.value || data.amount?.value || data.amountPaid || data.amount;
-                const amountPaid = (rawAmount / 100) || 0; 
-                
-                const upiTransactionID = data.transactionId || data.platformBillID || paymentLinkData.platformBillID || data.bankReferenceNumber || `setu_${Date.now()}`;
-                const payerVpa = data.payerVpa || data.sourceAccount?.number || null;
-                
-                // Extract orderId from additionalInfo if available, else fallback to billerBillID/paymentLinkID parsing
-                let orderId = data.additionalInfo?.orderId || data.additionalInfo?.orderID || paymentLinkData.additionalInfo?.orderId || paymentLinkData.additionalInfo?.orderID;
-                if (!orderId && billerBillID) {
-                    orderId = billerBillID.split('_')[0];
-                }
-                
-                if (!orderId || amountPaid <= 0) {
-                    console.error("Could not determine valid orderId or amountPaid from webhook data:", data);
-                    continue;
-                }
-                
-                await processSuccessfulPayment(orderId, amountPaid, upiTransactionID, payerVpa, req);
+                await handleSetuPaymentSuccess(event.data, req);
             }
             }
     } catch (e) {

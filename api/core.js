@@ -210,9 +210,53 @@ router.get('/public/external-payment/:token', ensureDb, async (req, res) => {
         const [rows] = await connection.query('SELECT data FROM external_payments WHERE share_token = ? OR id = ?', [token, token]);
         connection.release();
         
-        const record = rows.length > 0 ? JSON.parse(rows[0].data) : null;
+        let record = rows.length > 0 ? JSON.parse(rows[0].data) : null;
         
         if (record) {
+            // If link is pending but has a platformBillID, perform live status check
+            if (record.status !== 'PAID' && record.platformBillID) {
+                try {
+                    const statusConn = await pool.getConnection();
+                    const [setuRows] = await statusConn.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
+                    if (setuRows.length > 0) {
+                        let config = setuRows[0].config;
+                        if (typeof config === 'string') config = typeof config === "string" ? JSON.parse(config) : config;
+                        if (config.enabled !== false && (config.clientId || config.clientID) && (config.secret || config.clientSecret)) {
+                            const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
+                            const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
+                            const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
+                            const { getSetuToken, processSuccessfulExternalPayment } = await import('./payments.js');
+                            const tokenVal = await getSetuToken(statusConn, config);
+                            const statusRes = await fetch(`${baseUrl}/payment-links/${record.platformBillID}`, {
+                                headers: {
+                                    'Authorization': `Bearer ${tokenVal}`,
+                                    'X-Setu-Product-Instance-ID': schemeId,
+                                    'x-product-instance-id': schemeId
+                                }
+                            });
+                            const statusText = await statusRes.text();
+                            if (statusText.trim().startsWith('{')) {
+                                const statusData = JSON.parse(statusText);
+                                if (statusData.success && statusData.data && ['PAYMENT_SUCCESSFUL', 'SUCCESS', 'BILL_FULFILLED', 'CREDIT_RECEIVED'].includes(statusData.data.status)) {
+                                    const amountPaid = (statusData.data.amountPaid?.value / 100) || (statusData.data.amount?.value / 100) || record.amount;
+                                    const upiTxnId = statusData.data.paymentLink?.platformBillID || statusData.data.platformBillID || record.platformBillID;
+                                    await processSuccessfulExternalPayment(record.id, amountPaid, upiTxnId, statusData.data.payerVpa || null, req);
+                                    
+                                    // Re-read updated record from database
+                                    const [updatedRows] = await statusConn.query('SELECT data FROM external_payments WHERE id = ?', [record.id]);
+                                    if (updatedRows.length > 0) {
+                                        record = JSON.parse(updatedRows[0].data);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    statusConn.release();
+                } catch (chkErr) {
+                    console.error("[Public External Payment] Auto status check error:", chkErr.message);
+                }
+            }
+
             await logDbActivity('LINK_OPENED', `Customer viewed External Payment Request ${record.id}`, { recordId: record.id, customer: record.customerName }, req);
             res.json({ success: true, record });
         } else {

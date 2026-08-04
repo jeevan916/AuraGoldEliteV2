@@ -27,6 +27,7 @@ export const ExternalPaymentLedger: React.FC = () => {
   // Loading & notification state
   const [isGeneratingSetu, setIsGeneratingSetu] = useState(false);
   const [isSendingWa, setIsSendingWa] = useState(false);
+  const [checkingStatusId, setCheckingStatusId] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -317,6 +318,30 @@ export const ExternalPaymentLedger: React.FC = () => {
     setManualTxnId('');
     setManualNote('');
     triggerNotification('success', `Recorded ₹${showManualPayModal.amount} payment for ${showManualPayModal.customerName}!`);
+  };
+
+  // Verify Setu Payment Status Live
+  const verifyStatus = async (record: ExternalPaymentRecord) => {
+    const billId = record.platformBillID || (record.pendingSetuPayments && record.pendingSetuPayments[0]?.platformBillID);
+    if (!billId) {
+      triggerNotification('info', 'Generating Setu payment link first...');
+      await handleGenerateSetuLink(record);
+      return;
+    }
+    setCheckingStatusId(record.id);
+    try {
+      const res = await fetch(`/api/setu/status/${billId}`);
+      const data = await res.json();
+      if (data.success && data.data && ['PAYMENT_SUCCESSFUL', 'SUCCESS', 'BILL_FULFILLED', 'CREDIT_RECEIVED'].includes(data.data.status)) {
+        triggerNotification('success', `Payment verified as PAID for ${record.customerName}!`);
+      } else {
+        triggerNotification('info', `Setu Status: ${data.data?.status || data.error || 'Payment pending on Setu'}`);
+      }
+    } catch (err: any) {
+      triggerNotification('error', `Status check failed: ${err.message}`);
+    } finally {
+      setCheckingStatusId(null);
+    }
   };
 
   // Cancel Request
@@ -616,14 +641,24 @@ export const ExternalPaymentLedger: React.FC = () => {
                         <div className="flex items-center justify-end gap-1.5">
                           {/* Send WhatsApp */}
                           {r.status === 'PENDING' && (
-                            <button
-                              onClick={() => dispatchWaLink(r)}
-                              disabled={isSendingWa}
-                              title="Dispatch WhatsApp Payment Link"
-                              className="p-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl transition-all border border-emerald-200 active:scale-95"
-                            >
-                              <MessageSquare size={14} />
-                            </button>
+                            <>
+                              <button
+                                onClick={() => verifyStatus(r)}
+                                disabled={checkingStatusId === r.id}
+                                title="Check / Verify Payment Status with Setu"
+                                className="p-2 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-xl transition-all border border-sky-200 active:scale-95 flex items-center gap-1 font-bold text-[11px]"
+                              >
+                                <RefreshCw size={14} className={checkingStatusId === r.id ? 'animate-spin' : ''} />
+                              </button>
+                              <button
+                                onClick={() => dispatchWaLink(r)}
+                                disabled={isSendingWa}
+                                title="Dispatch WhatsApp Payment Link"
+                                className="p-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl transition-all border border-emerald-200 active:scale-95"
+                              >
+                                <MessageSquare size={14} />
+                              </button>
+                            </>
                           )}
 
                           {/* Setu UPI QR */}

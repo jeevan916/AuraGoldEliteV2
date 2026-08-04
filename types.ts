@@ -298,6 +298,11 @@ export interface ExternalPaymentRecord {
   platformBillID?: string;
   shortLink?: string;
   upiIntentLink?: string;
+  pendingSetuPayments?: {
+    platformBillID: string;
+    amount: number;
+    createdAt: string;
+  }[];
   shareToken: string;
   notes?: string;
   rawSetuResponse?: any;
