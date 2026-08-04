@@ -280,19 +280,22 @@ export type RiskProfile = 'VIP' | 'REGULAR' | 'FORGETFUL' | 'HIGH_RISK';
 export type MetaCategory = 'UTILITY' | 'MARKETING' | 'AUTHENTICATION';
 export type AppTemplateGroup = 'PAYMENT_COLLECTION' | 'ORDER_STATUS' | 'MARKETING_PROMO' | 'GENERAL_SUPPORT' | 'SYSTEM_NOTIFICATIONS' | 'SETU_PAYMENT' | 'UNCATEGORIZED';
 
-export type ExternalPaymentStatus = 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+export type ExternalPaymentStatus = 'PENDING' | 'PARTIAL' | 'PAID' | 'EXPIRED' | 'CANCELLED';
 
 export interface ExternalPaymentRecord {
   id: string; // e.g. "EXT-PAY-1001"
   customerName: string;
   customerContact: string;
   amount: number;
+  amountPaid?: number;
+  remainingAmount?: number;
   description: string;
   referenceNote: string; // Reference tag e.g. "External payment request"
   status: ExternalPaymentStatus;
   createdAt: string;
   dueDate: string;
   paidAt?: string;
+  lastPaymentAt?: string;
   paymentMode?: 'SETU_UPI' | 'CASH' | 'BANK_TRANSFER' | 'POS' | 'OTHER';
   txnId?: string;
   platformBillID?: string;
@@ -302,6 +305,13 @@ export interface ExternalPaymentRecord {
     platformBillID: string;
     amount: number;
     createdAt: string;
+  }[];
+  partialPayments?: {
+    amount: number;
+    paidAt: string;
+    mode?: string;
+    txnId?: string;
+    payerVpa?: string;
   }[];
   shareToken: string;
   notes?: string;

@@ -238,7 +238,11 @@ router.get('/public/external-payment/:token', ensureDb, async (req, res) => {
                             if (statusText.trim().startsWith('{')) {
                                 const statusData = JSON.parse(statusText);
                                 if (statusData.success && statusData.data && ['PAYMENT_SUCCESSFUL', 'SUCCESS', 'BILL_FULFILLED', 'CREDIT_RECEIVED'].includes(statusData.data.status)) {
-                                    const amountPaid = (statusData.data.amountPaid?.value / 100) || (statusData.data.amount?.value / 100) || record.amount;
+                                    let rawAmt = statusData.data.amountPaid?.value || statusData.data.amount?.value || statusData.data.amountPaid || statusData.data.amount;
+                                    if (typeof rawAmt === 'number' && rawAmt > 1000) {
+                                        rawAmt = rawAmt / 100;
+                                    }
+                                    const amountPaid = Number(rawAmt) || (record.amount - (record.amountPaid || 0));
                                     const upiTxnId = statusData.data.paymentLink?.platformBillID || statusData.data.platformBillID || record.platformBillID;
                                     await processSuccessfulExternalPayment(record.id, amountPaid, upiTxnId, statusData.data.payerVpa || null, req);
                                     

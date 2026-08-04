@@ -21,8 +21,19 @@ export const ExternalPaymentLedger: React.FC = () => {
   const [showQrRawDebug, setShowQrRawDebug] = useState(false);
   const [showManualPayModal, setShowManualPayModal] = useState<ExternalPaymentRecord | null>(null);
   const [manualPayMethod, setManualPayMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'POS' | 'OTHER'>('CASH');
+  const [manualPayAmount, setManualPayAmount] = useState('');
   const [manualTxnId, setManualTxnId] = useState('');
   const [manualNote, setManualNote] = useState('');
+
+  const openManualPayModal = (r: ExternalPaymentRecord) => {
+    setShowManualPayModal(r);
+    const alreadyPaid = r.amountPaid || (r.status === 'PAID' ? r.amount : 0);
+    const remaining = Math.max(0, r.amount - alreadyPaid);
+    setManualPayAmount(remaining > 0 ? remaining.toString() : r.amount.toString());
+    setManualPayMethod('CASH');
+    setManualTxnId('');
+    setManualNote('');
+  };
   
   // Loading & notification state
   const [isGeneratingSetu, setIsGeneratingSetu] = useState(false);
@@ -296,28 +307,86 @@ export const ExternalPaymentLedger: React.FC = () => {
   };
 
   // Record Manual Offline Payment
-  const handleRecordManualPayment = (e: React.FormEvent) => {
+  const handleRecordManualPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showManualPayModal) return;
 
+    const totalRequested = showManualPayModal.amount;
+    const previousPaid = showManualPayModal.amountPaid || (showManualPayModal.status === 'PAID' ? totalRequested : 0);
+    const enteredAmount = Number(manualPayAmount) || Math.max(0, totalRequested - previousPaid);
+
+    if (enteredAmount <= 0) {
+      triggerNotification('error', 'Please enter a valid payment amount greater than 0.');
+      return;
+    }
+
+    const newTotalPaid = previousPaid + enteredAmount;
+    const remaining = Math.max(0, totalRequested - newTotalPaid);
+    const isFullyPaid = newTotalPaid >= (totalRequested - 0.5);
+    const newStatus = isFullyPaid ? 'PAID' : 'PARTIAL';
+    const now = new Date().toISOString();
+
+    const partialPayments = [
+      ...(showManualPayModal.partialPayments || []),
+      {
+        amount: enteredAmount,
+        paidAt: now,
+        mode: manualPayMethod,
+        txnId: manualTxnId || `MANUAL-${Date.now()}`
+      }
+    ];
+
     const updated: Partial<ExternalPaymentRecord> = {
-      status: 'PAID',
-      paidAt: new Date().toISOString(),
+      amountPaid: newTotalPaid,
+      remainingAmount: remaining,
+      status: newStatus,
+      paidAt: isFullyPaid ? now : showManualPayModal.paidAt,
+      lastPaymentAt: now,
       paymentMode: manualPayMethod,
       txnId: manualTxnId || `MANUAL-${Date.now()}`,
+      partialPayments,
       notes: manualNote ? `${showManualPayModal.notes || ''}\n${manualNote}`.trim() : showManualPayModal.notes,
-      history: [...(showManualPayModal.history || []), {
-        date: new Date().toISOString(),
-        action: 'MANUAL_PAYMENT_RECORDED',
-        details: `Recorded manual payment of ₹${showManualPayModal.amount} via ${manualPayMethod} (Txn: ${manualTxnId || 'N/A'}). Reference: External payment request`
-      }]
+      history: [
+        ...(showManualPayModal.history || []),
+        {
+          date: now,
+          action: isFullyPaid ? 'MANUAL_FULL_PAYMENT' : 'MANUAL_PARTIAL_PAYMENT',
+          details: `Recorded manual payment of ₹${enteredAmount.toLocaleString('en-IN')} via ${manualPayMethod} (Txn: ${manualTxnId || 'N/A'}). Total Paid: ₹${newTotalPaid.toLocaleString('en-IN')}/${totalRequested.toLocaleString('en-IN')}. Remaining Balance: ₹${remaining.toLocaleString('en-IN')}.`
+        }
+      ]
     };
 
     storageService.updateExternalPayment(showManualPayModal.id, updated);
+
+    if (showManualPayModal.customerContact) {
+      try {
+        await whatsappService.sendTemplateMessage(
+          showManualPayModal.customerContact,
+          'auragold_payment_receipt_store',
+          'en_US',
+          [
+            showManualPayModal.customerName || 'Customer',
+            Number(enteredAmount).toLocaleString('en-IN'),
+            manualPayMethod,
+            showManualPayModal.id,
+            Number(remaining).toLocaleString('en-IN')
+          ],
+          showManualPayModal.customerName || 'Customer',
+          undefined,
+          undefined,
+          'SYSTEM',
+          showManualPayModal.id
+        );
+      } catch (waErr: any) {
+        console.warn("Could not dispatch WhatsApp receipt for manual payment:", waErr);
+      }
+    }
+
     setShowManualPayModal(null);
     setManualTxnId('');
     setManualNote('');
-    triggerNotification('success', `Recorded ₹${showManualPayModal.amount} payment for ${showManualPayModal.customerName}!`);
+    setManualPayAmount('');
+    triggerNotification('success', `Recorded ₹${enteredAmount.toLocaleString('en-IN')} payment for ${showManualPayModal.customerName}! ${isFullyPaid ? 'Link fully settled.' : `Remaining: ₹${remaining.toLocaleString('en-IN')}`}`);
   };
 
   // Verify Setu Payment Status Live
@@ -592,7 +661,13 @@ export const ExternalPaymentLedger: React.FC = () => {
                       {/* Amount */}
                       <td className="py-4 px-6">
                         <div className="font-black text-slate-900 text-sm">₹{r.amount.toLocaleString('en-IN')}</div>
-                        <div className="text-[10px] text-slate-400 mt-0.5">Due: {r.dueDate}</div>
+                        {r.amountPaid && r.amountPaid > 0 && r.status !== 'PAID' ? (
+                          <div className="text-[10px] text-amber-700 font-bold mt-0.5">
+                            Bal: ₹{Math.max(0, r.amount - r.amountPaid).toLocaleString('en-IN')}
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-slate-400 mt-0.5">Due: {r.dueDate}</div>
+                        )}
                       </td>
 
                       {/* Purpose */}
@@ -623,6 +698,17 @@ export const ExternalPaymentLedger: React.FC = () => {
                           </div>
                         )}
 
+                        {r.status === 'PARTIAL' && (
+                          <div className="flex flex-col">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-300 rounded-full font-bold text-[10px] uppercase tracking-wider w-fit">
+                              <Clock size={12} className="text-amber-600" /> PARTIAL
+                            </span>
+                            <span className="text-[10px] text-amber-700 font-bold mt-1">
+                              ₹{(r.amountPaid || 0).toLocaleString('en-IN')} / ₹{r.amount.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                        )}
+
                         {r.status === 'PENDING' && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full font-bold text-[10px] uppercase tracking-wider">
                             <Clock size={12} className="animate-spin" /> PENDING
@@ -639,8 +725,8 @@ export const ExternalPaymentLedger: React.FC = () => {
                       {/* Actions */}
                       <td className="py-4 px-6 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {/* Send WhatsApp */}
-                          {r.status === 'PENDING' && (
+                          {/* Send WhatsApp & Check Status */}
+                          {(r.status === 'PENDING' || r.status === 'PARTIAL') && (
                             <>
                               <button
                                 onClick={() => verifyStatus(r)}
@@ -680,9 +766,9 @@ export const ExternalPaymentLedger: React.FC = () => {
                           </button>
 
                           {/* Record Offline Pay */}
-                          {r.status === 'PENDING' && (
+                          {(r.status === 'PENDING' || r.status === 'PARTIAL') && (
                             <button
-                              onClick={() => setShowManualPayModal(r)}
+                              onClick={() => openManualPayModal(r)}
                               title="Record Offline Payment (Cash/POS)"
                               className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-[11px] transition-all flex items-center gap-1 active:scale-95 shadow-sm"
                             >
@@ -1018,6 +1104,29 @@ export const ExternalPaymentLedger: React.FC = () => {
             <form onSubmit={handleRecordManualPayment} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
+                  Payment Amount Received (₹)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-2.5 text-xs font-bold text-slate-400">₹</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={Math.max(0, showManualPayModal.amount - (showManualPayModal.amountPaid || 0))}
+                    value={manualPayAmount}
+                    onChange={e => setManualPayAmount(e.target.value)}
+                    className="w-full pl-8 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                    required
+                  />
+                </div>
+                <div className="flex justify-between text-[11px] text-slate-500 mt-1 px-1 font-medium">
+                  <span>Total Bill: ₹{showManualPayModal.amount.toLocaleString('en-IN')}</span>
+                  <span>Paid: ₹{(showManualPayModal.amountPaid || 0).toLocaleString('en-IN')}</span>
+                  <span className="font-bold text-amber-700">Due: ₹{Math.max(0, showManualPayModal.amount - (showManualPayModal.amountPaid || 0)).toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
                   Payment Mode
                 </label>
                 <select
@@ -1139,22 +1248,42 @@ export const ExternalPaymentLedger: React.FC = () => {
                     <span className="font-mono text-slate-900">{selectedRecord.customerContact}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Amount</span>
-                    <span className="font-black text-emerald-600 text-sm">₹{selectedRecord.amount.toLocaleString('en-IN')}</span>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Total Bill</span>
+                    <span className="font-black text-slate-900 text-sm">₹{selectedRecord.amount.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Paid / Due</span>
+                    <span className="font-bold text-emerald-600">
+                      ₹{(selectedRecord.amountPaid || (selectedRecord.status === 'PAID' ? selectedRecord.amount : 0)).toLocaleString('en-IN')}
+                    </span>
+                    <span className="text-slate-400"> / </span>
+                    <span className="font-bold text-amber-700">
+                      ₹{Math.max(0, selectedRecord.amount - (selectedRecord.amountPaid || (selectedRecord.status === 'PAID' ? selectedRecord.amount : 0))).toLocaleString('en-IN')}
+                    </span>
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">Reference Tag</span>
                     <span className="font-bold text-amber-700">{selectedRecord.referenceNote}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Setu Bill ID</span>
-                    <span className="font-mono font-bold text-slate-900">{selectedRecord.platformBillID || 'N/A'}</span>
-                  </div>
-                  <div>
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">Status</span>
                     <span className="font-bold uppercase text-amber-600">{selectedRecord.status}</span>
                   </div>
                 </div>
+
+                {selectedRecord.partialPayments && selectedRecord.partialPayments.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">Installments & Received Payments ({selectedRecord.partialPayments.length})</h4>
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                      {selectedRecord.partialPayments.map((p, idx) => (
+                        <div key={idx} className="flex justify-between items-center p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-medium">
+                          <span className="text-slate-600">{new Date(p.paidAt).toLocaleString('en-IN')} ({p.mode || 'UPI'})</span>
+                          <span className="font-bold text-emerald-600">+₹{Number(p.amount).toLocaleString('en-IN')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">Activity History Log</h4>

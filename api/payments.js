@@ -1144,21 +1144,58 @@ async function processSuccessfulExternalPayment(externalId, amountPaid, upiTrans
         const record = JSON.parse(rows[0].data);
         if (record.status === 'PAID') return;
 
-        record.status = 'PAID';
-        record.paidAt = new Date().toISOString();
-        record.paymentMode = 'SETU_UPI';
-        record.txnId = upiTransactionID;
-        if (!record.history) record.history = [];
-        record.history.push({
-            date: new Date().toISOString(),
-            action: 'SETU_UPI_PAYMENT_SUCCESS',
-            details: `Received ₹${amountPaid} via Setu UPI (Ref: ${upiTransactionID}, Payer: ${payerVpa || 'UPI User'}). Reference: External payment request`
+        if (!record.partialPayments) record.partialPayments = [];
+
+        // Deduplicate transaction ID to prevent double processing
+        if (upiTransactionID && record.partialPayments.some(p => p.txnId === upiTransactionID)) {
+            console.log(`[External Payment] Transaction ${upiTransactionID} already processed for ${externalId}`);
+            return;
+        }
+
+        const numericAmountPaid = Number(amountPaid) || 0;
+        if (numericAmountPaid <= 0) return;
+
+        const now = new Date().toISOString();
+        record.partialPayments.push({
+            amount: numericAmountPaid,
+            paidAt: now,
+            mode: 'SETU_UPI',
+            txnId: upiTransactionID,
+            payerVpa: payerVpa || null
         });
 
-        await connection.query('UPDATE external_payments SET status = ?, data = ?, updated_at = ? WHERE id = ?', ['PAID', JSON.stringify(record), Date.now(), externalId]);
+        // Calculate total accumulated paid amount
+        const totalPaidSoFar = record.partialPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+        record.amountPaid = totalPaidSoFar;
+
+        const totalRequested = Number(record.amount) || 0;
+        const remaining = Math.max(0, totalRequested - totalPaidSoFar);
+        record.remainingAmount = remaining;
+
+        // Check if fully paid (allowing 0.5 INR rounding leeway)
+        const isFullyPaid = totalPaidSoFar >= (totalRequested - 0.5);
+
+        if (isFullyPaid) {
+            record.status = 'PAID';
+            record.paidAt = now;
+            record.paymentMode = 'SETU_UPI';
+            record.txnId = upiTransactionID;
+        } else {
+            record.status = 'PARTIAL';
+            record.lastPaymentAt = now;
+        }
+
+        if (!record.history) record.history = [];
+        record.history.push({
+            date: now,
+            action: isFullyPaid ? 'SETU_UPI_PAYMENT_SUCCESS' : 'SETU_UPI_PARTIAL_PAYMENT',
+            details: `Received ₹${numericAmountPaid.toLocaleString('en-IN')} via Setu UPI (Ref: ${upiTransactionID}, Payer: ${payerVpa || 'UPI User'}). Total Paid: ₹${totalPaidSoFar.toLocaleString('en-IN')}/${totalRequested.toLocaleString('en-IN')}. Remaining Balance: ₹${remaining.toLocaleString('en-IN')}.`
+        });
+
+        await connection.query('UPDATE external_payments SET status = ?, data = ?, updated_at = ? WHERE id = ?', [record.status, JSON.stringify(record), Date.now(), externalId]);
         await journalTransaction('EXTERNAL_PAYMENT', externalId, 'PAYMENT_RECEIVE', record, connection);
 
-        console.log(`External Payment Request ${externalId} updated with Setu payment ${upiTransactionID}`);
+        console.log(`External Payment Request ${externalId} updated with payment ₹${numericAmountPaid} (Status: ${record.status})`);
         
         if (req && req.io) {
             req.io.emit('external_payments_sync', [record]);
@@ -1171,15 +1208,45 @@ async function processSuccessfulExternalPayment(externalId, amountPaid, upiTrans
             
             if (phoneId && token && record.customerContact) {
                 const { sendWhatsAppMessage } = await import('./whatsapp.js');
-                await sendWhatsAppMessage({
-                    to: record.customerContact,
-                    message: `Dear ${record.customerName}, thank you for your payment! We have received ₹${amountPaid} via Setu UPI for your External Payment Request (Ref: ${record.referenceNote || 'External payment request'}). Transaction ID: ${upiTransactionID}.`,
-                    customerName: record.customerName,
-                    phoneId,
-                    token,
-                    sentBy: 'SYSTEM',
-                    metadata: { type: 'EXTERNAL_PAYMENT_RECEIPT', externalId }
-                });
+                let resData = null;
+                try {
+                    resData = await sendWhatsAppMessage({
+                        to: record.customerContact,
+                        templateName: 'auragold_payment_success_remote',
+                        language: 'en_US',
+                        components: [{ type: "body", parameters: [
+                            { type: "text", text: record.customerName || "Customer" },
+                            { type: "text", text: Number(numericAmountPaid).toLocaleString('en-IN') },
+                            { type: "text", text: "UPI" },
+                            { type: "text", text: record.id },
+                            { type: "text", text: Number(remaining).toLocaleString('en-IN') }
+                        ]}],
+                        customerName: record.customerName,
+                        phoneId,
+                        token,
+                        sentBy: 'SYSTEM',
+                        orderId: record.id,
+                        metadata: { type: 'EXTERNAL_PAYMENT_RECEIPT', externalId }
+                    });
+                } catch (tmplErr) {
+                    console.warn("Template send failed for External Payment, attempting direct text fallback:", tmplErr.message);
+                    resData = await sendWhatsAppMessage({
+                        to: record.customerContact,
+                        message: isFullyPaid
+                            ? `Dear ${record.customerName || 'Customer'}, thank you! We have received final payment of ₹${Number(numericAmountPaid).toLocaleString('en-IN')} via Setu UPI. Payment Request ${record.id} is now FULLY PAID (Total: ₹${Number(totalPaidSoFar).toLocaleString('en-IN')}).`
+                            : `Dear ${record.customerName || 'Customer'}, thank you! We received a partial payment of ₹${Number(numericAmountPaid).toLocaleString('en-IN')} via Setu UPI for Payment Request ${record.id}. Total paid so far: ₹${Number(totalPaidSoFar).toLocaleString('en-IN')}. Remaining Balance: ₹${Number(remaining).toLocaleString('en-IN')}.`,
+                        customerName: record.customerName,
+                        phoneId,
+                        token,
+                        sentBy: 'SYSTEM',
+                        orderId: record.id,
+                        metadata: { type: 'EXTERNAL_PAYMENT_RECEIPT', externalId }
+                    });
+                }
+
+                if (resData && resData.logEntry && req && req.io) {
+                    req.io.emit('whatsapp_update', resData.logEntry);
+                }
             }
         } catch (waErr) {
             console.error("WhatsApp Receipt error for External Payment:", waErr);
