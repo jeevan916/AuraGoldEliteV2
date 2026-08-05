@@ -277,6 +277,8 @@ export const ExternalPaymentLedger: React.FC = () => {
     try {
       const validPayLink = getValidPayLink(record);
 
+      const orderRef = record.referenceNote || record.id || record.description || 'N/A';
+
       const res = await whatsappService.sendTemplateMessage(
         record.customerContact,
         'auragold_external_payment_request',
@@ -284,11 +286,10 @@ export const ExternalPaymentLedger: React.FC = () => {
         [
           record.customerName,
           record.amount.toLocaleString('en-IN'),
-          record.description || 'Jewelry Purchase',
-          validPayLink
+          orderRef
         ],
         record.customerName,
-        validPayLink,
+        record.shareToken || validPayLink,
         undefined,
         'ADMIN'
       );

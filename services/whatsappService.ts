@@ -335,6 +335,9 @@ export const whatsappService = {
             if (processedVar.includes('/setu/pay/')) {
                 const parts = processedVar.split('/setu/pay/');
                 processedVar = parts[parts.length - 1];
+            } else if (processedVar.includes('?token=')) {
+                const parts = processedVar.split('?token=');
+                processedVar = parts[parts.length - 1];
             } else if (processedVar.startsWith('http://') || processedVar.startsWith('https://') || processedVar.startsWith('upi://')) {
                 try {
                     processedVar = btoa(unescape(encodeURIComponent(processedVar))).replace(/\+/g, '-').replace(/\//g, '_');
