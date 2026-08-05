@@ -358,6 +358,20 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
     variables: ['customer_name', 'surcharge_amount', 'order_id', 'new_base_rate', 'token_link'],
     content: "Good news for {{1}}: The current market gold rate has stabilized and fallen back within your protection limit for Order {{3}}. The previous market adjustment surcharge of ₹{{2}} has been removed. Your base rate is restored to ₹{{4}}/g. You can review your updated order details securely here: https://order.auragoldelite.com/?token={{5}}",
     examples: ["Rahul", "1500", "ORD-77", "6800", "Lmn456"]
+  },
+  // 15) External Payment Link Request (Part / Full Payment)
+  {
+    name: 'auragold_external_payment_request',
+    description: 'Sent for external payment link requests. Supports full or flexible part payments.',
+    category: 'UTILITY',
+    appGroup: 'SETU_PAYMENT',
+    variables: ['customer_name', 'amount', 'purpose', 'payment_link'],
+    content: "Dear {{1}}, a payment request of ₹{{2}} has been created for Your order No {{3}} at Sanghavi Jewellers. You can pay securely in full or in flexible part payments via UPI.",
+    examples: ["Rajesh Kumar", "25,000", "Gold Jewelry Purchase", "ext_1785901329447_qgxjd"],
+    structure: [
+        { type: "BODY", text: "Dear {{1}}, a payment request of ₹{{2}} has been created for Your order No {{3}} at Sanghavi Jewellers. You can pay securely in full or in flexible part payments via UPI." },
+        { type: "BUTTONS", buttons: [{ type: "URL", text: "Pay Now", url: "https://order.auragoldelite.com/?token={{1}}" }] }
+    ]
   }
 ];
 

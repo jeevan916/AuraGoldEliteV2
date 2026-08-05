@@ -260,7 +260,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
       let bodyVars = [...templateParams];
 
       // If the template has a dynamic URL button, the last variable is often meant for the button
-      if (coreDef?.name === 'auragold_setu_payment' || coreDef?.name === 'auragold_finished_item_showcase' || coreDef?.name === 'auragold_order_agreement') {
+      if (coreDef?.name === 'auragold_setu_payment' || coreDef?.name === 'auragold_external_payment_request' || coreDef?.name === 'auragold_finished_item_showcase' || coreDef?.name === 'auragold_order_agreement') {
           buttonVar = bodyVars.pop();
       }
 

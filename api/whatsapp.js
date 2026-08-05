@@ -21,7 +21,8 @@ const SYSTEM_TEMPLATES = {
   auragold_payment_overdue: "Dear {{1}}, we noticed your payment of {{2}} is overdue. To maintain your gold rate protection, please clear the dues via: {{3}} today.",
   auragold_payment_overdue_alert: "Dear {{1}}, your payment of {{2}} for Order {{3}} is overdue. Please clear your dues immediately to maintain your gold rate protection.",
   auragold_urgent_lapse: "URGENT {{1}}: Your Gold Rate Protection for order {{2}} expires in 24 hours. Pay {{3}} immediately to save your booked rate: {{4}}",
-  auragold_rate_adjustment_liability: "URGENT notice for {{1}}: Due to a missed payment milestone, your rate protection for Order {{3}} has lapsed. A market adjustment surcharge of ₹{{2}} has been applied. The new base rate is now ₹{{4}}/g. Please review and accept the new terms here: https://order.auragoldelite.com/?token={{5}}"
+  auragold_rate_adjustment_liability: "URGENT notice for {{1}}: Due to a missed payment milestone, your rate protection for Order {{3}} has lapsed. A market adjustment surcharge of ₹{{2}} has been applied. The new base rate is now ₹{{4}}/g. Please review and accept the new terms here: https://order.auragoldelite.com/?token={{5}}",
+  auragold_external_payment_request: "Dear {{1}}, a payment request of ₹{{2}} has been created for Your order No {{3}} at Sanghavi Jewellers. You can pay securely in full or in flexible part payments via UPI."
 };
 
 function compileTemplateMessage(templateName, components) {
