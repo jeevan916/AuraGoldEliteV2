@@ -31,6 +31,8 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
           const paidSoFar = data.record.amountPaid || (data.record.status === 'PAID' ? totalAmt : 0);
           if (data.record.status === 'PAID' || paidSoFar >= totalAmt - 0.5) {
             setPaid(true);
+          } else {
+            setPaid(false);
           }
         } else {
           setError(data.error || "Invalid or Expired Payment Link");

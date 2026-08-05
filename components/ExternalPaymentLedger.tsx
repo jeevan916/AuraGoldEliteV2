@@ -210,13 +210,17 @@ export const ExternalPaymentLedger: React.FC = () => {
     const shareToken = `ext_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const newId = `EXT-${Math.floor(1000 + Math.random() * 9000)}`;
 
+    const finalRefNote = formData.referenceNote.trim() && formData.referenceNote.trim().toLowerCase() !== 'external payment request'
+      ? formData.referenceNote.trim()
+      : newId;
+
     const newRecord: ExternalPaymentRecord = {
       id: newId,
       customerName: formData.customerName.trim(),
       customerContact: formData.customerContact.trim().replace(/[^0-9]/g, ''),
       amount: Number(formData.amount),
       description: formData.description.trim() || 'Offline Sale / Repair Payment',
-      referenceNote: formData.referenceNote.trim() || 'External payment request',
+      referenceNote: finalRefNote,
       status: 'PENDING',
       createdAt: new Date().toISOString(),
       dueDate: formData.dueDate,
@@ -224,7 +228,7 @@ export const ExternalPaymentLedger: React.FC = () => {
       history: [{
         date: new Date().toISOString(),
         action: 'REQUEST_CREATED',
-        details: `External Payment Request generated for ₹${formData.amount}. Reference: ${formData.referenceNote}`
+        details: `External Payment Request generated for ₹${formData.amount}. Reference: ${finalRefNote}`
       }]
     };
 
@@ -245,7 +249,7 @@ export const ExternalPaymentLedger: React.FC = () => {
       customerContact: '',
       amount: '',
       description: '',
-      referenceNote: 'External payment request',
+      referenceNote: '',
       dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       dispatchWaImmediately: true
     });
@@ -277,7 +281,9 @@ export const ExternalPaymentLedger: React.FC = () => {
     try {
       const validPayLink = getValidPayLink(record);
 
-      const orderRef = record.referenceNote || record.id || record.description || 'N/A';
+      const orderRef = (record.referenceNote && record.referenceNote.trim() && record.referenceNote.trim().toLowerCase() !== 'external payment request')
+        ? record.referenceNote.trim()
+        : (record.id || 'N/A');
 
       const res = await whatsappService.sendTemplateMessage(
         record.customerContact,
@@ -921,16 +927,16 @@ export const ExternalPaymentLedger: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-                  Reference Note Tag
+                  Reference / Order No Tag
                 </label>
                 <input
                   type="text"
+                  placeholder="e.g. ORD-101, Bill #502, or leave blank"
                   value={formData.referenceNote}
                   onChange={e => setFormData({ ...formData, referenceNote: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-amber-50/50 border border-amber-200 rounded-2xl text-xs font-semibold text-amber-900 focus:outline-none"
-                  readOnly
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                 />
-                <p className="text-[10px] text-slate-400 mt-1">This reference tag distinguishes non-Auragold offline payments across the ledger.</p>
+                <p className="text-[10px] text-slate-400 mt-1">If left blank, request ID (e.g. EXT-1234) will automatically be used in WhatsApp message.</p>
               </div>
 
               <div className="pt-2">

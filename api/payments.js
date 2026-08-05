@@ -335,6 +335,28 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
 });
 
 // Setu Status Polling
+// Helper to safely extract amount in INR from Setu API responses
+function extractSetuAmount(data) {
+    if (!data) return 0;
+    if (data.amountPaid?.value !== undefined) {
+        return Number(data.amountPaid.value) / 100;
+    }
+    if (data.amount?.value !== undefined) {
+        return Number(data.amount.value) / 100;
+    }
+    if (data.paymentLink?.amount?.value !== undefined) {
+        return Number(data.paymentLink.amount.value) / 100;
+    }
+    if (typeof data.amountPaid === 'object' && data.amountPaid !== null && data.amountPaid.value !== undefined) {
+        return Number(data.amountPaid.value) / 100;
+    }
+    if (typeof data.amount === 'object' && data.amount !== null && data.amount.value !== undefined) {
+        return Number(data.amount.value) / 100;
+    }
+    let raw = data.amountPaid !== undefined ? data.amountPaid : data.amount;
+    return Number(raw) || 0;
+}
+
 // Centralized helper to process successful Setu payments for either External Payments or Orders
 async function handleSetuPaymentSuccess(data, req) {
     if (!data) return;
@@ -342,11 +364,7 @@ async function handleSetuPaymentSuccess(data, req) {
     const billerBillID = data.billerBillID || data.paymentLinkID || paymentLinkData.billerBillID;
     const platformBillID = data.platformBillID || paymentLinkData.platformBillID || data.transactionId;
     
-    let rawAmount = data.amountPaid?.value || data.amount?.value || data.amountPaid || data.amount;
-    if (typeof rawAmount === 'number' && rawAmount > 1000) {
-        rawAmount = rawAmount / 100;
-    }
-    const amountPaid = Number(rawAmount) || 0;
+    const amountPaid = extractSetuAmount(data);
     const upiTransactionID = data.transactionId || data.platformBillID || paymentLinkData.platformBillID || data.bankReferenceNumber || `setu_${Date.now()}`;
     const payerVpa = data.payerVpa || data.sourceAccount?.number || null;
 
