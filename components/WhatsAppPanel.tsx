@@ -3,12 +3,13 @@ import {
   MessageSquare, Check, CheckCircle2, Clock, AlertCircle, 
   Search, Send, Smartphone, User, Paperclip, X,
   FileText, Plus, RefreshCw, Zap, Lock, Sparkles, BrainCircuit,
-  ArrowLeft, Edit2
+  ArrowLeft, Edit2, Info
 } from 'lucide-react';
 import { WhatsAppLogEntry, MessageStatus, WhatsAppTemplate, Customer, AiChatInsight } from '../types';
 import { INITIAL_TEMPLATES, REQUIRED_SYSTEM_TEMPLATES } from '../constants';
 import { whatsappService } from '../services/whatsappService';
 import { geminiService } from '../services/geminiService';
+import { MetaRawResponseModal } from './MetaRawResponseModal';
 
 interface WhatsAppPanelProps {
   logs: WhatsAppLogEntry[];
@@ -42,6 +43,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
   const [editText, setEditText] = useState('');
   const [editError, setEditError] = useState('');
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const [rawModalLog, setRawModalLog] = useState<WhatsAppLogEntry | null>(null);
 
   const handleStartEdit = (log: WhatsAppLogEntry) => {
     setEditingLog(log);
@@ -285,11 +287,26 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
       setIsSending(false);
   };
 
-  const StatusIcon = ({ status }: { status: MessageStatus }) => {
+  const StatusIcon = ({ status, log }: { status: MessageStatus; log?: WhatsAppLogEntry }) => {
     switch (status) {
       case 'READ': return <div className="flex items-center"><Check size={13} className="text-sky-500" /><Check size={13} className="text-sky-500 -ml-2" /></div>;
       case 'DELIVERED': return <div className="flex items-center"><Check size={13} className="text-slate-400" /><Check size={13} className="text-slate-400 -ml-2" /></div>;
       case 'SENT': return <Check size={13} className="text-slate-400" />;
+      case 'FAILED': return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (log) setRawModalLog(log);
+          }}
+          className="inline-flex items-center gap-1 bg-rose-50 text-rose-600 border border-rose-200 px-1.5 py-0.5 rounded text-[10px] font-black uppercase hover:bg-rose-100 transition-colors cursor-pointer shadow-2xs"
+          title="Click to view Meta API Raw Response JSON"
+        >
+          <AlertCircle size={11} className="text-rose-600" />
+          <span>Failed</span>
+          <Info size={11} className="text-rose-500 ml-0.5" />
+        </button>
+      );
       default: return <Clock size={12} className="text-slate-300" />;
     }
   };
@@ -327,7 +344,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
                     </div>
                     <div className="flex justify-between items-center">
                         <p className="text-xs text-slate-500 truncate w-40">{c.messages.length > 0 ? c.lastMessage.message : 'No messages yet'}</p>
-                        {c.messages.length > 0 && c.lastMessage.direction === 'outbound' && <StatusIcon status={c.lastMessage.status} />}
+                        {c.messages.length > 0 && c.lastMessage.direction === 'outbound' && <StatusIcon status={c.lastMessage.status} log={c.lastMessage} />}
                     </div>
                 </div>
             ))}
@@ -399,7 +416,7 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
                                             </span>
                                         )}
                                         <span className="text-[10px] text-slate-400">{new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                                        {msg.direction === 'outbound' && <StatusIcon status={msg.status} />}
+                                        {msg.direction === 'outbound' && <StatusIcon status={msg.status} log={msg} />}
                                     </div>
                                 </div>
                             </div>
@@ -639,6 +656,13 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {rawModalLog && (
+        <MetaRawResponseModal 
+          log={rawModalLog} 
+          onClose={() => setRawModalLog(null)} 
+        />
       )}
     </div>
   );

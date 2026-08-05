@@ -2,10 +2,11 @@ import React, { useState, useMemo } from 'react';
 import { 
   Search, Filter, Smartphone, Calendar, CheckCircle2, 
   Clock, AlertCircle, MessageCircle, ArrowDownLeft, ArrowUpRight, 
-  ExternalLink, FileText, Check, User, Edit2, X
+  ExternalLink, FileText, Check, User, Edit2, X, Info
 } from 'lucide-react';
 import { WhatsAppLogEntry, MessageStatus } from '../types';
 import { whatsappService } from '../services/whatsappService';
+import { MetaRawResponseModal } from './MetaRawResponseModal';
 
 interface WhatsAppLogsProps {
   logs: WhatsAppLogEntry[];
@@ -22,6 +23,7 @@ const WhatsAppLogs: React.FC<WhatsAppLogsProps> = ({ logs, onViewChat, onAddLog 
   const [editText, setEditText] = useState('');
   const [editError, setEditError] = useState('');
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const [rawModalLog, setRawModalLog] = useState<WhatsAppLogEntry | null>(null);
 
   const handleStartEdit = (log: WhatsAppLogEntry) => {
     setEditingLog(log);
@@ -72,7 +74,7 @@ const WhatsAppLogs: React.FC<WhatsAppLogsProps> = ({ logs, onViewChat, onAddLog 
     }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [logs, search, typeFilter, statusFilter]);
 
-  const StatusBadge = ({ status }: { status: MessageStatus }) => {
+  const StatusBadge = ({ status, log }: { status: MessageStatus; log?: WhatsAppLogEntry }) => {
     switch (status) {
       case 'READ':
         return <span className="bg-blue-50 text-blue-600 px-2 py-1 rounded-md text-[10px] font-black flex items-center gap-1 uppercase border border-blue-100">
@@ -87,9 +89,18 @@ const WhatsAppLogs: React.FC<WhatsAppLogsProps> = ({ logs, onViewChat, onAddLog 
           <Check size={10} /> Sent
         </span>;
       case 'FAILED':
-        return <span className="bg-rose-50 text-rose-600 px-2 py-1 rounded-md text-[10px] font-black flex items-center gap-1 uppercase border border-rose-100">
-          <AlertCircle size={10} /> Failed
-        </span>;
+        return <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            if (log) setRawModalLog(log);
+          }}
+          className="bg-rose-50 text-rose-600 hover:bg-rose-100 hover:border-rose-300 px-2.5 py-1 rounded-md text-[10px] font-black flex items-center gap-1.5 uppercase border border-rose-200 transition-all cursor-pointer shadow-xs group/failed"
+          title="Click to view raw JSON Meta response"
+        >
+          <AlertCircle size={10} className="text-rose-600" /> 
+          <span>Failed</span>
+          <Info size={10} className="text-rose-500 opacity-80 group-hover/failed:scale-125 transition-transform ml-0.5" />
+        </button>;
       default:
         return <span className="bg-amber-50 text-amber-600 px-2 py-1 rounded-md text-[10px] font-black flex items-center gap-1 uppercase border border-amber-100">
           <Clock size={10} /> {status}
@@ -236,10 +247,19 @@ const WhatsAppLogs: React.FC<WhatsAppLogsProps> = ({ logs, onViewChat, onAddLog 
                                 </p>
                             </td>
                             <td className="px-8 py-6">
-                                <StatusBadge status={log.status} />
+                                <StatusBadge status={log.status} log={log} />
                             </td>
                             <td className="px-8 py-6 text-right">
                                 <div className="flex items-center justify-end gap-2">
+                                    {log.status === 'FAILED' && (
+                                        <button 
+                                            onClick={() => setRawModalLog(log)}
+                                            className="p-2.5 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl hover:bg-rose-100 hover:border-rose-300 transition-all shadow-sm group-hover:scale-110 flex items-center gap-1 cursor-pointer"
+                                            title="View Complete Raw Meta API Response JSON"
+                                        >
+                                            <Info size={16} />
+                                        </button>
+                                    )}
                                     {log.direction === 'outbound' && (
                                         <button 
                                             onClick={() => handleStartEdit(log)}
@@ -346,6 +366,13 @@ const WhatsAppLogs: React.FC<WhatsAppLogsProps> = ({ logs, onViewChat, onAddLog 
             </div>
           </div>
         </div>
+      )}
+
+      {rawModalLog && (
+        <MetaRawResponseModal 
+          log={rawModalLog} 
+          onClose={() => setRawModalLog(null)} 
+        />
       )}
     </div>
   );

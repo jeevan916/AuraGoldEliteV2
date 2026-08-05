@@ -118,7 +118,34 @@ export async function sendWhatsAppMessage({ to, message, templateName, language,
         
         if (!r.ok || data.error) {
              console.error("Meta Send Error:", JSON.stringify(data.error));
-             throw new Error(data.error?.message || "Meta API Error");
+             const pool = getPool();
+             const connection = await pool.getConnection();
+             const compiledMsg = templateName ? compileTemplateMessage(templateName, components) : message;
+             const failedId = "failed_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+             const failedLog = { 
+                 id: failedId, 
+                 customerName: customerName || "Customer", 
+                 phoneNumber: normalizePhone(to), 
+                 message: compiledMsg || message || "Failed Message", 
+                 status: 'FAILED', 
+                 timestamp: new Date().toISOString(), 
+                 direction: 'outbound', 
+                 type: templateName ? 'TEMPLATE' : 'CUSTOM', 
+                 sentBy, 
+                 orderId, 
+                 templateName, 
+                 components,
+                 metaError: data.error || data,
+                 rawResponse: data,
+                 ...metadata 
+             };
+             await connection.query('INSERT INTO whatsapp_logs (id, phone, order_id, direction, timestamp, data) VALUES (?, ?, ?, ?, ?, ?)', [failedLog.id, failedLog.phoneNumber, orderId || null, 'outbound', new Date(), JSON.stringify(failedLog)]);
+             connection.release();
+
+             const err = new Error(data.error?.message || "Meta API Error");
+             err.raw = data;
+             err.logEntry = failedLog;
+             throw err;
         }
 
         let returnLog = null;
@@ -227,6 +254,10 @@ router.post('/webhook', ensureDb, async (req, res) => {
             if (rows.length > 0) {
                 let data = JSON.parse(rows[0].data);
                 data.status = statusUpdate.status.toUpperCase();
+                if (statusUpdate.errors) {
+                    data.metaError = statusUpdate.errors;
+                }
+                data.rawResponse = statusUpdate;
                 
                 // On-the-fly name resolution before save/emit
                 data = await resolveContactNames(data);
@@ -488,7 +519,10 @@ router.post('/send', ensureDb, async (req, res) => {
         
         res.status(200).json(result);
     } catch (e) {
-        res.status(400).json({ success: false, error: e.message });
+        if (e.logEntry && req.io) {
+            req.io.emit('whatsapp_update', e.logEntry);
+        }
+        res.status(400).json({ success: false, error: e.message, raw: e.raw || e.logEntry?.rawResponse || e, logEntry: e.logEntry });
     }
 });
 

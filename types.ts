@@ -200,6 +200,8 @@ export interface WhatsAppLogEntry {
   orderId?: string;
   isEdited?: boolean;
   editedAt?: string;
+  metaError?: any;
+  rawResponse?: any;
 }
 
 export type CollectionTone = 'POLITE' | 'FIRM' | 'URGENT' | 'ENCOURAGING';

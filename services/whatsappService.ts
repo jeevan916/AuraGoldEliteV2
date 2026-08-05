@@ -378,7 +378,33 @@ export const whatsappService = {
 
         let data = await response.json();
         
-        // --- FALLBACK 1: Language Retry (e.g., en_US <-> en) on #132001 error ---
+        // --- FALLBACK 1: Parameter Count Mismatch (#131009) or Button Parameter Error ---
+        const isParamErr = (err: any) => {
+            const str = typeof err === 'string' ? err : JSON.stringify(err || {});
+            return str.includes('131009') || str.includes('parameter') || str.includes('does not match') || str.includes('mismatch') || str.includes('expected 0');
+        };
+
+        if (!data.success && isParamErr(data.error || data.raw)) {
+            console.warn(`[WhatsApp] Template ${safeTemplateName} returned parameter mismatch error (#131009). Retrying without button component...`);
+            const noButtonComponents = components.filter((c: any) => c.type !== 'button');
+            const retryPayload = { ...payload, components: noButtonComponents };
+            
+            const retryResponse = await fetch(`${API_BASE}/api/whatsapp/send`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'x-phone-id': settings.whatsappPhoneNumberId,
+                    'x-auth-token': token
+                },
+                body: JSON.stringify(retryPayload)
+            });
+            const retryData = await retryResponse.json();
+            if (retryData.success) {
+                data = retryData;
+            }
+        }
+
+        // --- FALLBACK 2: Language Retry (e.g., en_US <-> en) on #132001 error ---
         const isTranslationErr = (err: any) => {
             const str = typeof err === 'string' ? err : JSON.stringify(err || {});
             return str.includes('132001') || str.includes('does not exist in the translation');
@@ -401,6 +427,21 @@ export const whatsappService = {
             const fallbackData = await fallbackResponse.json();
             if (fallbackData.success) {
                 data = fallbackData;
+            } else if (isParamErr(fallbackData.error || fallbackData.raw)) {
+                const noButtonPayload = { ...fallbackPayload, components: components.filter((c: any) => c.type !== 'button') };
+                const retryResp = await fetch(`${API_BASE}/api/whatsapp/send`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'x-phone-id': settings.whatsappPhoneNumberId,
+                        'x-auth-token': token
+                    },
+                    body: JSON.stringify(noButtonPayload)
+                });
+                const retryData = await retryResp.json();
+                if (retryData.success) {
+                    data = retryData;
+                }
             }
         }
 
