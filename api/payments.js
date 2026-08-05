@@ -1444,5 +1444,5 @@ export function startSetuPoller(io) {
     }, 60 * 1000);
 }
 
-export { processSuccessfulPayment, processSuccessfulExternalPayment };
+export { processSuccessfulPayment, processSuccessfulExternalPayment, getSetuToken };
 export default router;
