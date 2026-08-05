@@ -134,12 +134,16 @@ router.post('/templates', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
-        for (const tpl of req.body.templates) {
-            await connection.query(
-                `INSERT INTO templates (id, name, category, data) VALUES (?, ?, ?, ?) 
-                 ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), data=VALUES(data)`,
-                [tpl.id, tpl.name, tpl.category || 'UNCATEGORIZED', JSON.stringify(tpl)]
-            );
+        // Clear old templates and insert current active set
+        await connection.query('DELETE FROM templates');
+        if (Array.isArray(req.body.templates)) {
+            for (const tpl of req.body.templates) {
+                await connection.query(
+                    `INSERT INTO templates (id, name, category, data) VALUES (?, ?, ?, ?) 
+                     ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), data=VALUES(data)`,
+                    [tpl.id, tpl.name, tpl.category || 'UNCATEGORIZED', JSON.stringify(tpl)]
+                );
+            }
         }
         connection.release();
         res.json({ success: true });

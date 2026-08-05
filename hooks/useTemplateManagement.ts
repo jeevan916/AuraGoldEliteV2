@@ -129,19 +129,23 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
                               disparityReason: hasDisparity ? "Local content differs from Meta" : undefined
                           };
                       } else {
-                          // MATCH NOT FOUND: Check if it *should* be on Meta
-                          if (localTpl.source === 'META' || localTpl.id.startsWith('sys-')) {
-                              // It was marked as META but Meta doesn't have it.
+                          // MATCH NOT FOUND: Check if it should be purged or flagged
+                          if (localTpl.source === 'META' && !localTpl.id.startsWith('sys-')) {
+                              // Template from previous WABA ID or deleted from Meta -> Purge it from state
+                              return null;
+                          }
+                          if (localTpl.id.startsWith('sys-')) {
                               return {
                                   ...localTpl,
                                   status: 'MISSING', 
-                                  rejectionReason: 'Template not found in Meta response. Likely deleted or failed creation.',
+                                  rejectionReason: 'System template not found on current Meta WABA ID. Re-sync system templates to register on this WABA.',
                               };
                           }
                           // If it's a local draft, leave it alone
                           return localTpl;
                       }
-                  });
+                  })
+                  .filter(Boolean) as WhatsAppTemplate[];
 
               // 3. Add any NEW templates found on Meta that weren't in local
               const newFromMeta: WhatsAppTemplate[] = [];

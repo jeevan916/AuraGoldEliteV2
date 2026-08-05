@@ -235,12 +235,9 @@ export const ExternalPaymentLedger: React.FC = () => {
     // Save initial record to storage
     storageService.addExternalPayment(newRecord);
 
-    // Generate Setu UPI link with raw response and debug log capture
-    const updatedRecord = await handleGenerateSetuLink(newRecord);
-
-    // Optionally dispatch WhatsApp Payment Link
+    // Optionally dispatch WhatsApp Payment Link (sends payment landing page URL)
     if (formData.dispatchWaImmediately) {
-      dispatchWaLink(updatedRecord || newRecord);
+      dispatchWaLink(newRecord);
     }
 
     setShowCreateModal(false);
@@ -256,8 +253,11 @@ export const ExternalPaymentLedger: React.FC = () => {
     triggerNotification('success', `External Payment Request ${newRecord.id} created successfully!`);
   };
 
-  // Helper to determine valid Setu UPI payment link or fallback UPI link
+  // Helper to determine valid payment page link or fallback
   const getValidPayLink = (record: ExternalPaymentRecord) => {
+    if (record.shareToken) {
+      return `${window.location.origin}/?token=${record.shareToken}`;
+    }
     if (record.shortLink && (record.shortLink.startsWith('http://') || record.shortLink.startsWith('https://')) && !record.shortLink.includes('token=')) {
       return record.shortLink;
     }

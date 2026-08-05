@@ -294,8 +294,26 @@ router.get('/logs/poll', ensureDb, async (req, res) => {
 });
 
 router.get('/templates', ensureDb, async (req, res) => {
-    const wabaId = req.headers['x-waba-id'];
-    const token = req.headers['x-auth-token'];
+    let wabaId = req.headers['x-waba-id'];
+    let token = req.headers['x-auth-token'];
+
+    // Fallback to database integrations if headers are not provided
+    if (!wabaId || !token) {
+        try {
+            const pool = getPool();
+            const connection = await pool.getConnection();
+            const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['whatsapp']);
+            connection.release();
+            if (rows.length > 0) {
+                const config = typeof rows[0].config === "string" ? JSON.parse(rows[0].config) : rows[0].config;
+                wabaId = wabaId || config.accountId || config.wabaId || config.whatsappBusinessAccountId;
+                token = token || config.token || config.accessToken;
+            }
+        } catch (e) {
+            console.error("[Meta Templates] Failed to load credentials from DB:", e.message);
+        }
+    }
+
     if (!wabaId || !token) return res.status(401).json({ success: false, error: "Missing Credentials" });
 
     try {
@@ -324,6 +342,9 @@ router.get('/templates', ensureDb, async (req, res) => {
         const pool = getPool();
         const connection = await pool.getConnection();
         
+        // Clear stale templates from DB before saving templates for the currently active WABA ID
+        await connection.query('DELETE FROM templates');
+
         for (const tpl of allTemplates) {
             const appTpl = { 
                 id: tpl.id, 

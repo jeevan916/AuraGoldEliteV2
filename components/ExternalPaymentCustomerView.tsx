@@ -86,9 +86,9 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
     ? Number(customAmount)
     : remainingBalance;
 
-  const handleGenerateCustomPartialLink = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeAmountToPay || activeAmountToPay <= 0) return;
+  // Generate Setu link on demand for the selected amount
+  const generateSetuLinkForAmount = async (amountToPay: number) => {
+    if (!record || !amountToPay || amountToPay <= 0) return;
 
     setGeneratingLink(true);
     try {
@@ -96,7 +96,7 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: activeAmountToPay,
+          amount: amountToPay,
           externalPaymentId: record.id,
           customerID: record.customerContact,
           name: record.customerName
@@ -105,16 +105,31 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
       const data = await res.json();
       if (data.success && data.data) {
         const setuPL = data.data.data?.paymentLink || data.data.paymentLink || {};
+        const shortUrl = setuPL.shortUrl || setuPL.url || setuPL.shortURL || '';
+        const upiIntentLink = setuPL.upiIntentLink || setuPL.upiURL || setuPL.upiID || (data.data.platformBillID ? `/api/setu/pay/${data.data.platformBillID}` : '');
         setCustomLink({
-          shortUrl: setuPL.shortUrl || setuPL.url || setuPL.shortURL || '',
-          upiIntentLink: setuPL.upiIntentLink || setuPL.upiURL || setuPL.upiID || ''
+          shortUrl,
+          upiIntentLink
         });
       }
     } catch (err) {
-      console.error("Error generating partial payment link:", err);
+      console.error("Error generating Setu payment link:", err);
     } finally {
       setGeneratingLink(false);
     }
+  };
+
+  // Automatically fetch Setu UPI link for full balance when customer opens page or returns to FULL mode
+  useEffect(() => {
+    if (record && !paid && !customLink && !generatingLink && remainingBalance > 0 && payMode === 'FULL') {
+      generateSetuLinkForAmount(remainingBalance);
+    }
+  }, [record, paid, payMode, remainingBalance]);
+
+  const handleGenerateCustomPartialLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeAmountToPay || activeAmountToPay <= 0) return;
+    await generateSetuLinkForAmount(activeAmountToPay);
   };
 
   const getPayLink = () => {
@@ -133,7 +148,7 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
     if (record.platformBillID) {
       return `/api/setu/pay/${record.platformBillID}`;
     }
-    return record.shortLink || '';
+    return '';
   };
 
   const upiPayLink = getPayLink();
@@ -301,15 +316,22 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
             </div>
 
             {/* QR Code */}
-            <div className="bg-white p-5 rounded-3xl text-slate-900 text-center shadow-xl relative">
+            <div className="bg-white p-5 rounded-3xl text-slate-900 text-center shadow-xl relative min-h-[260px] flex flex-col items-center justify-center">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
                 Scan QR code for ₹{activeAmountToPay.toLocaleString('en-IN')}
               </p>
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(upiPayLink)}`}
-                alt="Setu UPI Payment QR"
-                className="w-44 h-44 mx-auto rounded-2xl shadow-inner border border-slate-200"
-              />
+              {generatingLink ? (
+                <div className="w-44 h-44 my-2 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center gap-2 text-slate-500">
+                  <Loader2 size={28} className="animate-spin text-amber-500" />
+                  <span className="text-[10px] font-bold">Securing Setu UPI Link...</span>
+                </div>
+              ) : (
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(upiPayLink)}`}
+                  alt="Setu UPI Payment QR"
+                  className="w-44 h-44 mx-auto rounded-2xl shadow-inner border border-slate-200"
+                />
+              )}
               <div className="flex justify-center gap-3 mt-3">
                 <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">Google Pay</span>
                 <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">PhonePe</span>
@@ -319,10 +341,27 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
 
             {/* Pay via UPI Button */}
             <a
-              href={upiPayLink}
-              className="w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 active:scale-95"
+              href={upiPayLink || '#'}
+              onClick={(e) => {
+                if (generatingLink || !upiPayLink) {
+                  e.preventDefault();
+                }
+              }}
+              className={`w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 active:scale-95 ${
+                (generatingLink || !upiPayLink) ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''
+              }`}
             >
-              Pay ₹{activeAmountToPay.toLocaleString('en-IN')} via UPI <ArrowRight size={16} />
+              {generatingLink ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  <span>Securing UPI Gateway...</span>
+                </>
+              ) : (
+                <>
+                  <span>Pay ₹{activeAmountToPay.toLocaleString('en-IN')} via UPI</span>
+                  <ArrowRight size={16} />
+                </>
+              )}
             </a>
           </div>
         )}
