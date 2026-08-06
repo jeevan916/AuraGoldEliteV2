@@ -2,18 +2,17 @@
 RewriteEngine On
 
 # ----------------------------------------------------------------------
-# SECURITY: Block Source Code Access
-# ----------------------------------------------------------------------
-# Prevents users from downloading source code, configs, and secrets.
-# Returns a 403 Forbidden error for these file types.
+# SECURITY: Block Source Code & Sensitive File Access
 # ----------------------------------------------------------------------
 RewriteRule \.(ts|tsx|jsx|env|config|json|lock|git|yml)$ - [F,L]
 
 # ----------------------------------------------------------------------
-# Hostinger Node.js Proxy Configuration
+# Hostinger / Apache Proxy Configuration
 # ----------------------------------------------------------------------
-# Forward requests to backend Node.js application ONLY if ENV:PORT is explicitly set as a numeric port (e.g., SetEnv PORT 3000).
-# This prevents Apache/LiteSpeed from proxying to an unassigned port 3000, which causes HTTP 503 Service Unavailable errors on Passenger deployments.
-RewriteCond %{ENV:PORT} ^[0-9]+$
-RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]
+# If PORT is explicitly defined as a numeric port (e.g., SetEnv PORT 3000), proxy traffic to localhost.
+# On standard Hostinger Node.js (Passenger) setups, Passenger handles routing directly via sockets.
+<IfModule mod_rewrite.c>
+  RewriteCond %{ENV:PORT} ^[0-9]+$
+  RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]
+</IfModule>
 

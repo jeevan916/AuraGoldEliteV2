@@ -225,14 +225,10 @@ router.get('/public/external-payment/:token', ensureDb, async (req, res) => {
                             const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
                             const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
                             const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
-                            const { getSetuToken, processSuccessfulExternalPayment } = await import('./payments.js');
+                            const { getSetuToken, getSetuHeaders, processSuccessfulExternalPayment } = await import('./payments.js');
                             const tokenVal = await getSetuToken(statusConn, config);
                             const statusRes = await fetch(`${baseUrl}/payment-links/${record.platformBillID}`, {
-                                headers: {
-                                    'Authorization': `Bearer ${tokenVal}`,
-                                    'X-Setu-Product-Instance-ID': schemeId,
-                                    'x-product-instance-id': schemeId
-                                }
+                                headers: getSetuHeaders(tokenVal, schemeId)
                             });
                             const statusText = await statusRes.text();
                             if (statusText.trim().startsWith('{')) {

@@ -3,6 +3,26 @@ import express from 'express';
 import { getPool, ensureDb, journalTransaction, isMock } from './db.js';
 import { sendWhatsAppMessage } from './whatsapp.js';
 
+export const SETU_DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+
+export function getSetuHeaders(token = null, schemeId = null, extraHeaders = {}) {
+    const headers = {
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent': SETU_DEFAULT_USER_AGENT,
+        'Cache-Control': 'no-cache',
+        ...extraHeaders
+    };
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    if (schemeId) {
+        headers['X-Setu-Product-Instance-ID'] = schemeId;
+        headers['x-product-instance-id'] = schemeId;
+    }
+    return headers;
+}
+
 // Helper to obtain or refresh Setu OAuth token with auto-retry and cache handling
 async function getSetuToken(connection, config, forceRefresh = false) {
     const now = Math.floor(Date.now() / 1000);
@@ -12,6 +32,7 @@ async function getSetuToken(connection, config, forceRefresh = false) {
 
     const clientId = config.clientId || config.clientID || config.client_id;
     const secret = config.secret || config.clientSecret || config.client_secret;
+    const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
 
     const isInvalidCredential = (val) => !val || typeof val !== 'string' || val.trim() === '' || val.includes('default') || val.includes('YOUR_SETU');
     if (isInvalidCredential(clientId) || isInvalidCredential(secret) || config.enabled === false) {
@@ -32,11 +53,7 @@ async function getSetuToken(connection, config, forceRefresh = false) {
     try {
         tokenResponse = await fetch(`${baseUrl}/auth/token`, {
             method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'User-Agent': 'AuraGold-Server/2.0'
-            },
+            headers: getSetuHeaders(null, schemeId, { 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 clientID: clientId,
                 secret: secret
@@ -188,14 +205,7 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         try {
             linkResponse = await fetch(`${baseUrl}/payment-links`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                    'X-Setu-Product-Instance-ID': schemeId,
-                    'x-product-instance-id': schemeId,
-                    'User-Agent': 'AuraGold-Server/2.0'
-                },
+                headers: getSetuHeaders(token, schemeId, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     billerBillID: uniqueBillId,
                     amount: {
@@ -476,11 +486,7 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
         const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
 
         let statusResponse = await fetch(`${baseUrl}/payment-links/${platformBillID}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'X-Setu-Product-Instance-ID': schemeId,
-                'x-product-instance-id': schemeId
-            }
+            headers: getSetuHeaders(token, schemeId)
         });
         
         // If the token was bad, let's force-refresh it and retry once!
@@ -489,11 +495,7 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
             try {
                 token = await getSetuToken(connection, config, true);
                 statusResponse = await fetch(`${baseUrl}/payment-links/${platformBillID}`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'X-Setu-Product-Instance-ID': schemeId,
-                        'x-product-instance-id': schemeId
-                    }
+                    headers: getSetuHeaders(token, schemeId)
                 });
             } catch (retryErr) {
                 console.error("[Setu Status] Token refresh retry failed:", retryErr.message);
@@ -553,12 +555,7 @@ router.post('/setu/expire-link/:platformBillID', ensureDb, async (req, res) => {
 
         const response = await fetch(`${baseUrl}/payment-links/${platformBillID}/expire`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'X-Setu-Product-Instance-ID': schemeId,
-                'x-product-instance-id': schemeId,
-                'Content-Type': 'application/json'
-            }
+            headers: getSetuHeaders(token, schemeId, { 'Content-Type': 'application/json' })
         });
 
         const text = await response.text();
@@ -618,12 +615,7 @@ router.post('/setu/refund', ensureDb, async (req, res) => {
 
         const response = await fetch(`${baseUrl}/payment-links/refund`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'X-Setu-Product-Instance-ID': schemeId,
-                'x-product-instance-id': schemeId,
-                'Content-Type': 'application/json'
-            },
+            headers: getSetuHeaders(token, schemeId, { 'Content-Type': 'application/json' }),
             body: JSON.stringify(refundPayload)
         });
 
@@ -653,11 +645,7 @@ router.post('/setu/test-connection', ensureDb, async (req, res) => {
     try {
         const tokenResponse = await fetch(`${baseUrl}/auth/token`, {
             method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'User-Agent': 'AuraGold-Server/2.0'
-            },
+            headers: getSetuHeaders(null, req.body.schemeId || req.body.productInstanceId, { 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 clientID: clientId,
                 secret: secret
@@ -1380,11 +1368,7 @@ export function startSetuPoller(io) {
                         if (ageMs > 24 * 60 * 60 * 1000) continue;
                         try {
                             let statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
-                                headers: {
-                                    'Authorization': `Bearer ${token}`,
-                                    'X-Setu-Product-Instance-ID': schemeId,
-                                    'x-product-instance-id': schemeId
-                                }
+                                headers: getSetuHeaders(token, schemeId)
                             });
                             const statusResponseText = await statusResponse.text();
                             if (!statusResponseText.trim().startsWith('{')) continue;
@@ -1413,11 +1397,7 @@ export function startSetuPoller(io) {
 
                         try {
                             let statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
-                                headers: {
-                                    'Authorization': `Bearer ${token}`,
-                                    'X-Setu-Product-Instance-ID': schemeId,
-                                    'x-product-instance-id': schemeId
-                                }
+                                headers: getSetuHeaders(token, schemeId)
                             });
                             
                             if (statusResponse.status === 401 || statusResponse.status === 403) {
@@ -1428,11 +1408,7 @@ export function startSetuPoller(io) {
                                     refreshConn.release();
                                     
                                     statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
-                                        headers: {
-                                            'Authorization': `Bearer ${token}`,
-                                            'X-Setu-Product-Instance-ID': schemeId,
-                                            'x-product-instance-id': schemeId
-                                        }
+                                        headers: getSetuHeaders(token, schemeId)
                                     });
                                 } catch (refreshErr) {
                                     console.info("[Setu Poller] Token refresh deferred during poll:", refreshErr.message);
