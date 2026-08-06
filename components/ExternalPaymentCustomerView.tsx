@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ExternalPaymentRecord } from '../types';
 import { ReceiptIndianRupee, QrCode, CheckCircle2, ShieldCheck, Lock, ExternalLink, ArrowRight, Loader2, Sparkles, History } from 'lucide-react';
 
@@ -50,36 +50,8 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
     return () => clearInterval(interval);
   }, [token]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
-        <Loader2 size={36} className="animate-spin text-amber-500 mb-4" />
-        <h2 className="text-lg font-bold">Loading Payment Request...</h2>
-        <p className="text-slate-400 text-xs mt-1">Securing connection to Setu UPI Gateway</p>
-      </div>
-    );
-  }
-
-  if (error || !record) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-16 h-16 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center mb-4">
-          <ShieldCheck size={32} />
-        </div>
-        <h2 className="text-xl font-black mb-2">Invalid or Expired Payment Request</h2>
-        <p className="text-slate-400 text-xs max-w-sm mb-6">{error || "This payment link could not be found or has expired."}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="px-6 py-3 bg-amber-500 text-slate-950 font-black rounded-2xl text-xs uppercase tracking-wider"
-        >
-          Retry Loading
-        </button>
-      </div>
-    );
-  }
-
-  const totalAmount = record.amount || 0;
-  const totalPaidSoFar = record.amountPaid || (record.status === 'PAID' ? totalAmount : 0);
+  const totalAmount = record?.amount || 0;
+  const totalPaidSoFar = record?.amountPaid || (record?.status === 'PAID' ? totalAmount : 0);
   const remainingBalance = Math.max(0, totalAmount - totalPaidSoFar);
 
   const activeAmountToPay = payMode === 'CUSTOM' && Number(customAmount) > 0 && Number(customAmount) <= remainingBalance
@@ -87,7 +59,7 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
     : remainingBalance;
 
   // Generate Setu link on demand for the selected amount
-  const generateSetuLinkForAmount = async (amountToPay: number) => {
+  const generateSetuLinkForAmount = useCallback(async (amountToPay: number) => {
     if (!record || !amountToPay || amountToPay <= 0) return;
 
     setGeneratingLink(true);
@@ -117,14 +89,42 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
     } finally {
       setGeneratingLink(false);
     }
-  };
+  }, [record]);
 
   // Automatically fetch Setu UPI link for full balance when customer opens page or returns to FULL mode
   useEffect(() => {
     if (record && !paid && !customLink && !generatingLink && remainingBalance > 0 && payMode === 'FULL') {
       generateSetuLinkForAmount(remainingBalance);
     }
-  }, [record, paid, payMode, remainingBalance]);
+  }, [record, paid, payMode, remainingBalance, customLink, generatingLink, generateSetuLinkForAmount]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
+        <Loader2 size={36} className="animate-spin text-amber-500 mb-4" />
+        <h2 className="text-lg font-bold">Loading Payment Request...</h2>
+        <p className="text-slate-400 text-xs mt-1">Securing connection to Setu UPI Gateway</p>
+      </div>
+    );
+  }
+
+  if (error || !record) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center mb-4">
+          <ShieldCheck size={32} />
+        </div>
+        <h2 className="text-xl font-black mb-2">Invalid or Expired Payment Request</h2>
+        <p className="text-slate-400 text-xs max-w-sm mb-6">{error || "This payment link could not be found or has expired."}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-6 py-3 bg-amber-500 text-slate-950 font-black rounded-2xl text-xs uppercase tracking-wider"
+        >
+          Retry Loading
+        </button>
+      </div>
+    );
+  }
 
   const handleGenerateCustomPartialLink = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -205,26 +205,20 @@ const finalDistPath = getValidDistPath();
 const isDev = (process.env.NODE_ENV === 'development' || (process.env.APPLET_ID && !finalDistPath)) && process.env.NODE_ENV !== 'production';
 
 if (isDev) {
-    import('vite').then(async ({ createServer: createViteServer }) => {
-        try {
-            const vite = await createViteServer({
-                server: { middlewareMode: true },
-                appType: 'spa',
-            });
-            app.use(vite.middlewares);
-            console.log("[System] Vite middleware integrated for development.");
-        } catch (e) {
-            console.warn("[System] Vite integration failed, falling back to static serving:", e.message);
-            if (finalDistPath) {
-                app.use(express.static(finalDistPath));
-            }
-        }
-    }).catch((e) => {
-        console.warn("[System] Vite dynamic import skipped or failed:", e.message);
+    try {
+        const { createServer: createViteServer } = await import('vite');
+        const vite = await createViteServer({
+            server: { middlewareMode: true },
+            appType: 'spa',
+        });
+        app.use(vite.middlewares);
+        console.log("[System] Vite middleware integrated for development.");
+    } catch (e) {
+        console.warn("[System] Vite integration failed, falling back to static serving:", e.message);
         if (finalDistPath) {
             app.use(express.static(finalDistPath));
         }
-    });
+    }
 } else if (finalDistPath) {
     console.log(`[System] Static serving enabled for: ${finalDistPath}`);
     app.use(express.static(finalDistPath));

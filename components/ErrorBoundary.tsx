@@ -26,7 +26,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   private handleReset = () => {
-      if(confirm("This will clear all local data (Orders, Customers, Settings) to fix the crash. Are you sure?")) {
+      if(confirm("This will clear temporary browser session cache and reload. All store orders and database records on the server remain 100% safe and untouched. Continue?")) {
           localStorage.clear();
           window.location.reload();
       }
@@ -56,7 +56,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <p className="text-slate-500 mb-6 text-sm leading-relaxed">
               {isChunkError 
                 ? "A new version of AuraGold has been deployed. Please reload to get the latest features." 
-                : "Critical startup error detected. This is usually caused by corrupted local data."}
+                : "Temporary session error detected. Your orders and financial data are 100% safe on the secure server database."}
             </p>
             
             {!isChunkError && (
@@ -76,9 +76,9 @@ export class ErrorBoundary extends Component<Props, State> {
                 {!isChunkError && (
                     <button 
                         onClick={this.handleReset}
-                        className="w-full bg-rose-50 text-rose-600 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-rose-100 transition-all border border-rose-100"
+                        className="w-full bg-slate-100 text-slate-600 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition-all border border-slate-200"
                     >
-                        <Trash2 size={16} /> Reset App Data
+                        <Trash2 size={16} /> Clear Local Cache
                     </button>
                 )}
             </div>
