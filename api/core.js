@@ -207,10 +207,34 @@ router.get('/public/external-payment/:token', ensureDb, async (req, res) => {
         const pool = getPool();
         const connection = await pool.getConnection();
         
-        const [rows] = await connection.query('SELECT data FROM external_payments WHERE share_token = ? OR id = ?', [token, token]);
+        let rows = [];
+        try {
+            const [qRows] = await connection.query('SELECT data FROM external_payments WHERE share_token = ? OR id = ?', [token, token]);
+            rows = qRows;
+        } catch (dbErr) {
+            console.warn("[Core] Direct share_token query failed, attempting JSON scan fallback:", dbErr.message);
+        }
+
+        if (!rows || rows.length === 0) {
+            try {
+                const [allRows] = await connection.query('SELECT data FROM external_payments');
+                for (const row of allRows) {
+                    try {
+                        const parsed = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                        if (parsed && (parsed.shareToken === token || parsed.share_token === token || parsed.id === token)) {
+                            rows = [row];
+                            break;
+                        }
+                    } catch (e) {}
+                }
+            } catch (scanErr) {
+                console.error("[Core] JSON scan fallback failed:", scanErr.message);
+            }
+        }
+
         connection.release();
         
-        let record = rows.length > 0 ? JSON.parse(rows[0].data) : null;
+        let record = rows.length > 0 ? (typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data) : null;
         
         if (record) {
             // If link is pending but has a platformBillID, perform live status check
@@ -228,7 +252,8 @@ router.get('/public/external-payment/:token', ensureDb, async (req, res) => {
                             const { getSetuToken, getSetuHeaders, processSuccessfulExternalPayment } = await import('./payments.js');
                             const tokenVal = await getSetuToken(statusConn, config);
                             const statusRes = await fetch(`${baseUrl}/payment-links/${record.platformBillID}`, {
-                                headers: getSetuHeaders(tokenVal, schemeId)
+                                headers: getSetuHeaders(tokenVal, schemeId),
+                                signal: AbortSignal.timeout(3500)
                             });
                             const statusText = await statusRes.text();
                             if (statusText.trim().startsWith('{')) {

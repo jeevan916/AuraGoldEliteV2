@@ -98,6 +98,10 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ templates, onUpda
           pushingMeta={state.pushingMeta}
           handleSaveLocalOrDeploy={actions.handleSaveLocalOrDeploy}
           editorRef={refs.editorRef}
+          variableExamples={state.variableExamples}
+          setVariableExamples={actions.setVariableExamples}
+          editingStructure={state.editingStructure}
+          setEditingStructure={actions.setEditingStructure}
         />
       )}
 

@@ -220,8 +220,10 @@ class StorageService {
           
           // CRITICAL FIX: Ensure all REQUIRED templates are present in memory.
           // If DB misses them (or they were filtered out because they weren't auragold yet), we inject the local definition.
+          const getBaseName = (n: string) => (n || '').toLowerCase().trim().replace(/_v\d+$/i, '');
           REQUIRED_SYSTEM_TEMPLATES.forEach(req => {
-              const exists = fetchedTemplates.find((t: any) => t.name === req.name);
+              const reqBase = getBaseName(req.name);
+              const exists = fetchedTemplates.find((t: any) => getBaseName(t.name) === reqBase);
               if (!exists) {
                   fetchedTemplates.push({
                       id: `sys-${req.name}`,

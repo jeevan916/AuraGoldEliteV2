@@ -38,7 +38,9 @@ export const CoreActionTab: React.FC<CoreActionTabProps> = ({
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0 overflow-hidden p-2">
             <div className="space-y-3 overflow-y-auto custom-scrollbar pr-2 h-full">
                 {REQUIRED_SYSTEM_TEMPLATES.map(req => {
-                    const match = templates.find(t => t.name === req.name || t.name.startsWith(req.name));
+                    const getBaseName = (n: string) => (n || '').toLowerCase().trim().replace(/_v\d+$/i, '');
+                    const reqBase = getBaseName(req.name);
+                    const match = templates.find(t => t.name === req.name || getBaseName(t.name) === reqBase);
                     
                     let isMismatch = false;
                     if (match) {

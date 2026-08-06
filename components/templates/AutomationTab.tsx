@@ -23,7 +23,9 @@ export const AutomationTab: React.FC<AutomationTabProps> = ({
   return (
     <div className="grid grid-cols-1 gap-4">
         {SYSTEM_TRIGGER_MAP.map(trigger => {
-            const match = templates.find(t => t.name === trigger.defaultTemplateName);
+            const getBaseName = (n: string) => (n || '').toLowerCase().trim().replace(/_v\d+$/i, '');
+            const targetBase = getBaseName(trigger.defaultTemplateName);
+            const match = templates.find(t => t.name === trigger.defaultTemplateName || getBaseName(t.name) === targetBase);
             return (
                 <div key={trigger.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm grid grid-cols-12 gap-4 items-center">
                     <div className="col-span-4">

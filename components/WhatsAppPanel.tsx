@@ -209,8 +209,15 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
       const varMatches = tpl.content.match(/{{[0-9]+}}/g) || [];
       const varCount = varMatches.length;
       
+      const isCoreMatch = (rName: string, tName: string) => {
+          if (!rName || !tName) return false;
+          if (rName === tName) return true;
+          const base = tName.replace(/_v\d+$/i, '');
+          return rName === base;
+      };
+
       // Look up human-friendly names from core registry if it matches
-      const coreDef = REQUIRED_SYSTEM_TEMPLATES.find(r => r.name === tpl.name);
+      const coreDef = REQUIRED_SYSTEM_TEMPLATES.find(r => isCoreMatch(r.name, tpl.name));
       
       const placeholders = [];
       for (let i = 1; i <= varCount; i++) {
@@ -257,12 +264,14 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
       setIsSending(true);
 
       // Special handling for templates with dynamic buttons
-      const coreDef = REQUIRED_SYSTEM_TEMPLATES.find(r => r.name === selectedTemplate.name);
+      const getBaseName = (n: string) => (n || '').toLowerCase().trim().replace(/_v\d+$/i, '');
+      const coreDef = REQUIRED_SYSTEM_TEMPLATES.find(r => r.name === selectedTemplate.name || getBaseName(r.name) === getBaseName(selectedTemplate.name));
       let buttonVar = undefined;
       let bodyVars = [...templateParams];
 
       // If the template has a dynamic URL button, the last variable is often meant for the button
-      if (coreDef?.name === 'auragold_setu_payment' || coreDef?.name === 'auragold_external_payment_request' || coreDef?.name === 'auragold_finished_item_showcase' || coreDef?.name === 'auragold_order_agreement') {
+      const baseName = getBaseName(selectedTemplate.name);
+      if (baseName === 'auragold_setu_payment' || baseName === 'auragold_external_payment_request' || baseName === 'auragold_finished_item_showcase' || baseName === 'auragold_order_agreement') {
           buttonVar = bodyVars.pop();
       }
 

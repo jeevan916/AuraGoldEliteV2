@@ -45,26 +45,45 @@ export const geminiService = {
       tactic: PsychologicalTactic, 
       examples: string[] 
   }> {
-    const response = await fetch('/api/ai/generateTemplateFromPrompt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
-    });
-    if (!response.ok) throw new Error("AI Offline");
-    return await response.json();
+    try {
+        const response = await fetch('/api/ai/generateTemplateFromPrompt', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt })
+        });
+        if (response.ok) return await response.json();
+    } catch (e) {
+        console.warn("[GeminiService] AI prompt generation offline, using rule fallback");
+    }
+    const cleanPromptName = (prompt || 'template').toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 20);
+    return {
+        suggestedName: `auragold_${cleanPromptName}`,
+        content: `Dear {{1}}, ${prompt || 'your order status is updated'}. Ref: {{2}}. Thank you for choosing Sanghavi Jewellers.`,
+        metaCategory: 'UTILITY',
+        appGroup: 'ORDER_STATUS',
+        tactic: 'URGENCY',
+        examples: ['Valued Customer', 'ORD-1001']
+    };
   },
 
   async generateVariant(originalContent: string, goal: string): Promise<{ 
       content: string, 
       diagnosis: string 
   }> {
-    const response = await fetch('/api/ai/generateVariant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ originalContent, goal })
-    });
-    if (!response.ok) throw new Error("AI Offline");
-    return await response.json();
+    try {
+        const response = await fetch('/api/ai/generateVariant', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ originalContent, goal })
+        });
+        if (response.ok) return await response.json();
+    } catch (e) {
+        console.warn("[GeminiService] AI variant generation offline, using rule fallback");
+    }
+    return {
+        content: `${originalContent} (${goal})`,
+        diagnosis: "Applied rule-based variant fallback."
+    };
   },
 
   async generateStrategicNotification(order: Order, type: 'UPCOMING' | 'OVERDUE' | 'SYSTEM', goldRate: number, riskProfile: RiskProfile = 'REGULAR'): Promise<{ 
@@ -80,12 +99,11 @@ export const geminiService = {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ order, type, goldRate, riskProfile })
       });
-      if (!response.ok) throw new Error("AI Endpoint Unavailable");
-      return await response.json();
+      if (response.ok) return await response.json();
     } catch (e) {
       console.info("[GeminiService] AI service offline/error. Fallback to Inbuilt Strategy Engine.");
-      return strategyEngine.generateInbuiltStrategy(order, type, goldRate, riskProfile);
     }
+    return strategyEngine.generateInbuiltStrategy(order, type, goldRate, riskProfile);
   },
 
   async fixRejectedTemplate(template: Partial<WhatsAppTemplate>): Promise<{ 
@@ -95,13 +113,33 @@ export const geminiService = {
       variableExamples: string[], 
       diagnosis: string 
   }> {
-    const response = await fetch('/api/ai/fixRejectedTemplate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ template })
-    });
-    if (!response.ok) throw new Error("AI Offline");
-    return await response.json();
+    try {
+        const response = await fetch('/api/ai/fixRejectedTemplate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ template })
+        });
+        if (response.ok) return await response.json();
+    } catch (e) {
+        console.warn("[GeminiService] AI template auto-fix offline, using rule-based compliance engine", e);
+    }
+
+    const content = template.content || "Dear {{1}}, your order {{2}} has been updated at Sanghavi Jewellers.";
+    let fixedContent = content.replace(/[\r\n\t]+/g, ' ').trim();
+    if (!fixedContent.toLowerCase().includes('sanghavi jewellers')) {
+        fixedContent += " Thank you for choosing Sanghavi Jewellers.";
+    }
+    const matches = fixedContent.match(/\{\{\d+\}\}/g) || [];
+    const varCount = matches.length;
+    const variableExamples = Array.from({ length: varCount }, (_, i) => `Sample ${i + 1}`);
+
+    return {
+        fixedName: template.name || `auragold_template_${Date.now()}`,
+        fixedContent,
+        category: template.category || 'UTILITY',
+        variableExamples,
+        diagnosis: "Applied automated compliance optimization: Standardized line formatting and updated variable structure."
+    };
   },
 
   async generatePaymentPlan(prompt: string): Promise<Partial<PaymentPlanTemplate>> {

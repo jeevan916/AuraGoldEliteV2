@@ -167,6 +167,11 @@ export async function initDb() {
             await connection.query("ALTER TABLE orders ADD COLUMN share_token VARCHAR(100)");
             await connection.query("CREATE INDEX idx_share_token ON orders(share_token)");
         } catch (e) { }
+
+        try {
+            await connection.query("ALTER TABLE external_payments ADD COLUMN share_token VARCHAR(100)");
+            await connection.query("CREATE INDEX idx_ext_share_token ON external_payments(share_token)");
+        } catch (e) { }
         
         try {
             // Migration: populate share_token for existing orders
@@ -179,6 +184,21 @@ export async function initDb() {
                     }
                 } catch (e) {
                     console.error(`[DB] Failed to migrate order ${order.id}:`, e.message);
+                }
+            }
+        } catch (e) { }
+
+        try {
+            // Migration: populate share_token for existing external payments
+            const [exts] = await connection.query("SELECT id, data FROM external_payments WHERE share_token IS NULL OR share_token = ''");
+            for (const ext of exts) {
+                try {
+                    const data = typeof ext.data === 'string' ? JSON.parse(ext.data) : ext.data;
+                    if (data && (data.shareToken || data.share_token)) {
+                        await connection.query("UPDATE external_payments SET share_token = ? WHERE id = ?", [data.shareToken || data.share_token, ext.id]);
+                    }
+                } catch (e) {
+                    console.error(`[DB] Failed to migrate external payment ${ext.id}:`, e.message);
                 }
             }
         } catch (e) { }

@@ -12,9 +12,9 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
   const [error, setError] = useState<string | null>(null);
   const [paid, setPaid] = useState(false);
 
-  // Partial Payment States
-  const [payMode, setPayMode] = useState<'FULL' | 'CUSTOM'>('FULL');
-  const [customAmount, setCustomAmount] = useState<string>('');
+  // Amount & Link Generation States
+  const [payAmount, setPayAmount] = useState<string>('');
+  const [amountInitialized, setAmountInitialized] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
   const [customLink, setCustomLink] = useState<{ shortUrl: string; upiIntentLink: string } | null>(null);
 
@@ -23,7 +23,11 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
 
     const fetchRecord = async () => {
       try {
-        const res = await fetch(`/api/public/external-payment/${token}`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch(`/api/public/external-payment/${token}`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
         const data = await res.json();
         if (data.success && data.record) {
           setRecord(data.record);
@@ -38,7 +42,10 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
           setError(data.error || "Invalid or Expired Payment Link");
         }
       } catch (err: any) {
-        setError("Network error loading payment details.");
+        if (err.name === 'AbortError') {
+          console.warn("[ExternalPayment] Fetch timed out after 8s");
+        }
+        setError((prev) => prev || "Network error loading payment details.");
       } finally {
         setLoading(false);
       }
@@ -54,11 +61,19 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
   const totalPaidSoFar = record?.amountPaid || (record?.status === 'PAID' ? totalAmount : 0);
   const remainingBalance = Math.max(0, totalAmount - totalPaidSoFar);
 
-  const activeAmountToPay = payMode === 'CUSTOM' && Number(customAmount) > 0 && Number(customAmount) <= remainingBalance
-    ? Number(customAmount)
-    : remainingBalance;
+  // Initialize payment amount with remaining balance when record loads
+  useEffect(() => {
+    if (record && !amountInitialized) {
+      const rem = Math.max(0, (record.amount || 0) - (record.amountPaid || (record.status === 'PAID' ? record.amount || 0 : 0)));
+      setPayAmount(rem > 0 ? String(rem) : '');
+      setAmountInitialized(true);
+    }
+  }, [record, amountInitialized]);
 
-  // Generate Setu link on demand for the selected amount
+  const parsedAmount = Number(payAmount);
+  const isValidAmount = !isNaN(parsedAmount) && parsedAmount >= 1 && parsedAmount <= remainingBalance;
+
+  // Generate Setu link for the entered amount
   const generateSetuLinkForAmount = useCallback(async (amountToPay: number) => {
     if (!record || !amountToPay || amountToPay <= 0) return;
 
@@ -91,12 +106,16 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
     }
   }, [record]);
 
-  // Automatically fetch Setu UPI link for full balance when customer opens page or returns to FULL mode
+  // Debounced QR generation on change of amount
   useEffect(() => {
-    if (record && !paid && !customLink && !generatingLink && remainingBalance > 0 && payMode === 'FULL') {
-      generateSetuLinkForAmount(remainingBalance);
-    }
-  }, [record, paid, payMode, remainingBalance, customLink, generatingLink, generateSetuLinkForAmount]);
+    if (!record || paid || !isValidAmount) return;
+
+    const timer = setTimeout(() => {
+      generateSetuLinkForAmount(parsedAmount);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [parsedAmount, isValidAmount, record?.id, paid, generateSetuLinkForAmount]);
 
   if (loading) {
     return (
@@ -126,27 +145,24 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
     );
   }
 
-  const handleGenerateCustomPartialLink = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeAmountToPay || activeAmountToPay <= 0) return;
-    await generateSetuLinkForAmount(activeAmountToPay);
-  };
-
   const getPayLink = () => {
+    if (!isValidAmount) return '';
     if (customLink?.shortUrl) return customLink.shortUrl;
     if (customLink?.upiIntentLink) return customLink.upiIntentLink;
 
-    if (record.shortLink && (record.shortLink.startsWith('http://') || record.shortLink.startsWith('https://'))) {
-      return record.shortLink;
-    }
-    if (record.upiIntentLink && record.upiIntentLink.startsWith('upi://')) {
-      return record.upiIntentLink;
-    }
-    if (record.upiIntentLink && record.upiIntentLink.includes('@')) {
-      return `upi://pay?pa=${record.upiIntentLink}&pn=AuraGold%20Jewellers&am=${activeAmountToPay}&cu=INR&tn=${encodeURIComponent(record.id)}`;
-    }
-    if (record.platformBillID) {
-      return `/api/setu/pay/${record.platformBillID}`;
+    if (parsedAmount === remainingBalance) {
+      if (record.shortLink && (record.shortLink.startsWith('http://') || record.shortLink.startsWith('https://'))) {
+        return record.shortLink;
+      }
+      if (record.upiIntentLink && record.upiIntentLink.startsWith('upi://')) {
+        return record.upiIntentLink;
+      }
+      if (record.upiIntentLink && record.upiIntentLink.includes('@')) {
+        return `upi://pay?pa=${record.upiIntentLink}&pn=AuraGold%20Jewellers&am=${parsedAmount}&cu=INR&tn=${encodeURIComponent(record.id)}`;
+      }
+      if (record.platformBillID) {
+        return `/api/setu/pay/${record.platformBillID}`;
+      }
     }
     return '';
   };
@@ -261,108 +277,123 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
               </div>
             )}
 
-            {/* Payment Amount Selection Options */}
-            <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Choose Payment Amount</span>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setPayMode('FULL'); setCustomLink(null); }}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
-                    payMode === 'FULL'
-                      ? 'bg-amber-500/20 border-amber-500 text-amber-300'
-                      : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Pay Full Balance (₹{remainingBalance.toLocaleString('en-IN')})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setPayMode('CUSTOM'); setCustomLink(null); }}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
-                    payMode === 'CUSTOM'
-                      ? 'bg-amber-500/20 border-amber-500 text-amber-300'
-                      : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Pay Partial Amount
-                </button>
+            {/* Amount Input Text Box */}
+            <div className="bg-slate-900 border border-slate-800 p-4.5 rounded-2xl space-y-2.5">
+              <div className="flex justify-between items-center">
+                <label htmlFor="payment-amount-input" className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                  Enter Amount to Pay
+                </label>
+                <span className="text-[11px] font-semibold text-slate-400">
+                  Max: <strong className="text-amber-400">₹{remainingBalance.toLocaleString('en-IN')}</strong>
+                </span>
               </div>
 
-              {payMode === 'CUSTOM' && (
-                <form onSubmit={handleGenerateCustomPartialLink} className="pt-2 space-y-2 animate-fadeIn">
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-2.5 text-xs font-bold text-amber-400">₹</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={remainingBalance}
-                      placeholder={`Enter partial amount (Max ₹${remainingBalance})`}
-                      value={customAmount}
-                      onChange={e => setCustomAmount(e.target.value)}
-                      className="w-full pl-8 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={generatingLink || !Number(customAmount) || Number(customAmount) <= 0 || Number(customAmount) > remainingBalance}
-                    className="w-full py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-amber-400 font-bold text-xs rounded-xl border border-amber-500/30 flex items-center justify-center gap-1.5 transition-all"
-                  >
-                    {generatingLink ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                    <span>Update QR for ₹{Number(customAmount) || 0}</span>
-                  </button>
-                </form>
+              <div className="relative">
+                <span className="absolute left-3.5 top-3 text-sm font-black text-amber-400">₹</span>
+                <input
+                  id="payment-amount-input"
+                  type="number"
+                  min={1}
+                  max={remainingBalance}
+                  step="any"
+                  placeholder={`1 to ${remainingBalance}`}
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  className={`w-full pl-8 pr-4 py-3 bg-slate-800 border rounded-xl text-base font-bold text-white focus:outline-none transition-all ${
+                    !payAmount
+                      ? 'border-slate-700 focus:border-amber-500'
+                      : !isValidAmount
+                      ? 'border-rose-500/70 focus:border-rose-500 text-rose-300'
+                      : 'border-amber-500/50 focus:border-amber-400 text-amber-300'
+                  }`}
+                />
+              </div>
+
+              {/* Validation Feedback */}
+              {payAmount !== '' && !isValidAmount && (
+                <p className="text-[11px] font-bold text-rose-400 animate-fadeIn">
+                  {parsedAmount < 1
+                    ? 'Minimum payment amount is ₹1.'
+                    : parsedAmount > remainingBalance
+                    ? `Amount cannot exceed remaining balance of ₹${remainingBalance.toLocaleString('en-IN')}.`
+                    : 'Please enter a valid payment amount.'}
+                </p>
+              )}
+              {isValidAmount && (
+                <p className="text-[10px] font-medium text-slate-400 flex items-center gap-1">
+                  <Sparkles size={12} className="text-amber-400" />
+                  <span>QR code automatically generates for ₹{parsedAmount.toLocaleString('en-IN')}</span>
+                </p>
               )}
             </div>
 
             {/* QR Code */}
             <div className="bg-white p-5 rounded-3xl text-slate-900 text-center shadow-xl relative min-h-[260px] flex flex-col items-center justify-center">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
-                Scan QR code for ₹{activeAmountToPay.toLocaleString('en-IN')}
-              </p>
-              {generatingLink ? (
+              {!isValidAmount ? (
+                <div className="w-44 h-44 my-2 rounded-2xl bg-slate-100 border border-dashed border-slate-300 flex flex-col items-center justify-center p-4 text-center gap-2 text-slate-400">
+                  <QrCode size={32} className="text-slate-400" />
+                  <span className="text-[11px] font-bold text-slate-600">
+                    Enter amount (₹1 – ₹{remainingBalance.toLocaleString('en-IN')}) to display QR code
+                  </span>
+                </div>
+              ) : generatingLink ? (
                 <div className="w-44 h-44 my-2 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center gap-2 text-slate-500">
                   <Loader2 size={28} className="animate-spin text-amber-500" />
-                  <span className="text-[10px] font-bold">Securing Setu UPI Link...</span>
+                  <span className="text-[10px] font-bold text-center px-2">Generating QR for ₹{parsedAmount.toLocaleString('en-IN')}...</span>
                 </div>
+              ) : upiPayLink ? (
+                <>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                    Scan QR code for ₹{parsedAmount.toLocaleString('en-IN')}
+                  </p>
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(upiPayLink)}`}
+                    alt="Setu UPI Payment QR"
+                    className="w-44 h-44 mx-auto rounded-2xl shadow-inner border border-slate-200"
+                  />
+                  <div className="flex justify-center gap-3 mt-3">
+                    <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">Google Pay</span>
+                    <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">PhonePe</span>
+                    <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">Paytm</span>
+                  </div>
+                </>
               ) : (
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(upiPayLink)}`}
-                  alt="Setu UPI Payment QR"
-                  className="w-44 h-44 mx-auto rounded-2xl shadow-inner border border-slate-200"
-                />
+                <div className="w-44 h-44 my-2 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center gap-2 text-slate-500">
+                  <Loader2 size={28} className="animate-spin text-amber-500" />
+                  <span className="text-[10px] font-bold">Preparing Setu Gateway...</span>
+                </div>
               )}
-              <div className="flex justify-center gap-3 mt-3">
-                <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">Google Pay</span>
-                <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">PhonePe</span>
-                <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">Paytm</span>
-              </div>
             </div>
 
             {/* Pay via UPI Button */}
-            <a
-              href={upiPayLink || '#'}
-              onClick={(e) => {
-                if (generatingLink || !upiPayLink) {
-                  e.preventDefault();
+            <button
+              type="button"
+              disabled={!isValidAmount || generatingLink || !upiPayLink}
+              onClick={() => {
+                if (upiPayLink && upiPayLink !== '#') {
+                  window.location.href = upiPayLink;
                 }
               }}
-              className={`w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 active:scale-95 ${
-                (generatingLink || !upiPayLink) ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''
+              className={`w-full py-4 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 ${
+                isValidAmount && !generatingLink && upiPayLink
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 active:scale-95 cursor-pointer'
+                  : 'bg-slate-800 text-slate-500 border border-slate-700/50 cursor-not-allowed opacity-60'
               }`}
             >
               {generatingLink ? (
                 <>
-                  <Loader2 size={16} className="animate-spin" />
+                  <Loader2 size={16} className="animate-spin text-amber-500" />
                   <span>Securing UPI Gateway...</span>
                 </>
-              ) : (
+              ) : isValidAmount && upiPayLink ? (
                 <>
-                  <span>Pay ₹{activeAmountToPay.toLocaleString('en-IN')} via UPI</span>
+                  <span>Pay ₹{parsedAmount.toLocaleString('en-IN')} via UPI</span>
                   <ArrowRight size={16} />
                 </>
+              ) : (
+                <span>Enter valid amount to pay</span>
               )}
-            </a>
+            </button>
           </div>
         )}
 
@@ -377,3 +408,4 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
 };
 
 export default ExternalPaymentCustomerView;
+

@@ -73,8 +73,8 @@ async function getSetuToken(connection, config, forceRefresh = false) {
                       tokenText.trim().toLowerCase().startsWith('<html') ||
                       tokenText.includes('<!-- a padding to disable MSIE');
         
-        // Temporarily back off for 30 seconds if Setu edge returned WAF block or HTML error
-        config.wafBlockedUntil = Date.now() + 30 * 1000;
+        // Temporarily back off for 10 minutes if Setu edge returned WAF block or HTML error
+        config.wafBlockedUntil = Date.now() + 10 * 60 * 1000;
         if (connection) {
             try {
                 await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);

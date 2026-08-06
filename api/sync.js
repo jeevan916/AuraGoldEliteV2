@@ -176,7 +176,7 @@ router.post('/external-payments', ensureDb, async (req, res) => {
                     `INSERT INTO external_payments (id, customer_contact, status, created_at, share_token, data, updated_at) 
                      VALUES (?, ?, ?, ?, ?, ?, ?) 
                      ON DUPLICATE KEY UPDATE status=VALUES(status), share_token=VALUES(share_token), data=VALUES(data), updated_at=VALUES(updated_at)`,
-                    [item.id, item.customerContact || '', item.status || 'PENDING', new Date(item.createdAt || Date.now()), item.shareToken || '', JSON.stringify(item), Date.now()]
+                    [item.id, item.customerContact || '', item.status || 'PENDING', new Date(item.createdAt || Date.now()), item.shareToken || item.share_token || '', JSON.stringify(item), Date.now()]
                 );
             }
         }

@@ -78,6 +78,8 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       return groups;
   }, [templates]);
 
+  const getBaseName = (n: string) => (n || '').toLowerCase().trim().replace(/_v\d+$/i, '');
+
   const handleSyncFromMeta = async (silent: boolean = false) => {
       setSyncingMeta(true);
       if(!silent) addLog("Syncing templates from Meta...");
@@ -88,29 +90,44 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
               const metaTemplates = metaTemplatesRaw.filter((t: any) => t.name.toLowerCase().startsWith('auragold'));
 
               // 1. Create a quick lookup map of what actually exists on Meta right now
-              // KEY CHANGE: Use Lowercase Key for Case-Insensitive Matching
-              const metaMap = new Map();
+              const metaMap = new Map<string, any>();
               metaTemplates.forEach((mt: any) => metaMap.set(mt.name.toLowerCase(), mt));
 
-              // 2. Iterate through LOCAL templates to update status or flag missing ones.
-              // PURGE POLICY: We explicitly FILTER existing templates. If it doesn't start with 'auragold', it's dropped from the new state.
-              const seenLocalNames = new Set<string>();
+              // 2. Sort local templates so real Meta templates take precedence over sys- placeholders
+              const sortedLocal = [...templates].sort((a, b) => {
+                  const aIsSys = a.id?.startsWith('sys-') ? 1 : 0;
+                  const bIsSys = b.id?.startsWith('sys-') ? 1 : 0;
+                  return aIsSys - bIsSys;
+              });
+
+              const seenLocalBaseNames = new Set<string>();
               
-              const processedLocal = templates
-                  .filter(localTpl => localTpl.name.toLowerCase().startsWith('auragold'))
+              const processedLocal = sortedLocal
+                  .filter(localTpl => localTpl && localTpl.name && localTpl.name.toLowerCase().startsWith('auragold'))
                   .filter(localTpl => {
-                      // Deduplicate local templates by name
-                      const nameLower = localTpl.name.toLowerCase();
-                      if (seenLocalNames.has(nameLower)) return false;
-                      seenLocalNames.add(nameLower);
+                      // Deduplicate local templates by base name
+                      const baseName = getBaseName(localTpl.name);
+                      if (seenLocalBaseNames.has(baseName)) return false;
+                      seenLocalBaseNames.add(baseName);
                       return true;
                   })
                   .map(localTpl => {
-                      const remote = metaMap.get(localTpl.name.toLowerCase());
+                      let remoteKey = localTpl.name.toLowerCase();
+                      let remote = metaMap.get(remoteKey);
+
+                      if (!remote) {
+                          const localBase = getBaseName(localTpl.name);
+                          for (const [k, v] of metaMap.entries()) {
+                              if (getBaseName(k) === localBase) {
+                                  remote = v;
+                                  remoteKey = k;
+                                  break;
+                              }
+                          }
+                      }
 
                       if (remote) {
-                          // MATCH FOUND: Update local with truth from Meta
-                          metaMap.delete(localTpl.name.toLowerCase()); // Remove from map so we know it's handled
+                          metaMap.delete(remoteKey);
                           
                           const bodyComp = remote.components?.find((c: any) => c.type === 'BODY');
                           const remoteContent = bodyComp?.text || "";
@@ -118,7 +135,8 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
                           
                           return {
                               ...localTpl,
-                              id: remote.id, // Ensure ID matches Meta
+                              id: remote.id,
+                              name: remote.name, // Use registered template name from Meta
                               status: remote.status,
                               category: remote.category,
                               structure: remote.components,
@@ -204,12 +222,21 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       
       let finalExamples = [...providedExamples];
       while(finalExamples.length < maxIndex) {
-          finalExamples.push(`sample_${finalExamples.length + 1}`);
+          finalExamples.push(`Sample ${finalExamples.length + 1}`);
       }
       if(finalExamples.length > maxIndex) {
           finalExamples = finalExamples.slice(0, maxIndex);
       }
-      return finalExamples;
+      return finalExamples.map((ex, i) => {
+          if (typeof ex === 'string') ex = ex.trim();
+          if (!ex) {
+              if (i === 0) return 'Rahul Sharma';
+              if (i === 1) return '₹25,000';
+              if (i === 2) return 'ORD-10023';
+              return `Sample ${i + 1}`;
+          }
+          return ex;
+      });
   };
 
   const handleAutoHeal = async () => {
@@ -219,7 +246,8 @@ export function useTemplateManagement(templates: WhatsAppTemplate[], onUpdate: (
       const remoteTemplates = await handleSyncFromMeta(true);
       
       for (const req of REQUIRED_SYSTEM_TEMPLATES) {
-          const match = remoteTemplates?.find(t => t.name === req.name);
+          const reqBase = getBaseName(req.name);
+          const match = remoteTemplates?.find(t => t.name === req.name || getBaseName(t.name) === reqBase);
           if (!match) {
               addLog(`MISSING: ${req.name}. Deploying fresh...`);
               await deployHelper(req);

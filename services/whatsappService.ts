@@ -62,12 +62,18 @@ const constructMetaComponents = (content: string, variableExamples: string[] = [
     if (maxBodyIndex > 0) {
         const safeExamples = [...variableExamples];
         while(safeExamples.length < maxBodyIndex) {
-            safeExamples.push(`sample_${safeExamples.length + 1}`);
+            safeExamples.push(`Sample ${safeExamples.length + 1}`);
         }
-        // Slice specifically for BODY (assuming body vars come first or are the main ones)
-        // Note: Complex splitting between body/button vars usually requires strict index mapping.
-        // For AuraGold, we assume provided examples cover body vars first.
-        const bodyEx = safeExamples.slice(0, maxBodyIndex);
+        const bodyEx = safeExamples.slice(0, maxBodyIndex).map((ex, i) => {
+            if (typeof ex === 'string') ex = ex.trim();
+            if (!ex) {
+                if (i === 0) return 'Rahul Sharma';
+                if (i === 1) return '₹25,000';
+                if (i === 2) return 'ORD-10023';
+                return `Sample ${i + 1}`;
+            }
+            return ex;
+        });
 
         bodyComponent.example = {
             body_text: [bodyEx]
@@ -89,14 +95,12 @@ const constructMetaComponents = (content: string, variableExamples: string[] = [
         const urlButtonIndex = buttons.findIndex((b: any) => b.type === 'URL' && b.url.includes('{{1}}'));
         
         if (urlButtonIndex >= 0) {
-            // We need a separate example for the URL variable
-            // Since we often pass a generic list of examples, let's grab the last one or a generic one
-            const urlExample = variableExamples.length > 0 ? variableExamples[variableExamples.length - 1] : "123456";
+            let urlExample = (variableExamples.length > maxBodyIndex && variableExamples[maxBodyIndex]?.trim())
+                ? variableExamples[maxBodyIndex].trim()
+                : (buttons[urlButtonIndex].example?.[0]?.trim() || "ORD-10023");
             
-            // Meta requires the 'example' field on the root of the URL button object
-            if (!buttons[urlButtonIndex].example) {
-                 buttons[urlButtonIndex].example = [urlExample]; 
-            }
+            if (!urlExample) urlExample = "ORD-10023";
+            buttons[urlButtonIndex].example = [urlExample]; 
         }
         components[buttonIndex].buttons = buttons;
     }
@@ -105,16 +109,25 @@ const constructMetaComponents = (content: string, variableExamples: string[] = [
     const headerIndex = components.findIndex((c: any) => c.type === 'HEADER');
     if (headerIndex >= 0) {
         const header = components[headerIndex];
-        if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(header.format) && !header.example) {
-            // Meta requires an example handle or URL for media headers
+        if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(header.format)) {
+            // Meta Graph API requires header_url for media examples when submitting URLs
+            const defaultMediaUrl = 
+                header.format === 'IMAGE' ? "https://images.unsplash.com/photo-1611591475178-57e05244f7db?auto=format&fit=crop&w=800&q=80" :
+                header.format === 'VIDEO' ? "https://www.w3schools.com/html/mov_bbb.mp4" :
+                "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf";
+            
+            const existingUrl = (header.example?.header_url?.[0]) || 
+                (typeof header.example?.header_handle?.[0] === 'string' && header.example.header_handle[0].startsWith('http') ? header.example.header_handle[0] : null);
+
             header.example = {
-                header_handle: [
-                    // Provide a generic placeholder URL that Meta accepts for review
-                    header.format === 'IMAGE' ? "https://scontent.whatsapp.net/v/t61.24694-34/436327422_1144207906709772_3593922765354964177_n.jpg" :
-                    header.format === 'VIDEO' ? "https://scontent.whatsapp.net/v/t61.24694-34/436327422_1144207906709772_3593922765354964177_n.mp4" :
-                    "https://scontent.whatsapp.net/v/t61.24694-34/436327422_1144207906709772_3593922765354964177_n.pdf"
-                ]
+                header_url: [existingUrl || defaultMediaUrl]
             };
+        } else if (header.format === 'TEXT' && header.text && header.text.includes('{{1}}')) {
+            if (!header.example || !header.example.header_text) {
+                header.example = {
+                    header_text: [variableExamples[0] || 'Sample Header']
+                };
+            }
         }
     }
 
@@ -205,7 +218,32 @@ export const whatsappService = {
          });
          const data = await response.json();
          if (!data.success) {
-             const errorMsg = data.error?.message || data.error || "Unknown Meta API Error";
+             const errorSubcode = data.error?.error_subcode || data.raw?.error?.error_subcode;
+             const errorMsg = data.error?.message || (typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+             
+             // Meta Error 2388023: "Message template language is being deleted"
+             // Automatically retry with a fresh version suffix to bypass deletion lock
+             if (errorSubcode === 2388023 || (typeof errorMsg === 'string' && errorMsg.includes('being deleted'))) {
+                 const versionedName = `${finalName}_v${Math.floor(Date.now() / 1000).toString().slice(-4)}`;
+                 console.warn(`[Meta Template] Deletion lock on ${finalName}. Retrying as ${versionedName}...`);
+                 const retryPayload = { ...payload, name: versionedName };
+                 const retryRes = await fetch(`${API_BASE}/api/whatsapp/templates`, {
+                     method: 'POST',
+                     headers: {
+                         'Content-Type': 'application/json',
+                         'x-waba-id': settings.whatsappBusinessAccountId,
+                         'x-auth-token': token
+                     },
+                     body: JSON.stringify(retryPayload)
+                 });
+                 const retryData = await retryRes.json();
+                 if (retryData.success) {
+                     return { success: true, finalName: retryData.data?.name || versionedName };
+                 }
+                 const retryMsg = retryData.error?.message || JSON.stringify(retryData.error);
+                 return { success: false, error: { message: retryMsg }, rawError: retryData.raw || retryData };
+             }
+
              return { success: false, error: { message: errorMsg }, rawError: data.raw || data };
          }
          return { success: true, finalName: data.data?.name || finalName };
@@ -214,7 +252,7 @@ export const whatsappService = {
      }
   },
 
-  async editMetaTemplate(templateId: string, template: WhatsAppTemplate): Promise<{ success: boolean; error?: any; rawError?: any }> {
+  async editMetaTemplate(templateId: string, template: WhatsAppTemplate): Promise<{ success: boolean; error?: any; rawError?: any; finalName?: string }> {
       const settings = this.getSettings();
       const token = settings.whatsappBusinessToken?.trim();
       if (!settings.whatsappBusinessAccountId || !token) return { success: false, error: { message: "Credentials missing" } };
@@ -239,7 +277,15 @@ export const whatsappService = {
           const data = await response.json();
           
           if (!data.success) {
+              const errorSubcode = data.error?.error_subcode || data.raw?.error?.error_subcode;
               const errorMsg = data.error?.message || (typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+              
+              // If edit fails because template language is being deleted or template not found, fallback to creating fresh template
+              if (errorSubcode === 2388023 || (typeof errorMsg === 'string' && (errorMsg.includes('being deleted') || errorMsg.includes('does not exist')))) {
+                  console.warn(`[Meta Edit] Fallback create due to deletion lock or missing template: ${errorMsg}`);
+                  return await this.createMetaTemplate(template);
+              }
+
               return { success: false, error: { message: errorMsg }, rawError: data.raw || data };
           }
           return { success: true };
@@ -290,7 +336,23 @@ export const whatsappService = {
     const token = settings.whatsappBusinessToken?.trim();
     if (!settings.whatsappPhoneNumberId || !token) return { success: false, error: "WhatsApp API Credentials Missing in Settings" };
 
-    const safeTemplateName = templateName.toLowerCase().trim();
+    let safeTemplateName = templateName.toLowerCase().trim();
+    const getBaseName = (n: string) => (n || '').toLowerCase().trim().replace(/_v\d+$/i, '');
+    const baseTarget = getBaseName(safeTemplateName);
+
+    try {
+        const cachedTemplates = storageService.getTemplates();
+        const registeredTpl = cachedTemplates.find(t => 
+            (t.name.toLowerCase() === safeTemplateName || getBaseName(t.name) === baseTarget) &&
+            t.status !== 'REJECTED' && 
+            t.status !== 'MISSING'
+        );
+        if (registeredTpl && registeredTpl.name) {
+            safeTemplateName = registeredTpl.name.toLowerCase().trim();
+        }
+    } catch (e) {
+        // Fallback to original safeTemplateName
+    }
 
     let actualSentBy = sentBy;
     if (!actualSentBy) {
@@ -449,7 +511,7 @@ export const whatsappService = {
         if (!data.success && isTranslationErr(data.error || data.raw)) {
             console.warn(`[WhatsApp] Template ${safeTemplateName} missing on Meta WABA. Falling back to direct text message dispatch...`);
             
-            const sysTpl = REQUIRED_SYSTEM_TEMPLATES.find(t => t.name === safeTemplateName);
+            const sysTpl = REQUIRED_SYSTEM_TEMPLATES.find(t => t.name === safeTemplateName || getBaseName(t.name) === baseTarget);
             let fallbackBody = sysTpl ? sysTpl.content : `Dear {{1}}, please pay {{2}} securely.`;
             bodyVariables.forEach((val, idx) => {
                 fallbackBody = fallbackBody.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), val.toString());
@@ -594,12 +656,14 @@ export const whatsappService = {
     try {
         const existing = await this.fetchMetaTemplates();
         
+        const getBaseName = (n: string) => (n || '').toLowerCase().trim().replace(/_v\d+$/i, '');
         for (const sysTpl of REQUIRED_SYSTEM_TEMPLATES) {
-            const match = existing.find(e => e.name === sysTpl.name);
+            const sysBase = getBaseName(sysTpl.name);
+            const match = existing.find(e => e.name === sysTpl.name || getBaseName(e.name) === sysBase);
             
             const tplToSync: WhatsAppTemplate = {
                 id: match?.id || `sys-${sysTpl.name}`,
-                name: sysTpl.name,
+                name: match?.name || sysTpl.name,
                 category: sysTpl.category as MetaCategory,
                 content: sysTpl.content,
                 variableExamples: sysTpl.examples,

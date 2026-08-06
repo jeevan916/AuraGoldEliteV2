@@ -398,11 +398,64 @@ router.get('/templates', ensureDb, async (req, res) => {
     }
 });
 
+function sanitizeComponents(components) {
+    if (!Array.isArray(components)) return components;
+    return components.map(c => {
+        if (!c) return c;
+        if (c.type === 'BODY' && c.text) {
+            const matches = c.text.match(/\{\{([0-9]+)\}\}/g) || [];
+            const nums = matches.map(m => parseInt(m.replace(/[^0-9]/g, ''), 10));
+            const maxIdx = nums.length > 0 ? Math.max(...nums) : 0;
+            if (maxIdx > 0) {
+                let existingEx = c.example?.body_text?.[0] || [];
+                let safeEx = [];
+                for (let i = 0; i < maxIdx; i++) {
+                    let val = existingEx[i];
+                    if (typeof val === 'string') val = val.trim();
+                    if (!val) {
+                        val = i === 0 ? 'Rahul Sharma' : i === 1 ? '₹25,000' : i === 2 ? 'ORD-10023' : `Sample ${i + 1}`;
+                    }
+                    safeEx.push(val);
+                }
+                c.example = { body_text: [safeEx] };
+            }
+        } else if (c.type === 'HEADER') {
+            if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(c.format)) {
+                const defaultMediaUrl = 
+                    c.format === 'IMAGE' ? "https://images.unsplash.com/photo-1611591475178-57e05244f7db?auto=format&fit=crop&w=800&q=80" :
+                    c.format === 'VIDEO' ? "https://www.w3schools.com/html/mov_bbb.mp4" :
+                    "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf";
+                const existingUrl = c.example?.header_url?.[0] || c.example?.header_handle?.[0];
+                c.example = { header_url: [existingUrl || defaultMediaUrl] };
+            } else if (c.format === 'TEXT' && c.text && c.text.includes('{{1}}')) {
+                if (!c.example || !c.example.header_text || !c.example.header_text[0]) {
+                    c.example = { header_text: ['Sample Header'] };
+                }
+            }
+        } else if (c.type === 'BUTTONS' && Array.isArray(c.buttons)) {
+            c.buttons = c.buttons.map(b => {
+                if (b.type === 'URL' && b.url && b.url.includes('{{1}}')) {
+                    let ex = b.example?.[0];
+                    if (typeof ex === 'string') ex = ex.trim();
+                    if (!ex) ex = 'ORD-10023';
+                    b.example = [ex];
+                }
+                return b;
+            });
+        }
+        return c;
+    });
+}
+
 router.post('/templates', ensureDb, async (req, res) => {
     const wabaId = req.headers['x-waba-id'];
     const token = req.headers['x-auth-token'];
     const payload = req.body;
     if (!wabaId || !token) return res.status(401).json({ success: false, error: "Missing Credentials" });
+
+    if (payload.components) {
+        payload.components = sanitizeComponents(payload.components);
+    }
 
     try {
         const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${wabaId}/message_templates`, {
@@ -436,6 +489,10 @@ router.post('/templates/:id', ensureDb, async (req, res) => {
     const token = req.headers['x-auth-token'];
     const payload = req.body;
     if (!token) return res.status(401).json({ success: false, error: "Missing Credentials" });
+
+    if (payload.components) {
+        payload.components = sanitizeComponents(payload.components);
+    }
 
     try {
         const r = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${templateId}`, {
