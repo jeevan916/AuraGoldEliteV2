@@ -13,7 +13,12 @@ import { whatsappService } from '../services/whatsappService';
 export const ExternalPaymentLedger: React.FC = () => {
   const [records, setRecords] = useState<ExternalPaymentRecord[]>(storageService.getExternalPayments());
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL'); // ALL, PAID, PARTIAL, PENDING, CANCELLED, TODAY_RECEIVED
+  const [datePreset, setDatePreset] = useState<'ALL_TIME' | 'TODAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'CUSTOM'>('ALL_TIME');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [sortBy, setSortBy] = useState<'DATE_DESC' | 'DATE_ASC' | 'AMOUNT_DESC' | 'AMOUNT_ASC' | 'CUSTOMER_ASC' | 'PAID_DATE_DESC' | 'DUE_DATE_ASC'>('DATE_DESC');
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<ExternalPaymentRecord | null>(null);
   const [activeDetailTab, setActiveDetailTab] = useState<'OVERVIEW' | 'RAW_DEBUG'>('OVERVIEW');
@@ -35,6 +40,43 @@ export const ExternalPaymentLedger: React.FC = () => {
     setManualNote('');
   };
   
+  // Date Helpers
+  const isSameDay = (d1Str?: string, d2Str?: string) => {
+    if (!d1Str || !d2Str) return false;
+    const d1 = new Date(d1Str);
+    const d2 = new Date(d2Str);
+    return d1.getFullYear() === d2.getFullYear() &&
+           d1.getMonth() === d2.getMonth() &&
+           d1.getDate() === d2.getDate();
+  };
+
+  const isToday = (dStr?: string) => {
+    if (!dStr) return false;
+    return isSameDay(dStr, new Date().toISOString());
+  };
+
+  const hasReceivedPaymentToday = (r: ExternalPaymentRecord) => {
+    if (r.paidAt && isToday(r.paidAt)) return true;
+    if (r.lastPaymentAt && isToday(r.lastPaymentAt)) return true;
+    if (r.partialPayments && r.partialPayments.some(p => p.paidAt && isToday(p.paidAt))) return true;
+    return false;
+  };
+
+  const getAmountReceivedToday = (r: ExternalPaymentRecord) => {
+    let sumToday = 0;
+    const todayISO = new Date().toISOString();
+    if (r.partialPayments && r.partialPayments.length > 0) {
+      r.partialPayments.forEach(p => {
+        if (p.paidAt && isSameDay(p.paidAt, todayISO)) {
+          sumToday += Number(p.amount || 0);
+        }
+      });
+    } else if (r.status === 'PAID' && r.paidAt && isSameDay(r.paidAt, todayISO)) {
+      sumToday += Number(r.amountPaid || r.amount || 0);
+    }
+    return sumToday;
+  };
+
   // Loading & notification state
   const [isGeneratingSetu, setIsGeneratingSetu] = useState(false);
   const [isSendingWa, setIsSendingWa] = useState(false);
@@ -76,39 +118,156 @@ export const ExternalPaymentLedger: React.FC = () => {
   const metrics = useMemo(() => {
     const total = records.length;
     const paidRecords = records.filter(r => r.status === 'PAID');
+    const partialRecords = records.filter(r => r.status === 'PARTIAL');
     const pendingRecords = records.filter(r => r.status === 'PENDING');
     const cancelledRecords = records.filter(r => r.status === 'CANCELLED');
 
-    const totalPaidAmount = paidRecords.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-    const totalPendingAmount = pendingRecords.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-    const collectionRate = total > 0 ? Math.round((paidRecords.length / total) * 100) : 0;
+    const totalPaidAmount = records.reduce((sum, r) => sum + Number(r.amountPaid || (r.status === 'PAID' ? r.amount : 0) || 0), 0);
+    const totalPendingAmount = records.reduce((sum, r) => {
+      const alreadyPaid = r.amountPaid || (r.status === 'PAID' ? r.amount : 0);
+      return sum + Math.max(0, Number(r.amount || 0) - alreadyPaid);
+    }, 0);
+
+    let todayReceivedAmount = 0;
+    let todayReceivedCount = 0;
+    records.forEach(r => {
+      const amtToday = getAmountReceivedToday(r);
+      if (amtToday > 0) {
+        todayReceivedAmount += amtToday;
+        todayReceivedCount++;
+      }
+    });
+
+    const collectionRate = total > 0 ? Math.round(((paidRecords.length + partialRecords.length) / total) * 100) : 0;
 
     return {
       total,
       paidCount: paidRecords.length,
+      partialCount: partialRecords.length,
       pendingCount: pendingRecords.length,
       cancelledCount: cancelledRecords.length,
       totalPaidAmount,
       totalPendingAmount,
+      todayReceivedAmount,
+      todayReceivedCount,
       collectionRate
     };
   }, [records]);
 
-  // Filtered records
+  // Counts per status category
+  const statusCounts = useMemo(() => {
+    const counts = {
+      ALL: records.length,
+      PAID: 0,
+      PARTIAL: 0,
+      PENDING: 0,
+      CANCELLED: 0,
+      TODAY_RECEIVED: 0
+    };
+
+    records.forEach(r => {
+      if (r.status === 'PAID') counts.PAID++;
+      else if (r.status === 'PARTIAL') counts.PARTIAL++;
+      else if (r.status === 'PENDING') counts.PENDING++;
+      else if (r.status === 'CANCELLED') counts.CANCELLED++;
+
+      if (hasReceivedPaymentToday(r)) counts.TODAY_RECEIVED++;
+    });
+
+    return counts;
+  }, [records]);
+
+  // Filtered & Sorted records
   const filteredRecords = useMemo(() => {
-    return records.filter(r => {
+    const filtered = records.filter(r => {
+      // Search filter
       const matchesSearch = 
         r.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
         r.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         r.customerContact.includes(searchTerm) ||
         r.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        r.referenceNote.toLowerCase().includes(searchTerm.toLowerCase());
+        r.referenceNote.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (r.txnId && r.txnId.toLowerCase().includes(searchTerm.toLowerCase()));
 
-      const matchesStatus = statusFilter === 'ALL' || r.status === statusFilter;
+      if (!matchesSearch) return false;
 
-      return matchesSearch && matchesStatus;
+      // Status filter
+      if (statusFilter === 'PAID' && r.status !== 'PAID') return false;
+      if (statusFilter === 'PARTIAL' && r.status !== 'PARTIAL') return false;
+      if (statusFilter === 'PENDING' && r.status !== 'PENDING') return false;
+      if (statusFilter === 'CANCELLED' && r.status !== 'CANCELLED') return false;
+      if (statusFilter === 'TODAY_RECEIVED' && !hasReceivedPaymentToday(r)) return false;
+
+      // Date preset & custom range filter
+      const createdAt = r.createdAt ? new Date(r.createdAt) : null;
+      const now = new Date();
+
+      if (datePreset === 'TODAY') {
+        const isCreatedToday = isToday(r.createdAt);
+        const isPaidToday = hasReceivedPaymentToday(r);
+        if (!isCreatedToday && !isPaidToday) return false;
+      } else if (datePreset === 'THIS_WEEK') {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(now.getDate() - 7);
+        sevenDaysAgo.setHours(0, 0, 0, 0);
+        if (!createdAt || createdAt < sevenDaysAgo) return false;
+      } else if (datePreset === 'THIS_MONTH') {
+        if (!createdAt || createdAt.getMonth() !== now.getMonth() || createdAt.getFullYear() !== now.getFullYear()) return false;
+      } else if (datePreset === 'CUSTOM') {
+        if (startDate) {
+          const startMs = new Date(startDate + 'T00:00:00').getTime();
+          if (createdAt && createdAt.getTime() < startMs) return false;
+        }
+        if (endDate) {
+          const endMs = new Date(endDate + 'T23:59:59').getTime();
+          if (createdAt && createdAt.getTime() > endMs) return false;
+        }
+      }
+
+      return true;
     });
-  }, [records, searchTerm, statusFilter]);
+
+    // Sort logic
+    return [...filtered].sort((a, b) => {
+      if (sortBy === 'DATE_DESC') {
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      }
+      if (sortBy === 'DATE_ASC') {
+        return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+      }
+      if (sortBy === 'AMOUNT_DESC') {
+        return (b.amount || 0) - (a.amount || 0);
+      }
+      if (sortBy === 'AMOUNT_ASC') {
+        return (a.amount || 0) - (b.amount || 0);
+      }
+      if (sortBy === 'CUSTOMER_ASC') {
+        return a.customerName.localeCompare(b.customerName);
+      }
+      if (sortBy === 'PAID_DATE_DESC') {
+        const timeA = a.paidAt || a.lastPaymentAt ? new Date(a.paidAt || a.lastPaymentAt!).getTime() : 0;
+        const timeB = b.paidAt || b.lastPaymentAt ? new Date(b.paidAt || b.lastPaymentAt!).getTime() : 0;
+        return timeB - timeA;
+      }
+      if (sortBy === 'DUE_DATE_ASC') {
+        const timeA = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+        const timeB = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+        return timeA - timeB;
+      }
+      return 0;
+    });
+  }, [records, searchTerm, statusFilter, datePreset, startDate, endDate, sortBy]);
+
+  const resetFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('ALL');
+    setDatePreset('ALL_TIME');
+    setStartDate('');
+    setEndDate('');
+    setSortBy('DATE_DESC');
+  };
+
+  const isFiltered = searchTerm !== '' || statusFilter !== 'ALL' || datePreset !== 'ALL_TIME' || startDate !== '' || endDate !== '';
 
   // Helper to generate or re-generate Setu UPI link with full raw response and debug logs
   const handleGenerateSetuLink = async (record: ExternalPaymentRecord) => {
@@ -524,7 +683,7 @@ export const ExternalPaymentLedger: React.FC = () => {
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-xs font-bold uppercase tracking-wider">Total Received</span>
@@ -534,7 +693,35 @@ export const ExternalPaymentLedger: React.FC = () => {
           </div>
           <div>
             <div className="text-2xl font-black text-emerald-600">₹{metrics.totalPaidAmount.toLocaleString('en-IN')}</div>
-            <div className="text-[11px] font-semibold text-slate-500 mt-0.5">{metrics.paidCount} Transactions Paid</div>
+            <div className="text-[11px] font-semibold text-slate-500 mt-0.5">{metrics.paidCount} Fully Paid • {metrics.partialCount} Partial</div>
+          </div>
+        </div>
+
+        {/* Today's Received Payment Card */}
+        <div 
+          onClick={() => setStatusFilter(statusFilter === 'TODAY_RECEIVED' ? 'ALL' : 'TODAY_RECEIVED')}
+          className={`p-5 rounded-3xl border transition-all cursor-pointer shadow-sm flex flex-col justify-between ${
+            statusFilter === 'TODAY_RECEIVED' 
+              ? 'bg-gradient-to-br from-emerald-900 to-teal-950 text-white border-emerald-700 ring-2 ring-emerald-500' 
+              : 'bg-emerald-50/50 hover:bg-emerald-50 border-emerald-200/80'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === 'TODAY_RECEIVED' ? 'text-emerald-300' : 'text-emerald-800'}`}>
+              Today's Received
+            </span>
+            <div className={`w-8 h-8 rounded-2xl flex items-center justify-center ${statusFilter === 'TODAY_RECEIVED' ? 'bg-emerald-800/80 text-emerald-200' : 'bg-emerald-100 text-emerald-700'}`}>
+              <ReceiptIndianRupee size={18} />
+            </div>
+          </div>
+          <div>
+            <div className={`text-2xl font-black ${statusFilter === 'TODAY_RECEIVED' ? 'text-white' : 'text-emerald-700'}`}>
+              ₹{metrics.todayReceivedAmount.toLocaleString('en-IN')}
+            </div>
+            <div className={`text-[11px] font-semibold mt-0.5 flex items-center justify-between ${statusFilter === 'TODAY_RECEIVED' ? 'text-emerald-200' : 'text-emerald-700'}`}>
+              <span>{metrics.todayReceivedCount} Paid Today</span>
+              <span className="underline text-[10px] uppercase font-bold">Filter</span>
+            </div>
           </div>
         </div>
 
@@ -579,40 +766,161 @@ export const ExternalPaymentLedger: React.FC = () => {
       </div>
 
       {/* Controls Bar */}
-      <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-        {/* Search */}
-        <div className="relative w-full sm:w-80">
-          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by customer, phone, ID or purpose..."
-            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-          />
-          {searchTerm && (
-            <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-              <X size={14} />
-            </button>
-          )}
+      <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
+        {/* Row 1: Search & Status Chips */}
+        <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4">
+          {/* Search Input */}
+          <div className="relative w-full xl:w-80">
+            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search by customer, phone, ID, purpose or Txn ID..."
+              className="w-full pl-10 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+            />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Status Filter Buttons */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 xl:pb-0 scrollbar-none">
+            {[
+              { id: 'ALL', label: 'All', count: statusCounts.ALL, color: 'bg-slate-900 text-white' },
+              { id: 'PAID', label: 'Complete Paid', count: statusCounts.PAID, color: 'bg-emerald-600 text-white' },
+              { id: 'PARTIAL', label: 'Partial Paid', count: statusCounts.PARTIAL, color: 'bg-amber-600 text-white' },
+              { id: 'PENDING', label: 'Unpaid / Pending', count: statusCounts.PENDING, color: 'bg-amber-500 text-slate-950' },
+              { id: 'CANCELLED', label: 'Cancelled', count: statusCounts.CANCELLED, color: 'bg-rose-600 text-white' },
+              { id: 'TODAY_RECEIVED', label: "Today's Received", count: statusCounts.TODAY_RECEIVED, color: 'bg-teal-600 text-white' }
+            ].map((st) => {
+              const isActive = statusFilter === st.id;
+              return (
+                <button
+                  key={st.id}
+                  onClick={() => setStatusFilter(st.id)}
+                  className={`px-3.5 py-2 rounded-xl text-[11px] font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                    isActive
+                      ? `${st.color} shadow-md ring-2 ring-offset-1 ring-slate-400/50`
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <span>{st.label}</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                    isActive ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {st.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Status Filters */}
-        <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          {['ALL', 'PENDING', 'PAID', 'CANCELLED'].map((st) => (
-            <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
-              className={`px-3.5 py-2 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all whitespace-nowrap ${
-                statusFilter === st
-                  ? 'bg-slate-900 text-white shadow-md'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {st}
-            </button>
-          ))}
+        {/* Row 2: Date Filters & Sorting Controls */}
+        <div className="pt-3 border-t border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 text-xs">
+          {/* Date Range Presets & Pickers */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 text-slate-500 font-bold text-[11px] uppercase tracking-wider mr-1">
+              <Calendar size={14} className="text-amber-600" />
+              <span>Date:</span>
+            </div>
+
+            <div className="inline-flex bg-slate-100 p-1 rounded-2xl border border-slate-200">
+              {[
+                { id: 'ALL_TIME', label: 'All Time' },
+                { id: 'TODAY', label: 'Today' },
+                { id: 'THIS_WEEK', label: 'This Week' },
+                { id: 'THIS_MONTH', label: 'This Month' },
+                { id: 'CUSTOM', label: 'Custom' }
+              ].map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setDatePreset(p.id as any)}
+                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all ${
+                    datePreset === p.id 
+                      ? 'bg-white text-slate-900 shadow-sm' 
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Custom Date Pickers */}
+            {(datePreset === 'CUSTOM' || startDate || endDate) && (
+              <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-200 animate-fadeIn">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setDatePreset('CUSTOM');
+                  }}
+                  className="px-2 py-1 bg-white border border-slate-200 rounded-xl text-[11px] font-mono text-slate-800 focus:outline-none"
+                />
+                <span className="text-slate-400 font-bold text-[10px]">TO</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setDatePreset('CUSTOM');
+                  }}
+                  className="px-2 py-1 bg-white border border-slate-200 rounded-xl text-[11px] font-mono text-slate-800 focus:outline-none"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Sorting & Filter Reset */}
+          <div className="flex items-center gap-3 justify-between md:justify-end">
+            <div className="flex items-center gap-2">
+              <Filter size={14} className="text-slate-400" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 cursor-pointer"
+              >
+                <option value="DATE_DESC">Newest First</option>
+                <option value="DATE_ASC">Oldest First</option>
+                <option value="AMOUNT_DESC">Amount: High to Low</option>
+                <option value="AMOUNT_ASC">Amount: Low to High</option>
+                <option value="CUSTOMER_ASC">Customer Name (A-Z)</option>
+                <option value="PAID_DATE_DESC">Recently Paid First</option>
+                <option value="DUE_DATE_ASC">Due Date (Soonest First)</option>
+              </select>
+            </div>
+
+            {/* Reset Filters */}
+            {isFiltered && (
+              <button
+                onClick={resetFilters}
+                className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-2xl border border-rose-200 transition-all flex items-center gap-1 active:scale-95"
+                title="Clear all search, status, date, and sort filters"
+              >
+                <X size={12} /> Clear Filters
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Filter Summary Banner */}
+        {isFiltered && (
+          <div className="text-[11px] font-semibold text-slate-500 flex items-center justify-between pt-1">
+            <span>
+              Showing <strong className="text-slate-900">{filteredRecords.length}</strong> of <strong className="text-slate-900">{records.length}</strong> external payment requests
+            </span>
+            <span className="text-amber-700 font-bold">
+              {statusFilter !== 'ALL' && `Status: ${statusFilter} `}
+              {datePreset !== 'ALL_TIME' && `• Date: ${datePreset} `}
+              {searchTerm && `• Query: "${searchTerm}"`}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Ledger Table */}

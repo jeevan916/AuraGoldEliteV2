@@ -2,11 +2,28 @@ import React, { useState, useMemo } from 'react';
 import { 
   Search, Filter, Smartphone, Calendar, CheckCircle2, 
   Clock, AlertCircle, MessageCircle, ArrowDownLeft, ArrowUpRight, 
-  ExternalLink, FileText, Check, User, Edit2, X, Info
+  ExternalLink, FileText, Check, User, Edit2, X, Info, Image as ImageIcon
 } from 'lucide-react';
 import { WhatsAppLogEntry, MessageStatus } from '../types';
 import { whatsappService } from '../services/whatsappService';
 import { MetaRawResponseModal } from './MetaRawResponseModal';
+
+const getLogMediaUrl = (log: WhatsAppLogEntry): string | null => {
+  if (log.mediaUrl) return log.mediaUrl;
+  if (log.mediaId) return `/api/whatsapp/media/${log.mediaId}`;
+  
+  const raw = log.rawResponse || (log as any).raw || {};
+  const mediaId = raw.image?.id || raw.document?.id || raw.sticker?.id;
+  if (mediaId) {
+    return `/api/whatsapp/media/${mediaId}`;
+  }
+
+  if (log.message && (log.message.startsWith('/uploads/') || log.message.startsWith('http://') || log.message.startsWith('https://')) && (log.message.match(/\.(jpeg|jpg|gif|png|webp)/i))) {
+    return log.message;
+  }
+
+  return null;
+};
 
 interface WhatsAppLogsProps {
   logs: WhatsAppLogEntry[];
@@ -228,9 +245,31 @@ const WhatsAppLogs: React.FC<WhatsAppLogsProps> = ({ logs, onViewChat, onAddLog 
                             </td>
                             <td className="px-8 py-6">
                                 <div className="max-w-[300px]">
-                                    <p className="text-sm text-slate-600 line-clamp-2 leading-relaxed italic">
-                                        "{log.message}"
-                                    </p>
+                                    {(() => {
+                                        const mediaSrc = getLogMediaUrl(log);
+                                        if (mediaSrc) {
+                                            return (
+                                                <div className="flex items-center gap-2.5 my-1">
+                                                    <a href={mediaSrc} target="_blank" rel="noopener noreferrer" className="relative group shrink-0">
+                                                        <img src={mediaSrc} alt="Thumbnail" className="w-12 h-12 rounded-lg object-cover border border-slate-200 group-hover:opacity-80 transition-opacity shadow-sm" />
+                                                    </a>
+                                                    <div>
+                                                        <span className="text-xs font-bold text-emerald-800 flex items-center gap-1">
+                                                            <ImageIcon size={12} /> Image Received
+                                                        </span>
+                                                        <a href={mediaSrc} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 font-bold hover:underline block mt-0.5">
+                                                            View Full Size ↗
+                                                        </a>
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+                                        return (
+                                            <p className="text-sm text-slate-600 line-clamp-2 leading-relaxed italic">
+                                                "{log.message}"
+                                            </p>
+                                        );
+                                    })()}
                                     {log.isEdited && (
                                         <span className="inline-flex items-center gap-1 text-[9px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter border border-emerald-100 mt-1">
                                             Edited

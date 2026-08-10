@@ -6,7 +6,7 @@ import {
   Order, JewelryDetail, OrderStatus, GlobalSettings, 
   ProductionStatus, Purity, ProtectionStatus, Milestone, PaymentPlan, PaymentPlanTemplate, Customer, AuthUser
 } from '../types';
-import { compressImage } from '../services/imageOptimizer';
+import { compressImage, uploadOrderImage } from '../services/imageOptimizer';
 import { whatsappService } from '../services/whatsappService';
 
 interface OrderFormProps {
@@ -230,15 +230,15 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
     if (e.target.files && e.target.files.length > 0) {
       setIsCompressing(true);
       try {
-        const compressedList: string[] = [];
+        const uploadedList: string[] = [];
         for (let i = 0; i < e.target.files.length; i++) {
           const file = e.target.files[i];
-          const compressed = await compressImage(file);
-          compressedList.push(compressed);
+          const serverUrl = await uploadOrderImage(file, 'ordered');
+          uploadedList.push(serverUrl);
         }
         setCurrentItem(prev => ({
           ...prev,
-          photoUrls: [...(prev.photoUrls || []), ...compressedList]
+          photoUrls: [...(prev.photoUrls || []), ...uploadedList]
         }));
       } catch (error) {
         alert("Failed to process one or more images. Ensure files are standard image formats.");

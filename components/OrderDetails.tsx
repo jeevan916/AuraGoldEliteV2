@@ -5,7 +5,7 @@ import { Order, GlobalSettings, WhatsAppLogEntry, ProductionStatus, ProtectionSt
 import { generateOrderPDF, generateReceiptPDF } from '../services/pdfGenerator';
 import { whatsappService } from '../services/whatsappService';
 import { Button } from './shared/BaseUI';
-import { compressImage } from '../services/imageOptimizer';
+import { compressImage, uploadOrderImage } from '../services/imageOptimizer';
 
 // Importing Clusters (Plug & Play Units)
 import { PaymentWidget } from './clusters/PaymentWidget';
@@ -447,18 +447,18 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, itemId: string, type: 'ordered' | 'ready' = 'ready') => {
       if (e.target.files && e.target.files.length > 0) {
           try {
-              const compressedList: string[] = [];
+              const uploadedList: string[] = [];
               for (let i = 0; i < e.target.files.length; i++) {
-                  const compressed = await compressImage(e.target.files[i]);
-                  compressedList.push(compressed);
+                  const serverUrl = await uploadOrderImage(e.target.files[i], type);
+                  uploadedList.push(serverUrl);
               }
               
               const updatedItems = order.items.map(i => {
                   if (i.id === itemId) {
                       if (type === 'ordered') {
-                          return { ...i, photoUrls: [...(i.photoUrls || []), ...compressedList] };
+                          return { ...i, photoUrls: [...(i.photoUrls || []), ...uploadedList] };
                       } else {
-                          return { ...i, readyPhotoUrls: [...(i.readyPhotoUrls || []), ...compressedList] };
+                          return { ...i, readyPhotoUrls: [...(i.readyPhotoUrls || []), ...uploadedList] };
                       }
                   }
                   return i;

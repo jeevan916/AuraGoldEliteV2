@@ -61,3 +61,30 @@ export const compressImage = async (file: File): Promise<string> => {
     reader.onerror = (err) => reject(new Error("Failed to read file"));
   });
 };
+
+const API_BASE = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) || (typeof process !== 'undefined' && process.env?.VITE_API_BASE_URL) || '';
+
+/**
+ * Uploads an order image to the physical server storage in /uploads/ordered or /uploads/ready folder
+ * and returns the relative path URL (e.g. /uploads/ordered/img_xxx.jpg or /uploads/ready/img_xxx.jpg).
+ */
+export const uploadOrderImage = async (file: File, folder: 'ordered' | 'ready' = 'ordered'): Promise<string> => {
+  const compressedBase64 = await compressImage(file);
+  try {
+    const res = await fetch(`${API_BASE}/api/sync/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: compressedBase64, folder })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.url) {
+        return data.url;
+      }
+    }
+  } catch (e) {
+    console.warn("[Upload] Direct image upload to server failed, using local base64 fallback", e);
+  }
+  return compressedBase64;
+};
+

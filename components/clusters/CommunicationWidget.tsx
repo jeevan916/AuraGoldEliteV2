@@ -1,9 +1,26 @@
 
 import React, { useState } from 'react';
-import { Send, MessageSquare, Phone, ExternalLink, AlertCircle } from 'lucide-react';
+import { Send, MessageSquare, Phone, ExternalLink, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import { Card, Button, SectionHeader } from '../shared/BaseUI';
 import { WhatsAppLogEntry } from '../../types';
 import { whatsappService } from '../../services/whatsappService';
+
+const getLogMediaUrl = (log: WhatsAppLogEntry): string | null => {
+  if (log.mediaUrl) return log.mediaUrl;
+  if (log.mediaId) return `/api/whatsapp/media/${log.mediaId}`;
+  
+  const raw = log.rawResponse || (log as any).raw || {};
+  const mediaId = raw.image?.id || raw.document?.id || raw.sticker?.id;
+  if (mediaId) {
+    return `/api/whatsapp/media/${mediaId}`;
+  }
+
+  if (log.message && (log.message.startsWith('/uploads/') || log.message.startsWith('http://') || log.message.startsWith('https://')) && (log.message.match(/\.(jpeg|jpg|gif|png|webp)/i))) {
+    return log.message;
+  }
+
+  return null;
+};
 
 interface CommunicationWidgetProps {
   logs: WhatsAppLogEntry[];
@@ -104,20 +121,53 @@ export const CommunicationWidget: React.FC<CommunicationWidgetProps> = ({
 
       <Card className="flex-1 flex flex-col overflow-hidden bg-slate-50 border-slate-200">
         <div className="flex-1 overflow-y-auto p-4 space-y-3 flex flex-col-reverse custom-scrollbar">
-          {customerLogs.map((log) => (
-            <div key={log.id} className={`flex ${log.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] p-3 rounded-2xl text-xs font-medium leading-relaxed shadow-sm ${
-                log.direction === 'outbound' 
-                  ? 'bg-white border border-slate-200 text-slate-700 rounded-tr-none' 
-                  : 'bg-emerald-100 text-emerald-900 rounded-tl-none border border-emerald-200'
-              }`}>
-                {log.message}
-                <div className="mt-1 text-[8px] opacity-50 font-black uppercase text-right">
-                  {new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} • {log.status}
+          {customerLogs.map((log) => {
+            const mediaSrc = getLogMediaUrl(log);
+            const showText = log.message && log.message !== '[Media: image]' && !log.message.startsWith('[Media:');
+
+            return (
+              <div key={log.id} className={`flex ${log.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[85%] p-3 rounded-2xl text-xs font-medium leading-relaxed shadow-sm ${
+                  log.direction === 'outbound' 
+                    ? 'bg-white border border-slate-200 text-slate-700 rounded-tr-none' 
+                    : 'bg-emerald-100 text-emerald-900 rounded-tl-none border border-emerald-200'
+                }`}>
+                  {mediaSrc ? (
+                    <div className="space-y-2 mb-1">
+                      <a 
+                        href={mediaSrc} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="block rounded-xl overflow-hidden border border-slate-200 shadow-sm max-w-[260px] bg-black/5 hover:opacity-95 transition-opacity"
+                      >
+                        <img 
+                          src={mediaSrc} 
+                          alt="Customer Media Attachment" 
+                          className="w-full max-h-64 object-cover"
+                          loading="lazy"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            target.style.display = 'none';
+                            const fb = target.nextElementSibling as HTMLElement;
+                            if (fb) fb.style.display = 'flex';
+                          }}
+                        />
+                        <div className="hidden p-3 items-center justify-center gap-2 text-xs font-bold text-slate-600 bg-slate-100">
+                          <ImageIcon size={16} /> View Image Attachment
+                        </div>
+                      </a>
+                      {showText && <p>{log.message}</p>}
+                    </div>
+                  ) : (
+                    log.message
+                  )}
+                  <div className="mt-1 text-[8px] opacity-50 font-black uppercase text-right">
+                    {new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} • {log.status}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {customerLogs.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2">
               <MessageSquare size={32} className="opacity-20"/>

@@ -2,17 +2,32 @@
 import express from 'express';
 import { getPool, ensureDb, journalTransaction } from './db.js';
 import { refreshInterval } from './rateService.js';
-import { processOrderImages } from './imageStore.js';
+import { processOrderImages, saveBase64ImageToServer } from './imageStore.js';
 
 const router = express.Router();
+
+// Direct image upload endpoint for saving images into /uploads/ordered or /uploads/ready
+router.post('/upload', (req, res) => {
+    try {
+        const { image, folder } = req.body;
+        if (!image) {
+            return res.status(400).json({ error: 'Image data is required' });
+        }
+        const url = saveBase64ImageToServer(image, folder === 'ready' ? 'ready' : 'ordered');
+        return res.json({ success: true, url });
+    } catch (e) {
+        return res.status(500).json({ error: e.message });
+    }
+});
 
 router.post('/orders', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
-        for (let order of req.body.orders) {
-            // Intercept and extract any base64 images, saving them on the server drive
-            order = processOrderImages(order);
+        for (let i = 0; i < req.body.orders.length; i++) {
+            // Intercept and extract any base64 images, saving them on the server drive in /uploads/ordered or /uploads/ready
+            req.body.orders[i] = processOrderImages(req.body.orders[i]);
+            const order = req.body.orders[i];
 
             await connection.query('INSERT INTO orders (id, customer_contact, status, created_at, share_token, data, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status=VALUES(status), share_token=VALUES(share_token), data=VALUES(data), updated_at=VALUES(updated_at)', [order.id, order.customerContact, order.status, new Date(order.createdAt), order.shareToken, JSON.stringify(order), Date.now()]);
             await journalTransaction('ORDER', order.id, 'SYNC_WRITE', order, connection);

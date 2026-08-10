@@ -113,9 +113,13 @@ app.use((req, res, next) => {
 
 // Serve physical uploaded files from the server drive
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) {
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
+const ORDERED_UPLOADS_DIR = path.join(UPLOADS_DIR, 'ordered');
+const READY_UPLOADS_DIR = path.join(UPLOADS_DIR, 'ready');
+
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+if (!fs.existsSync(ORDERED_UPLOADS_DIR)) fs.mkdirSync(ORDERED_UPLOADS_DIR, { recursive: true });
+if (!fs.existsSync(READY_UPLOADS_DIR)) fs.mkdirSync(READY_UPLOADS_DIR, { recursive: true });
+
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Debug Routes (Before other API routes)

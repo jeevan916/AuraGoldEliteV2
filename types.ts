@@ -202,6 +202,11 @@ export interface WhatsAppLogEntry {
   editedAt?: string;
   metaError?: any;
   rawResponse?: any;
+  mediaId?: string;
+  mediaType?: string;
+  mediaUrl?: string;
+  mediaCaption?: string;
+  mimeType?: string;
 }
 
 export type CollectionTone = 'POLITE' | 'FIRM' | 'URGENT' | 'ENCOURAGING';

@@ -91,9 +91,12 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
       });
       const data = await res.json();
       if (data.success && data.data) {
-        const setuPL = data.data.data?.paymentLink || data.data.paymentLink || {};
-        const shortUrl = setuPL.shortUrl || setuPL.url || setuPL.shortURL || '';
-        const upiIntentLink = setuPL.upiIntentLink || setuPL.upiURL || setuPL.upiID || (data.data.platformBillID ? `/api/setu/pay/${data.data.platformBillID}` : '');
+        const setuPL = data.data.data?.paymentLink || data.data.paymentLink || data.data || {};
+        const shortUrl = setuPL.shortUrl || setuPL.shortURL || setuPL.shortLink || setuPL.url || '';
+        const upiIntentLink = setuPL.upiIntentLink || setuPL.upiLink || setuPL.upiURL || (setuPL.upiID && setuPL.upiID.startsWith('upi://') ? setuPL.upiID : '') || (data.data.platformBillID ? `/api/setu/pay/${data.data.platformBillID}` : '');
+        
+        console.log("[ExternalPayment] Generated Setu link:", { shortUrl, upiIntentLink });
+
         setCustomLink({
           shortUrl,
           upiIntentLink
@@ -145,20 +148,32 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
     );
   }
 
-  const getPayLink = () => {
+  const getQrCodeLink = () => {
     if (!isValidAmount) return '';
-    if (customLink?.shortUrl) return customLink.shortUrl;
-    if (customLink?.upiIntentLink) return customLink.upiIntentLink;
+    // Priority 1: Direct upi:// intent link from custom generated link
+    if (customLink?.upiIntentLink && (customLink.upiIntentLink.startsWith('upi://') || customLink.upiIntentLink.includes('pa='))) {
+      return customLink.upiIntentLink;
+    }
+    if (customLink?.upiIntentLink) {
+      return customLink.upiIntentLink;
+    }
+    if (customLink?.shortUrl) {
+      return customLink.shortUrl;
+    }
 
+    // Priority 2: Default record link if amount matches remaining balance
     if (parsedAmount === remainingBalance) {
-      if (record.shortLink && (record.shortLink.startsWith('http://') || record.shortLink.startsWith('https://'))) {
-        return record.shortLink;
-      }
-      if (record.upiIntentLink && record.upiIntentLink.startsWith('upi://')) {
+      if (record.upiIntentLink && (record.upiIntentLink.startsWith('upi://') || record.upiIntentLink.includes('pa='))) {
         return record.upiIntentLink;
       }
       if (record.upiIntentLink && record.upiIntentLink.includes('@')) {
         return `upi://pay?pa=${record.upiIntentLink}&pn=AuraGold%20Jewellers&am=${parsedAmount}&cu=INR&tn=${encodeURIComponent(record.id)}`;
+      }
+      if (record.upiIntentLink) {
+        return record.upiIntentLink;
+      }
+      if (record.shortLink) {
+        return record.shortLink;
       }
       if (record.platformBillID) {
         return `/api/setu/pay/${record.platformBillID}`;
@@ -167,7 +182,37 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
     return '';
   };
 
-  const upiPayLink = getPayLink();
+  const getPayButtonLink = () => {
+    if (!isValidAmount) return '';
+    if (customLink?.upiIntentLink && customLink.upiIntentLink.startsWith('upi://')) {
+      return customLink.upiIntentLink;
+    }
+    if (customLink?.shortUrl) {
+      return customLink.shortUrl;
+    }
+    if (customLink?.upiIntentLink) {
+      return customLink.upiIntentLink;
+    }
+
+    if (parsedAmount === remainingBalance) {
+      if (record.upiIntentLink && record.upiIntentLink.startsWith('upi://')) {
+        return record.upiIntentLink;
+      }
+      if (record.shortLink) {
+        return record.shortLink;
+      }
+      if (record.upiIntentLink) {
+        return record.upiIntentLink;
+      }
+      if (record.platformBillID) {
+        return `/api/setu/pay/${record.platformBillID}`;
+      }
+    }
+    return '';
+  };
+
+  const qrCodeLink = getQrCodeLink();
+  const upiPayLink = getPayButtonLink();
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 md:p-6 relative overflow-hidden font-sans">
@@ -341,13 +386,13 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
                   <Loader2 size={28} className="animate-spin text-amber-500" />
                   <span className="text-[10px] font-bold text-center px-2">Generating QR for ₹{parsedAmount.toLocaleString('en-IN')}...</span>
                 </div>
-              ) : upiPayLink ? (
+              ) : qrCodeLink ? (
                 <>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
                     Scan QR code for ₹{parsedAmount.toLocaleString('en-IN')}
                   </p>
                   <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(upiPayLink)}`}
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrCodeLink)}`}
                     alt="Setu UPI Payment QR"
                     className="w-44 h-44 mx-auto rounded-2xl shadow-inner border border-slate-200"
                   />

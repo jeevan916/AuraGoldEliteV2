@@ -3,13 +3,30 @@ import {
   MessageSquare, Check, CheckCircle2, Clock, AlertCircle, 
   Search, Send, Smartphone, User, Paperclip, X,
   FileText, Plus, RefreshCw, Zap, Lock, Sparkles, BrainCircuit,
-  ArrowLeft, Edit2, Info
+  ArrowLeft, Edit2, Info, Image as ImageIcon
 } from 'lucide-react';
 import { WhatsAppLogEntry, MessageStatus, WhatsAppTemplate, Customer, AiChatInsight } from '../types';
 import { INITIAL_TEMPLATES, REQUIRED_SYSTEM_TEMPLATES } from '../constants';
 import { whatsappService } from '../services/whatsappService';
 import { geminiService } from '../services/geminiService';
 import { MetaRawResponseModal } from './MetaRawResponseModal';
+
+const getLogMediaUrl = (log: WhatsAppLogEntry): string | null => {
+  if (log.mediaUrl) return log.mediaUrl;
+  if (log.mediaId) return `/api/whatsapp/media/${log.mediaId}`;
+  
+  const raw = log.rawResponse || (log as any).raw || {};
+  const mediaId = raw.image?.id || raw.document?.id || raw.sticker?.id;
+  if (mediaId) {
+    return `/api/whatsapp/media/${mediaId}`;
+  }
+
+  if (log.message && (log.message.startsWith('/uploads/') || log.message.startsWith('http://') || log.message.startsWith('https://')) && (log.message.match(/\.(jpeg|jpg|gif|png|webp)/i))) {
+    return log.message;
+  }
+
+  return null;
+};
 
 interface WhatsAppPanelProps {
   logs: WhatsAppLogEntry[];
@@ -397,40 +414,73 @@ const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4 z-10">
-                    {activeConversation.messages.map(msg => (
-                        <div key={msg.id} className={`flex ${msg.direction === 'inbound' ? 'justify-start' : 'justify-end'}`}>
-                            <div className={`max-w-[75%] rounded-xl p-3 shadow-sm relative ${msg.direction === 'inbound' ? 'bg-white' : 'bg-[#d9fdd3]'}`}>
-                                <p className="text-sm text-slate-800 whitespace-pre-wrap">{msg.message}</p>
-                                <div className="flex items-center justify-between gap-2 mt-1">
-                                    <div>
-                                        {msg.direction === 'outbound' && (
-                                            <button 
-                                                onClick={() => handleStartEdit(msg)}
-                                                className="text-[10px] font-bold text-slate-400 hover:text-emerald-600 transition-colors mr-2 cursor-pointer"
-                                                title="Edit Message"
+                    {activeConversation.messages.map(msg => {
+                        const mediaSrc = getLogMediaUrl(msg);
+                        const showText = msg.message && msg.message !== '[Media: image]' && !msg.message.startsWith('[Media:');
+
+                        return (
+                            <div key={msg.id} className={`flex ${msg.direction === 'inbound' ? 'justify-start' : 'justify-end'}`}>
+                                <div className={`max-w-[75%] rounded-xl p-3 shadow-sm relative ${msg.direction === 'inbound' ? 'bg-white' : 'bg-[#d9fdd3]'}`}>
+                                    {mediaSrc ? (
+                                        <div className="space-y-2 mb-1">
+                                            <a 
+                                                href={mediaSrc} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer" 
+                                                className="block rounded-lg overflow-hidden border border-slate-200 shadow-sm max-w-[280px] bg-black/5 hover:opacity-95 transition-opacity"
                                             >
-                                                Edit
-                                            </button>
-                                        )}
-                                        {msg.isEdited && (
-                                            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1 rounded border border-emerald-100">
-                                                Edited
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        {msg.direction === 'outbound' && msg.sentBy && (
-                                            <span className="text-[9px] font-bold text-slate-400 uppercase mr-1 bg-slate-100 px-1 rounded">
-                                                {msg.sentBy}
-                                            </span>
-                                        )}
-                                        <span className="text-[10px] text-slate-400">{new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                                        {msg.direction === 'outbound' && <StatusIcon status={msg.status} log={msg} />}
+                                                <img 
+                                                    src={mediaSrc} 
+                                                    alt="Received media" 
+                                                    className="w-full max-h-72 object-cover"
+                                                    loading="lazy"
+                                                    onError={(e) => {
+                                                        const target = e.currentTarget;
+                                                        target.style.display = 'none';
+                                                        const fb = target.nextElementSibling as HTMLElement;
+                                                        if (fb) fb.style.display = 'flex';
+                                                    }}
+                                                />
+                                                <div className="hidden p-3 items-center justify-center gap-2 text-xs font-bold text-slate-600 bg-slate-100">
+                                                    <ImageIcon size={16} /> View Image Attachment
+                                                </div>
+                                            </a>
+                                            {showText && <p className="text-sm text-slate-800 whitespace-pre-wrap">{msg.message}</p>}
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-slate-800 whitespace-pre-wrap">{msg.message}</p>
+                                    )}
+                                    <div className="flex items-center justify-between gap-2 mt-1">
+                                        <div>
+                                            {msg.direction === 'outbound' && (
+                                                <button 
+                                                    onClick={() => handleStartEdit(msg)}
+                                                    className="text-[10px] font-bold text-slate-400 hover:text-emerald-600 transition-colors mr-2 cursor-pointer"
+                                                    title="Edit Message"
+                                                >
+                                                    Edit
+                                                </button>
+                                            )}
+                                            {msg.isEdited && (
+                                                <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1 rounded border border-emerald-100">
+                                                    Edited
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            {msg.direction === 'outbound' && msg.sentBy && (
+                                                <span className="text-[9px] font-bold text-slate-400 uppercase mr-1 bg-slate-100 px-1 rounded">
+                                                    {msg.sentBy}
+                                                </span>
+                                            )}
+                                            <span className="text-[10px] text-slate-400">{new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                            {msg.direction === 'outbound' && <StatusIcon status={msg.status} log={msg} />}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                     <div ref={chatEndRef} />
                 </div>
                 

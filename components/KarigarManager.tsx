@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { Order, JewelryDetail, ProductionStatus, OrderStatus, GlobalSettings } from '../types';
 import { whatsappService } from '../services/whatsappService';
-import { compressImage } from '../services/imageOptimizer';
+import { compressImage, uploadOrderImage } from '../services/imageOptimizer';
 import { Card, Badge, Button } from './shared/BaseUI';
 
 interface KarigarManagerProps {
@@ -182,17 +182,17 @@ const KarigarManager: React.FC<KarigarManagerProps> = ({ orders, onUpdateItem, o
       if (e.target.files && e.target.files.length > 0) {
           setIsUploading(true);
           try {
-              const compressedList: string[] = [];
+              const uploadedList: string[] = [];
               for (let i = 0; i < e.target.files.length; i++) {
-                  const compressed = await compressImage(e.target.files[i]);
-                  compressedList.push(compressed);
+                  const serverUrl = await uploadOrderImage(e.target.files[i], type);
+                  uploadedList.push(serverUrl);
               }
               
               if (type === 'ordered') {
-                  const updatedPhotos = [...(item.photoUrls || []), ...compressedList];
+                  const updatedPhotos = [...(item.photoUrls || []), ...uploadedList];
                   onUpdateItem(orderId, item.id, { photoUrls: updatedPhotos });
               } else {
-                  const updatedPhotos = [...(item.readyPhotoUrls || []), ...compressedList];
+                  const updatedPhotos = [...(item.readyPhotoUrls || []), ...uploadedList];
                   onUpdateItem(orderId, item.id, { readyPhotoUrls: updatedPhotos });
               }
               

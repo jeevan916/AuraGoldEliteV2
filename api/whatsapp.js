@@ -1,11 +1,55 @@
 
 import express from 'express';
+import fs from 'fs';
+import path from 'path';
 import { getPool, ensureDb, normalizePhone, logDbActivity } from './db.js';
 import { checkRateBreaches } from './rateService.js';
 import { runPaymentReminders } from './reminderService.js';
 
 const router = express.Router();
 const META_API_VERSION = "v20.0";
+const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+
+export function enrichLogMedia(log) {
+    if (!log) return log;
+    if (log.mediaUrl) return log;
+
+    const raw = log.rawResponse || log.raw || {};
+    let mId = log.mediaId || null;
+    let mType = log.mediaType || null;
+    let mCaption = log.mediaCaption || null;
+
+    if (!mId) {
+        if (raw.image?.id) {
+            mId = raw.image.id;
+            mType = 'image';
+            mCaption = raw.image?.caption || null;
+        } else if (raw.document?.id) {
+            mId = raw.document.id;
+            mType = 'document';
+            mCaption = raw.document?.caption || raw.document?.filename || null;
+        } else if (raw.video?.id) {
+            mId = raw.video.id;
+            mType = 'video';
+            mCaption = raw.video?.caption || null;
+        } else if (raw.sticker?.id) {
+            mId = raw.sticker.id;
+            mType = 'sticker';
+        } else if (raw.audio?.id) {
+            mId = raw.audio.id;
+            mType = 'audio';
+        }
+    }
+
+    if (mId) {
+        log.mediaId = mId;
+        log.mediaType = mType || 'image';
+        log.mediaUrl = `/api/whatsapp/media/${mId}`;
+        if (mCaption) log.mediaCaption = mCaption;
+    }
+
+    return log;
+}
 
 const SYSTEM_TEMPLATES = {
   auragold_order_agreement: "Dear {{1}}, thank you for choosing AuraGold. We are pleased to share the details and payment schedule for your order of {{2}}.\n\nTotal Order Value: ₹{{3}} (rate protection limited)\nPayment Terms: {{4}}\n\nPayment Schedule:\n{{5}}\n\nYou can view the detailed breakdown and track your order progress here: https://order.auragoldelite.com/?token={{6}}\n\n!!!Pay your payments ON Time to prevent Gold Rate Protection Lapses!!!",
@@ -207,7 +251,35 @@ router.post('/webhook', ensureDb, async (req, res) => {
         if (change.messages && change.messages[0]) {
             const msg = change.messages[0];
             const fromFormatted = normalizePhone(msg.from);
-            const msgBody = msg.text?.body || `[Media: ${msg.type}]`;
+
+            let mediaId = null;
+            let mediaType = msg.type || 'text';
+            let mediaCaption = null;
+            let mimeType = null;
+
+            if (msg.image) {
+                mediaId = msg.image.id;
+                mediaCaption = msg.image.caption || null;
+                mimeType = msg.image.mime_type || 'image/jpeg';
+            } else if (msg.document) {
+                mediaId = msg.document.id;
+                mediaCaption = msg.document.caption || msg.document.filename || null;
+                mimeType = msg.document.mime_type || 'application/pdf';
+            } else if (msg.video) {
+                mediaId = msg.video.id;
+                mediaCaption = msg.video.caption || null;
+                mimeType = msg.video.mime_type || 'video/mp4';
+            } else if (msg.audio) {
+                mediaId = msg.audio.id;
+                mimeType = msg.audio.mime_type || 'audio/ogg';
+            } else if (msg.sticker) {
+                mediaId = msg.sticker.id;
+                mimeType = msg.sticker.mime_type || 'image/webp';
+            }
+
+            const mediaUrl = mediaId ? `/api/whatsapp/media/${mediaId}` : null;
+            const msgBody = msg.text?.body || mediaCaption || (mediaType === 'image' ? '[Media: image]' : `[Media: ${mediaType}]`);
+
             const timestamp = new Date(parseInt(msg.timestamp) * 1000).toISOString();
             let contactName = change.contacts?.[0]?.profile?.name || "Customer";
             if (contactName.toLowerCase() === 'empty') {
@@ -241,7 +313,23 @@ router.post('/webhook', ensureDb, async (req, res) => {
                 }
             }
 
-            const logEntry = { id: msg.id, customerName: contactName, phoneNumber: fromFormatted, message: msgBody, status: 'READ', timestamp, direction: 'inbound', type: 'INBOUND', orderId: mostRecentOrderId };
+            const logEntry = { 
+                id: msg.id, 
+                customerName: contactName, 
+                phoneNumber: fromFormatted, 
+                message: msgBody, 
+                status: 'READ', 
+                timestamp, 
+                direction: 'inbound', 
+                type: 'INBOUND', 
+                orderId: mostRecentOrderId,
+                mediaId,
+                mediaType,
+                mediaUrl,
+                mediaCaption,
+                mimeType,
+                rawResponse: msg
+            };
             
             await connection.query(`INSERT INTO whatsapp_logs (id, phone, order_id, direction, timestamp, data) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE data=VALUES(data), order_id=VALUES(order_id)`, [logEntry.id, fromFormatted, mostRecentOrderId, 'inbound', new Date(timestamp), JSON.stringify(logEntry)]);
             
@@ -301,7 +389,7 @@ export async function resolveContactNames(logsOrLog) {
             } else if (log.customerName && log.customerName.toLowerCase() === 'empty') {
                 log.customerName = 'Customer';
             }
-            return log;
+            return enrichLogMedia(log);
         });
         return isArray ? resolved : resolved[0];
     } catch (e) {
@@ -309,6 +397,122 @@ export async function resolveContactNames(logsOrLog) {
         return logsOrLog;
     }
 }
+
+// Proxy WhatsApp Media Download
+router.get('/media/:mediaId', async (req, res) => {
+    try {
+        const { mediaId } = req.params;
+        if (!mediaId || mediaId === 'undefined' || mediaId === 'null') {
+            return res.status(400).send("Invalid media ID");
+        }
+
+        // 1. Check if the file already exists locally in /uploads/
+        if (!fs.existsSync(UPLOADS_DIR)) {
+            fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+        } else {
+            const files = fs.readdirSync(UPLOADS_DIR);
+            const matchedFile = files.find(f => f.startsWith(`wa_media_${mediaId}.`));
+            if (matchedFile) {
+                const fullPath = path.join(UPLOADS_DIR, matchedFile);
+                return res.sendFile(fullPath);
+            }
+        }
+
+        // 2. Fetch WhatsApp API credentials
+        let phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+        let token = process.env.WHATSAPP_PERMANENT_ACCESS_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
+
+        try {
+            const pool = getPool();
+            if (pool) {
+                const connection = await pool.getConnection();
+                const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['whatsapp']);
+                connection.release();
+                if (rows.length > 0) {
+                    const config = typeof rows[0].config === 'string' ? JSON.parse(rows[0].config) : rows[0].config;
+                    if (config) {
+                        if (config.token || config.accessToken || config.whatsappBusinessToken) {
+                            token = config.token || config.accessToken || config.whatsappBusinessToken;
+                        }
+                        if (config.phoneNumberId || config.whatsappPhoneNumberId) {
+                            phoneId = config.phoneNumberId || config.whatsappPhoneNumberId;
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("[WhatsApp Media] Error fetching DB config:", e.message);
+        }
+
+        if (!token) {
+            console.error("[WhatsApp Media] Missing WhatsApp permanent access token");
+            return res.status(401).send("WhatsApp access token not configured");
+        }
+
+        // 3. Query Graph API for media URL
+        const metaRes = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${mediaId}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!metaRes.ok) {
+            const errText = await metaRes.text();
+            console.error(`[WhatsApp Media] Graph API metadata error (${metaRes.status}):`, errText);
+            return res.status(metaRes.status).send(`Failed to get media info from Meta: ${metaRes.statusText}`);
+        }
+
+        const metaData = await metaRes.json();
+        const downloadUrl = metaData.url;
+        const mimeType = metaData.mime_type || 'image/jpeg';
+
+        if (!downloadUrl) {
+            return res.status(404).send("Download URL not found in Meta response");
+        }
+
+        // 4. Download binary file from Meta lookaside URL
+        const binaryRes = await fetch(downloadUrl, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'User-Agent': 'AuraGold-Server/2.0'
+            }
+        });
+
+        if (!binaryRes.ok) {
+            console.error(`[WhatsApp Media] Download binary error (${binaryRes.status}):`, binaryRes.statusText);
+            return res.status(binaryRes.status).send("Failed to download media binary from Meta");
+        }
+
+        const arrayBuffer = await binaryRes.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        // 5. Save locally to /uploads/ for future instant access
+        let ext = 'jpg';
+        if (mimeType.includes('png')) ext = 'png';
+        else if (mimeType.includes('webp')) ext = 'webp';
+        else if (mimeType.includes('gif')) ext = 'gif';
+        else if (mimeType.includes('pdf')) ext = 'pdf';
+        else if (mimeType.includes('mp4')) ext = 'mp4';
+        else if (mimeType.includes('ogg')) ext = 'ogg';
+
+        const saveFilename = `wa_media_${mediaId}.${ext}`;
+        const savePath = path.join(UPLOADS_DIR, saveFilename);
+
+        try {
+            fs.writeFileSync(savePath, buffer);
+            console.log(`[WhatsApp Media] Saved media binary to ${savePath} (${Math.round(buffer.length/1024)} KB)`);
+        } catch (saveErr) {
+            console.error("[WhatsApp Media] Failed to write media file to disk:", saveErr.message);
+        }
+
+        res.setHeader('Content-Type', mimeType);
+        res.setHeader('Cache-Control', 'public, max-age=31536000');
+        return res.send(buffer);
+    } catch (err) {
+        console.error("[WhatsApp Media Proxy Exception]:", err);
+        return res.status(500).send("Server error processing media download");
+    }
+});
 
 router.get('/logs/poll', ensureDb, async (req, res) => {
     try {

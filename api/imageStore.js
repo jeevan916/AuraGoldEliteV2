@@ -4,20 +4,23 @@ import crypto from 'crypto';
 import { getPool, isMock } from './db.js';
 
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+const ORDERED_DIR = path.join(UPLOADS_DIR, 'ordered');
+const READY_DIR = path.join(UPLOADS_DIR, 'ready');
 
-// Ensure the uploads directory exists on the server drive
-if (!fs.existsSync(UPLOADS_DIR)) {
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
+// Ensure the uploads directory and subdirectories exist on the server drive
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+if (!fs.existsSync(ORDERED_DIR)) fs.mkdirSync(ORDERED_DIR, { recursive: true });
+if (!fs.existsSync(READY_DIR)) fs.mkdirSync(READY_DIR, { recursive: true });
 
 /**
  * Saves a base64 encoded data-url image to the physical server drive
- * and returns the relative path URL.
+ * inside either the 'ordered' or 'ready' folder and returns the relative path URL.
  * 
  * @param {string} base64Str - The data URL (e.g. data:image/jpeg;base64,...)
- * @returns {string} - The public relative path (e.g. /uploads/filename.jpg)
+ * @param {string} folder - 'ordered' or 'ready'
+ * @returns {string} - The public relative path (e.g. /uploads/ordered/filename.jpg)
  */
-export function saveBase64ImageToServer(base64Str) {
+export function saveBase64ImageToServer(base64Str, folder = 'ordered') {
     if (!base64Str || typeof base64Str !== 'string') return base64Str;
     if (!base64Str.startsWith('data:image/')) return base64Str;
 
@@ -29,15 +32,18 @@ export function saveBase64ImageToServer(base64Str) {
         const data = match[2];
         const buffer = Buffer.from(data, 'base64');
 
+        const targetFolder = folder === 'ready' ? READY_DIR : ORDERED_DIR;
+        const subPath = folder === 'ready' ? 'ready' : 'ordered';
+
         // Generate a cryptographically secure safe unique filename
         const filename = `img_${crypto.randomBytes(8).toString('hex')}_${Date.now()}.${ext}`;
-        const filePath = path.join(UPLOADS_DIR, filename);
+        const filePath = path.join(targetFolder, filename);
 
         // Save the file binary to server drive
         fs.writeFileSync(filePath, buffer);
-        console.log(`[Storage Service] Saved base64 image physically at /uploads/${filename} (${Math.round(buffer.length / 1024)} KB)`);
+        console.log(`[Storage Service] Saved base64 image physically at /uploads/${subPath}/${filename} (${Math.round(buffer.length / 1024)} KB)`);
 
-        return `/uploads/${filename}`;
+        return `/uploads/${subPath}/${filename}`;
     } catch (err) {
         console.error("[Storage Service] Error saving base64 image:", err.message);
         return base64Str; // Return original on failure
@@ -45,7 +51,7 @@ export function saveBase64ImageToServer(base64Str) {
 }
 
 /**
- * Processes an order object, transferring any base64 images to physical storage.
+ * Processes an order object, transferring any base64 images to physical storage in /uploads/ordered or /uploads/ready.
  * 
  * @param {object} order - The order payload from the client
  * @returns {object} - The mutated order with relative file URLs
@@ -55,10 +61,10 @@ export function processOrderImages(order) {
 
     for (const item of order.items) {
         if (item.photoUrls && Array.isArray(item.photoUrls)) {
-            item.photoUrls = item.photoUrls.map(url => saveBase64ImageToServer(url));
+            item.photoUrls = item.photoUrls.map(url => saveBase64ImageToServer(url, 'ordered'));
         }
         if (item.readyPhotoUrls && Array.isArray(item.readyPhotoUrls)) {
-            item.readyPhotoUrls = item.readyPhotoUrls.map(url => saveBase64ImageToServer(url));
+            item.readyPhotoUrls = item.readyPhotoUrls.map(url => saveBase64ImageToServer(url, 'ready'));
         }
     }
     return order;
@@ -66,7 +72,7 @@ export function processOrderImages(order) {
 
 /**
  * One-time startup migration: Scans the relational DB orders for old embedded base64 blobs,
- * extracts them, writes them to files, and updates the database record with relative URLs.
+ * extracts them, writes them to files in /uploads/ordered or /uploads/ready, and updates the database record with relative URLs.
  */
 export async function migrateExistingDbImages() {
     if (isMock) {
@@ -115,12 +121,12 @@ export async function migrateExistingDbImages() {
                                         const data = match[2];
                                         const buffer = Buffer.from(data, 'base64');
                                         const filename = `migrated_${crypto.randomBytes(8).toString('hex')}_${Date.now()}.${ext}`;
-                                        const filePath = path.join(UPLOADS_DIR, filename);
+                                        const filePath = path.join(ORDERED_DIR, filename);
 
                                         fs.writeFileSync(filePath, buffer);
                                         orderModified = true;
                                         migratedCount++;
-                                        return `/uploads/${filename}`;
+                                        return `/uploads/ordered/${filename}`;
                                     }
                                 }
                                 return url;
@@ -137,12 +143,12 @@ export async function migrateExistingDbImages() {
                                         const data = match[2];
                                         const buffer = Buffer.from(data, 'base64');
                                         const filename = `migrated_${crypto.randomBytes(8).toString('hex')}_${Date.now()}.${ext}`;
-                                        const filePath = path.join(UPLOADS_DIR, filename);
+                                        const filePath = path.join(READY_DIR, filename);
 
                                         fs.writeFileSync(filePath, buffer);
                                         orderModified = true;
                                         migratedCount++;
-                                        return `/uploads/${filename}`;
+                                        return `/uploads/ready/${filename}`;
                                     }
                                 }
                                 return url;
