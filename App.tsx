@@ -174,70 +174,7 @@ const App = () => {
   const { logs, addLog, templates, setTemplates } = useWhatsApp();
 
   useEffect(() => {
-    // 1. CHECK FOR PUBLIC LINK FIRST
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token') || params.get('ext_token');
-
-    if (token) {
-        setIsPublicMode(true);
-        if (token.startsWith('ext_') || token.startsWith('EXT-') || params.get('ext_token')) {
-            setPublicExtToken(token);
-            setView('EXTERNAL_CUSTOMER_VIEW');
-            return;
-        }
-
-        setView('CUSTOMER_VIEW');
-        
-        let alertShown = false;
-        const fetchOrder = () => {
-            fetch(`/api/public/order/${token}`)
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success && data.order) {
-                        setPublicOrder(data.order);
-                    } else if (!alertShown) {
-                        alert("Invalid Link. Please check with AuraGold support.");
-                        alertShown = true;
-                    }
-                })
-                .catch(e => console.error("Link Error:", e));
-        };
-        
-        fetchOrder();
-        const interval = setInterval(fetchOrder, 30000); // Poll every 30 seconds
-        
-        return () => clearInterval(interval);
-    }
-
-    // 2. CHECK LOCAL AUTH
-    const storedUser = localStorage.getItem('aura_auth');
-    if (storedUser) {
-        try {
-            const parsedUser = JSON.parse(storedUser);
-            setUser(parsedUser);
-            // If user is Karigar, force to desk immediately
-            if (parsedUser.role === 'KARIGAR') {
-                setView('KARIGAR_DESK');
-            }
-        } catch(e) { localStorage.removeItem('aura_auth'); }
-    }
-
-    // 3. ADMIN INITIALIZATION (Only runs if we pass the login check later)
-    errorService.initGlobalListeners();
-    const unsubscribeErrors = errorService.subscribe((errs, acts) => {
-        setSystemErrors(errs);
-        setSystemActivities(acts);
-    });
-
-    storageService.syncFromServer().then(res => {
-        if (res.success) {
-            setSettings(storageService.getSettings());
-            setPlanTemplates(storageService.getPlanTemplates());
-            setManualCustomers(storageService.getCustomers());
-        }
-    });
-
-    // Global Rate Listener
+    // 1. Initialize Socket.IO connection for both Admin and Public Customer Views
     const socket = io(API_BASE, {
         path: '/socket.io',
         transports: ['websocket', 'polling']
@@ -254,14 +191,95 @@ const App = () => {
     });
 
     socket.on('orders_sync', (syncedOrders: Order[]) => {
-        // Just force a re-read from storage since storageService handles the merge
-        // Instantly update the public order if it matches
         if (syncedOrders && syncedOrders.length > 0) {
             setPublicOrder(prev => {
                 if (!prev) return prev;
-                const updated = syncedOrders.find(o => o.id === prev.id);
+                const updated = syncedOrders.find(o => o.id === prev.id || (prev.shareToken && o.shareToken === prev.shareToken));
                 return updated || prev;
             });
+        }
+    });
+
+    // 2. CHECK FOR PUBLIC LINK FIRST
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token') || params.get('ext_token');
+
+    if (token) {
+        setIsPublicMode(true);
+        if (token.startsWith('ext_') || token.startsWith('EXT-') || params.get('ext_token')) {
+            setPublicExtToken(token);
+            setView('EXTERNAL_CUSTOMER_VIEW');
+            return () => {
+                socket.disconnect();
+            };
+        }
+
+        setView('CUSTOMER_VIEW');
+        
+        let alertShown = false;
+        const fetchOrder = () => {
+            fetch(`/api/public/order/${token}?_t=${Date.now()}`, {
+                cache: 'no-store',
+                headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && data.order) {
+                        setPublicOrder(data.order);
+                    } else if (!alertShown && !data.success) {
+                        alert("Invalid Link. Please check with AuraGold support.");
+                        alertShown = true;
+                    }
+                })
+                .catch(e => console.error("Link Error:", e));
+        };
+        
+        fetchOrder();
+        const interval = setInterval(fetchOrder, 8000); // Responsive poll every 8 seconds
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                fetchOrder();
+            }
+        };
+        const handleFocus = () => fetchOrder();
+
+        window.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('focus', handleFocus);
+        
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('focus', handleFocus);
+            socket.disconnect();
+        };
+    }
+
+    // 3. CHECK LOCAL AUTH
+    const storedUser = localStorage.getItem('aura_auth');
+    if (storedUser) {
+        try {
+            const parsedUser = JSON.parse(storedUser);
+            setUser(parsedUser);
+            // If user is Karigar, force to desk immediately
+            if (parsedUser.role === 'KARIGAR') {
+                setView('KARIGAR_DESK');
+            }
+        } catch(e) { localStorage.removeItem('aura_auth'); }
+    }
+
+    // 4. ADMIN INITIALIZATION (Only runs if not in public mode)
+    errorService.initGlobalListeners();
+    const unsubscribeErrors = errorService.subscribe((errs, acts) => {
+        setSystemErrors(errs);
+        setSystemActivities(acts);
+    });
+
+    storageService.syncFromServer().then(res => {
+        if (res.success) {
+            setSettings(storageService.getSettings());
+            setPlanTemplates(storageService.getPlanTemplates());
+            setManualCustomers(storageService.getCustomers());
         }
     });
 

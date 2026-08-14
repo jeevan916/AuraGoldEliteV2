@@ -4,6 +4,7 @@ import {
   BookOpen, CheckCheck, Plus, AlertCircle, ShieldAlert, ShieldCheck, Calendar, Sparkles
 } from 'lucide-react';
 import { Order, OrderStatus, ProductionStatus, GlobalSettings, ProtectionStatus } from '../types';
+import { whatsappService } from '../services/whatsappService';
 
 interface OrderBookProps {
   orders: Order[];
@@ -13,6 +14,18 @@ interface OrderBookProps {
 }
 
 type BookTab = 'ACTIVE' | 'READY' | 'ARCHIVE';
+
+const TabButton = ({ active, onClick, icon: Icon, label }: any) => (
+  <button
+    onClick={onClick}
+    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+        active ? 'bg-amber-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
+    }`}
+  >
+    <Icon size={14} />
+    <span className="inline">{label}</span>
+  </button>
+);
 
 const OrderBook: React.FC<OrderBookProps> = ({ orders, settings, onViewOrder, onUpdateOrder }) => {
   const [activeTab, setActiveTab] = useState<BookTab>('ACTIVE');
@@ -52,16 +65,58 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, settings, onViewOrder, on
     );
   }, [safeOrders, activeTab, search]);
 
-  const handleQuickDeliver = (e: React.MouseEvent, order: Order) => {
+  const handleQuickDeliver = async (e: React.MouseEvent, order: Order) => {
       e.stopPropagation();
       if (!onUpdateOrder) return;
       if (confirm(`Mark order for ${order.customerName} as DELIVERED? This will move it to archives.`)) {
+          const handoverRate = order.handoverGoldRate || settings.currentGoldRate22K;
           const updated: Order = {
               ...order,
               status: OrderStatus.DELIVERED,
+              deliveredAt: order.deliveredAt || new Date().toISOString(),
+              handoverGoldRate: handoverRate,
               items: order.items.map(i => ({...i, productionStatus: ProductionStatus.DELIVERED}))
           };
           onUpdateOrder(updated);
+
+          if (confirm(`Send Handover Confirmation WhatsApp to ${order.customerName}?`)) {
+              const itemsList = updated.items.map(i => i.category).join(', ') || 'Jewelry Items';
+              const savedAmount = Math.round(
+                  updated.items.reduce((acc, item) => {
+                      const rateDiff = Math.max(0, handoverRate - updated.goldRateAtBooking);
+                      return acc + (item.netWeight * rateDiff);
+                  }, 0)
+              );
+              const savingsStr = savedAmount > 0 ? `₹${savedAmount.toLocaleString('en-IN')}` : '₹0';
+
+              try {
+                  const res = await whatsappService.sendTemplateMessage(
+                      updated.customerContact,
+                      'auragold_order_delivered',
+                      'en_US',
+                      [
+                          updated.customerName,
+                          updated.id,
+                          itemsList,
+                          savingsStr,
+                          updated.shareToken
+                      ],
+                      updated.customerName,
+                      updated.shareToken,
+                      undefined,
+                      undefined,
+                      updated.id
+                  );
+                  if (res.success) {
+                      alert(`Handover Confirmation WhatsApp sent successfully to ${updated.customerName}!`);
+                  } else {
+                      alert(`Order marked as DELIVERED, but WhatsApp message failed: ${res.error || 'Unknown error'}`);
+                  }
+              } catch (err: any) {
+                  console.error("Failed to send handover WhatsApp:", err);
+                  alert(`Failed to dispatch WhatsApp: ${err.message || err}`);
+              }
+          }
       }
   };
 
@@ -145,15 +200,15 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, settings, onViewOrder, on
           ) : (
             <div className="divide-y divide-slate-100">
                {filteredOrders.map(order => {
-                  const paid = order.payments.reduce((a,c) => a + c.amount, 0);
+                  const paid = (order.payments || []).reduce((a,c) => a + c.amount, 0);
                   const balance = order.totalAmount - paid;
                   const progress = order.totalAmount > 0 ? Math.min(100, Math.round((paid / order.totalAmount) * 100)) : 0;
 
                   // --- PROTECTION LOGIC ---
-                  const isLapsed = order.paymentPlan.protectionStatus === ProtectionStatus.LAPSED;
+                  const isLapsed = order.paymentPlan?.protectionStatus === ProtectionStatus.LAPSED;
                   const currentRate = settings.currentGoldRate22K;
-                  const bookedRate = order.paymentPlan.protectionRateBooked || order.goldRateAtBooking;
-                  const limit = order.paymentPlan.protectionLimit || 0;
+                  const bookedRate = order.paymentPlan?.protectionRateBooked || order.goldRateAtBooking;
+                  const limit = order.paymentPlan?.protectionLimit || 0;
                   const isLimitHit = !isLapsed && activeTab === 'ACTIVE' && (currentRate - bookedRate > limit);
 
                   let rowClass = "p-5 lg:p-6 hover:bg-slate-50 transition-colors cursor-pointer group relative border-l-4";
@@ -210,7 +265,7 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, settings, onViewOrder, on
                                     <div className="flex flex-wrap gap-3 text-xs text-slate-500 font-medium items-center">
                                         <span className="font-mono">{order.id}</span>
                                         <span>•</span>
-                                        <span>{order.items.length} Items</span>
+                                        <span>{(order.items || []).length} Items</span>
                                         {/* BOOKING DATE */}
                                         <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-600 uppercase">
                                             <Calendar size={10} /> {new Date(order.createdAt).toLocaleDateString('en-IN')}
@@ -273,17 +328,5 @@ const OrderBook: React.FC<OrderBookProps> = ({ orders, settings, onViewOrder, on
     </div>
   );
 };
-
-const TabButton = ({ active, onClick, icon: Icon, label }: any) => (
-  <button
-    onClick={onClick}
-    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-        active ? 'bg-amber-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
-    }`}
-  >
-    <Icon size={14} />
-    <span className="inline">{label}</span>
-  </button>
-);
 
 export default OrderBook;

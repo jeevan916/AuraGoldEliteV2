@@ -47,7 +47,7 @@ const PaymentCollections: React.FC<PaymentCollectionsProps> = ({ orders, onViewO
           const isArchived = o.status === OrderStatus.CANCELLED || o.status === OrderStatus.DELIVERED;
 
           // Milestones (Only active orders)
-          if (!isArchived) {
+          if (!isArchived && o.paymentPlan?.milestones) {
               o.paymentPlan.milestones.forEach(m => {
                   ms.push({
                       ...m,

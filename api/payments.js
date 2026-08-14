@@ -24,7 +24,7 @@ export function getSetuHeaders(token = null, schemeId = null, extraHeaders = {})
 }
 
 // Helper to obtain or refresh Setu OAuth token with auto-retry and cache handling
-async function getSetuToken(connection, config, forceRefresh = false) {
+async function getSetuToken(connection, config, forceRefresh = false, allowWafBypass = false) {
     const now = Math.floor(Date.now() / 1000);
     const mode = (config.mode || 'PRODUCTION').toUpperCase();
     const isProduction = mode === 'PRODUCTION' || mode === 'PROD';
@@ -39,9 +39,11 @@ async function getSetuToken(connection, config, forceRefresh = false) {
         throw new Error("Setu Integration is not configured with valid credentials in Settings.");
     }
 
-    if (!forceRefresh && config.wafBlockedUntil && Date.now() < config.wafBlockedUntil) {
+    if (!allowWafBypass && config.wafBlockedUntil && Date.now() < config.wafBlockedUntil) {
         const remainingSec = Math.ceil((config.wafBlockedUntil - Date.now()) / 1000);
-        throw new Error(`Setu API endpoint temporarily back-off active due to WAF rate limits (${remainingSec}s remaining). Retry later or force refresh.`);
+        const err = new Error(`Setu API endpoint temporarily back-off active due to Cloudflare/WAF block (${remainingSec}s remaining). Retry later or update settings.`);
+        err.status = 403;
+        throw err;
     }
 
     if (!forceRefresh && config.cachedToken && config.tokenExpiresAt && config.tokenExpiresAt > (now + 60)) {
@@ -73,8 +75,8 @@ async function getSetuToken(connection, config, forceRefresh = false) {
                       tokenText.trim().toLowerCase().startsWith('<html') ||
                       tokenText.includes('<!-- a padding to disable MSIE');
         
-        // Temporarily back off for 10 minutes if Setu edge returned WAF block or HTML error
-        config.wafBlockedUntil = Date.now() + 10 * 60 * 1000;
+        // Temporarily back off for 15 minutes if Setu edge returned WAF block or HTML error
+        config.wafBlockedUntil = Date.now() + 15 * 60 * 1000;
         if (connection) {
             try {
                 await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
@@ -83,21 +85,27 @@ async function getSetuToken(connection, config, forceRefresh = false) {
 
         const summary = isHtml ? "HTML Error Page (Cloudflare/WAF block or invalid endpoint)" : tokenText.substring(0, 150);
         console.warn(`[Setu Token Manager] Setu returned HTTP ${tokenResponse.status}: ${summary}`);
-        throw {
-            message: `Setu returned HTTP ${tokenResponse.status}: ${summary}`,
-            rawResponse: tokenText,
-            status: tokenResponse.status
-        };
+        const err = new Error(`Setu returned HTTP ${tokenResponse.status}: ${summary}`);
+        err.rawResponse = tokenText;
+        err.status = tokenResponse.status;
+        throw err;
     }
 
     if (!tokenResponse.ok || !tokenData.success) {
+        if (tokenResponse.status === 403 || tokenResponse.status === 429) {
+            config.wafBlockedUntil = Date.now() + 15 * 60 * 1000;
+            if (connection) {
+                try {
+                    await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
+                } catch (dbErr) {}
+            }
+        }
         console.warn(`[Setu Token Manager] Auth Response Error (Status ${tokenResponse.status}):`, tokenData.error?.message || tokenText);
-        throw {
-            message: tokenData.error?.message || tokenData.error?.detail || tokenData.message || "Setu Authentication Failed",
-            response: { status: tokenResponse.status, data: tokenData },
-            rawResponse: tokenText,
-            status: tokenResponse.status
-        };
+        const err = new Error(tokenData.error?.message || tokenData.error?.detail || tokenData.message || "Setu Authentication Failed");
+        err.response = { status: tokenResponse.status, data: tokenData };
+        err.rawResponse = tokenText;
+        err.status = tokenResponse.status;
+        throw err;
     }
 
     const token = tokenData.data.token;
@@ -489,9 +497,9 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
             headers: getSetuHeaders(token, schemeId)
         });
         
-        // If the token was bad, let's force-refresh it and retry once!
-        if (statusResponse.status === 401 || statusResponse.status === 403) {
-            console.warn(`[Setu Status] Status check returned ${statusResponse.status}. Force refreshing token and retrying...`);
+        // If token expired (401), force-refresh once. If 403 WAF block, back off cleanly.
+        if (statusResponse.status === 401) {
+            console.warn(`[Setu Status] Status check returned 401. Force refreshing token and retrying...`);
             try {
                 token = await getSetuToken(connection, config, true);
                 statusResponse = await fetch(`${baseUrl}/payment-links/${platformBillID}`, {
@@ -500,6 +508,17 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
             } catch (retryErr) {
                 console.error("[Setu Status] Token refresh retry failed:", retryErr.message);
             }
+        } else if (statusResponse.status === 403) {
+            console.warn(`[Setu Status] Access blocked by Setu WAF (HTTP 403). Backing off...`);
+            config.wafBlockedUntil = Date.now() + 15 * 60 * 1000;
+            try {
+                await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
+            } catch (e) {}
+            connection.release();
+            return res.status(403).json({
+                success: false,
+                error: "Setu API access blocked by edge WAF (HTTP 403). Back-off active."
+            });
         }
         
         const statusResponseText = await statusResponse.text();
@@ -1050,8 +1069,7 @@ async function processSuccessfulPayment(orderId, amountPaid, upiTransactionID, p
         const alreadyRecorded = order.payments && order.payments.some(p => p.reference === upiTransactionID || p.transactionId === upiTransactionID);
         if (alreadyRecorded) return;
 
-        if (!order.payments) order.payments = [];
-        order.payments.push({
+        const paymentRecord = {
             id: `pay_${Date.now()}`,
             amount: amountPaid,
             date: new Date().toISOString(),
@@ -1059,7 +1077,10 @@ async function processSuccessfulPayment(orderId, amountPaid, upiTransactionID, p
             reference: upiTransactionID,
             payer: payerVpa || undefined,
             status: 'SUCCESS'
-        });
+        };
+
+        if (!order.payments) order.payments = [];
+        order.payments.push(paymentRecord);
         
         const totalPaid = order.payments.reduce((sum, p) => sum + Number(p.amount), 0);
         let runningSum = 0;
@@ -1069,7 +1090,7 @@ async function processSuccessfulPayment(orderId, amountPaid, upiTransactionID, p
                 runningSum += Number(m.targetAmount);
                 // Use a 1 rupee tolerance to prevent any decimal/rounding issues
                 const status = totalPaid >= (runningSum - 1) ? 'PAID' : (totalPaid > (runningSum - Number(m.targetAmount) + 1) ? 'PARTIAL' : 'PENDING');
-                return { ...m, status };
+                return { ...m, status, cumulativeTarget: runningSum };
             });
             order.paymentPlan.milestones = updatedMilestones;
         }
@@ -1080,6 +1101,27 @@ async function processSuccessfulPayment(orderId, amountPaid, upiTransactionID, p
         
         await connection.query('UPDATE orders SET status = ?, data = ? WHERE id = ?', [order.status, JSON.stringify(order), orderId]);
         await journalTransaction('ORDER', orderId, 'PAYMENT_RECEIVE', order, connection);
+
+        // Always write to payments_log table so it persists independently
+        try {
+            await connection.query(
+                `INSERT INTO payments_log (id, order_id, customer_contact, amount, method, status, timestamp, data) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data)`,
+                [
+                    paymentRecord.id,
+                    order.id,
+                    order.customerContact || '',
+                    amountPaid,
+                    'UPI',
+                    'SUCCESS',
+                    new Date(),
+                    JSON.stringify(paymentRecord)
+                ]
+            );
+        } catch(pLogErr) {
+            console.error("Failed to insert payment into payments_log:", pLogErr.message);
+        }
 
         if (order.paymentPlan && Array.isArray(order.paymentPlan.milestones)) {
             for (const m of order.paymentPlan.milestones) {
@@ -1370,6 +1412,32 @@ export function startSetuPoller(io) {
                             let statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
                                 headers: getSetuHeaders(token, schemeId)
                             });
+
+                            if (statusResponse.status === 403) {
+                                console.info(`[Setu Poller] WAF block (HTTP 403) detected for external payment ${pending.platformBillID}. Backing off status polling for 15m.`);
+                                config.wafBlockedUntil = Date.now() + 15 * 60 * 1000;
+                                try {
+                                    const updateConn = await pool.getConnection();
+                                    await updateConn.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
+                                    updateConn.release();
+                                } catch (e) {}
+                                return;
+                            } else if (statusResponse.status === 401) {
+                                console.warn(`[Setu Poller] Received 401 for external payment ${pending.platformBillID}. Attempting token refresh...`);
+                                try {
+                                    const refreshConn = await pool.getConnection();
+                                    token = await getSetuToken(refreshConn, config, true);
+                                    refreshConn.release();
+                                    
+                                    statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
+                                        headers: getSetuHeaders(token, schemeId)
+                                    });
+                                } catch (refreshErr) {
+                                    console.info("[Setu Poller] Token refresh deferred during poll:", refreshErr.message);
+                                    return;
+                                }
+                            }
+
                             const statusResponseText = await statusResponse.text();
                             if (!statusResponseText.trim().startsWith('{')) continue;
                             const statusData = JSON.parse(statusResponseText);
@@ -1400,8 +1468,17 @@ export function startSetuPoller(io) {
                                 headers: getSetuHeaders(token, schemeId)
                             });
                             
-                            if (statusResponse.status === 401 || statusResponse.status === 403) {
-                                console.warn(`[Setu Poller] Received ${statusResponse.status} for ${pending.platformBillID}. Attempting token refresh...`);
+                            if (statusResponse.status === 403) {
+                                console.info(`[Setu Poller] WAF block (HTTP 403) detected for order ${pending.platformBillID}. Backing off status polling for 15m.`);
+                                config.wafBlockedUntil = Date.now() + 15 * 60 * 1000;
+                                try {
+                                    const updateConn = await pool.getConnection();
+                                    await updateConn.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
+                                    updateConn.release();
+                                } catch (e) {}
+                                return;
+                            } else if (statusResponse.status === 401) {
+                                console.warn(`[Setu Poller] Received 401 for ${pending.platformBillID}. Attempting token refresh...`);
                                 try {
                                     const refreshConn = await pool.getConnection();
                                     token = await getSetuToken(refreshConn, config, true);
@@ -1412,6 +1489,7 @@ export function startSetuPoller(io) {
                                     });
                                 } catch (refreshErr) {
                                     console.info("[Setu Poller] Token refresh deferred during poll:", refreshErr.message);
+                                    return;
                                 }
                             }
                             

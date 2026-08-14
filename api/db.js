@@ -39,7 +39,8 @@ export const mockData = {
     ],
     system_activities: [],
     system_errors: [],
-    whatsapp_logs: []
+    whatsapp_logs: [],
+    payments_log: []
 };
 
 export async function initDb() {
@@ -153,6 +154,16 @@ export async function initDb() {
                 share_token VARCHAR(100),
                 data LONGTEXT,
                 updated_at BIGINT
+            )`,
+            `CREATE TABLE IF NOT EXISTS payments_log (
+                id VARCHAR(100) PRIMARY KEY,
+                order_id VARCHAR(100),
+                customer_contact VARCHAR(50),
+                amount DECIMAL(10, 2),
+                method VARCHAR(50),
+                status VARCHAR(50),
+                timestamp DATETIME,
+                data LONGTEXT
             )`
         ];
         for (const sql of tables) await connection.query(sql);
@@ -473,6 +484,38 @@ export const getPool = () => {
                         if (!mockData.transaction_journal) mockData.transaction_journal = [];
                         mockData.transaction_journal.push(newEntry);
                         return [{ affectedRows: 1 }];
+                    }
+                    if (lowerSql.includes('insert into payments_log')) {
+                        const newLog = {
+                            id: params[0],
+                            order_id: params[1],
+                            customer_contact: params[2],
+                            amount: params[3],
+                            method: params[4],
+                            status: params[5],
+                            timestamp: params[6],
+                            data: params[params.length - 1]
+                        };
+                        if (!mockData.payments_log) mockData.payments_log = [];
+                        const existingIdx = mockData.payments_log.findIndex(p => p.id === newLog.id);
+                        if (existingIdx > -1) {
+                            mockData.payments_log[existingIdx] = newLog;
+                        } else {
+                            mockData.payments_log.push(newLog);
+                        }
+                        return [{ affectedRows: 1 }];
+                    }
+                    if (lowerSql.includes('select data from payments_log where order_id = ?')) {
+                        const logs = (mockData.payments_log || []).filter(p => p.order_id === params[0]);
+                        return [logs.map(l => ({ data: l.data }))];
+                    }
+                    if (lowerSql.includes('select order_id, data from payments_log')) {
+                        const logs = mockData.payments_log || [];
+                        return [logs.map(l => ({ order_id: l.order_id, data: l.data }))];
+                    }
+                    if (lowerSql.includes('select data from payments_log')) {
+                        const logs = mockData.payments_log || [];
+                        return [logs.map(l => ({ data: l.data }))];
                     }
                     return [[]];
                 },

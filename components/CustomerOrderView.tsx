@@ -6,7 +6,7 @@ import {
   LocateFixed, ReceiptIndianRupee, TrendingUp, ChevronDown, ChevronUp, Scale, Info, ShieldAlert, Sparkles,
   Zap, Loader2, Download, Image as ImageIcon
 } from 'lucide-react';
-import { Order, ProductionStatus, ProtectionStatus } from '../types';
+import { Order, OrderStatus, ProductionStatus, ProtectionStatus } from '../types';
 import { errorService } from '../services/errorService';
 import { goldRateService } from '../services/goldRateService';
 import { applyLateFees, reconcileOrderTotalsAndMilestones } from '../services/orderUtils';
@@ -44,6 +44,10 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
   const hasOverdue = overdueMilestones.length > 0;
   const overdueAmount = Math.round(overdueMilestones.reduce((acc, m) => acc + (m.targetAmount || 0), 0));
 
+  const isHandedOver = order.status === OrderStatus.DELIVERED || Boolean(order.deliveredAt);
+  const isCancelled = order.status === OrderStatus.CANCELLED;
+  const isArchived = isHandedOver || isCancelled;
+
   let maxDaysOverdue = 0;
   if (hasOverdue) {
       const oldestDueDate = new Date(Math.min(...overdueMilestones.map(m => new Date(m.dueDate).getTime())));
@@ -80,15 +84,17 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
         });
     }
 
-    // 2. Fetch Live Rate for Protection Monitor
-    const fetchRate = async () => {
-        const res = await goldRateService.fetchLiveRate();
-        if (res.success) {
-            setLiveRate(res.rate22K);
-        }
-    };
-    fetchRate();
-  }, [remaining, nextPayment, order.id, customAmount]);
+    // 2. Fetch Live Rate for Protection Monitor (Active orders only)
+    if (!isArchived) {
+        const fetchRate = async () => {
+            const res = await goldRateService.fetchLiveRate();
+            if (res.success) {
+                setLiveRate(res.rate22K);
+            }
+        };
+        fetchRate();
+    }
+  }, [remaining, nextPayment, order.id, customAmount, isArchived]);
 
   useEffect(() => {
       let interval: any;
@@ -205,30 +211,31 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
     }
   };
 
-  const displayMilestones = showOriginal && order.paymentPlan.originalMilestones 
+  const displayMilestones = showOriginal && order.paymentPlan?.originalMilestones 
       ? order.paymentPlan.originalMilestones 
-      : order.paymentPlan.milestones;
+      : (order.paymentPlan?.milestones || []);
 
   // PROTECTION CALCS
-  const bookedRate = order.paymentPlan.protectionRateBooked || order.goldRateAtBooking;
-  const protectionLimit = order.paymentPlan.protectionLimit || 0; // Max Allowed Increase
+  const bookedRate = order.paymentPlan?.protectionRateBooked || order.goldRateAtBooking;
+  const protectionLimit = order.paymentPlan?.protectionLimit || 0; // Max Allowed Increase
   const maxProtectedRate = bookedRate + protectionLimit;
   
-  const isProtected = order.paymentPlan.protectionStatus === ProtectionStatus.ACTIVE && order.paymentPlan.goldRateProtection !== false;
+  const isProtected = order.paymentPlan?.protectionStatus === ProtectionStatus.ACTIVE && order.paymentPlan?.goldRateProtection !== false;
   
-  const totalGoldWeight = order.items.reduce((sum, item) => item.metalColor !== 'Silver' ? sum + item.netWeight : sum, 0);
+  const totalGoldWeight = (order.items || []).reduce((sum, item) => item.metalColor !== 'Silver' ? sum + item.netWeight : sum, 0);
   
-  const isLimitBreached = liveRate > maxProtectedRate;
+  const isLimitBreached = !isHandedOver && liveRate > maxProtectedRate;
   const surchargePerGram = isLimitBreached ? liveRate - maxProtectedRate : 0;
   
-  // Savings Calculation:
-  // If breached: Savings is capped at the protectionLimit.
-  // If not breached but market > booked: Savings is the diff.
-  // If market < booked: No savings (technically 0).
+  // Active Order Live Savings
   const savingsPerGram = Math.max(0, Math.min(liveRate - bookedRate, protectionLimit));
-  
   const totalSavings = savingsPerGram * totalGoldWeight;
   const potentialSurcharge = surchargePerGram * totalGoldWeight;
+
+  // Handover Realized Net Benefits
+  const handoverRate = order.handoverGoldRate || (liveRate > 0 ? liveRate : bookedRate);
+  const handoverSavingsPerGram = Math.max(0, Math.min(handoverRate - bookedRate, protectionLimit || Infinity));
+  const totalHandoverNetBenefit = handoverSavingsPerGram * totalGoldWeight;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -266,8 +273,63 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
 
       <div className="px-6 -mt-16 relative z-20 space-y-6">
         
-        {/* 1. RATE PROTECTION MONITOR (REDESIGNED) */}
-        {isProtected && totalGoldWeight > 0 && (
+        {/* 1A. HANDOVER COMPLETED - REALIZED NET BENEFIT SUMMARY (NO LIVE TRACKING) */}
+        {isHandedOver && (
+            <div className="bg-white rounded-3xl shadow-xl border border-emerald-100 overflow-hidden relative mb-2">
+                <div className="bg-emerald-600 text-white px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-emerald-500/40 rounded-xl shrink-0">
+                            <CheckCircle2 size={22} className="text-white" />
+                        </div>
+                        <div>
+                            <h3 className="font-black text-sm uppercase tracking-wider text-white flex items-center gap-2">
+                                Order Handover Completed
+                            </h3>
+                            <p className="text-[10px] text-emerald-100 font-medium mt-0.5">
+                                {order.deliveredAt ? `Handed over on ${new Date(order.deliveredAt).toLocaleDateString('en-IN', { dateStyle: 'medium' })}` : 'Order Completed & Delivered'}
+                            </p>
+                        </div>
+                    </div>
+                    <span className="bg-white/20 backdrop-blur-sm text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-white/20">
+                        Archived Order
+                    </span>
+                </div>
+
+                {totalGoldWeight > 0 && isProtected && (
+                    <div className="p-6">
+                        <div className="bg-emerald-50/80 border border-emerald-100 p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <div>
+                                <p className="text-[10px] font-black uppercase text-emerald-800 tracking-widest mb-1 flex items-center gap-1">
+                                    <Sparkles size={14} className="text-amber-500" /> Net Rate Protection Benefit Realized
+                                </p>
+                                <p className="text-3xl font-black text-emerald-700">
+                                    +₹{Math.round(totalHandoverNetBenefit).toLocaleString('en-IN')}
+                                </p>
+                                <p className="text-xs text-slate-600 font-medium mt-1">
+                                    Final realized net savings secured on {totalGoldWeight.toFixed(2)}g gold weight upon order completion.
+                                </p>
+                            </div>
+
+                            <div className="flex gap-2 self-stretch sm:self-auto shrink-0">
+                                <div className="bg-white p-3 rounded-xl border border-emerald-100 text-right flex-1 sm:flex-none min-w-[110px]">
+                                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Booked Rate</p>
+                                    <p className="text-sm font-black text-slate-800">₹{Math.round(bookedRate).toLocaleString('en-IN')}<span className="text-[9px] text-slate-400">/g</span></p>
+                                </div>
+                                {order.handoverGoldRate ? (
+                                    <div className="bg-white p-3 rounded-xl border border-emerald-100 text-right flex-1 sm:flex-none min-w-[110px]">
+                                        <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Handover Rate</p>
+                                        <p className="text-sm font-black text-emerald-700">₹{Math.round(order.handoverGoldRate).toLocaleString('en-IN')}<span className="text-[9px] text-slate-400">/g</span></p>
+                                    </div>
+                                ) : null}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        )}
+
+        {/* 1B. RATE PROTECTION MONITOR (ACTIVE ORDERS ONLY - LIVE MONITORING) */}
+        {!isHandedOver && isProtected && totalGoldWeight > 0 && (
             <div className={`bg-white rounded-3xl shadow-xl border overflow-hidden relative mb-2 ${isLimitBreached ? 'border-amber-200 shadow-amber-500/10' : 'border-emerald-100 shadow-emerald-500/10'}`}>
                 
                 {/* HEADER */}
@@ -323,8 +385,6 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
                         <div className="h-3 bg-slate-100 rounded-full relative w-full flex overflow-hidden">
                             <div className="w-full h-full relative bg-slate-200">
                                  {/* Green Zone (Protected) */}
-                                 {/* Calculate percentage fill based on LIVE rate relative to the Range (Booked -> MaxProtected) */}
-                                 {/* If live rate is 50% through the protected zone, bar is 50% green. Max is 100% green. */}
                                  <div 
                                     className="absolute left-0 top-0 bottom-0 bg-emerald-400 transition-all duration-1000" 
                                     style={{ 
@@ -333,8 +393,6 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
                                             : '0%' 
                                     }}
                                  ></div>
-                                 
-                                 {/* Red Zone (Breach) - Only shown if limit exceeded, but handled via overlay for visual simplicity or separate indicator */}
                             </div>
                         </div>
                         
@@ -459,8 +517,8 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
           );
         })()}
 
-        {/* 2. PAYMENT */}
-        {remaining > 0 && (
+        {/* 2. PAYMENT (ACTIVE ORDERS ONLY) */}
+        {!isHandedOver && remaining > 0 && (
           <div className="bg-white p-6 rounded-3xl shadow-lg border border-amber-100 flex flex-col items-center">
              <div className="text-center mb-6">
                 <h3 className="font-bold text-slate-800 text-lg">Balance Due: ₹{Math.round(remaining).toLocaleString('en-IN')}</h3>
@@ -633,163 +691,165 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
           </div>
         </div>
 
-        {/* 3.5 TERMS, CANCELLATION & OVERDUE POLICIES */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-5" id="agreed-terms-policies-panel">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2" id="terms-header-title">
-              <ShieldCheck size={16} className="text-amber-600" /> Agreed Terms & Policies
-            </h3>
-            <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full uppercase tracking-widest" id="booking-agreement-badge">
-              Booking Agreement
-            </span>
-          </div>
-
-          {/* Active Overdue Alert (if customer is overdue on any milestone) */}
-          {hasOverdue && (
-            <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 flex gap-3 animate-fadeIn" id="overdue-warning-alert">
-              <AlertCircle size={20} className="text-rose-500 shrink-0 mt-0.5" />
-              <div>
-                <h4 className="text-rose-800 font-black text-xs uppercase tracking-wider">
-                  Payment Milestone Overdue
-                </h4>
-                <p className="text-[10px] text-rose-600 font-bold leading-relaxed mt-1">
-                  You have <span className="font-black text-rose-700">{overdueMilestones.length} installment(s)</span> overdue in your promised schedule, totaling <span className="font-black text-rose-700">₹{overdueAmount.toLocaleString('en-IN')}</span>. The oldest installment is overdue by <span className="font-black text-rose-700">{maxDaysOverdue} days</span>.
-                </p>
-                <div className="mt-2.5 flex flex-wrap gap-2">
-                  <span className="bg-rose-100 text-rose-800 text-[9px] font-black uppercase px-2 py-0.5 rounded-full">
-                    Rate Protection Suspended
-                  </span>
-                  <span className="bg-rose-100 text-rose-800 text-[9px] font-black uppercase px-2 py-0.5 rounded-full">
-                    Late Fees Applied
-                  </span>
-                </div>
-              </div>
+        {/* 3.5 TERMS, CANCELLATION & OVERDUE POLICIES (HIDDEN ON HANDOVER / ARCHIVE) */}
+        {!isHandedOver && (
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-5" id="agreed-terms-policies-panel">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2" id="terms-header-title">
+                <ShieldCheck size={16} className="text-amber-600" /> Agreed Terms & Policies
+              </h3>
+              <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full uppercase tracking-widest" id="booking-agreement-badge">
+                Booking Agreement
+              </span>
             </div>
-          )}
 
-          {/* Policy Segment Tabs */}
-          <div className="flex border-b border-slate-100 pb-1" id="policy-tabs-list">
-            <button
-              id="tab-payment-terms"
-              onClick={() => setActivePolicyTab('PAYMENT')}
-              className={`flex-1 pb-3 text-center text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-                activePolicyTab === 'PAYMENT'
-                  ? 'border-amber-500 text-slate-800 font-black'
-                  : 'border-transparent text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              Payment Terms
-            </button>
-            <button
-              id="tab-overdue-fees"
-              onClick={() => setActivePolicyTab('OVERDUE')}
-              className={`flex-1 pb-3 text-center text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-                activePolicyTab === 'OVERDUE'
-                  ? 'border-amber-500 text-slate-800 font-black'
-                  : 'border-transparent text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              Overdue & Fees
-            </button>
-            <button
-              id="tab-cancellation-policy"
-              onClick={() => setActivePolicyTab('CANCELLATION')}
-              className={`flex-1 pb-3 text-center text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-                activePolicyTab === 'CANCELLATION'
-                  ? 'border-amber-500 text-slate-800 font-black'
-                  : 'border-transparent text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              Cancellation
-            </button>
-          </div>
-
-          {/* Selected Policy Tab Body */}
-          <div className="pt-1" id="policy-tab-content-container">
-            {activePolicyTab === 'PAYMENT' && (
-              <div className="space-y-3.5" id="payment-terms-tab-content">
-                <div className="flex gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-                  <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                    <span className="font-bold text-slate-800">Promised Milestone Schedule:</span> Your customized order plan consists of <span className="font-black text-slate-700">{order.paymentPlan.milestones.length} installments</span> agreed upon booking on <span className="font-bold text-slate-700">{new Date(order.createdAt).toLocaleDateString('en-IN', { dateStyle: 'medium' })}</span>.
+            {/* Active Overdue Alert (if customer is overdue on any milestone) */}
+            {hasOverdue && (
+              <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 flex gap-3 animate-fadeIn" id="overdue-warning-alert">
+                <AlertCircle size={20} className="text-rose-500 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-rose-800 font-black text-xs uppercase tracking-wider">
+                    Payment Milestone Overdue
+                  </h4>
+                  <p className="text-[10px] text-rose-600 font-bold leading-relaxed mt-1">
+                    You have <span className="font-black text-rose-700">{overdueMilestones.length} installment(s)</span> overdue in your promised schedule, totaling <span className="font-black text-rose-700">₹{overdueAmount.toLocaleString('en-IN')}</span>. The oldest installment is overdue by <span className="font-black text-rose-700">{maxDaysOverdue} days</span>.
                   </p>
-                </div>
-                <div className="flex gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-                  <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                    <span className="font-bold text-slate-800">Rate Lock Commitment:</span> To fully secure your booked gold rate of <span className="font-bold text-amber-600">₹{Math.round(bookedRate).toLocaleString('en-IN')}/g</span>, you commit to paying each milestone on or before its respective due date.
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-                  <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                    <span className="font-bold text-slate-800">Auto-Reminders:</span> Personalized WhatsApp reminders are scheduled to be sent prior to each due date to assist you in preserving your rate-protection.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {activePolicyTab === 'OVERDUE' && (
-              <div className="space-y-3.5" id="overdue-fees-tab-content">
-                <div className="flex gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
-                  <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                    <span className="font-bold text-slate-800">Rate Protection Suspension:</span> Failure to pay an installment past its due date (subject to a standard 24-hour grace period) compromises your Rate Protection lock. The remaining unpaid gold weight may immediately revert to standard market gold rates.
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
-                  <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                    <span className="font-bold text-slate-800">Late Fee & Overdue Charges:</span> Overdue periods trigger an active late fee of <span className="font-black text-rose-600">₹250 per milestone</span> or standard overdue charges to cover gold market volatility risk.
-                  </p>
-                </div>
-                {order.lateFeeAmount ? (
-                  <div className="bg-rose-50/60 rounded-xl p-3 flex justify-between items-center border border-rose-100 mt-1" id="late-fee-detail-box">
-                    <div>
-                      <p className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Late Fee Applied</p>
-                      <p className="text-xs font-bold text-slate-700">Accumulated for this Order</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-black text-rose-600">₹{Math.round(order.lateFeeAmount).toLocaleString('en-IN')}</p>
-                      {order.lateFeeWaived ? (
-                        <p className="text-[9px] font-bold text-emerald-600">Waived: ₹{Math.round(order.lateFeeWaived).toLocaleString('en-IN')}</p>
-                      ) : null}
-                    </div>
+                  <div className="mt-2.5 flex flex-wrap gap-2">
+                    <span className="bg-rose-100 text-rose-800 text-[9px] font-black uppercase px-2 py-0.5 rounded-full">
+                      Rate Protection Suspended
+                    </span>
+                    <span className="bg-rose-100 text-rose-800 text-[9px] font-black uppercase px-2 py-0.5 rounded-full">
+                      Late Fees Applied
+                    </span>
                   </div>
-                ) : null}
-                <div className="flex gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
-                  <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                    <span className="font-bold text-slate-800">Production Hold:</span> Crafting on custom jewelry items is paused in the workshop immediately if any payment remains overdue past 5 days.
-                  </p>
                 </div>
               </div>
             )}
 
-            {activePolicyTab === 'CANCELLATION' && (
-              <div className="space-y-3.5" id="cancellation-tab-content">
-                <div className="flex gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-slate-500 mt-1.5 shrink-0" />
-                  <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                    <span className="font-bold text-slate-800">Rate Lock Termination:</span> Customer-initiated cancellation of this order at any point will immediately invalidate your booked rate and void the rate lock.
-                  </p>
+            {/* Policy Segment Tabs */}
+            <div className="flex border-b border-slate-100 pb-1" id="policy-tabs-list">
+              <button
+                id="tab-payment-terms"
+                onClick={() => setActivePolicyTab('PAYMENT')}
+                className={`flex-1 pb-3 text-center text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
+                  activePolicyTab === 'PAYMENT'
+                    ? 'border-amber-500 text-slate-800 font-black'
+                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Payment Terms
+              </button>
+              <button
+                id="tab-overdue-fees"
+                onClick={() => setActivePolicyTab('OVERDUE')}
+                className={`flex-1 pb-3 text-center text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
+                  activePolicyTab === 'OVERDUE'
+                    ? 'border-amber-500 text-slate-800 font-black'
+                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Overdue & Fees
+              </button>
+              <button
+                id="tab-cancellation-policy"
+                onClick={() => setActivePolicyTab('CANCELLATION')}
+                className={`flex-1 pb-3 text-center text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
+                  activePolicyTab === 'CANCELLATION'
+                    ? 'border-amber-500 text-slate-800 font-black'
+                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Cancellation
+              </button>
+            </div>
+
+            {/* Selected Policy Tab Body */}
+            <div className="pt-1" id="policy-tab-content-container">
+              {activePolicyTab === 'PAYMENT' && (
+                <div className="space-y-3.5" id="payment-terms-tab-content">
+                  <div className="flex gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                    <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                      <span className="font-bold text-slate-800">Promised Milestone Schedule:</span> Your customized order plan consists of <span className="font-black text-slate-700">{order.paymentPlan.milestones.length} installments</span> agreed upon booking on <span className="font-bold text-slate-700">{new Date(order.createdAt).toLocaleDateString('en-IN', { dateStyle: 'medium' })}</span>.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                    <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                      <span className="font-bold text-slate-800">Rate Lock Commitment:</span> To fully secure your booked gold rate of <span className="font-bold text-amber-600">₹{Math.round(bookedRate).toLocaleString('en-IN')}/g</span>, you commit to paying each milestone on or before its respective due date.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                    <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                      <span className="font-bold text-slate-800">Auto-Reminders:</span> Personalized WhatsApp reminders are scheduled to be sent prior to each due date to assist you in preserving your rate-protection.
+                    </p>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-slate-500 mt-1.5 shrink-0" />
-                  <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                    <span className="font-bold text-slate-800">Deduction of Work-in-Progress Costs:</span> Since custom jewelry is crafted specifically for you, any cancellation is subject to a deduction fee comprising actual design labor, raw gold melting loss/wastage, and metal processing costs (up to 10% of total order value).
-                  </p>
+              )}
+
+              {activePolicyTab === 'OVERDUE' && (
+                <div className="space-y-3.5" id="overdue-fees-tab-content">
+                  <div className="flex gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
+                    <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                      <span className="font-bold text-slate-800">Rate Protection Suspension:</span> Failure to pay an installment past its due date (subject to a standard 24-hour grace period) compromises your Rate Protection lock. The remaining unpaid gold weight may immediately revert to standard market gold rates.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
+                    <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                      <span className="font-bold text-slate-800">Late Fee & Overdue Charges:</span> Overdue periods trigger an active late fee of <span className="font-black text-rose-600">₹250 per milestone</span> or standard overdue charges to cover gold market volatility risk.
+                    </p>
+                  </div>
+                  {order.lateFeeAmount ? (
+                    <div className="bg-rose-50/60 rounded-xl p-3 flex justify-between items-center border border-rose-100 mt-1" id="late-fee-detail-box">
+                      <div>
+                        <p className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Late Fee Applied</p>
+                        <p className="text-xs font-bold text-slate-700">Accumulated for this Order</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-black text-rose-600">₹{Math.round(order.lateFeeAmount).toLocaleString('en-IN')}</p>
+                        {order.lateFeeWaived ? (
+                          <p className="text-[9px] font-bold text-emerald-600">Waived: ₹{Math.round(order.lateFeeWaived).toLocaleString('en-IN')}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="flex gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
+                    <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                      <span className="font-bold text-slate-800">Production Hold:</span> Crafting on custom jewelry items is paused in the workshop immediately if any payment remains overdue past 5 days.
+                    </p>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-slate-500 mt-1.5 shrink-0" />
-                  <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                    <span className="font-bold text-slate-800">Refund Settlement:</span> Eligible refunds after standard deductions will be processed via <span className="font-bold text-slate-700">{order.refundMethod || 'Original payment channel / Bank Transfer'}</span> within 7-10 working days of official cancellation approval.
-                  </p>
+              )}
+
+              {activePolicyTab === 'CANCELLATION' && (
+                <div className="space-y-3.5" id="cancellation-tab-content">
+                  <div className="flex gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-slate-500 mt-1.5 shrink-0" />
+                    <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                      <span className="font-bold text-slate-800">Rate Lock Termination:</span> Customer-initiated cancellation of this order at any point will immediately invalidate your booked rate and void the rate lock.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-slate-500 mt-1.5 shrink-0" />
+                    <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                      <span className="font-bold text-slate-800">Deduction of Work-in-Progress Costs:</span> Since custom jewelry is crafted specifically for you, any cancellation is subject to a deduction fee comprising actual design labor, raw gold melting loss/wastage, and metal processing costs (up to 10% of total order value).
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-slate-500 mt-1.5 shrink-0" />
+                    <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                      <span className="font-bold text-slate-800">Refund Settlement:</span> Eligible refunds after standard deductions will be processed via <span className="font-bold text-slate-700">{order.refundMethod || 'Original payment channel / Bank Transfer'}</span> within 7-10 working days of official cancellation approval.
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* 4. TRANSACTIONS */}
         {order.payments.length > 0 && (
@@ -802,7 +862,17 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
                         <div key={p.id} className="flex justify-between items-center border-b border-slate-50 last:border-0 pb-3 last:pb-0">
                             <div>
                                 <p className="text-xs font-bold text-slate-700">Payment Received</p>
-                                <p className="text-[10px] text-slate-400 mt-0.5">{new Date(p.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })} via {p.method}</p>
+                                <p className="text-[10px] text-slate-400 mt-0.5">
+                                    {(() => {
+                                        if (!p.date) return '';
+                                        const d = new Date(p.date);
+                                        if (isNaN(d.getTime())) return p.date;
+                                        const isLegacyUtcMidnight = d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
+                                        return isLegacyUtcMidnight 
+                                          ? d.toLocaleDateString('en-IN', { dateStyle: 'medium' })
+                                          : d.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+                                    })()} via {p.method}
+                                </p>
                                 {(p.reference || p.transactionId || p.payer) && (
                                     <div className="flex gap-2 mt-1">
                                         {(p.reference || p.transactionId) && (

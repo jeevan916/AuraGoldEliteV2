@@ -166,7 +166,7 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
           let riskScore = 0.95; // Start with 95% confidence
           
           // 1. History Penalty: Does this order have OTHER overdue milestones?
-          const hasOverdue = order.paymentPlan.milestones.some(m => 
+          const hasOverdue = (order.paymentPlan?.milestones || []).some(m => 
               m.status !== 'PAID' && new Date(m.dueDate) < today
           );
           if (hasOverdue) riskScore -= 0.15; // 15% penalty for existing delinquency
@@ -175,10 +175,10 @@ const MarketIntelligence: React.FC<MarketIntelligenceProps> = ({ orders, setting
           if (order.totalAmount > 100000) riskScore -= 0.05; // 5% volatility for large sums
 
           // 3. New Customer Penalty (No history)
-          const isNew = order.payments.length === 0;
+          const isNew = (order.payments || []).length === 0;
           if (isNew) riskScore -= 0.05;
 
-          order.paymentPlan.milestones.forEach(m => {
+          (order.paymentPlan?.milestones || []).forEach(m => {
               if (m.status === 'PAID') return;
 
               const dueDate = new Date(m.dueDate);

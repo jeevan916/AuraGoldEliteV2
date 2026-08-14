@@ -205,7 +205,8 @@ export const SYSTEM_TRIGGER_MAP: SystemTrigger[] = [
     { id: 'TRIG_11', label: '11. Payment Overdue', description: 'Firm reminder for overdue payment.', requiredVariables: ['Customer Name', 'Amount', 'Link'], defaultTemplateName: 'auragold_payment_overdue', appGroup: 'PAYMENT_COLLECTION' },
     { id: 'TRIG_12', label: '12. Urgent Lapse', description: 'Urgent reminder before rate protection lapses.', requiredVariables: ['Customer Name', 'Order ID', 'Amount', 'Link'], defaultTemplateName: 'auragold_urgent_lapse', appGroup: 'PAYMENT_COLLECTION' },
     { id: 'TRIG_13', label: '13. Liability Adjustment', description: 'Surcharge applied (Limit Breached & Milestone Missed).', requiredVariables: ['Customer Name', 'Surcharge Amount', 'Order ID', 'New Base Rate', 'Link'], defaultTemplateName: 'auragold_rate_adjustment_liability', appGroup: 'SYSTEM_NOTIFICATIONS' },
-    { id: 'TRIG_14', label: '14. Rate Stabilized', description: 'Gold rate falls back under protection limit.', requiredVariables: ['Customer Name', 'Surcharge Amount', 'Order ID', 'New Base Rate', 'Link'], defaultTemplateName: 'auragold_rate_stabilized', appGroup: 'SYSTEM_NOTIFICATIONS' }
+    { id: 'TRIG_14', label: '14. Rate Stabilized', description: 'Gold rate falls back under protection limit.', requiredVariables: ['Customer Name', 'Surcharge Amount', 'Order ID', 'New Base Rate', 'Link'], defaultTemplateName: 'auragold_rate_stabilized', appGroup: 'SYSTEM_NOTIFICATIONS' },
+    { id: 'TRIG_15', label: '15. Handover Confirmation', description: 'Sent on order completion and handover.', requiredVariables: ['Customer Name', 'Order ID', 'Items List', 'Savings Amount', 'Link'], defaultTemplateName: 'auragold_order_delivered', appGroup: 'ORDER_STATUS' }
 ];
 
 // --- CORE SYSTEM TEMPLATES (THE 14 MANDATORY ONES) ---
@@ -372,6 +373,16 @@ export const REQUIRED_SYSTEM_TEMPLATES = [
         { type: "BODY", text: "Dear {{1}}, a payment request of ₹{{2}} has been created for Your order No {{3}} at Sanghavi Jewellers. You can pay securely in full or in flexible part payments via UPI." },
         { type: "BUTTONS", buttons: [{ type: "URL", text: "Pay Now", url: "https://order.auragoldelite.com/?token={{1}}" }] }
     ]
+  },
+  // 16) Handover Confirmation
+  {
+    name: 'auragold_order_delivered',
+    description: 'Sent upon order handover & delivery confirmation to customer.',
+    category: 'UTILITY',
+    appGroup: 'ORDER_STATUS',
+    variables: ['customer_name', 'order_id', 'items_list', 'net_protection_savings', 'token_link'],
+    content: "Dear {{1}}, thank you for choosing AuraGold! Your Order {{2}} ({{3}}) has been successfully handed over to you. Through our Gold Rate Protection, you saved a total of {{4}} on your order. You can view your completed order receipt and certificate here: https://order.auragoldelite.com/?token={{5}}\n\nWe look forward to serving you again!",
+    examples: ["Rahul Sharma", "ORD-10023", "Gold Ring, Bangle", "₹12,500", "1q648vdxmjn"]
   }
 ];
 

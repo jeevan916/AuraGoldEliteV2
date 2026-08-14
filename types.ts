@@ -143,6 +143,7 @@ export interface Order {
   requiresLiabilityAcceptance?: boolean;
   liabilityGapAcceptedAt?: string;
   deliveredAt?: string;
+  handoverGoldRate?: number;
   cancelledAt?: string;
   refundMethod?: 'CASH' | 'TRANSFER';
   protectionRevokedAt?: string;

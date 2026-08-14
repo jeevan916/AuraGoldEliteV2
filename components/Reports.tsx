@@ -41,7 +41,7 @@ const Reports: React.FC<ReportsProps> = ({ orders }) => {
     return { date: dateStr.split('-').slice(1).reverse().join('/'), amount: dailyTotal };
   }).reverse();
 
-  const allMilestones = orders.flatMap(o => o.paymentPlan.milestones);
+  const allMilestones = orders.flatMap(o => o.paymentPlan?.milestones || []);
   const milestoneStats = {
     paid: allMilestones.filter(m => m.status === 'PAID').length,
     overdue: allMilestones.filter(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date()).length,

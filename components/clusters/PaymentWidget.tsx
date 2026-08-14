@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2, AlertCircle, RefreshCw, Calendar, Clock, CheckCircle2, History, Coins, Landmark } from 'lucide-react';
+import { CreditCard, QrCode, X, Share2, Smartphone, Link, Zap, Loader2, AlertCircle, RefreshCw, Calendar, Clock, CheckCircle2, History, Coins, Landmark, Trash2 } from 'lucide-react';
 import { Card, Button } from '../shared/BaseUI';
 import { Order, OrderStatus, WhatsAppLogEntry, Milestone } from '../../types';
 import { whatsappService } from '../../services/whatsappService';
@@ -24,6 +24,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
   const [setuData, setSetuData] = useState<{ shortURL: string, upiID: string, upiLink: string, platformBillID: string, rawResponse?: any } | null>(null);
   const [showRawResponse, setShowRawResponse] = useState(false);
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
 
   // Old Gold inputs state
   const [goldWeight, setGoldWeight] = useState('');
@@ -96,9 +97,27 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
   }, [mode, calculatedGoldValue]);
 
   const updateOrderWithPayment = (val: number, method: string, notes: string, dateStr?: string) => {
+      let paymentTimestamp: string;
+      const now = new Date();
+      const todayYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+      if (!dateStr || dateStr === todayYMD) {
+        // If today or omitted, record exact current local time ISO
+        paymentTimestamp = now.toISOString();
+      } else {
+        // If custom date, attach current local time to avoid defaulting to UTC midnight (5:30 AM IST)
+        const [y, m, d] = dateStr.split('-').map(Number);
+        if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+          const customDate = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds());
+          paymentTimestamp = customDate.toISOString();
+        } else {
+          paymentTimestamp = now.toISOString();
+        }
+      }
+
       const newPayment = {
         id: `PAY-${Date.now()}`,
-        date: dateStr ? new Date(dateStr).toISOString() : new Date().toISOString(),
+        date: paymentTimestamp,
         amount: val,
         method: method,
         note: notes
@@ -126,6 +145,33 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
       
       onPaymentRecorded(updatedOrder);
       errorService.logActivity('PAYMENT_RECORDED', `₹${val} via ${method} for ${order.customerName}`);
+  };
+
+  const handleRemovePayment = (paymentId: string, amountVal: number) => {
+    const updatedPayments = order.payments.filter(p => p.id !== paymentId);
+    const newTotalPaid = updatedPayments.reduce((acc, p) => acc + p.amount, 0);
+
+    let runningSum = 0;
+    const updatedMilestones = (order.paymentPlan?.milestones || []).map(m => {
+      runningSum += m.targetAmount;
+      const status = newTotalPaid >= (runningSum - 1) 
+        ? 'PAID' 
+        : (newTotalPaid > (runningSum - m.targetAmount + 1) ? 'PARTIAL' : 'PENDING');
+      return { ...m, status: status as any };
+    });
+
+    const isComplete = newTotalPaid >= order.totalAmount - 1;
+
+    const updatedOrder = {
+      ...order,
+      payments: updatedPayments,
+      paymentPlan: { ...(order.paymentPlan || {}), milestones: updatedMilestones },
+      status: isComplete ? OrderStatus.COMPLETED : (order.status === OrderStatus.COMPLETED ? OrderStatus.ACTIVE : order.status)
+    };
+
+    onPaymentRecorded(updatedOrder);
+    setDeletingPaymentId(null);
+    errorService.logActivity('PAYMENT_RECORDED', `Removed payment ${paymentId} (₹${amountVal}) for ${order.customerName}`);
   };
 
   const handleRecordPayment = async () => {
@@ -813,7 +859,15 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                                 <span className="text-[8px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full">{p.status || 'PAID'}</span>
                             </div>
                             <p className="text-[10px] text-slate-500 font-medium flex items-center gap-2 mt-1 mb-1.5">
-                                <span>{new Date(p.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                                <span>{(() => {
+                                    if (!p.date) return '';
+                                    const d = new Date(p.date);
+                                    if (isNaN(d.getTime())) return p.date;
+                                    const isLegacyUtcMidnight = d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
+                                    return isLegacyUtcMidnight 
+                                      ? d.toLocaleDateString('en-IN', { dateStyle: 'medium' })
+                                      : d.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+                                })()}</span>
                                 <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
                                 <span className="uppercase font-bold tracking-wider">{p.method?.replace('_', ' ')}</span>
                             </p>
@@ -833,9 +887,39 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                             )}
                             {p.note && <p className="text-[10px] text-slate-400 mt-1 italic leading-relaxed">{p.note}</p>}
                         </div>
-                        <div className="bg-emerald-50 text-emerald-600 p-2 rounded-xl shrink-0">
-                            <CheckCircle2 size={16} />
-                        </div>
+                        {deletingPaymentId === p.id ? (
+                            <div className="bg-rose-50 border border-rose-200 p-2 rounded-xl flex items-center gap-2 text-xs shrink-0 animate-fadeIn">
+                                <span className="text-[11px] font-bold text-rose-800">Delete entry?</span>
+                                <button
+                                    type="button"
+                                    onClick={() => handleRemovePayment(p.id, p.amount)}
+                                    className="bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-sm transition-all"
+                                >
+                                    Confirm
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setDeletingPaymentId(null)}
+                                    className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-bold px-2 py-1 rounded-lg transition-all"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 shrink-0">
+                                <div className="bg-emerald-50 text-emerald-600 p-2 rounded-xl">
+                                    <CheckCircle2 size={16} />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setDeletingPaymentId(p.id)}
+                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                                    title="Remove Payment Record"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 // Added CheckCheck to imports from lucide-react
-import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp, Plus, Edit2, Printer, Download, Image as ImageIcon, Sparkles, Calculator, Percent, Tag, ReceiptIndianRupee, Bell } from 'lucide-react';
+import { ArrowLeft, Box, CreditCard, MessageSquare, FileText, Lock, AlertTriangle, Archive, CheckCircle2, CheckCheck, History, ExternalLink, RefreshCw, XCircle, TrendingUp, ShieldAlert, ShieldCheck, Scale, Camera, Send, CalendarDays, Clock, ChevronDown, ChevronUp, Plus, Edit2, Printer, Download, Image as ImageIcon, Sparkles, Calculator, Percent, Tag, ReceiptIndianRupee, Bell, Trash2 } from 'lucide-react';
 import { Order, GlobalSettings, WhatsAppLogEntry, ProductionStatus, ProtectionStatus, OrderStatus, JewelryDetail } from '../types';
 import { generateOrderPDF, generateReceiptPDF } from '../services/pdfGenerator';
 import { whatsappService } from '../services/whatsappService';
@@ -49,6 +49,7 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
   
   // Schedule View State
   const [showOriginalSchedule, setShowOriginalSchedule] = useState(false);
+  const [showDeleteOrderConfirm, setShowDeleteOrderConfirm] = useState(false);
 
   useEffect(() => {
       if (!lateFeeCheckedRef.current) {
@@ -310,6 +311,8 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           } 
       };
 
+      reconcileOrderTotalsAndMilestones(updatedOrder);
+
       try {
           if (w !== oldWeight) {
               await whatsappService.sendTemplateMessage(
@@ -534,6 +537,8 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
           } 
       };
 
+      reconcileOrderTotalsAndMilestones(updatedOrder);
+
       whatsappService.sendTemplateMessage(updatedOrder.customerContact, 'auragold_order_revised', 'en_US', [updatedOrder.customerName, updatedOrder.id, Math.round(newTotal).toLocaleString('en-IN'), 'Rate Repopulation', updatedOrder.shareToken], updatedOrder.customerName);
       onOrderUpdate(updatedOrder);
       alert("Order Repopulated!");
@@ -565,23 +570,69 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
       });
   };
 
-  const handleHandover = () => {
+  const sendHandoverWhatsApp = async (ord: Order) => {
+      const handoverRate = ord.handoverGoldRate || settings.currentGoldRate22K;
+      const itemsList = ord.items.map(i => i.category).join(', ') || 'Jewelry Items';
+      const savedAmount = Math.round(
+          ord.items.reduce((acc, item) => {
+              const rateDiff = Math.max(0, handoverRate - ord.goldRateAtBooking);
+              return acc + (item.netWeight * rateDiff);
+          }, 0)
+      );
+      const savingsStr = savedAmount > 0 ? `₹${savedAmount.toLocaleString('en-IN')}` : '₹0';
+
+      try {
+          const res = await whatsappService.sendTemplateMessage(
+              ord.customerContact,
+              'auragold_order_delivered',
+              'en_US',
+              [
+                  ord.customerName,
+                  ord.id,
+                  itemsList,
+                  savingsStr,
+                  ord.shareToken
+              ],
+              ord.customerName,
+              ord.shareToken,
+              undefined,
+              undefined,
+              ord.id
+          );
+          if (res.success) {
+              alert("Handover Confirmation WhatsApp sent successfully to " + ord.customerName + "!");
+          } else {
+              alert("Order updated, but WhatsApp delivery failed: " + (res.error || 'Unknown error'));
+          }
+      } catch (e: any) {
+          console.error("Failed to send Handover WhatsApp:", e);
+          alert("Failed to dispatch WhatsApp: " + (e.message || e));
+      }
+  };
+
+  const handleHandover = async () => {
       if(confirm("Confirm Handover? Marks as DELIVERED.")) {
-          onOrderUpdate({ 
+          const handoverRate = order.handoverGoldRate || settings.currentGoldRate22K;
+          const updatedOrder: Order = { 
               ...order, 
               status: OrderStatus.DELIVERED, 
-              deliveredAt: new Date().toISOString(),
+              deliveredAt: order.deliveredAt || new Date().toISOString(),
+              handoverGoldRate: handoverRate,
               items: order.items.map(i => ({...i, productionStatus: ProductionStatus.DELIVERED})) 
-          });
+          };
+          onOrderUpdate(updatedOrder);
+
+          if (confirm("Send Handover Confirmation WhatsApp to " + updatedOrder.customerName + "?")) {
+              await sendHandoverWhatsApp(updatedOrder);
+          }
+
           onBack(); 
       }
   };
 
   const handleDeleteOrder = () => {
       if (!onDeleteOrder) return;
-      if (confirm("Are you sure you want to permanently delete this order? This action cannot be undone and will remove all associated items and payments.")) {
-          onDeleteOrder(order.id);
-      }
+      setShowDeleteOrderConfirm(true);
   };
 
   const isFullyPaid = order.payments.reduce((acc, p) => acc + p.amount, 0) >= order.totalAmount - 1;
@@ -862,7 +913,24 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                 </div>
             </div>
 
-            {order.status !== OrderStatus.DELIVERED && (
+            {order.status === OrderStatus.DELIVERED ? (
+                <div className="bg-emerald-50/60 p-6 rounded-[2rem] border border-emerald-100 shadow-sm space-y-3">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div>
+                            <h3 className="font-black text-emerald-900 text-sm uppercase tracking-wide">Order Handed Over & Archived</h3>
+                            <p className="text-xs text-emerald-700 font-medium mt-0.5">
+                                Delivered on {new Date(order.deliveredAt || Date.now()).toLocaleDateString('en-IN', { dateStyle: 'medium' })}
+                            </p>
+                        </div>
+                        <button 
+                            onClick={() => sendHandoverWhatsApp(order)} 
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-sm transition-all"
+                        >
+                            <MessageSquare size={14} /> Resend Handover WhatsApp
+                        </button>
+                    </div>
+                </div>
+            ) : (
                 <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
                     <h3 className="font-black text-slate-800 text-sm uppercase tracking-wide">Contract Controls</h3>
                     <div className="flex flex-col md:flex-row gap-4">
@@ -1230,6 +1298,36 @@ const OrderDetails: React.FC<OrderDetailsProps> = ({
                         <div className="bg-white rounded-xl p-4 border border-amber-100 space-y-2 mb-6"><div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-bold">Reason</span><span className="font-black text-rose-600 uppercase">{order.originalSnapshot.reason}</span></div><div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-bold">Original Price</span><span className="font-black text-slate-800">₹{Math.round(order.originalSnapshot.originalTotal).toLocaleString('en-IN')}</span></div><div className="flex justify-between items-center text-sm"><span className="text-slate-500 font-bold">Original Rate</span><span className="font-black text-slate-800">₹{order.originalSnapshot.originalRate}/g</span></div></div>
                     ) : <div className="text-xs text-amber-600 mb-4 italic">No snapshot available.</div>}
                     <div className="grid grid-cols-2 gap-4"><button onClick={handleRepopulateOrder} className="bg-emerald-600 text-white p-4 rounded-xl flex flex-col items-center justify-center gap-2 shadow-lg"><RefreshCw size={24} /><div className="text-center"><span className="block font-black text-xs uppercase">Repopulate</span><span className="text-[9px] opacity-80">Accept New Rate</span></div></button><button onClick={handleRefundCancel} className="bg-rose-600 text-white p-4 rounded-xl flex flex-col items-center justify-center gap-2 shadow-lg"><XCircle size={24} /><div className="text-center"><span className="block font-black text-xs uppercase">Refund</span><span className="text-[9px] opacity-80">Cancel Funds</span></div></button></div>
+                </div>
+            </div>
+        )}
+
+        {showDeleteOrderConfirm && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-4 animate-scaleUp">
+                    <div className="flex items-center gap-3 text-rose-600">
+                        <div className="p-3 bg-rose-50 rounded-2xl">
+                            <Trash2 size={24} />
+                        </div>
+                        <h3 className="text-lg font-black text-slate-900">Delete Order?</h3>
+                    </div>
+                    <p className="text-sm text-slate-600 leading-relaxed font-medium">
+                        Are you sure you want to permanently delete this order for <strong className="text-slate-900">{order.customerName}</strong>? This action cannot be undone and will remove all associated items and payments.
+                    </p>
+                    <div className="flex items-center justify-end gap-3 pt-2">
+                        <Button variant="secondary" onClick={() => setShowDeleteOrderConfirm(false)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="danger"
+                            onClick={() => {
+                                setShowDeleteOrderConfirm(false);
+                                if (onDeleteOrder) onDeleteOrder(order.id);
+                            }}
+                        >
+                            Yes, Delete Order
+                        </Button>
+                    </div>
                 </div>
             </div>
         )}

@@ -29,6 +29,76 @@ router.post('/orders', ensureDb, async (req, res) => {
             req.body.orders[i] = processOrderImages(req.body.orders[i]);
             const order = req.body.orders[i];
 
+            // Fetch existing order from DB to prevent overwriting server-recorded payments (e.g. Setu webhook / UPI)
+            let existingPayments = [];
+            try {
+                const [existingOrderRows] = await connection.query('SELECT data FROM orders WHERE id = ?', [order.id]);
+                if (existingOrderRows.length > 0) {
+                    const existingData = JSON.parse(existingOrderRows[0].data);
+                    if (Array.isArray(existingData.payments)) {
+                        existingPayments.push(...existingData.payments);
+                    }
+                }
+            } catch(e) {}
+
+            // Also check payments_log table for any payments recorded directly by gateway/webhooks
+            try {
+                const [loggedPaymentsRows] = await connection.query('SELECT data FROM payments_log WHERE order_id = ?', [order.id]);
+                for (const row of loggedPaymentsRows) {
+                    try {
+                        const pData = JSON.parse(row.data);
+                        if (pData && (pData.id || pData.reference)) {
+                            const existsInExisting = existingPayments.some(p => 
+                                (p.id && p.id === pData.id) || 
+                                (p.reference && pData.reference && p.reference === pData.reference) || 
+                                (p.transactionId && pData.reference && p.transactionId === pData.reference)
+                            );
+                            if (!existsInExisting) {
+                                existingPayments.push(pData);
+                            }
+                        }
+                    } catch(e) {}
+                }
+            } catch(e) {}
+
+            // Merge existing server payments into incoming order.payments
+            if (!Array.isArray(order.payments)) {
+                order.payments = [];
+            }
+            
+            for (const ep of existingPayments) {
+                const alreadyPresent = order.payments.some(p => 
+                    (p.id && ep.id && p.id === ep.id) || 
+                    (p.reference && ep.reference && p.reference === ep.reference) ||
+                    (p.transactionId && ep.reference && p.transactionId === ep.reference) ||
+                    (p.reference && ep.transactionId && p.reference === ep.transactionId) ||
+                    (Number(p.amount) === Number(ep.amount) && Math.abs(new Date(p.date || p.timestamp || 0).getTime() - new Date(ep.date || ep.timestamp || 0).getTime()) < 60000)
+                );
+                if (!alreadyPresent) {
+                    order.payments.push(ep);
+                }
+            }
+
+            // Sort payments by date
+            order.payments.sort((a, b) => new Date(a.date || a.timestamp || 0).getTime() - new Date(b.date || b.timestamp || 0).getTime());
+
+            // Reconcile milestone payment statuses and order status based on all merged payments
+            const totalPaid = order.payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+            if (order.paymentPlan && Array.isArray(order.paymentPlan.milestones)) {
+                let runningSum = 0;
+                order.paymentPlan.milestones = order.paymentPlan.milestones.map(m => {
+                    runningSum += Number(m.targetAmount || 0);
+                    const status = totalPaid >= (runningSum - 1) ? 'PAID' : (totalPaid > (runningSum - Number(m.targetAmount || 0) + 1) ? 'PARTIAL' : 'PENDING');
+                    return { ...m, status, cumulativeTarget: runningSum };
+                });
+            }
+
+            const isComplete = totalPaid >= (order.totalAmount || 0) - 1;
+            const hasOverdueMilestones = order.paymentPlan && Array.isArray(order.paymentPlan.milestones) && order.paymentPlan.milestones.some(m => m.status !== 'PAID' && new Date(m.dueDate) < new Date());
+            if (order.status !== 'DELIVERED' && order.status !== 'CANCELLED' && order.status !== 'REFUNDED') {
+                order.status = isComplete ? 'COMPLETED' : (hasOverdueMilestones ? 'OVERDUE' : 'ACTIVE');
+            }
+
             await connection.query('INSERT INTO orders (id, customer_contact, status, created_at, share_token, data, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status=VALUES(status), share_token=VALUES(share_token), data=VALUES(data), updated_at=VALUES(updated_at)', [order.id, order.customerContact, order.status, new Date(order.createdAt), order.shareToken, JSON.stringify(order), Date.now()]);
             await journalTransaction('ORDER', order.id, 'SYNC_WRITE', order, connection);
             
