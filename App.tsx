@@ -71,19 +71,20 @@ const CustomerOrderView = lazyRetry(() => import('./components/CustomerOrderView
 const SystemArchitect = lazyRetry(() => import('./components/SystemArchitect'), 'Architect');
 const KarigarManager = lazyRetry(() => import('./components/KarigarManager'), 'KarigarDesk');
 const WebhookLogs = lazyRetry(() => import('./components/WebhookLogs'), 'Webhooks');
+const SalesmanCalculator = lazyRetry(() => import('./components/SalesmanCalculator'), 'SalesmanCalculator');
 
 const StaffManager = lazyRetry(() => import('./components/StaffManager').then(m => ({ default: m.StaffManager })), 'StaffManager');
 const DuesTracker = lazyRetry(() => import('./components/DuesTracker').then(m => ({ default: m.DuesTracker })), 'DuesTracker');
 const ExternalPaymentLedger = lazyRetry(() => import('./components/ExternalPaymentLedger'), 'ExternalPaymentLedger');
 const ExternalPaymentCustomerView = lazyRetry(() => import('./components/ExternalPaymentCustomerView'), 'ExternalPaymentCustomerView');
 
-type MainView = 'DASH' | 'ORDER_NEW' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW' | 'ARCHITECT' | 'KARIGAR_DESK' | 'WEBHOOKS' | 'STAFF_MANAGER' | 'DUES_TRACKER' | 'EXTERNAL_PAYMENTS' | 'EXTERNAL_CUSTOMER_VIEW';
+type MainView = 'DASH' | 'ORDER_NEW' | 'CALCULATOR' | 'ORDER_DETAILS' | 'ORDER_BOOK' | 'CUSTOMERS' | 'CUSTOMER_PROFILE' | 'COLLECTIONS' | 'WHATSAPP' | 'TEMPLATES' | 'PLANS' | 'LOGS' | 'STRATEGY' | 'MARKET' | 'SYS_LOGS' | 'SETTINGS' | 'MENU' | 'CUSTOMER_VIEW' | 'ARCHITECT' | 'KARIGAR_DESK' | 'WEBHOOKS' | 'STAFF_MANAGER' | 'DUES_TRACKER' | 'EXTERNAL_PAYMENTS' | 'EXTERNAL_CUSTOMER_VIEW';
 
 // --- ACCESS CONTROL LIST ---
 const ROLE_PERMISSIONS: Record<UserRole, MainView[]> = {
-    ADMIN: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'SYS_LOGS', 'SETTINGS', 'MENU', 'CUSTOMER_VIEW', 'ARCHITECT', 'KARIGAR_DESK', 'WEBHOOKS', 'STAFF_MANAGER', 'DUES_TRACKER', 'EXTERNAL_PAYMENTS'],
-    MANAGER: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'MENU', 'KARIGAR_DESK', 'EXTERNAL_PAYMENTS'],
-    SALES: ['DASH', 'ORDER_NEW', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'MENU', 'EXTERNAL_PAYMENTS'],
+    ADMIN: ['DASH', 'ORDER_NEW', 'CALCULATOR', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'SYS_LOGS', 'SETTINGS', 'MENU', 'CUSTOMER_VIEW', 'ARCHITECT', 'KARIGAR_DESK', 'WEBHOOKS', 'STAFF_MANAGER', 'DUES_TRACKER', 'EXTERNAL_PAYMENTS'],
+    MANAGER: ['DASH', 'ORDER_NEW', 'CALCULATOR', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'COLLECTIONS', 'WHATSAPP', 'TEMPLATES', 'PLANS', 'LOGS', 'STRATEGY', 'MARKET', 'MENU', 'KARIGAR_DESK', 'EXTERNAL_PAYMENTS'],
+    SALES: ['DASH', 'ORDER_NEW', 'CALCULATOR', 'ORDER_DETAILS', 'ORDER_BOOK', 'CUSTOMERS', 'CUSTOMER_PROFILE', 'MENU', 'EXTERNAL_PAYMENTS'],
     KARIGAR: ['KARIGAR_DESK']
 };
 
@@ -397,11 +398,28 @@ const App = () => {
 
           // --- ADMIN VIEWS ---
           case 'EXTERNAL_PAYMENTS': return <ExternalPaymentLedger />;
+          case 'CALCULATOR': return (
+              <SalesmanCalculator 
+                  settings={settings} 
+                  planTemplates={planTemplates} 
+                  customers={derivedCustomers} 
+                  currentUser={user} 
+                  onConvertToOrder={(o) => { 
+                      addOrder(o); 
+                      setSelectedOrderId(o.id); 
+                      setView('ORDER_DETAILS'); 
+                  }} 
+                  onRefreshRates={async () => {
+                      const res = await goldRateService.fetchLiveRate();
+                      if (res.success) setSettings({...settings, currentGoldRate24K: res.rate24K, currentGoldRate22K: res.rate22K, currentSilverRate: res.silver});
+                  }} 
+              />
+          );
           case 'DASH': return <Dashboard orders={orders} currentRates={{k24: settings.currentGoldRate24K, k22: settings.currentGoldRate22K, silver: settings.currentSilverRate}} onRefreshRates={async () => {
               const res = await goldRateService.fetchLiveRate();
               if (res.success) setSettings({...settings, currentGoldRate24K: res.rate24K, currentGoldRate22K: res.rate22K, currentSilverRate: res.silver});
           }} activities={systemActivities} />;
-          case 'ORDER_NEW': return <OrderForm settings={settings} customers={derivedCustomers} planTemplates={planTemplates} currentUser={user} onSubmit={(o) => { addOrder(o); setSelectedOrderId(o.id); setView('ORDER_DETAILS'); }} onCancel={() => setView('DASH')} />;
+          case 'ORDER_NEW': return <OrderForm settings={settings} customers={derivedCustomers} planTemplates={planTemplates} currentUser={user} onSubmit={(o) => { addOrder(o); setSelectedOrderId(o.id); setView('ORDER_DETAILS'); }} onCancel={() => setView('DASH')} onSwitchToCalculator={() => setView('CALCULATOR')} />;
           case 'ORDER_BOOK': return <OrderBook orders={orders} onViewOrder={(id) => { setSelectedOrderId(id); setView('ORDER_DETAILS'); }} onUpdateOrder={updateOrder} settings={settings} />;
           case 'ORDER_DETAILS': return selectedOrder ? <OrderDetails order={selectedOrder} settings={settings} onBack={() => setView('ORDER_BOOK')} onUpdateStatus={(itemId, status) => updateItemStatus(selectedOrder.id, itemId, { productionStatus: status })} onRecordPayment={recordPayment} onOrderUpdate={updateOrder} onDeleteOrder={handleDeleteOrder} logs={logs} onAddLog={addLog} /> : <div className="text-center p-10">Order Not Found</div>;
           case 'CUSTOMERS': return <CustomerList customers={derivedCustomers} orders={orders} onSelectCustomer={(id) => { setSelectedCustomerId(id); setView('CUSTOMER_PROFILE'); }} onAddCustomer={(c) => { setManualCustomers(prev => { const next = [...prev, c]; storageService.setCustomers(next); return next; }); }} />;
@@ -422,6 +440,7 @@ const App = () => {
           case 'KARIGAR_DESK': return <KarigarManager orders={orders} onUpdateItem={updateItemStatus} onOrderUpdate={updateOrder} settings={settings} />;
           case 'MENU': return (
               <div className="grid grid-cols-2 gap-4 pb-24 animate-fadeIn">
+                  {canAccess('CALCULATOR') && <MenuItem onClick={() => setView('CALCULATOR')} icon={<Calculator />} label="Salesman Calculator" desc="Multi-item & Gold Exchange" colorClass="bg-amber-100 text-amber-800" />}
                   {canAccess('ORDER_BOOK') && <MenuItem onClick={() => setView('ORDER_BOOK')} icon={<BookOpen />} label="Order Registry" desc="Manage all bookings" colorClass="bg-blue-50 text-blue-600" />}
                   {canAccess('KARIGAR_DESK') && <MenuItem onClick={() => setView('KARIGAR_DESK')} icon={<Hammer />} label="Karigar Desk" desc="Production Tracking" colorClass="bg-slate-800 text-white" />}
                   {canAccess('CUSTOMERS') && <MenuItem onClick={() => setView('CUSTOMERS')} icon={<Users />} label="Client Directory" desc="View customer profiles" colorClass="bg-emerald-50 text-emerald-600" />}
@@ -480,6 +499,7 @@ const App = () => {
              <div className="flex-1 space-y-1 overflow-y-auto custom-scrollbar pr-2">
                  {canAccess('DASH') && <SidebarItem active={view === 'DASH'} onClick={() => setView('DASH')} icon={Home} label="Dashboard" />}
                  {canAccess('ORDER_BOOK') && <SidebarItem active={view === 'ORDER_BOOK'} onClick={() => setView('ORDER_BOOK')} icon={BookOpen} label="Order Book" />}
+                 {canAccess('CALCULATOR') && <SidebarItem active={view === 'CALCULATOR'} onClick={() => setView('CALCULATOR')} icon={Calculator} label="Estimate Desk" highlight />}
                  {canAccess('KARIGAR_DESK') && <SidebarItem active={view === 'KARIGAR_DESK'} onClick={() => setView('KARIGAR_DESK')} icon={Hammer} label="Karigar Desk" highlight />}
                  {canAccess('ORDER_NEW') && <SidebarItem active={view === 'ORDER_NEW'} onClick={() => setView('ORDER_NEW')} icon={Plus} label="New Booking" />}
                  

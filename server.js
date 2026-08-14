@@ -206,122 +206,112 @@ const getValidDistPath = () => {
 };
 
 const finalDistPath = getValidDistPath();
-const isDev = (process.env.NODE_ENV === 'development' || (process.env.APPLET_ID && !finalDistPath)) && process.env.NODE_ENV !== 'production';
 
-if (isDev) {
-    import('vite').then(({ createServer: createViteServer }) => {
-        return createViteServer({
-            server: { middlewareMode: true },
-            appType: 'spa',
-        }).then(vite => {
+async function startServer() {
+    // 1. Initialize Database
+    try {
+        const result = await initDb();
+        if (result.success) {
+            initRateService();
+            runPaymentReminders();
+            setInterval(runPaymentReminders, 24 * 60 * 60 * 1000);
+            startSetuPoller(io);
+            initBackupScheduler();
+            
+            // Asynchronously run DB image analysis and migration
+            migrateExistingDbImages().catch(err => {
+                console.error("[System] Startup image migration failed:", err.message);
+            });
+        } else {
+            console.error(`[System] Database initialization failed: ${result.error}`);
+        }
+    } catch (dbErr) {
+        console.error(`[System] Error during DB init:`, dbErr?.message || dbErr);
+    }
+
+    // 2. Vite Middleware for Development or Static Serving for Production
+    if (process.env.NODE_ENV !== 'production') {
+        try {
+            const { createServer: createViteServer } = await import('vite');
+            const vite = await createViteServer({
+                server: { middlewareMode: true },
+                appType: 'spa',
+            });
             app.use(vite.middlewares);
             console.log("[System] Vite middleware integrated for development.");
-        });
-    }).catch(e => {
-        console.warn("[System] Vite integration failed, falling back to static serving:", e.message);
-        if (finalDistPath) {
-            app.use(express.static(finalDistPath));
+        } catch (e) {
+            console.warn("[System] Vite integration failed, falling back to static serving:", e?.message || e);
+            if (finalDistPath) {
+                app.use(express.static(finalDistPath));
+            }
         }
-    });
-} else if (finalDistPath) {
-    console.log(`[System] Static serving enabled for: ${finalDistPath}`);
-    app.use(express.static(finalDistPath));
-    
-    // Explicit Root Route
-    app.get('/', (req, res) => {
-        const indexPath = path.join(finalDistPath, 'index.html');
-        console.log(`[System] Root request received. Serving: ${indexPath}`);
+    } else if (finalDistPath) {
+        console.log(`[System] Static serving enabled for: ${finalDistPath}`);
+        app.use(express.static(finalDistPath));
         
-        if (fs.existsSync(indexPath)) {
-            res.sendFile(indexPath);
-        } else {
-            console.error(`[System] Root Index Not Found at: ${indexPath}`);
-            res.status(404).send(`
-                <div style="font-family: sans-serif; padding: 2rem; text-align: center;">
-                    <h1>AuraGold Elite - Deployment Status</h1>
-                    <p>The server is running, but the application files (dist/index.html) were not found.</p>
-                    <p>Path checked: <code>${indexPath}</code></p>
-                    <hr/>
-                    <p><strong>Auto-Deployment Tip:</strong> Ensure 'npm run build' has completed successfully on the server.</p>
-                </div>
-            `);
-        }
-    });
-
-    // SPA Fallback
-    app.get(/.*/, (req, res, next) => {
-        // Skip API and Socket.io routes
-        if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
-            return next();
-        }
-        
-        const indexPath = path.join(finalDistPath, 'index.html');
-        if (fs.existsSync(indexPath)) {
-            res.sendFile(indexPath);
-        } else {
-            res.status(404).send("Application Index Not Found. Please run 'npm run build'.");
-        }
-    });
-} else {
-    console.error("[System] Critical Error: No index.html found in 'dist' or root. Static serving disabled.");
-    
-    app.get('/', (req, res) => {
-        res.status(200).send(`
-            <div style="font-family: sans-serif; padding: 2rem; text-align: center;">
-                <h1>AuraGold Elite - Server Running</h1>
-                <p>The backend is operational, but the frontend build (dist/index.html) is missing.</p>
-            </div>
-        `);
-    });
-}
-
-initDb().then(async (result) => {
-    if (result.success) {
-        initRateService();
-        runPaymentReminders();
-        setInterval(runPaymentReminders, 24 * 60 * 60 * 1000);
-        startSetuPoller(io);
-        initBackupScheduler();
-        
-        // Asynchronously run DB image analysis and migration
-        migrateExistingDbImages().catch(err => {
-            console.error("[System] Startup image migration failed:", err.message);
+        // SPA Fallback
+        app.get(/.*/, (req, res, next) => {
+            // Skip API and Socket.io routes
+            if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
+                return next();
+            }
+            
+            const indexPath = path.join(finalDistPath, 'index.html');
+            if (fs.existsSync(indexPath)) {
+                res.sendFile(indexPath);
+            } else {
+                res.status(404).send("Application Index Not Found. Please run 'npm run build'.");
+            }
         });
     } else {
-        console.error(`[System] Database initialization failed: ${result.error}`);
+        console.error("[System] Critical Error: No index.html found in 'dist' or root. Static serving disabled.");
+        
+        app.get('/', (req, res) => {
+            res.status(200).send(`
+                <div style="font-family: sans-serif; padding: 2rem; text-align: center;">
+                    <h1>AuraGold Elite - Server Running</h1>
+                    <p>The backend is operational, but the frontend build (dist/index.html) is missing.</p>
+                </div>
+            `);
+        });
     }
-});
 
-const isSocketPath = typeof PORT === 'string' && (PORT.startsWith('/') || PORT.startsWith('\\\\') || isNaN(Number(PORT)));
+    // 3. Start HTTP Server
+    const isSocketPath = typeof PORT === 'string' && (PORT.startsWith('/') || PORT.startsWith('\\\\') || isNaN(Number(PORT)));
 
-httpServer.on('error', (err) => {
-    console.error('[Server Error]', err?.message || err);
-    if (err?.code === 'EADDRINUSE') {
-        if (isSocketPath) {
-            console.warn(`[Server] Socket ${PORT} is in use. Unlinking stale socket...`);
-            try {
-                if (fs.existsSync(PORT)) {
-                    fs.unlinkSync(PORT);
+    httpServer.on('error', (err) => {
+        console.error('[Server Error]', err?.message || err);
+        if (err?.code === 'EADDRINUSE') {
+            if (isSocketPath) {
+                console.warn(`[Server] Socket ${PORT} is in use. Unlinking stale socket...`);
+                try {
+                    if (fs.existsSync(PORT)) {
+                        fs.unlinkSync(PORT);
+                    }
+                    httpServer.listen(PORT);
+                } catch (unlinkErr) {
+                    console.error(`[Server] Failed to unlink socket ${PORT}:`, unlinkErr?.message);
                 }
-                httpServer.listen(PORT);
-            } catch (unlinkErr) {
-                console.error(`[Server] Failed to unlink socket ${PORT}:`, unlinkErr?.message);
+            } else {
+                console.error(`[Server] Port ${PORT} is already in use.`);
             }
-        } else {
-            console.error(`[Server] Port ${PORT} is already in use.`);
         }
-    }
-});
+    });
 
-if (isSocketPath) {
-    httpServer.listen(PORT, () => {
-        console.log(`[Server] Operational on socket: ${PORT}`);
-        console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
-    });
-} else {
-    const numericPort = Number(PORT);
-    httpServer.listen(numericPort, '0.0.0.0', () => {
-        console.log(`[Server] Operational on port ${numericPort}`);
-        console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
-    });
+    if (isSocketPath) {
+        httpServer.listen(PORT, () => {
+            console.log(`[Server] Operational on socket: ${PORT}`);
+            console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
+        });
+    } else {
+        const numericPort = Number(PORT) || 3000;
+        httpServer.listen(numericPort, '0.0.0.0', () => {
+            console.log(`[Server] Operational on port ${numericPort}`);
+            console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
+        });
+    }
 }
+
+startServer().catch(err => {
+    console.error('[Server] Fatal startup error:', err);
+});

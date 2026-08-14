@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  Plus, Trash2, ChevronRight, X, Loader2, Sparkles, Image as ImageIcon, Camera, Lock, Gem, CheckCircle2, Edit2
+  Plus, Trash2, ChevronRight, X, Loader2, Sparkles, Image as ImageIcon, Camera, Lock, Gem, CheckCircle2, Edit2, Calculator
 } from 'lucide-react';
 import { 
   Order, JewelryDetail, OrderStatus, GlobalSettings, 
@@ -15,10 +15,11 @@ interface OrderFormProps {
   customers?: Customer[];
   onSubmit: (order: Order) => void;
   onCancel: () => void;
+  onSwitchToCalculator?: () => void;
   currentUser?: AuthUser | null;
 }
 
-const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], customers = [], onSubmit, onCancel, currentUser }) => {
+const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], customers = [], onSubmit, onCancel, onSwitchToCalculator, currentUser }) => {
   const [step, setStep] = useState(1);
   const [customer, setCustomer] = useState({ name: '', contact: '' });
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
@@ -389,6 +390,27 @@ const OrderForm: React.FC<OrderFormProps> = ({ settings, planTemplates = [], cus
   return (
     <div className="flex flex-col min-h-full max-w-4xl mx-auto space-y-4 pb-20">
       
+      {onSwitchToCalculator && (
+        <div className="bg-gradient-to-r from-amber-500/10 via-amber-50 to-orange-50 border border-amber-200 p-3.5 rounded-2xl flex justify-between items-center shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-md">
+              <Calculator size={16} />
+            </div>
+            <div>
+              <h4 className="font-bold text-xs text-slate-900">Need Multiple Items & Scrap Gold Exchange?</h4>
+              <p className="text-[10px] text-slate-500">Use the Salesman Estimate Calculator with full cost bifurcation and live old gold deductions.</p>
+            </div>
+          </div>
+          <button
+            onClick={onSwitchToCalculator}
+            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95 shrink-0"
+          >
+            <span>Open Estimate Desk</span>
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
+
       <div className="flex bg-white rounded-2xl border overflow-hidden p-1 shadow-sm">
         {[1, 2, 3].map(s => (
           <div 

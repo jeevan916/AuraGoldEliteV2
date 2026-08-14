@@ -104,6 +104,45 @@ export interface JewelryDetail {
   actualDeliveryDate?: string;
 }
 
+export interface OldGoldExchangeItem {
+  id: string;
+  description: string;
+  metalType: 'GOLD' | 'SILVER';
+  grossWeight: number;
+  deductionWeight: number; // stone/dirt/enamel deduction
+  netMeltingWeight: number;
+  purity: '24K' | '22K' | '20K' | '18K' | '14K' | 'CUSTOM' | '925' | '800';
+  customPurityPercent?: number; // e.g. 84.5
+  meltingLossPercentage: number; // e.g. 1% or 2% or 0%
+  fineGoldWeight: number; // calculated fine metal weight
+  ratePerGram: number; // exchange buying rate
+  exchangeValue: number; // net credit value in INR
+}
+
+export interface SalesmanEstimate {
+  id: string;
+  customerName: string;
+  customerContact: string;
+  customerCity?: string;
+  date: string;
+  items: JewelryDetail[];
+  oldGoldItems: OldGoldExchangeItem[];
+  goldRate22K: number;
+  goldRate24K: number;
+  goldRate18K: number;
+  silverRate: number;
+  discountAmount: number;
+  taxRate: number;
+  totalJewelryValue: number;
+  totalGstAmount: number;
+  grossCartAmount: number;
+  totalOldGoldCredit: number;
+  netPayableAmount: number;
+  paymentPlan: PaymentPlan;
+  salesmanName?: string;
+  notes?: string;
+}
+
 export interface Payment {
   id: string;
   date: string;

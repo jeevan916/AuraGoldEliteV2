@@ -3,6 +3,9 @@
     "camera",
     "geolocation"
   ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ],
   "name": "AuraGoldEliteV2",
   "description": "Luxury Management and Gold Rate Tracking System with real-time updates and multi-user support."
 }
