@@ -266,7 +266,7 @@ router.get('/public/external-payment/:token', ensureDb, async (req, res) => {
             if (record.status !== 'PAID' && record.platformBillID) {
                 let statusConn;
                 try {
-                    statusConn = await pool.getConnection();
+                    statusConn = await getPool().getConnection();
                     const [setuRows] = await statusConn.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
                     if (setuRows.length > 0) {
                         let config = setuRows[0].config;

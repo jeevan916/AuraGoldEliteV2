@@ -61,6 +61,7 @@ export async function initDb() {
             password: process.env.DB_PASSWORD,
             database: process.env.DB_NAME,
             port: parseInt(process.env.DB_PORT || '3306'),
+            socketPath: process.env.DB_SOCKET_PATH || undefined,
             waitForConnections: true,
             connectionLimit: 5,
             connectTimeout: 10000,

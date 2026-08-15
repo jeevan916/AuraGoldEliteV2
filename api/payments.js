@@ -184,11 +184,11 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         let token;
         try {
             const shouldForce = req.body.forceRefresh === true || req.body.force === true;
-            token = await getSetuToken(connection, config, shouldForce);
+            token = await getSetuToken(connection, config, shouldForce, true);
         } catch (tokenErr) {
             if (!req.body.forceRefresh && (tokenErr.message?.includes('back-off') || tokenErr.status === 401)) {
                 try {
-                    token = await getSetuToken(connection, config, true);
+                    token = await getSetuToken(connection, config, true, true);
                 } catch (retryErr) {
                     connection.release();
                     throw retryErr;
@@ -283,7 +283,7 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         // Save platformBillID to order or external payment for background recovery checking
         const billID = setuPayload?.platformBillID || linkData?.data?.platformBillID || linkData?.platformBillID;
         if (orderId && billID) {
-            const processConn = await pool.getConnection();
+            const processConn = await getPool().getConnection();
             try {
                 const [orderRows] = await processConn.query('SELECT data FROM orders WHERE id = ?', [orderId]);
                 if (orderRows.length > 0) {
@@ -308,7 +308,7 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                 processConn.release();
             }
         } else if (externalPaymentId && billID) {
-            const processConn = await pool.getConnection();
+            const processConn = await getPool().getConnection();
             try {
                 const [extRows] = await processConn.query('SELECT data FROM external_payments WHERE id = ?', [externalPaymentId]);
                 if (extRows.length > 0) {
@@ -1416,7 +1416,7 @@ export function startSetuPoller(io) {
                                 console.info(`[Setu Poller] WAF block (HTTP 403) detected for external payment ${pending.platformBillID}. Backing off status polling for 15m.`);
                                 config.wafBlockedUntil = Date.now() + 15 * 60 * 1000;
                                 try {
-                                    const updateConn = await pool.getConnection();
+                                    const updateConn = await getPool().getConnection();
                                     await updateConn.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
                                     updateConn.release();
                                 } catch (e) {}
@@ -1424,7 +1424,7 @@ export function startSetuPoller(io) {
                             } else if (statusResponse.status === 401) {
                                 console.warn(`[Setu Poller] Received 401 for external payment ${pending.platformBillID}. Attempting token refresh...`);
                                 try {
-                                    const refreshConn = await pool.getConnection();
+                                    const refreshConn = await getPool().getConnection();
                                     token = await getSetuToken(refreshConn, config, true);
                                     refreshConn.release();
                                     
@@ -1471,7 +1471,7 @@ export function startSetuPoller(io) {
                                 console.info(`[Setu Poller] WAF block (HTTP 403) detected for order ${pending.platformBillID}. Backing off status polling for 15m.`);
                                 config.wafBlockedUntil = Date.now() + 15 * 60 * 1000;
                                 try {
-                                    const updateConn = await pool.getConnection();
+                                    const updateConn = await getPool().getConnection();
                                     await updateConn.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
                                     updateConn.release();
                                 } catch (e) {}
@@ -1479,7 +1479,7 @@ export function startSetuPoller(io) {
                             } else if (statusResponse.status === 401) {
                                 console.warn(`[Setu Poller] Received 401 for ${pending.platformBillID}. Attempting token refresh...`);
                                 try {
-                                    const refreshConn = await pool.getConnection();
+                                    const refreshConn = await getPool().getConnection();
                                     token = await getSetuToken(refreshConn, config, true);
                                     refreshConn.release();
                                     
