@@ -18,7 +18,6 @@ export function getSetuHeaders(token = null, schemeId = null, extraHeaders = {})
     }
     if (schemeId) {
         headers['X-Setu-Product-Instance-ID'] = schemeId;
-        headers['x-product-instance-id'] = schemeId;
     }
     return headers;
 }
@@ -55,7 +54,7 @@ async function getSetuToken(connection, config, forceRefresh = false, allowWafBy
     try {
         tokenResponse = await fetch(`${baseUrl}/auth/token`, {
             method: 'POST',
-            headers: getSetuHeaders(null, schemeId, { 'Content-Type': 'application/json' }),
+            headers: getSetuHeaders(null, null, { 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 clientID: clientId,
                 secret: secret
@@ -664,7 +663,7 @@ router.post('/setu/test-connection', ensureDb, async (req, res) => {
     try {
         const tokenResponse = await fetch(`${baseUrl}/auth/token`, {
             method: 'POST',
-            headers: getSetuHeaders(null, req.body.schemeId || req.body.productInstanceId, { 'Content-Type': 'application/json' }),
+            headers: getSetuHeaders(null, null, { 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 clientID: clientId,
                 secret: secret

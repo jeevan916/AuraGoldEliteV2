@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ExternalPaymentRecord } from '../types';
 import { ReceiptIndianRupee, QrCode, CheckCircle2, ShieldCheck, Lock, ExternalLink, ArrowRight, Loader2, Sparkles, History } from 'lucide-react';
 
@@ -17,6 +17,11 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
   const [amountInitialized, setAmountInitialized] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
   const [customLink, setCustomLink] = useState<{ shortUrl: string; upiIntentLink: string } | null>(null);
+
+  // Refs to prevent continuous Setu API call loops during status polling
+  const lastGeneratedAmountRef = useRef<number | null>(null);
+  const recordRef = useRef<ExternalPaymentRecord | null>(null);
+  recordRef.current = record;
 
   useEffect(() => {
     let interval: any;
@@ -67,6 +72,11 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
       const rem = Math.max(0, (record.amount || 0) - (record.amountPaid || (record.status === 'PAID' ? record.amount || 0 : 0)));
       setPayAmount(rem > 0 ? String(rem) : '');
       setAmountInitialized(true);
+
+      // If record already has a valid payment link from creation, mark remaining balance as generated
+      if (record.shortLink || record.upiIntentLink || record.platformBillID) {
+        lastGeneratedAmountRef.current = rem;
+      }
     }
   }, [record, amountInitialized]);
 
@@ -75,7 +85,8 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
 
   // Generate Setu link for the entered amount
   const generateSetuLinkForAmount = useCallback(async (amountToPay: number) => {
-    if (!record || !amountToPay || amountToPay <= 0) return;
+    const rec = recordRef.current;
+    if (!rec || !amountToPay || amountToPay <= 0) return;
 
     setGeneratingLink(true);
     try {
@@ -84,9 +95,9 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: amountToPay,
-          externalPaymentId: record.id,
-          customerID: record.customerContact,
-          name: record.customerName
+          externalPaymentId: rec.id,
+          customerID: rec.customerContact,
+          name: rec.customerName
         })
       });
       const data = await res.json();
@@ -107,15 +118,19 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
     } finally {
       setGeneratingLink(false);
     }
-  }, [record]);
+  }, []);
 
   // Debounced QR generation on change of amount
   useEffect(() => {
     if (!record || paid || !isValidAmount) return;
 
+    // Do not re-trigger generation if we already generated/loaded a link for this exact amount
+    if (lastGeneratedAmountRef.current === parsedAmount) return;
+
     const timer = setTimeout(() => {
+      lastGeneratedAmountRef.current = parsedAmount;
       generateSetuLinkForAmount(parsedAmount);
-    }, 500);
+    }, 600);
 
     return () => clearTimeout(timer);
   }, [parsedAmount, isValidAmount, record?.id, paid, generateSetuLinkForAmount]);
