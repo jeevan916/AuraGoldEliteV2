@@ -38,7 +38,16 @@ async function getSetuToken(connection, config, forceRefresh = false, allowWafBy
         throw new Error("Setu Integration is not configured with valid credentials in Settings.");
     }
 
-    if (!allowWafBypass && config.wafBlockedUntil && Date.now() < config.wafBlockedUntil) {
+    if (allowWafBypass || forceRefresh) {
+        if (config.wafBlockedUntil) {
+            delete config.wafBlockedUntil;
+            if (connection) {
+                try {
+                    await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
+                } catch (dbErr) {}
+            }
+        }
+    } else if (config.wafBlockedUntil && Date.now() < config.wafBlockedUntil) {
         const remainingSec = Math.ceil((config.wafBlockedUntil - Date.now()) / 1000);
         const err = new Error(`Setu API endpoint temporarily back-off active due to Cloudflare/WAF block (${remainingSec}s remaining). Retry later or update settings.`);
         err.status = 403;
@@ -208,11 +217,10 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
 
         // 3. Setu Payment Link Creation
-        let linkResponse;
-        try {
-            linkResponse = await fetch(`${baseUrl}/payment-links`, {
+        const makeLinkRequest = async (authToken) => {
+            return await fetch(`${baseUrl}/payment-links`, {
                 method: 'POST',
-                headers: getSetuHeaders(token, schemeId, { 'Content-Type': 'application/json' }),
+                headers: getSetuHeaders(authToken, schemeId, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     billerBillID: uniqueBillId,
                     amount: {
@@ -230,6 +238,21 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
                     }
                 })
             });
+        };
+
+        let linkResponse;
+        try {
+            linkResponse = await makeLinkRequest(token);
+            if (linkResponse.status === 401) {
+                console.warn("[Setu Link Gen] Received 401 from Setu. Attempting force token refresh...");
+                const retryConn = await pool.getConnection();
+                try {
+                    token = await getSetuToken(retryConn, config, true, true);
+                    linkResponse = await makeLinkRequest(token);
+                } finally {
+                    retryConn.release();
+                }
+            }
         } catch (fetchErr) {
             console.error(`[Setu Link Gen] Network request to Setu failed: ${fetchErr.message}`);
             throw new Error(`Network request to Setu failed: ${fetchErr.message}`);

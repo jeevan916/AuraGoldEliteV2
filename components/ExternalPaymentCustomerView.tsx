@@ -88,7 +88,8 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
           amount: amountToPay,
           externalPaymentId: rec.id,
           customerID: rec.customerContact,
-          name: rec.customerName
+          name: rec.customerName,
+          forceRefresh: true
         })
       });
       const data = await res.json();
