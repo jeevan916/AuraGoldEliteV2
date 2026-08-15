@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ExternalPaymentRecord } from '../types';
-import { ReceiptIndianRupee, QrCode, CheckCircle2, ShieldCheck, Lock, ExternalLink, ArrowRight, Loader2, Sparkles, History } from 'lucide-react';
+import { ReceiptIndianRupee, QrCode, CheckCircle2, ShieldCheck, Lock, ArrowRight, Loader2, Sparkles, History, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
 
 interface ExternalPaymentCustomerViewProps {
   token: string;
@@ -12,14 +12,15 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
   const [error, setError] = useState<string | null>(null);
   const [paid, setPaid] = useState(false);
 
+  // Workflow steps: 'INITIAL' -> 'ENTER_AMOUNT' -> 'GENERATED'
+  const [step, setStep] = useState<'INITIAL' | 'ENTER_AMOUNT' | 'GENERATED'>('INITIAL');
+
   // Amount & Link Generation States
   const [payAmount, setPayAmount] = useState<string>('');
-  const [amountInitialized, setAmountInitialized] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
   const [customLink, setCustomLink] = useState<{ shortUrl: string; upiIntentLink: string } | null>(null);
+  const [genError, setGenError] = useState<string | null>(null);
 
-  // Refs to prevent continuous Setu API call loops during status polling
-  const lastGeneratedAmountRef = useRef<number | null>(null);
   const recordRef = useRef<ExternalPaymentRecord | null>(null);
   recordRef.current = record;
 
@@ -66,29 +67,19 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
   const totalPaidSoFar = record?.amountPaid || (record?.status === 'PAID' ? totalAmount : 0);
   const remainingBalance = Math.max(0, totalAmount - totalPaidSoFar);
 
-  // Initialize payment amount with remaining balance when record loads
-  useEffect(() => {
-    if (record && !amountInitialized) {
-      const rem = Math.max(0, (record.amount || 0) - (record.amountPaid || (record.status === 'PAID' ? record.amount || 0 : 0)));
-      setPayAmount(rem > 0 ? String(rem) : '');
-      setAmountInitialized(true);
-
-      // If record already has a valid payment link from creation, mark remaining balance as generated
-      if (record.shortLink || record.upiIntentLink || record.platformBillID) {
-        lastGeneratedAmountRef.current = rem;
-      }
-    }
-  }, [record, amountInitialized]);
-
   const parsedAmount = Number(payAmount);
   const isValidAmount = !isNaN(parsedAmount) && parsedAmount >= 1 && parsedAmount <= remainingBalance;
 
-  // Generate Setu link for the entered amount
-  const generateSetuLinkForAmount = useCallback(async (amountToPay: number) => {
+  // Explicit link generation triggered strictly when customer clicks "OK" / "Generate Link"
+  const handleGenerateLink = async (amountToPay: number) => {
     const rec = recordRef.current;
     if (!rec || !amountToPay || amountToPay <= 0) return;
 
     setGeneratingLink(true);
+    setGenError(null);
+    setCustomLink(null);
+    setStep('GENERATED');
+
     try {
       const res = await fetch('/api/setu/create-link', {
         method: 'POST',
@@ -105,41 +96,27 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
         const setuPL = data.data.data?.paymentLink || data.data.paymentLink || data.data || {};
         const shortUrl = setuPL.shortUrl || setuPL.shortURL || setuPL.shortLink || setuPL.url || '';
         const upiIntentLink = setuPL.upiIntentLink || setuPL.upiLink || setuPL.upiURL || (setuPL.upiID && setuPL.upiID.startsWith('upi://') ? setuPL.upiID : '') || (data.data.platformBillID ? `/api/setu/pay/${data.data.platformBillID}` : '');
-        
-        console.log("[ExternalPayment] Generated Setu link:", { shortUrl, upiIntentLink });
 
         setCustomLink({
           shortUrl,
           upiIntentLink
         });
+      } else {
+        setGenError(data.error || "Unable to generate payment link. Please try again.");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error generating Setu payment link:", err);
+      setGenError("Network error generating payment link. Please try again.");
     } finally {
       setGeneratingLink(false);
     }
-  }, []);
-
-  // Debounced QR generation on change of amount
-  useEffect(() => {
-    if (!record || paid || !isValidAmount) return;
-
-    // Do not re-trigger generation if we already generated/loaded a link for this exact amount
-    if (lastGeneratedAmountRef.current === parsedAmount) return;
-
-    const timer = setTimeout(() => {
-      lastGeneratedAmountRef.current = parsedAmount;
-      generateSetuLinkForAmount(parsedAmount);
-    }, 600);
-
-    return () => clearTimeout(timer);
-  }, [parsedAmount, isValidAmount, record?.id, paid, generateSetuLinkForAmount]);
+  };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center font-sans">
         <Loader2 size={36} className="animate-spin text-amber-500 mb-4" />
-        <h2 className="text-lg font-bold">Loading Payment Request...</h2>
+        <h2 className="text-lg font-bold">Loading Payment Details...</h2>
         <p className="text-slate-400 text-xs mt-1">Securing connection to Setu UPI Gateway</p>
       </div>
     );
@@ -147,7 +124,7 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
 
   if (error || !record) {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center font-sans">
         <div className="w-16 h-16 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center mb-4">
           <ShieldCheck size={32} />
         </div>
@@ -155,7 +132,7 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
         <p className="text-slate-400 text-xs max-w-sm mb-6">{error || "This payment link could not be found or has expired."}</p>
         <button
           onClick={() => window.location.reload()}
-          className="px-6 py-3 bg-amber-500 text-slate-950 font-black rounded-2xl text-xs uppercase tracking-wider"
+          className="px-6 py-3 bg-amber-500 text-slate-950 font-black rounded-2xl text-xs uppercase tracking-wider hover:bg-amber-400 transition-all cursor-pointer"
         >
           Retry Loading
         </button>
@@ -165,63 +142,26 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
 
   const getQrCodeLink = () => {
     if (!isValidAmount) return '';
-    // Priority 1: Direct upi:// intent link from custom generated link
-    if (customLink?.upiIntentLink && (customLink.upiIntentLink.startsWith('upi://') || customLink.upiIntentLink.includes('pa='))) {
-      return customLink.upiIntentLink;
-    }
-    if (customLink?.upiIntentLink) {
-      return customLink.upiIntentLink;
-    }
-    if (customLink?.shortUrl) {
-      return customLink.shortUrl;
-    }
+    if (customLink?.upiIntentLink) return customLink.upiIntentLink;
+    if (customLink?.shortUrl) return customLink.shortUrl;
 
-    // Priority 2: Default record link if amount matches remaining balance
     if (parsedAmount === remainingBalance) {
-      if (record.upiIntentLink && (record.upiIntentLink.startsWith('upi://') || record.upiIntentLink.includes('pa='))) {
-        return record.upiIntentLink;
-      }
-      if (record.upiIntentLink && record.upiIntentLink.includes('@')) {
-        return `upi://pay?pa=${record.upiIntentLink}&pn=AuraGold%20Jewellers&am=${parsedAmount}&cu=INR&tn=${encodeURIComponent(record.id)}`;
-      }
-      if (record.upiIntentLink) {
-        return record.upiIntentLink;
-      }
-      if (record.shortLink) {
-        return record.shortLink;
-      }
-      if (record.platformBillID) {
-        return `/api/setu/pay/${record.platformBillID}`;
-      }
+      if (record.upiIntentLink) return record.upiIntentLink;
+      if (record.shortLink) return record.shortLink;
+      if (record.platformBillID) return `/api/setu/pay/${record.platformBillID}`;
     }
     return '';
   };
 
   const getPayButtonLink = () => {
     if (!isValidAmount) return '';
-    if (customLink?.upiIntentLink && customLink.upiIntentLink.startsWith('upi://')) {
-      return customLink.upiIntentLink;
-    }
-    if (customLink?.shortUrl) {
-      return customLink.shortUrl;
-    }
-    if (customLink?.upiIntentLink) {
-      return customLink.upiIntentLink;
-    }
+    if (customLink?.upiIntentLink) return customLink.upiIntentLink;
+    if (customLink?.shortUrl) return customLink.shortUrl;
 
     if (parsedAmount === remainingBalance) {
-      if (record.upiIntentLink && record.upiIntentLink.startsWith('upi://')) {
-        return record.upiIntentLink;
-      }
-      if (record.shortLink) {
-        return record.shortLink;
-      }
-      if (record.upiIntentLink) {
-        return record.upiIntentLink;
-      }
-      if (record.platformBillID) {
-        return `/api/setu/pay/${record.platformBillID}`;
-      }
+      if (record.upiIntentLink) return record.upiIntentLink;
+      if (record.shortLink) return record.shortLink;
+      if (record.platformBillID) return `/api/setu/pay/${record.platformBillID}`;
     }
     return '';
   };
@@ -242,10 +182,10 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
             {record.referenceNote || 'External Payment Request'}
           </div>
           <h1 className="text-2xl font-black text-white tracking-tight">AuraGold Jewellers</h1>
-          <p className="text-xs text-slate-400 mt-1">Official Setu UPI Remote Payment Gateway</p>
+          <p className="text-xs text-slate-400 mt-1">Official Setu UPI Payment Gateway</p>
         </div>
 
-        {/* Payment Amount & Status */}
+        {/* Payment Settled Screen */}
         {paid ? (
           <div className="bg-emerald-950/40 border border-emerald-500/30 p-6 rounded-3xl text-center space-y-3 animate-fadeIn">
             <div className="w-14 h-14 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto">
@@ -266,7 +206,7 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
               </div>
             )}
 
-            {/* Installments Breakdown if partial payments were made */}
+            {/* Installments Breakdown */}
             {record.partialPayments && record.partialPayments.length > 0 && (
               <div className="mt-4 pt-3 border-t border-emerald-800/40 text-left">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block mb-2">Payment History</span>
@@ -283,177 +223,267 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
           </div>
         ) : (
           <div className="space-y-5">
-            {/* Status Summary Card */}
-            <div className="bg-slate-800/60 p-5 rounded-3xl border border-slate-700/60 space-y-3">
-              <div className="flex justify-between items-center text-xs text-slate-400">
-                <span>Customer Name:</span>
-                <span className="font-bold text-white">{record.customerName}</span>
-              </div>
-              <div className="flex justify-between items-center text-xs text-slate-400">
-                <span>Reference Tag:</span>
-                <span className="font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                  {record.referenceNote}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-xs text-slate-400">
-                <span>Purpose / Order:</span>
-                <span className="font-medium text-slate-200">{record.description}</span>
-              </div>
+            {/* STEP 1: INITIAL SUMMARY & PAY NOW BUTTON */}
+            {step === 'INITIAL' && (
+              <div className="space-y-5 animate-fadeIn">
+                {/* Summary Card */}
+                <div className="bg-slate-800/60 p-5 rounded-3xl border border-slate-700/60 space-y-3">
+                  <div className="flex justify-between items-center text-xs text-slate-400">
+                    <span>Customer Name:</span>
+                    <span className="font-bold text-white">{record.customerName}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs text-slate-400">
+                    <span>Reference Tag:</span>
+                    <span className="font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                      {record.referenceNote}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs text-slate-400">
+                    <span>Purpose / Order:</span>
+                    <span className="font-medium text-slate-200">{record.description}</span>
+                  </div>
 
-              {/* Amount Breakdown */}
-              <div className="pt-3 border-t border-slate-700/60 space-y-2">
-                <div className="flex justify-between items-center text-xs text-slate-400">
-                  <span>Total Amount Requested:</span>
-                  <span className="font-bold text-white">₹{totalAmount.toLocaleString('en-IN')}</span>
+                  {/* Amount Breakdown */}
+                  <div className="pt-3 border-t border-slate-700/60 space-y-2">
+                    <div className="flex justify-between items-center text-xs text-slate-400">
+                      <span>Total Amount Requested:</span>
+                      <span className="font-bold text-white">₹{totalAmount.toLocaleString('en-IN')}</span>
+                    </div>
+                    {totalPaidSoFar > 0 && (
+                      <div className="flex justify-between items-center text-xs text-emerald-400">
+                        <span>Paid So Far:</span>
+                        <span className="font-bold">₹{totalPaidSoFar.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center pt-2 border-t border-slate-700/40">
+                      <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Remaining Balance Due</span>
+                      <span className="text-2xl font-black text-amber-400">₹{remainingBalance.toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
                 </div>
-                {totalPaidSoFar > 0 && (
-                  <div className="flex justify-between items-center text-xs text-emerald-400">
-                    <span>Paid So Far:</span>
-                    <span className="font-bold">₹{totalPaidSoFar.toLocaleString('en-IN')}</span>
+
+                {/* Previous Partial Payments List */}
+                {record.partialPayments && record.partialPayments.length > 0 && (
+                  <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/40">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-300 mb-2">
+                      <History size={14} className="text-amber-400" />
+                      <span>Received Payments ({record.partialPayments.length})</span>
+                    </div>
+                    <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
+                      {record.partialPayments.map((p, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-[11px] bg-slate-900/60 p-2 rounded-xl border border-slate-800 text-slate-300">
+                          <span>{new Date(p.paidAt).toLocaleDateString('en-IN')} ({p.mode || 'UPI'})</span>
+                          <span className="font-bold text-emerald-400">+₹{Number(p.amount).toLocaleString('en-IN')}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
-                <div className="flex justify-between items-center pt-1 border-t border-slate-700/40">
-                  <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Remaining Balance Due</span>
-                  <span className="text-2xl font-black text-amber-400">₹{remainingBalance.toLocaleString('en-IN')}</span>
-                </div>
-              </div>
-            </div>
 
-            {/* Previous Partial Payments List if any */}
-            {record.partialPayments && record.partialPayments.length > 0 && (
-              <div className="bg-slate-800/40 p-4 rounded-2xl border border-slate-700/40">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-300 mb-2">
-                  <History size={14} className="text-amber-400" />
-                  <span>Received Payments ({record.partialPayments.length})</span>
+                {/* Primary Action Button: Pay Now */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPayAmount(String(remainingBalance));
+                    setStep('ENTER_AMOUNT');
+                  }}
+                  className="w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>Pay Now (₹{remainingBalance.toLocaleString('en-IN')})</span>
+                  <ArrowRight size={18} />
+                </button>
+              </div>
+            )}
+
+            {/* STEP 2: ENTER AMOUNT & CONFIRM */}
+            {step === 'ENTER_AMOUNT' && (
+              <div className="space-y-5 animate-fadeIn">
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setStep('INITIAL')}
+                    className="text-xs text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                  >
+                    <ArrowLeft size={14} />
+                    <span>Back</span>
+                  </button>
+                  <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">Step 1 of 2: Set Amount</span>
                 </div>
-                <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
-                  {record.partialPayments.map((p, idx) => (
-                    <div key={idx} className="flex justify-between items-center text-[11px] bg-slate-900/60 p-2 rounded-xl border border-slate-800 text-slate-300">
-                      <span>{new Date(p.paidAt).toLocaleDateString('en-IN')} ({p.mode || 'UPI'})</span>
-                      <span className="font-bold text-emerald-400">+₹{Number(p.amount).toLocaleString('en-IN')}</span>
-                    </div>
-                  ))}
+
+                <div className="bg-slate-800/80 border border-slate-700 p-5 rounded-3xl space-y-4">
+                  <div>
+                    <label htmlFor="payment-amount-input" className="text-xs font-bold uppercase tracking-wider text-slate-300 block mb-1">
+                      Enter Payment Amount
+                    </label>
+                    <p className="text-[11px] text-slate-400">
+                      Remaining balance due: <strong className="text-amber-400">₹{remainingBalance.toLocaleString('en-IN')}</strong>
+                    </p>
+                  </div>
+
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-3.5 text-base font-black text-amber-400">₹</span>
+                    <input
+                      id="payment-amount-input"
+                      type="number"
+                      min={1}
+                      max={remainingBalance}
+                      step="any"
+                      placeholder={`1 to ${remainingBalance}`}
+                      value={payAmount}
+                      onChange={(e) => setPayAmount(e.target.value)}
+                      className={`w-full pl-8 pr-4 py-3 bg-slate-900 border rounded-2xl text-lg font-black text-white focus:outline-none transition-all ${
+                        !payAmount
+                          ? 'border-slate-700 focus:border-amber-500'
+                          : !isValidAmount
+                          ? 'border-rose-500/70 focus:border-rose-500 text-rose-300'
+                          : 'border-amber-500/50 focus:border-amber-400 text-amber-300'
+                      }`}
+                    />
+                  </div>
+
+                  {/* Preset Amount Button */}
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setPayAmount(String(remainingBalance))}
+                      className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold rounded-xl border border-slate-600 transition-all cursor-pointer"
+                    >
+                      Full Amount (₹{remainingBalance.toLocaleString('en-IN')})
+                    </button>
+                  </div>
+
+                  {/* Validation Feedback */}
+                  {payAmount !== '' && !isValidAmount && (
+                    <p className="text-[11px] font-bold text-rose-400">
+                      {parsedAmount < 1
+                        ? 'Minimum payment amount is ₹1.'
+                        : parsedAmount > remainingBalance
+                        ? `Amount cannot exceed remaining balance of ₹${remainingBalance.toLocaleString('en-IN')}.`
+                        : 'Please enter a valid payment amount.'}
+                    </p>
+                  )}
+                </div>
+
+                {/* Proceed Button */}
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    disabled={!isValidAmount}
+                    onClick={() => handleGenerateLink(parsedAmount)}
+                    className={`w-full py-4 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 ${
+                      isValidAmount
+                        ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 active:scale-95 cursor-pointer'
+                        : 'bg-slate-800 text-slate-500 border border-slate-700/50 cursor-not-allowed opacity-60'
+                    }`}
+                  >
+                    <span>OK — Generate Link & QR for ₹{isValidAmount ? parsedAmount.toLocaleString('en-IN') : '0'}</span>
+                    <ArrowRight size={18} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStep('INITIAL')}
+                    className="w-full py-2.5 text-xs text-slate-400 hover:text-slate-200 font-bold transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
             )}
 
-            {/* Amount Input Text Box */}
-            <div className="bg-slate-900 border border-slate-800 p-4.5 rounded-2xl space-y-2.5">
-              <div className="flex justify-between items-center">
-                <label htmlFor="payment-amount-input" className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                  Enter Amount to Pay
-                </label>
-                <span className="text-[11px] font-semibold text-slate-400">
-                  Max: <strong className="text-amber-400">₹{remainingBalance.toLocaleString('en-IN')}</strong>
-                </span>
-              </div>
-
-              <div className="relative">
-                <span className="absolute left-3.5 top-3 text-sm font-black text-amber-400">₹</span>
-                <input
-                  id="payment-amount-input"
-                  type="number"
-                  min={1}
-                  max={remainingBalance}
-                  step="any"
-                  placeholder={`1 to ${remainingBalance}`}
-                  value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value)}
-                  className={`w-full pl-8 pr-4 py-3 bg-slate-800 border rounded-xl text-base font-bold text-white focus:outline-none transition-all ${
-                    !payAmount
-                      ? 'border-slate-700 focus:border-amber-500'
-                      : !isValidAmount
-                      ? 'border-rose-500/70 focus:border-rose-500 text-rose-300'
-                      : 'border-amber-500/50 focus:border-amber-400 text-amber-300'
-                  }`}
-                />
-              </div>
-
-              {/* Validation Feedback */}
-              {payAmount !== '' && !isValidAmount && (
-                <p className="text-[11px] font-bold text-rose-400 animate-fadeIn">
-                  {parsedAmount < 1
-                    ? 'Minimum payment amount is ₹1.'
-                    : parsedAmount > remainingBalance
-                    ? `Amount cannot exceed remaining balance of ₹${remainingBalance.toLocaleString('en-IN')}.`
-                    : 'Please enter a valid payment amount.'}
-                </p>
-              )}
-              {isValidAmount && (
-                <p className="text-[10px] font-medium text-slate-400 flex items-center gap-1">
-                  <Sparkles size={12} className="text-amber-400" />
-                  <span>QR code automatically generates for ₹{parsedAmount.toLocaleString('en-IN')}</span>
-                </p>
-              )}
-            </div>
-
-            {/* QR Code */}
-            <div className="bg-white p-5 rounded-3xl text-slate-900 text-center shadow-xl relative min-h-[260px] flex flex-col items-center justify-center">
-              {!isValidAmount ? (
-                <div className="w-44 h-44 my-2 rounded-2xl bg-slate-100 border border-dashed border-slate-300 flex flex-col items-center justify-center p-4 text-center gap-2 text-slate-400">
-                  <QrCode size={32} className="text-slate-400" />
-                  <span className="text-[11px] font-bold text-slate-600">
-                    Enter amount (₹1 – ₹{remainingBalance.toLocaleString('en-IN')}) to display QR code
+            {/* STEP 3: GENERATED LINK, QR CODE & PAY BUTTON */}
+            {step === 'GENERATED' && (
+              <div className="space-y-5 animate-fadeIn">
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setStep('ENTER_AMOUNT')}
+                    className="text-xs text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                  >
+                    <ArrowLeft size={14} />
+                    <span>Change Amount</span>
+                  </button>
+                  <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+                    Amount: ₹{parsedAmount.toLocaleString('en-IN')}
                   </span>
                 </div>
-              ) : generatingLink ? (
-                <div className="w-44 h-44 my-2 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center gap-2 text-slate-500">
-                  <Loader2 size={28} className="animate-spin text-amber-500" />
-                  <span className="text-[10px] font-bold text-center px-2">Generating QR for ₹{parsedAmount.toLocaleString('en-IN')}...</span>
-                </div>
-              ) : qrCodeLink ? (
-                <>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
-                    Scan QR code for ₹{parsedAmount.toLocaleString('en-IN')}
-                  </p>
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrCodeLink)}`}
-                    alt="Setu UPI Payment QR"
-                    className="w-44 h-44 mx-auto rounded-2xl shadow-inner border border-slate-200"
-                  />
-                  <div className="flex justify-center gap-3 mt-3">
-                    <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">Google Pay</span>
-                    <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">PhonePe</span>
-                    <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">Paytm</span>
-                  </div>
-                </>
-              ) : (
-                <div className="w-44 h-44 my-2 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center gap-2 text-slate-500">
-                  <Loader2 size={28} className="animate-spin text-amber-500" />
-                  <span className="text-[10px] font-bold">Preparing Setu Gateway...</span>
-                </div>
-              )}
-            </div>
 
-            {/* Pay via UPI Button */}
-            <button
-              type="button"
-              disabled={!isValidAmount || generatingLink || !upiPayLink}
-              onClick={() => {
-                if (upiPayLink && upiPayLink !== '#') {
-                  window.location.href = upiPayLink;
-                }
-              }}
-              className={`w-full py-4 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 ${
-                isValidAmount && !generatingLink && upiPayLink
-                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 active:scale-95 cursor-pointer'
-                  : 'bg-slate-800 text-slate-500 border border-slate-700/50 cursor-not-allowed opacity-60'
-              }`}
-            >
-              {generatingLink ? (
-                <>
-                  <Loader2 size={16} className="animate-spin text-amber-500" />
-                  <span>Securing UPI Gateway...</span>
-                </>
-              ) : isValidAmount && upiPayLink ? (
-                <>
-                  <span>Pay ₹{parsedAmount.toLocaleString('en-IN')} via UPI</span>
-                  <ArrowRight size={16} />
-                </>
-              ) : (
-                <span>Enter valid amount to pay</span>
-              )}
-            </button>
+                {generatingLink ? (
+                  <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl text-center space-y-3">
+                    <Loader2 size={36} className="animate-spin text-amber-500 mx-auto" />
+                    <h3 className="text-sm font-bold text-white">Generating Setu UPI Link...</h3>
+                    <p className="text-xs text-slate-400">Securing payment link for ₹{parsedAmount.toLocaleString('en-IN')}</p>
+                  </div>
+                ) : genError ? (
+                  <div className="bg-rose-950/40 border border-rose-500/30 p-5 rounded-3xl text-center space-y-3">
+                    <AlertCircle size={28} className="text-rose-500 mx-auto" />
+                    <p className="text-xs font-bold text-rose-300">{genError}</p>
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateLink(parsedAmount)}
+                      className="px-4 py-2 bg-rose-500 text-white font-bold text-xs rounded-xl hover:bg-rose-600 cursor-pointer flex items-center justify-center gap-1.5 mx-auto"
+                    >
+                      <RefreshCw size={14} />
+                      <span>Retry Link Generation</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* QR Code Container */}
+                    <div className="bg-white p-6 rounded-3xl text-slate-900 text-center shadow-xl flex flex-col items-center justify-center space-y-3">
+                      <p className="text-xs font-black uppercase tracking-wider text-slate-600">
+                        Scan QR Code for ₹{parsedAmount.toLocaleString('en-IN')}
+                      </p>
+
+                      {qrCodeLink ? (
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrCodeLink)}`}
+                          alt="Setu UPI Payment QR"
+                          className="w-48 h-48 mx-auto rounded-2xl shadow-inner border border-slate-200"
+                        />
+                      ) : (
+                        <div className="w-48 h-48 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 text-xs">
+                          QR Unavailable
+                        </div>
+                      )}
+
+                      <div className="flex justify-center gap-2 pt-1">
+                        <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">Google Pay</span>
+                        <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">PhonePe</span>
+                        <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">Paytm</span>
+                      </div>
+                    </div>
+
+                    {/* Pay Button Directly Below QR Code */}
+                    <button
+                      type="button"
+                      disabled={!upiPayLink}
+                      onClick={() => {
+                        if (upiPayLink && upiPayLink !== '#') {
+                          window.location.href = upiPayLink;
+                        }
+                      }}
+                      className={`w-full py-4 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 ${
+                        upiPayLink
+                          ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 active:scale-95 cursor-pointer'
+                          : 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-60'
+                      }`}
+                    >
+                      <span>Pay ₹{parsedAmount.toLocaleString('en-IN')} via UPI App</span>
+                      <ArrowRight size={18} />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setStep('ENTER_AMOUNT')}
+                      className="w-full py-2.5 text-xs text-slate-400 hover:text-slate-200 font-bold transition-all cursor-pointer text-center block"
+                    >
+                      Change Payment Amount
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
