@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
 import { getPool, isMock, mockData } from './db.js';
+import { verifyAdmin } from './auth.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -287,6 +288,8 @@ export const initBackupScheduler = () => {
 };
 
 // --- HTTP ROUTES ---
+// Enforce Admin Authentication & Authorization on all backup and journal operations
+router.use(verifyAdmin);
 
 // Get list of backups
 router.get('/backups', async (req, res) => {

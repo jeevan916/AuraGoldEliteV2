@@ -1,7 +1,11 @@
 import express from 'express';
 import { GoogleGenAI, Type } from "@google/genai";
+import { authenticateToken, requireRole } from './auth.js';
 
 const router = express.Router();
+
+// AI Diagnostic and Generation endpoints require authenticated staff access
+router.use(authenticateToken, requireRole('ADMIN', 'MANAGER', 'SALES'));
 
 const PRO_MODEL = 'gemini-2.5-pro';
 const FLASH_MODEL = 'gemini-2.5-flash';

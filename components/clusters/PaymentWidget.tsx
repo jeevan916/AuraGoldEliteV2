@@ -335,15 +335,15 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
                   amount: val,
                   customerID: order.customerContact, 
                   name: order.customerName,
-                  orderId: order.id,
-                  forceRefresh: true
+                  orderId: order.id
               })
           });
 
           const responseBody = await response.json();
 
           if (!response.ok || !responseBody.success) {
-              const errMsg = responseBody.error || "Gateway Error";
+              const isBusy = responseBody.isBlocked || responseBody.error?.includes('System busy') || response.status === 503 || response.status === 429;
+              const errMsg = isBusy ? "System busy, please try again in a few minutes" : (responseBody.error || "Gateway Error");
               errorService.logError(
                   'Setu_Gateway', 
                   `HTTP ${response.status}: ${errMsg}`, 

@@ -71,7 +71,7 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
   const isValidAmount = !isNaN(parsedAmount) && parsedAmount >= 1 && parsedAmount <= remainingBalance;
 
   // Explicit link generation triggered strictly when customer clicks "OK" / "Generate Link"
-  const handleGenerateLink = async (amountToPay: number) => {
+  const handleGenerateLink = async (amountToPay: number, isRetry = false) => {
     const rec = recordRef.current;
     if (!rec || !amountToPay || amountToPay <= 0) return;
 
@@ -89,11 +89,11 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
           externalPaymentId: rec.id,
           customerID: rec.customerContact,
           name: rec.customerName,
-          forceRefresh: true
+          forceRefresh: isRetry
         })
       });
       const data = await res.json();
-      if (data.success && data.data) {
+      if (res.ok && data.success && data.data) {
         const setuPL = data.data.data?.paymentLink || data.data.paymentLink || data.data || {};
         const shortUrl = setuPL.shortUrl || setuPL.shortURL || setuPL.shortLink || setuPL.url || '';
         const upiIntentLink = setuPL.upiIntentLink || setuPL.upiLink || setuPL.upiURL || (setuPL.upiID && setuPL.upiID.startsWith('upi://') ? setuPL.upiID : '') || (data.data.platformBillID ? `/api/setu/pay/${data.data.platformBillID}` : '');
@@ -103,11 +103,12 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
           upiIntentLink
         });
       } else {
-        setGenError(data.error || "Unable to generate payment link. Please try again.");
+        const errMsg = data.error || data.message || "System busy, please try again in a few minutes";
+        setGenError(errMsg);
       }
     } catch (err: any) {
       console.error("Error generating Setu payment link:", err);
-      setGenError("Network error generating payment link. Please try again.");
+      setGenError("System busy, please try again in a few minutes");
     } finally {
       setGeneratingLink(false);
     }
@@ -421,7 +422,7 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
                     <p className="text-xs font-bold text-rose-300">{genError}</p>
                     <button
                       type="button"
-                      onClick={() => handleGenerateLink(parsedAmount)}
+                      onClick={() => handleGenerateLink(parsedAmount, true)}
                       className="px-4 py-2 bg-rose-500 text-white font-bold text-xs rounded-xl hover:bg-rose-600 cursor-pointer flex items-center justify-center gap-1.5 mx-auto"
                     >
                       <RefreshCw size={14} />

@@ -3,6 +3,7 @@ import express from 'express';
 import { getPool, ensureDb, journalTransaction } from './db.js';
 import { refreshInterval } from './rateService.js';
 import { processOrderImages, saveBase64ImageToServer } from './imageStore.js';
+import { authenticateToken, requireRole, verifyAdmin, optionalAuth } from './auth.js';
 
 const router = express.Router();
 

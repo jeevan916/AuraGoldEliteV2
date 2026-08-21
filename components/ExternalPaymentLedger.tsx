@@ -80,6 +80,7 @@ export const ExternalPaymentLedger: React.FC = () => {
   // Loading & notification state
   const [isGeneratingSetu, setIsGeneratingSetu] = useState(false);
   const [isSendingWa, setIsSendingWa] = useState(false);
+  const [isSyncingSetu, setIsSyncingSetu] = useState(false);
   const [checkingStatusId, setCheckingStatusId] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -270,7 +271,7 @@ export const ExternalPaymentLedger: React.FC = () => {
   const isFiltered = searchTerm !== '' || statusFilter !== 'ALL' || datePreset !== 'ALL_TIME' || startDate !== '' || endDate !== '';
 
   // Helper to generate or re-generate Setu UPI link with full raw response and debug logs
-  const handleGenerateSetuLink = async (record: ExternalPaymentRecord) => {
+  const handleGenerateSetuLink = async (record: ExternalPaymentRecord, isRetry = false) => {
     setIsGeneratingSetu(true);
     const timestamp = new Date().toISOString();
     const payload = {
@@ -278,7 +279,7 @@ export const ExternalPaymentLedger: React.FC = () => {
       customerID: record.customerContact,
       name: record.customerName,
       externalPaymentId: record.id,
-      forceRefresh: true
+      forceRefresh: isRetry
     };
 
     let setuData: any = null;
@@ -296,10 +297,14 @@ export const ExternalPaymentLedger: React.FC = () => {
       rawResponse = setuData.rawSetuResponse || setuData.data || setuData;
 
       if (!res.ok || !setuData.success) {
-        errorMsg = setuData.error || `HTTP ${res.status}: ${setuData.message || 'Setu Link Generation Failed'}`;
+        if (setuData.isBlocked || setuData.error?.includes('System busy') || res.status === 503 || res.status === 429) {
+          errorMsg = "System busy, please try again in a few minutes";
+        } else {
+          errorMsg = setuData.error || `HTTP ${res.status}: ${setuData.message || 'Setu Link Generation Failed'}`;
+        }
       }
     } catch (err: any) {
-      errorMsg = `Network Error: ${err.message}`;
+      errorMsg = "System busy, please try again in a few minutes";
       rawResponse = { error: err.message };
     }
 
@@ -340,7 +345,11 @@ export const ExternalPaymentLedger: React.FC = () => {
         action: 'SETU_LINK_ERROR',
         details: `Setu Link Failed: ${errorMsg}`
       });
-      triggerNotification('error', `Setu Link Generation Failed: ${errorMsg}`);
+      if (errorMsg === "System busy, please try again in a few minutes") {
+        triggerNotification('info', "System busy, please try again in a few minutes");
+      } else {
+        triggerNotification('error', `Setu Link Generation Failed: ${errorMsg}`);
+      }
     }
 
     storageService.updateExternalPayment(record.id, updates);
@@ -560,27 +569,73 @@ export const ExternalPaymentLedger: React.FC = () => {
     triggerNotification('success', `Recorded ₹${enteredAmount.toLocaleString('en-IN')} payment for ${showManualPayModal.customerName}! ${isFullyPaid ? 'Link fully settled.' : `Remaining: ₹${remaining.toLocaleString('en-IN')}`}`);
   };
 
-  // Verify Setu Payment Status Live
+  // Verify Setu Payment Status Live across all links generated for this record
   const verifyStatus = async (record: ExternalPaymentRecord) => {
-    const billId = record.platformBillID || (record.pendingSetuPayments && record.pendingSetuPayments[0]?.platformBillID);
-    if (!billId) {
+    const billIds = new Set<string>();
+    if (record.platformBillID) billIds.add(record.platformBillID);
+    if (Array.isArray(record.pendingSetuPayments)) {
+      record.pendingSetuPayments.forEach(p => {
+        if (p.platformBillID) billIds.add(p.platformBillID);
+      });
+    }
+
+    if (billIds.size === 0) {
       triggerNotification('info', 'Generating Setu payment link first...');
       await handleGenerateSetuLink(record);
       return;
     }
+
     setCheckingStatusId(record.id);
+    let capturedAny = false;
+    let lastStatus = 'PENDING';
+
     try {
-      const res = await fetch(`/api/setu/status/${billId}`);
-      const data = await res.json();
-      if (data.success && data.data && ['PAYMENT_SUCCESSFUL', 'SUCCESS', 'BILL_FULFILLED', 'CREDIT_RECEIVED'].includes(data.data.status)) {
-        triggerNotification('success', `Payment verified as PAID for ${record.customerName}!`);
+      for (const billId of billIds) {
+        const res = await fetch(`/api/setu/status/${billId}`);
+        const data = await res.json();
+        if (data.success && data.data) {
+          lastStatus = data.data.status;
+          if (['PAYMENT_SUCCESSFUL', 'SUCCESS', 'BILL_FULFILLED', 'CREDIT_RECEIVED'].includes(data.data.status)) {
+            capturedAny = true;
+          }
+        }
+      }
+
+      if (capturedAny) {
+        triggerNotification('success', `Payment captured & verified as PAID for ${record.customerName}!`);
       } else {
-        triggerNotification('info', `Setu Status: ${data.data?.status || data.error || 'Payment pending on Setu'}`);
+        triggerNotification('info', `Setu Status: ${lastStatus || 'Payment pending on Setu'}`);
       }
     } catch (err: any) {
       triggerNotification('error', `Status check failed: ${err.message}`);
     } finally {
       setCheckingStatusId(null);
+    }
+  };
+
+  // Live Sync All Setu Payments
+  const handleSyncAllSetu = async () => {
+    setIsSyncingSetu(true);
+    try {
+      const res = await fetch('/api/setu/sync-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (data.updatedCount > 0) {
+          triggerNotification('success', `Sync Complete: ${data.updatedCount} payment(s) captured & reconciled from Setu!`);
+        } else {
+          triggerNotification('info', `Setu Sync Complete. Checked ${data.totalChecked || 0} active links (all up-to-date).`);
+        }
+      } else {
+        triggerNotification('error', `Sync failed: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      triggerNotification('error', `Sync error: ${err.message}`);
+    } finally {
+      setIsSyncingSetu(false);
     }
   };
 
@@ -666,6 +721,19 @@ export const ExternalPaymentLedger: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={handleSyncAllSetu}
+              disabled={isSyncingSetu}
+              title="Query Setu UPI API to live reconcile and capture all paid links"
+              className={`px-4 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 border active:scale-95 shadow-md ${
+                isSyncingSetu 
+                  ? 'bg-amber-900/50 text-amber-300 border-amber-500/40 cursor-not-allowed' 
+                  : 'bg-emerald-950/70 hover:bg-emerald-900 text-emerald-300 border-emerald-700/60'
+              }`}
+            >
+              <RefreshCw size={14} className={isSyncingSetu ? 'animate-spin' : ''} />
+              {isSyncingSetu ? 'Syncing...' : 'Sync Setu Payments'}
+            </button>
             <button
               onClick={exportToCSV}
               className="px-4 py-2.5 bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 border border-slate-700 active:scale-95 shadow-md"

@@ -156,7 +156,6 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
       }
       
       // Let backend generate the unique bill ID using orderId
-      
       const response = await fetch('/api/setu/create-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -164,14 +163,14 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
           amount: amountToPay,
           customerID: order.customerContact,
           name: order.customerName,
-          orderId: order.id,
-          forceRefresh: true
+          orderId: order.id
         })
       });
 
       const result = await response.json();
       if (!response.ok || !result.success) {
-        throw new Error(result.error || "Failed to generate payment link");
+        const msg = result.error || result.message || "System busy, please try again in a few minutes";
+        throw new Error(msg);
       }
 
       // Setu Bridge v2 response structure
@@ -204,7 +203,8 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
       }
     } catch (err: any) {
       console.error("Setu Payment Error:", err);
-      setSetuError(err.message);
+      const isBusy = err.message?.includes('System busy') || err.message?.includes('back-off') || err.message?.includes('WAF') || err.message?.includes('Cloudflare');
+      setSetuError(isBusy ? "System busy, please try again in a few minutes" : err.message);
       errorService.logError('CustomerSetuPayment', err.message);
     } finally {
       setSetuLoading(false);
@@ -537,14 +537,12 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
              </div>
 
              {setuError && (
-                <div className="w-full mb-4 p-3 bg-rose-50 border border-rose-100 rounded-xl text-[10px] text-rose-600 font-bold flex flex-col gap-2 overflow-hidden">
-                    <div className="flex items-center gap-2">
-                       <AlertCircle size={14} className="shrink-0" /> 
-                       <span>Gateway Error</span>
+                <div className="w-full mb-4 p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 font-medium flex items-start gap-2.5 shadow-sm">
+                    <AlertCircle size={18} className="shrink-0 text-amber-600 mt-0.5" /> 
+                    <div>
+                       <p className="font-bold text-amber-950 text-xs">Payment Gateway Notice</p>
+                       <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">{setuError}</p>
                     </div>
-                    <pre className="whitespace-pre-wrap break-all bg-white/50 p-2 rounded border border-rose-200 font-mono text-[9px] max-h-40 overflow-y-auto">
-                       {setuError}
-                    </pre>
                 </div>
              )}
 

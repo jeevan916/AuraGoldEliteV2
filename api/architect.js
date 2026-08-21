@@ -5,12 +5,16 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from "@google/genai";
 import { getPool } from './db.js';
+import { verifyAdmin } from './auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = process.cwd();
 
 const router = express.Router();
+
+// Enforce Admin Authentication on all Architect endpoints
+router.use(verifyAdmin);
 
 const getAI = () => {
     const key = process.env.GEMINI_API_KEY;

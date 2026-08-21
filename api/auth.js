@@ -5,25 +5,134 @@ import jwt from 'jsonwebtoken';
 import { getPool, ensureDb, logDbActivity, isMock } from './db.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'auragold_elite_secret_key_2025';
+export const JWT_SECRET = process.env.JWT_SECRET || 'auragold_elite_secret_key_2025';
 
-// Middleware to verify Admin JWT
-const verifyAdmin = (req, res, next) => {
+// ---------------------------------------------------------
+// REUSABLE AUTHENTICATION & IDOR PROTECTION MIDDLEWARE
+// ---------------------------------------------------------
+
+/**
+ * Standard JWT Authentication Middleware
+ * Extracts token from Authorization header or query param.
+ */
+export const authenticateToken = (req, res, next) => {
+    let token = null;
     const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ success: false, error: 'No token provided' });
-    
-    const token = authHeader.split(' ')[1];
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+    } else if (req.query && req.query.auth_token) {
+        token = req.query.auth_token;
+    }
+
+    if (!token) {
+        return res.status(401).json({ 
+            success: false, 
+            error: 'Authentication required. No session or token provided.' 
+        });
+    }
+
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
-        if (decoded.role !== 'ADMIN') {
-            return res.status(403).json({ success: false, error: 'Requires Admin role' });
-        }
         req.user = decoded;
         next();
     } catch (e) {
-        return res.status(401).json({ success: false, error: 'Invalid token' });
+        return res.status(401).json({ 
+            success: false, 
+            error: 'Invalid or expired session token.' 
+        });
     }
 };
+
+/**
+ * Optional Authentication Middleware
+ * Populates req.user if a valid token is provided, without failing if missing.
+ */
+export const optionalAuth = (req, res, next) => {
+    let token = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+    } else if (req.query && req.query.auth_token) {
+        token = req.query.auth_token;
+    }
+
+    if (token) {
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            req.user = decoded;
+        } catch (e) {}
+    }
+    next();
+};
+
+/**
+ * Role-Based Access Control (RBAC)
+ * @param  {...string} allowedRoles Allowed roles for the endpoint (ADMIN always allowed)
+ */
+export const requireRole = (...allowedRoles) => {
+    return (req, res, next) => {
+        if (!req.user) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+        if (req.user.role === 'ADMIN' || allowedRoles.includes(req.user.role)) {
+            return next();
+        }
+        return res.status(403).json({ 
+            success: false, 
+            error: `Access Denied. Required roles: ${allowedRoles.join(', ')} (Your role: ${req.user.role})` 
+        });
+    };
+};
+
+/**
+ * Enforce Admin Role
+ */
+export const verifyAdmin = (req, res, next) => {
+    authenticateToken(req, res, () => {
+        if (req.user && req.user.role === 'ADMIN') {
+            return next();
+        }
+        return res.status(403).json({ success: false, error: 'Access Denied. Administrator privileges required.' });
+    });
+};
+
+/**
+ * IDOR / Object-Level Authorization Protection
+ * Verifies that the currently logged-in user is either accessing their own resource
+ * (where resource identifier == req.user.id) OR possesses an administrative override role.
+ * 
+ * @param {string} paramKey The URL param name containing the target user ID (e.g. 'id' or 'userId')
+ * @param {string[]} overrideRoles Roles permitted to bypass individual ownership check (default: ['ADMIN'])
+ */
+export const verifyUserOwnership = (paramKey = 'id', overrideRoles = ['ADMIN']) => {
+    return (req, res, next) => {
+        if (!req.user) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+
+        const targetId = req.params[paramKey] || req.body[paramKey] || req.query[paramKey];
+        if (!targetId) {
+            return res.status(400).json({ success: false, error: `Missing required resource parameter: ${paramKey}` });
+        }
+
+        const isOwner = String(req.user.id) === String(targetId);
+        const hasOverrideRole = overrideRoles.includes(req.user.role);
+
+        if (isOwner || hasOverrideRole) {
+            return next();
+        }
+
+        console.warn(`[Security Alert: IDOR Prevention] User ${req.user.username} (ID: ${req.user.id}, Role: ${req.user.role}) attempted unauthorized access to resource belonging to User ID ${targetId}`);
+        return res.status(403).json({ 
+            success: false, 
+            error: 'IDOR Protection: Access Denied. You do not own this user resource.' 
+        });
+    };
+};
+
+// ---------------------------------------------------------
+// AUTHENTICATION & USER MANAGEMENT ROUTES
+// ---------------------------------------------------------
 
 // Login Endpoint
 router.post('/auth/login', ensureDb, async (req, res) => {
@@ -73,7 +182,7 @@ router.post('/auth/login', ensureDb, async (req, res) => {
 
         // Generate Token
         const token = jwt.sign(
-            { id: user.id || 1, username: user.username, role: user.role || 'ADMIN' },
+            { id: user.id || 1, username: user.username, role: user.role || 'ADMIN', mobile_number: user.mobile_number || '' },
             JWT_SECRET,
             { expiresIn: '12h' }
         );
@@ -86,6 +195,7 @@ router.post('/auth/login', ensureDb, async (req, res) => {
                 id: user.id,
                 username: user.username,
                 role: user.role,
+                mobile_number: user.mobile_number || '',
                 token
             }
         });
@@ -96,28 +206,66 @@ router.post('/auth/login', ensureDb, async (req, res) => {
     }
 });
 
-// Create User (Admin Only - simplified for initial setup, normally requires auth middleware)
-router.post('/auth/register', ensureDb, async (req, res) => {
-    const { username, password, role, mobile_number, adminSecret } = req.body;
+// Self Profile Lookup (Guaranteed IDOR-Safe by using req.user.id from verified JWT)
+router.get('/auth/me', ensureDb, authenticateToken, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query(
+            'SELECT id, username, role, mobile_number, created_at FROM app_users WHERE id = ?', 
+            [req.user.id]
+        );
+        connection.release();
 
-    // Support both process.env.ADMIN_SECRET (if explicitly configured) and JWT token (for UI)
-    let isAuthorized = false;
-    if (process.env.ADMIN_SECRET && adminSecret === process.env.ADMIN_SECRET) {
-        isAuthorized = true;
-    } else {
-        const authHeader = req.headers.authorization;
-        if (authHeader) {
-            try {
-                const token = authHeader.split(' ')[1];
-                const decoded = jwt.verify(token, JWT_SECRET);
-                if (decoded.role === 'ADMIN') isAuthorized = true;
-            } catch (e) {}
+        if (rows.length === 0) {
+            return res.json({
+                success: true,
+                user: {
+                    id: req.user.id,
+                    username: req.user.username,
+                    role: req.user.role,
+                    mobile_number: req.user.mobile_number || ''
+                }
+            });
         }
-    }
 
-    if (!isAuthorized) {
-        return res.status(403).json({ success: false, error: 'Unauthorized' });
+        res.json({ success: true, user: rows[0] });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
+});
+
+// Self Profile Update (Guaranteed IDOR-Safe by using req.user.id from verified JWT)
+router.put('/auth/me', ensureDb, authenticateToken, async (req, res) => {
+    const { mobile_number, password } = req.body;
+
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+
+        if (password && password.trim().length >= 4) {
+            const hash = await bcrypt.hash(password, 10);
+            await connection.query(
+                "UPDATE app_users SET mobile_number = ?, password_hash = ? WHERE id = ?",
+                [mobile_number || '', hash, req.user.id]
+            );
+        } else if (mobile_number !== undefined) {
+            await connection.query(
+                "UPDATE app_users SET mobile_number = ? WHERE id = ?",
+                [mobile_number || '', req.user.id]
+            );
+        }
+
+        connection.release();
+        res.json({ success: true, message: 'Your profile has been updated.' });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Create User (Admin Only)
+router.post('/auth/register', ensureDb, verifyAdmin, async (req, res) => {
+    const { username, password, role, mobile_number } = req.body;
 
     if (!['ADMIN', 'MANAGER', 'SALES', 'KARIGAR'].includes(role)) {
         return res.status(400).json({ success: false, error: 'Invalid Role' });
@@ -149,7 +297,7 @@ router.post('/auth/register', ensureDb, async (req, res) => {
     }
 });
 
-// Get all users
+// Get all users (Admin Only)
 router.get('/auth/users', ensureDb, verifyAdmin, async (req, res) => {
     try {
         const pool = getPool();
@@ -162,9 +310,33 @@ router.get('/auth/users', ensureDb, verifyAdmin, async (req, res) => {
     }
 });
 
-// Unified route to update staff member details (role, mobile_number, and password if provided)
-router.put('/auth/users/:id', ensureDb, verifyAdmin, async (req, res) => {
+// Get specific user by ID with strict IDOR verification
+router.get('/auth/users/:id', ensureDb, authenticateToken, verifyUserOwnership('id', ['ADMIN']), async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query('SELECT id, username, role, mobile_number, created_at FROM app_users WHERE id = ?', [req.params.id]);
+        connection.release();
+        if (rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+        res.json({ success: true, user: rows[0] });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Unified route to update staff member details with IDOR verification
+// Non-admins can update their own mobile_number/password, but CANNOT escalate their role.
+router.put('/auth/users/:id', ensureDb, authenticateToken, verifyUserOwnership('id', ['ADMIN']), async (req, res) => {
     const { role, mobile_number, password } = req.body;
+    const isSelf = String(req.user.id) === String(req.params.id);
+    const isAdmin = req.user.role === 'ADMIN';
+
+    // Prevent privilege escalation by non-admins
+    if (role && !isAdmin) {
+        return res.status(403).json({ success: false, error: 'IDOR Protection: Only administrators can modify user roles.' });
+    }
     
     if (role && !['ADMIN', 'MANAGER', 'SALES', 'KARIGAR'].includes(role)) {
         return res.status(400).json({ success: false, error: 'Invalid Role' });
@@ -174,16 +346,25 @@ router.put('/auth/users/:id', ensureDb, verifyAdmin, async (req, res) => {
         const pool = getPool();
         const connection = await pool.getConnection();
         
+        // Fetch current user details
+        const [existingRows] = await connection.query('SELECT id, role FROM app_users WHERE id = ?', [req.params.id]);
+        if (existingRows.length === 0) {
+            connection.release();
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        const effectiveRole = isAdmin && role ? role : existingRows[0].role;
+
         if (password && password.trim().length >= 4) {
             const hash = await bcrypt.hash(password, 10);
             await connection.query(
                 "UPDATE app_users SET role = ?, mobile_number = ?, password_hash = ? WHERE id = ?",
-                [role, mobile_number || '', hash, req.params.id]
+                [effectiveRole, mobile_number || '', hash, req.params.id]
             );
         } else {
             await connection.query(
                 "UPDATE app_users SET role = ?, mobile_number = ? WHERE id = ?",
-                [role, mobile_number || '', req.params.id]
+                [effectiveRole, mobile_number || '', req.params.id]
             );
         }
         
@@ -194,7 +375,7 @@ router.put('/auth/users/:id', ensureDb, verifyAdmin, async (req, res) => {
     }
 });
 
-// Update user role
+// Update user role (Admin Only)
 router.put('/auth/users/:id/role', ensureDb, verifyAdmin, async (req, res) => {
     const { role } = req.body;
     if (!['ADMIN', 'MANAGER', 'SALES', 'KARIGAR'].includes(role)) {
@@ -212,11 +393,11 @@ router.put('/auth/users/:id/role', ensureDb, verifyAdmin, async (req, res) => {
     }
 });
 
-// Update user password
-router.put('/auth/users/:id/password', ensureDb, verifyAdmin, async (req, res) => {
+// Update user password with IDOR verification
+router.put('/auth/users/:id/password', ensureDb, authenticateToken, verifyUserOwnership('id', ['ADMIN']), async (req, res) => {
     const { password } = req.body;
     if (!password || password.length < 4) {
-        return res.status(400).json({ success: false, error: 'Password too short' });
+        return res.status(400).json({ success: false, error: 'Password must be at least 4 characters long' });
     }
 
     try {
@@ -225,13 +406,13 @@ router.put('/auth/users/:id/password', ensureDb, verifyAdmin, async (req, res) =
         const hash = await bcrypt.hash(password, 10);
         await connection.query("UPDATE app_users SET password_hash = ? WHERE id = ?", [hash, req.params.id]);
         connection.release();
-        res.json({ success: true, message: 'Password updated' });
+        res.json({ success: true, message: 'Password updated successfully' });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-// Delete user
+// Delete user (Admin Only)
 router.delete('/auth/users/:id', ensureDb, verifyAdmin, async (req, res) => {
     try {
         const pool = getPool();

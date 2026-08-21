@@ -2,8 +2,60 @@
 import express from 'express';
 import { getPool, ensureDb, journalTransaction, isMock } from './db.js';
 import { sendWhatsAppMessage } from './whatsapp.js';
+import { authenticateToken, requireRole, optionalAuth } from './auth.js';
 
 export const SETU_DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+
+// ---------------------------------------------------------
+// LOCAL BACK-OFF CACHE FOR SETU INTEGRATION
+// ---------------------------------------------------------
+let setuLocalBackoff = {
+    blockedUntil: 0,
+    reason: ''
+};
+
+export function getSetuBackoffStatus(config = null) {
+    const now = Date.now();
+    let blockedUntil = setuLocalBackoff.blockedUntil || 0;
+    if (config && config.wafBlockedUntil && config.wafBlockedUntil > blockedUntil) {
+        blockedUntil = config.wafBlockedUntil;
+        setuLocalBackoff.blockedUntil = blockedUntil;
+    }
+    const isBlocked = blockedUntil > now;
+    const remainingSeconds = isBlocked ? Math.ceil((blockedUntil - now) / 1000) : 0;
+    return {
+        isBlocked,
+        blockedUntil,
+        remainingSeconds,
+        message: isBlocked ? 'System busy, please try again in a few minutes' : null
+    };
+}
+
+export function activateSetuBackoff(durationMs = 15 * 60 * 1000, reason = 'WAF/RateLimit', connection = null, config = null) {
+    const blockedUntil = Date.now() + durationMs;
+    setuLocalBackoff.blockedUntil = blockedUntil;
+    setuLocalBackoff.reason = reason;
+
+    if (config) {
+        config.wafBlockedUntil = blockedUntil;
+    }
+    if (connection && config) {
+        connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']).catch(() => {});
+    }
+    console.warn(`[Setu Back-Off Activated] Local cache & DB locked for ${Math.ceil(durationMs / 60000)} minutes. Reason: ${reason}`);
+    return blockedUntil;
+}
+
+export function clearSetuBackoff(connection = null, config = null) {
+    setuLocalBackoff.blockedUntil = 0;
+    setuLocalBackoff.reason = '';
+    if (config && config.wafBlockedUntil) {
+        delete config.wafBlockedUntil;
+        if (connection) {
+            connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']).catch(() => {});
+        }
+    }
+}
 
 export function getSetuHeaders(token = null, schemeId = null, extraHeaders = {}) {
     const headers = {
@@ -39,19 +91,16 @@ async function getSetuToken(connection, config, forceRefresh = false, allowWafBy
     }
 
     if (allowWafBypass || forceRefresh) {
-        if (config.wafBlockedUntil) {
-            delete config.wafBlockedUntil;
-            if (connection) {
-                try {
-                    await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
-                } catch (dbErr) {}
-            }
+        clearSetuBackoff(connection, config);
+    } else {
+        const backoff = getSetuBackoffStatus(config);
+        if (backoff.isBlocked) {
+            const err = new Error("System busy, please try again in a few minutes");
+            err.status = 503;
+            err.isBlocked = true;
+            err.remainingSeconds = backoff.remainingSeconds;
+            throw err;
         }
-    } else if (config.wafBlockedUntil && Date.now() < config.wafBlockedUntil) {
-        const remainingSec = Math.ceil((config.wafBlockedUntil - Date.now()) / 1000);
-        const err = new Error(`Setu API endpoint temporarily back-off active due to Cloudflare/WAF block (${remainingSec}s remaining). Retry later or update settings.`);
-        err.status = 403;
-        throw err;
     }
 
     if (!forceRefresh && config.cachedToken && config.tokenExpiresAt && config.tokenExpiresAt > (now + 60)) {
@@ -71,7 +120,11 @@ async function getSetuToken(connection, config, forceRefresh = false, allowWafBy
         });
     } catch (fetchErr) {
         console.warn(`[Setu Token Manager] Network request to Setu failed: ${fetchErr.message}`);
-        throw new Error(`Setu network request failed: ${fetchErr.message}`);
+        activateSetuBackoff(5 * 60 * 1000, `NetworkFetchError: ${fetchErr.message}`, connection, config);
+        const err = new Error("System busy, please try again in a few minutes");
+        err.status = 503;
+        err.isBlocked = true;
+        throw err;
     }
 
     const tokenText = await tokenResponse.text();
@@ -84,29 +137,24 @@ async function getSetuToken(connection, config, forceRefresh = false, allowWafBy
                       tokenText.includes('<!-- a padding to disable MSIE');
         
         // Temporarily back off for 15 minutes if Setu edge returned WAF block or HTML error
-        config.wafBlockedUntil = Date.now() + 15 * 60 * 1000;
-        if (connection) {
-            try {
-                await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
-            } catch (dbErr) {}
-        }
+        activateSetuBackoff(15 * 60 * 1000, isHtml ? 'WAF_HTML_Page' : `NonJson_${tokenResponse.status}`, connection, config);
 
         const summary = isHtml ? "HTML Error Page (Cloudflare/WAF block or invalid endpoint)" : tokenText.substring(0, 150);
         console.warn(`[Setu Token Manager] Setu returned HTTP ${tokenResponse.status}: ${summary}`);
-        const err = new Error(`Setu returned HTTP ${tokenResponse.status}: ${summary}`);
+        const err = new Error("System busy, please try again in a few minutes");
         err.rawResponse = tokenText;
-        err.status = tokenResponse.status;
+        err.status = 503;
+        err.isBlocked = true;
         throw err;
     }
 
     if (!tokenResponse.ok || !tokenData.success) {
-        if (tokenResponse.status === 403 || tokenResponse.status === 429) {
-            config.wafBlockedUntil = Date.now() + 15 * 60 * 1000;
-            if (connection) {
-                try {
-                    await connection.query("UPDATE integrations SET config = ? WHERE provider = ?", [JSON.stringify(config), 'setu']);
-                } catch (dbErr) {}
-            }
+        if (tokenResponse.status === 403 || tokenResponse.status === 429 || tokenResponse.status >= 500) {
+            activateSetuBackoff(15 * 60 * 1000, `HTTP_${tokenResponse.status}`, connection, config);
+            const err = new Error("System busy, please try again in a few minutes");
+            err.status = 503;
+            err.isBlocked = true;
+            throw err;
         }
         console.warn(`[Setu Token Manager] Auth Response Error (Status ${tokenResponse.status}):`, tokenData.error?.message || tokenText);
         const err = new Error(tokenData.error?.message || tokenData.error?.detail || tokenData.message || "Setu Authentication Failed");
@@ -121,7 +169,7 @@ async function getSetuToken(connection, config, forceRefresh = false, allowWafBy
     
     config.cachedToken = token;
     config.tokenExpiresAt = now + expiresIn;
-    delete config.wafBlockedUntil;
+    clearSetuBackoff(connection, config);
     
     if (connection) {
         try {
@@ -189,23 +237,30 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
         const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
         const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
 
-        // 2. Token Management using the helper function
+        // 2. Check local cache back-off status before making any network calls
+        const backoffStatus = getSetuBackoffStatus(config);
+        const shouldForce = req.body.forceRefresh === true || req.body.force === true;
+
+        if (backoffStatus.isBlocked && !shouldForce) {
+            connection.release();
+            console.warn(`[Setu Link Gen] Request rejected early by local back-off cache (${backoffStatus.remainingSeconds}s remaining).`);
+            return res.status(503).json({
+                success: false,
+                isBlocked: true,
+                backoffActive: true,
+                remainingSeconds: backoffStatus.remainingSeconds,
+                error: "System busy, please try again in a few minutes",
+                message: "System busy, please try again in a few minutes"
+            });
+        }
+
+        // 3. Token Management using the helper function
         let token;
         try {
-            const shouldForce = req.body.forceRefresh === true || req.body.force === true;
-            token = await getSetuToken(connection, config, shouldForce, true);
+            token = await getSetuToken(connection, config, shouldForce, false);
         } catch (tokenErr) {
-            if (!req.body.forceRefresh && (tokenErr.message?.includes('back-off') || tokenErr.status === 401)) {
-                try {
-                    token = await getSetuToken(connection, config, true, true);
-                } catch (retryErr) {
-                    connection.release();
-                    throw retryErr;
-                }
-            } else {
-                connection.release();
-                throw tokenErr;
-            }
+            connection.release();
+            throw tokenErr;
         }
 
         connection.release();
@@ -255,7 +310,12 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
             }
         } catch (fetchErr) {
             console.error(`[Setu Link Gen] Network request to Setu failed: ${fetchErr.message}`);
-            throw new Error(`Network request to Setu failed: ${fetchErr.message}`);
+            activateSetuBackoff(5 * 60 * 1000, `NetworkLinkGen: ${fetchErr.message}`, null, config);
+            throw {
+                message: "System busy, please try again in a few minutes",
+                status: 503,
+                isBlocked: true
+            };
         }
 
         const linkText = await linkResponse.text();
@@ -265,15 +325,27 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
             linkData = JSON.parse(linkText);
         } catch (e) {
             console.error(`[Setu Link Gen] Non-JSON response received from Setu (Status: ${linkResponse.status}): ${linkText}`);
+            activateSetuBackoff(15 * 60 * 1000, `NonJsonLink_${linkResponse.status}`, null, config);
             throw {
-                message: `Setu returned non-JSON response (${linkResponse.status}): ${linkText.substring(0, 300)}`,
+                message: "System busy, please try again in a few minutes",
                 rawResponse: linkText,
-                status: linkResponse.status
+                status: 503,
+                isBlocked: true
             };
         }
 
         if (!linkResponse.ok || !linkData.success) {
             console.error(`[Setu Link Gen] Setu Error Response (Status ${linkResponse.status}):`, linkText);
+            if (linkResponse.status === 403 || linkResponse.status === 429 || linkResponse.status >= 500) {
+                activateSetuBackoff(15 * 60 * 1000, `HTTP_${linkResponse.status}_LinkGen`, null, config);
+                throw {
+                    message: "System busy, please try again in a few minutes",
+                    response: { status: linkResponse.status, data: linkData },
+                    rawResponse: linkText,
+                    status: 503,
+                    isBlocked: true
+                };
+            }
             throw {
                 message: linkData.error?.detail || linkData.error?.message || linkData.message || "Setu Link Creation Failed",
                 response: { status: linkResponse.status, data: linkData },
@@ -362,15 +434,49 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
     } catch (e) { 
         console.error("Setu Link Gen Error:", e);
         
+        let errMsg = e.message || "Setu Link Generation Error";
+        const isBackoffOrBusy = e.isBlocked || 
+            errMsg.includes("System busy") || 
+            errMsg.includes("back-off") || 
+            errMsg.includes("Cloudflare") || 
+            errMsg.includes("WAF") || 
+            e.status === 403 || 
+            e.status === 429 || 
+            e.status === 503;
+
+        if (isBackoffOrBusy) {
+            errMsg = "System busy, please try again in a few minutes";
+        }
+
         const rawResponse = e.rawResponse || e.response?.data || e;
-        const statusCode = e.status || e.response?.status || 500;
+        const statusCode = isBackoffOrBusy ? 503 : (e.status || e.response?.status || 500);
 
         res.status(statusCode).json({ 
             success: false, 
-            error: e.message || "Setu Link Generation Error",
+            isBlocked: isBackoffOrBusy,
+            error: errMsg,
+            message: errMsg,
             rawSetuResponse: rawResponse,
             raw: e
         }); 
+    }
+});
+
+// Setu Back-off status query endpoint
+router.get('/setu/backoff-status', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
+        let config = rows.length > 0 ? rows[0].config : null;
+        if (typeof config === 'string') {
+            try { config = JSON.parse(config); } catch (e) {}
+        }
+        connection.release();
+        const status = getSetuBackoffStatus(config);
+        res.json({ success: true, ...status });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
@@ -401,83 +507,135 @@ function extractSetuAmount(data) {
 async function handleSetuPaymentSuccess(data, req) {
     if (!data) return;
     const paymentLinkData = data.paymentLink || data.bill || {};
-    const billerBillID = data.billerBillID || data.paymentLinkID || paymentLinkData.billerBillID;
-    const platformBillID = data.platformBillID || paymentLinkData.platformBillID || data.transactionId;
+    const billerBillID = data.billerBillID || data.paymentLinkID || paymentLinkData.billerBillID || '';
+    const platformBillID = String(data.platformBillID || paymentLinkData.platformBillID || data.id || data.bill?.id || data.paymentLinkId || data.paymentLinkID || '').trim();
     
     const amountPaid = extractSetuAmount(data);
-    const upiTransactionID = data.transactionId || data.platformBillID || paymentLinkData.platformBillID || data.bankReferenceNumber || `setu_${Date.now()}`;
-    const payerVpa = data.payerVpa || data.sourceAccount?.number || null;
+    const upiTransactionID = data.transactionId || data.txnId || data.bankReferenceNumber || data.rrn || data.utr || platformBillID || `setu_${Date.now()}`;
+    const payerVpa = data.payerVpa || data.sourceAccount?.number || data.payerAccount?.vpa || data.payer || null;
 
-    let externalPaymentId = data.additionalInfo?.externalPaymentId || data.additionalInfo?.externalPaymentID || paymentLinkData.additionalInfo?.externalPaymentId || paymentLinkData.additionalInfo?.externalPaymentID;
-    let orderId = data.additionalInfo?.orderId || data.additionalInfo?.orderID || paymentLinkData.additionalInfo?.orderId || paymentLinkData.additionalInfo?.orderID;
+    let explicitExtId = data.additionalInfo?.externalPaymentId || data.additionalInfo?.externalPaymentID || paymentLinkData.additionalInfo?.externalPaymentId || paymentLinkData.additionalInfo?.externalPaymentID;
+    let explicitOrderId = data.additionalInfo?.orderId || data.additionalInfo?.orderID || paymentLinkData.additionalInfo?.orderId || paymentLinkData.additionalInfo?.orderID;
 
     const pool = getPool();
     if (!pool) return;
     const connection = await pool.getConnection();
 
     try {
-        let matchedExtId = externalPaymentId;
+        // Collect all potential text tokens from note, description, billerBillID, name
+        const textSources = [
+            billerBillID,
+            data.transactionNote || '',
+            paymentLinkData.transactionNote || '',
+            data.description || '',
+            paymentLinkData.description || '',
+            data.name || '',
+            paymentLinkData.name || '',
+            explicitExtId || '',
+            explicitOrderId || ''
+        ].join(' ');
+
+        // Extract EXT tokens (e.g. EXT-9962, EXT9962, EXT_9962)
+        const extMatches = textSources.match(/EXT[\-_]?[0-9A-Za-z]+/gi) || [];
+        const candidateExtTokens = Array.from(new Set([
+            ...(explicitExtId ? [explicitExtId] : []),
+            ...extMatches
+        ]));
+
+        // Extract Order tokens (e.g. ORD-1234, ORD1234, or numeric order IDs)
+        const ordMatches = textSources.match(/ORD[\-_]?[0-9A-Za-z]+/gi) || [];
+        const candidateOrdTokens = Array.from(new Set([
+            ...(explicitOrderId ? [explicitOrderId] : []),
+            ...ordMatches
+        ]));
+
+        const normalizeId = (str) => String(str || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+
+        // 1. Try matching External Payments
+        const [allExtRows] = await connection.query("SELECT id, data FROM external_payments");
         
-        if (!matchedExtId && billerBillID && billerBillID.startsWith('EXT')) {
-            matchedExtId = billerBillID.split('_')[0];
-        }
-        if (!matchedExtId) {
-            const note = data.transactionNote || paymentLinkData.transactionNote || '';
-            const match = note.match(/EXT[A-Za-z0-9]+/i);
-            if (match) matchedExtId = match[0];
-        }
+        let matchedExternalRecordId = null;
 
-        if (matchedExtId) {
-            const [extRows] = await connection.query('SELECT id FROM external_payments WHERE id = ?', [matchedExtId]);
-            if (extRows.length > 0) {
-                connection.release();
-                await processSuccessfulExternalPayment(matchedExtId, amountPaid, upiTransactionID, payerVpa, req);
-                return;
+        for (const row of allExtRows) {
+            const rawId = row.id;
+            const normRowId = normalizeId(rawId);
+
+            // Match by candidate tokens
+            for (const token of candidateExtTokens) {
+                if (rawId === token || normRowId === normalizeId(token)) {
+                    matchedExternalRecordId = rawId;
+                    break;
+                }
             }
+            if (matchedExternalRecordId) break;
+
+            // Match by platformBillID or pendingSetuPayments
+            try {
+                const rec = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                if (platformBillID && (
+                    String(rec.platformBillID || '').trim() === platformBillID ||
+                    (rec.pendingSetuPayments && rec.pendingSetuPayments.some(p => String(p.platformBillID || '').trim() === platformBillID))
+                )) {
+                    matchedExternalRecordId = rawId;
+                    break;
+                }
+                if (billerBillID && rec.billerBillID && String(rec.billerBillID).trim() === billerBillID) {
+                    matchedExternalRecordId = rawId;
+                    break;
+                }
+            } catch (e) {}
         }
 
-        if (platformBillID) {
-            const [extRows] = await connection.query("SELECT id, data FROM external_payments WHERE status != 'PAID'");
-            for (const row of extRows) {
-                try {
-                    const rec = JSON.parse(row.data);
-                    if (rec.platformBillID === platformBillID || (rec.pendingSetuPayments && rec.pendingSetuPayments.some(p => p.platformBillID === platformBillID))) {
-                        connection.release();
-                        await processSuccessfulExternalPayment(row.id, amountPaid, upiTransactionID, payerVpa, req);
-                        return;
-                    }
-                } catch(e) {}
+        if (matchedExternalRecordId) {
+            connection.release();
+            await processSuccessfulExternalPayment(matchedExternalRecordId, amountPaid, upiTransactionID, payerVpa, req);
+            return;
+        }
+
+        // 2. Try matching Orders
+        const [allOrderRows] = await connection.query("SELECT id, data FROM orders");
+        let matchedOrderId = null;
+
+        for (const row of allOrderRows) {
+            const rawId = row.id;
+            const normRowId = normalizeId(rawId);
+
+            // Match by candidate tokens
+            for (const token of candidateOrdTokens) {
+                if (rawId === token || normRowId === normalizeId(token)) {
+                    matchedOrderId = rawId;
+                    break;
+                }
             }
+            if (matchedOrderId) break;
+
+            // Match by platformBillID or pendingSetuPayments
+            try {
+                const order = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                if (platformBillID && (
+                    String(order.platformBillID || '').trim() === platformBillID ||
+                    (order.pendingSetuPayments && order.pendingSetuPayments.some(p => String(p.platformBillID || '').trim() === platformBillID))
+                )) {
+                    matchedOrderId = rawId;
+                    break;
+                }
+            } catch (e) {}
         }
 
-        let matchedOrderId = orderId;
-        if (!matchedOrderId && billerBillID) {
-            matchedOrderId = billerBillID.split('_')[0];
-        }
         if (matchedOrderId) {
-            const [orderRows] = await connection.query('SELECT id FROM orders WHERE id = ?', [matchedOrderId]);
-            if (orderRows.length > 0) {
-                connection.release();
-                await processSuccessfulPayment(matchedOrderId, amountPaid, upiTransactionID, payerVpa, req);
-                return;
-            }
+            connection.release();
+            await processSuccessfulPayment(matchedOrderId, amountPaid, upiTransactionID, payerVpa, req);
+            return;
         }
 
-        if (platformBillID) {
-            const [orderRows] = await connection.query("SELECT id, data FROM orders WHERE status != 'COMPLETED'");
-            for (const row of orderRows) {
-                try {
-                    const rec = JSON.parse(row.data);
-                    if (rec.platformBillID === platformBillID || (rec.pendingSetuPayments && rec.pendingSetuPayments.some(p => p.platformBillID === platformBillID))) {
-                        connection.release();
-                        await processSuccessfulPayment(row.id, amountPaid, upiTransactionID, payerVpa, req);
-                        return;
-                    }
-                } catch(e) {}
-            }
-        }
-
-        console.warn("Could not match Setu payment to any external payment or order:", data);
+        console.warn("[Setu Matcher] Could not match Setu payment to any external payment or order:", {
+            platformBillID,
+            billerBillID,
+            candidateExtTokens,
+            candidateOrdTokens,
+            amountPaid,
+            upiTransactionID
+        });
     } catch (err) {
         console.error("Error matching Setu payment:", err);
     } finally {
@@ -487,6 +645,7 @@ async function handleSetuPaymentSuccess(data, req) {
     }
 }
 
+// Setu Live Status Check Endpoint for Single Bill
 router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
@@ -512,7 +671,6 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
         }
 
         const platformBillID = req.params.platformBillID;
-
         const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
 
         let statusResponse = await fetch(`${baseUrl}/payment-links/${platformBillID}`, {
@@ -571,8 +729,117 @@ router.get('/setu/status/:platformBillID', ensureDb, async (req, res) => {
     }
 });
 
-// Setu Expire Payment Link (Manual / On Demand)
-router.post('/setu/expire-link/:platformBillID', ensureDb, async (req, res) => {
+// Setu Comprehensive Sync & Reconciliation Endpoint
+router.post(['/setu/sync-all', '/setu/reconcile-all'], ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
+        if (rows.length === 0) {
+            connection.release();
+            return res.status(400).json({ success: false, error: "Setu Integration not configured." });
+        }
+
+        let config = rows[0].config;
+        if (typeof config === 'string') config = typeof config === "string" ? JSON.parse(config) : config;
+
+        const isProduction = (config.mode || 'PRODUCTION') === 'PRODUCTION';
+        const baseUrl = isProduction ? 'https://prod.setu.co/api/v2' : 'https://uat.setu.co/api/v2';
+        const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
+
+        let token = await getSetuToken(connection, config, true, true);
+        connection.release();
+
+        // 1. Gather all platformBillIDs to check
+        const billIdsToCheck = new Set();
+
+        // Optional list supplied in request body
+        if (Array.isArray(req.body.platformBillIDs)) {
+            req.body.platformBillIDs.forEach(id => {
+                if (id) billIdsToCheck.add(String(id).trim());
+            });
+        }
+
+        const scanConn = await pool.getConnection();
+        const [extRows] = await scanConn.query("SELECT id, data FROM external_payments");
+        const [orderRows] = await scanConn.query("SELECT id, data FROM orders");
+        scanConn.release();
+
+        for (const row of extRows) {
+            try {
+                const rec = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                if (rec.platformBillID) billIdsToCheck.add(String(rec.platformBillID).trim());
+                if (Array.isArray(rec.pendingSetuPayments)) {
+                    rec.pendingSetuPayments.forEach(p => {
+                        if (p.platformBillID) billIdsToCheck.add(String(p.platformBillID).trim());
+                    });
+                }
+            } catch (e) {}
+        }
+
+        for (const row of orderRows) {
+            try {
+                const ord = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                if (ord.platformBillID) billIdsToCheck.add(String(ord.platformBillID).trim());
+                if (Array.isArray(ord.pendingSetuPayments)) {
+                    ord.pendingSetuPayments.forEach(p => {
+                        if (p.platformBillID) billIdsToCheck.add(String(p.platformBillID).trim());
+                    });
+                }
+            } catch (e) {}
+        }
+
+        const results = [];
+        let updatedCount = 0;
+
+        for (const billId of billIdsToCheck) {
+            if (!billId || billId.length < 5) continue;
+            try {
+                let statusRes = await fetch(`${baseUrl}/payment-links/${billId}`, {
+                    headers: getSetuHeaders(token, schemeId),
+                    signal: AbortSignal.timeout(5000)
+                });
+
+                if (statusRes.status === 401) {
+                    const refConn = await pool.getConnection();
+                    token = await getSetuToken(refConn, config, true, true);
+                    refConn.release();
+                    statusRes = await fetch(`${baseUrl}/payment-links/${billId}`, {
+                        headers: getSetuHeaders(token, schemeId),
+                        signal: AbortSignal.timeout(5000)
+                    });
+                }
+
+                const resText = await statusRes.text();
+                if (!resText.trim().startsWith('{')) continue;
+                const statusJson = JSON.parse(resText);
+
+                if (statusJson.success && statusJson.data && ['PAYMENT_SUCCESSFUL', 'SUCCESS', 'BILL_FULFILLED', 'CREDIT_RECEIVED'].includes(statusJson.data.status)) {
+                    await handleSetuPaymentSuccess(statusJson.data, req);
+                    updatedCount++;
+                    results.push({ billId, status: statusJson.data.status, success: true });
+                } else {
+                    results.push({ billId, status: statusJson.data?.status || 'PENDING', success: false });
+                }
+            } catch (err) {
+                results.push({ billId, error: err.message, success: false });
+            }
+        }
+
+        res.json({
+            success: true,
+            totalChecked: billIdsToCheck.size,
+            updatedCount,
+            results
+        });
+    } catch (e) {
+        console.error("Setu Sync-All Error:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Setu Expire Payment Link (Restricted to Authorized Staff)
+router.post('/setu/expire-link/:platformBillID', ensureDb, authenticateToken, requireRole('ADMIN', 'MANAGER'), async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
@@ -612,8 +879,8 @@ router.post('/setu/expire-link/:platformBillID', ensureDb, async (req, res) => {
     }
 });
 
-// Setu Refund Payment Link
-router.post('/setu/refund', ensureDb, async (req, res) => {
+// Setu Refund Payment Link (Restricted to Authorized Staff)
+router.post('/setu/refund', ensureDb, authenticateToken, requireRole('ADMIN', 'MANAGER'), async (req, res) => {
     try {
         const { platformBillID, amount } = req.body;
         if (!platformBillID) {
@@ -673,8 +940,8 @@ router.post('/setu/refund', ensureDb, async (req, res) => {
     }
 });
 
-// Setu Test Connection
-router.post('/setu/test-connection', ensureDb, async (req, res) => {
+// Setu Test Connection (Admin Only)
+router.post('/setu/test-connection', ensureDb, authenticateToken, requireRole('ADMIN'), async (req, res) => {
     const { clientId, secret, mode } = req.body;
     
     if (!clientId || !secret) {
@@ -1030,26 +1297,35 @@ router.post('/razorpay/create-order', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Liability Gap Acceptance
-router.post('/orders/:id/accept-liability', ensureDb, async (req, res) => {
+// Liability Gap Acceptance (IDOR Protected: Validates Order Share Token or Authenticated Staff)
+router.post('/orders/:id/accept-liability', ensureDb, optionalAuth, async (req, res) => {
     const orderId = req.params.id;
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
         
         // Find the order
-        const [rows] = await connection.query('SELECT data FROM orders');
-        const orderRow = rows.find(r => {
-            const o = JSON.parse(r.data);
-            return o.id === orderId;
-        });
+        const [rows] = await connection.query('SELECT data FROM orders WHERE id = ?', [orderId]);
         
-        if (!orderRow) {
+        if (rows.length === 0) {
             connection.release();
             return res.status(404).json({ success: false, error: "Order not found" });
         }
         
-        const order = JSON.parse(orderRow.data);
+        const order = JSON.parse(rows[0].data);
+
+        // IDOR Verification: Must be authenticated staff OR supply the exact unguessable shareToken
+        const clientShareToken = req.body.shareToken || req.headers['x-share-token'];
+        const isStaff = req.user && ['ADMIN', 'MANAGER', 'SALES'].includes(req.user.role);
+
+        if (!isStaff && (!clientShareToken || clientShareToken !== order.shareToken)) {
+            connection.release();
+            console.warn(`[Security Alert: IDOR Prevention] Unauthorized attempt to accept liability for Order ${orderId}`);
+            return res.status(403).json({ 
+                success: false, 
+                error: "IDOR Protection: Access Denied. Valid share token or staff authorization required." 
+            });
+        }
         
         // Update order data
         order.requiresLiabilityAcceptance = false;
@@ -1212,13 +1488,12 @@ async function processSuccessfulExternalPayment(externalId, amountPaid, upiTrans
         if (rows.length === 0) return;
         
         const record = JSON.parse(rows[0].data);
-        if (record.status === 'PAID') return;
 
         if (!record.partialPayments) record.partialPayments = [];
 
         // Deduplicate transaction ID to prevent double processing
-        if (upiTransactionID && record.partialPayments.some(p => p.txnId === upiTransactionID)) {
-            console.log(`[External Payment] Transaction ${upiTransactionID} already processed for ${externalId}`);
+        if (upiTransactionID && record.partialPayments.some(p => p.txnId === upiTransactionID || (p.platformBillID && p.platformBillID === upiTransactionID) || (p.reference && p.reference === upiTransactionID))) {
+            console.log(`[External Payment] Transaction ${upiTransactionID} already recorded for ${externalId}`);
             return;
         }
 
@@ -1231,8 +1506,19 @@ async function processSuccessfulExternalPayment(externalId, amountPaid, upiTrans
             paidAt: now,
             mode: 'SETU_UPI',
             txnId: upiTransactionID,
+            platformBillID: upiTransactionID,
             payerVpa: payerVpa || null
         });
+
+        // Mark corresponding pending Setu payment as PAID if present
+        if (Array.isArray(record.pendingSetuPayments)) {
+            record.pendingSetuPayments.forEach(p => {
+                if (p.platformBillID === upiTransactionID || String(p.amount) === String(numericAmountPaid)) {
+                    p.status = 'PAID';
+                    p.paidAt = now;
+                }
+            });
+        }
 
         // Calculate total accumulated paid amount
         const totalPaidSoFar = record.partialPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
@@ -1263,7 +1549,32 @@ async function processSuccessfulExternalPayment(externalId, amountPaid, upiTrans
         });
 
         await connection.query('UPDATE external_payments SET status = ?, data = ?, updated_at = ? WHERE id = ?', [record.status, JSON.stringify(record), Date.now(), externalId]);
-        await journalTransaction('EXTERNAL_PAYMENT', externalId, 'PAYMENT_RECEIVE', record, connection);
+        
+        try {
+            await journalTransaction('EXTERNAL_PAYMENT', externalId, 'PAYMENT_RECEIVE', record, connection);
+        } catch (jErr) {
+            console.warn("Journaling skipped or failed:", jErr.message);
+        }
+
+        // Also record to payments_log table for audit trail
+        try {
+            await connection.query(
+                `INSERT INTO payments_log (id, orderId, amount, method, status, createdAt, rawResponse)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE status=VALUES(status), rawResponse=VALUES(rawResponse)`,
+                [
+                    `ext_${externalId}_${Date.now()}`,
+                    externalId,
+                    numericAmountPaid,
+                    'SETU_UPI',
+                    'SUCCESS',
+                    new Date(),
+                    JSON.stringify({ upiTransactionID, payerVpa, amountPaid: numericAmountPaid })
+                ]
+            );
+        } catch (pLogErr) {
+            console.warn("payments_log insertion skipped:", pLogErr.message);
+        }
 
         console.log(`External Payment Request ${externalId} updated with payment ₹${numericAmountPaid} (Status: ${record.status})`);
         
@@ -1334,7 +1645,7 @@ export function startSetuPoller(io) {
     if (pollerActive) return;
     pollerActive = true;
     
-    // Poll every 1 minute
+    // Poll every 45 seconds
     setInterval(async () => {
         const pool = getPool();
         if (!pool) return;
@@ -1370,7 +1681,7 @@ export function startSetuPoller(io) {
             const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
             
             const [orderRows] = await connection.query("SELECT id, data FROM orders");
-            const [extRows] = await connection.query("SELECT id, data FROM external_payments WHERE status != 'PAID'");
+            const [extRows] = await connection.query("SELECT id, data FROM external_payments");
             
             // Check if there are any active pending Setu payments before attempting token fetch
             let hasPending = false;
@@ -1380,7 +1691,7 @@ export function startSetuPoller(io) {
                     const pendings = extRecord.pendingSetuPayments || (extRecord.platformBillID ? [{ platformBillID: extRecord.platformBillID, amount: extRecord.amount, createdAt: extRecord.createdAt }] : []);
                     const activePendings = pendings.filter(p => {
                         const ageMs = Date.now() - new Date(p.createdAt || Date.now()).getTime();
-                        return ageMs <= 24 * 60 * 60 * 1000;
+                        return ageMs <= 7 * 24 * 60 * 60 * 1000;
                     });
                     if (activePendings.length > 0) {
                         hasPending = true;
@@ -1396,7 +1707,7 @@ export function startSetuPoller(io) {
                         if (order.pendingSetuPayments && order.pendingSetuPayments.length > 0) {
                             const activePendings = order.pendingSetuPayments.filter(p => {
                                 const ageMs = Date.now() - new Date(p.createdAt).getTime();
-                                return ageMs <= 24 * 60 * 60 * 1000;
+                                return ageMs <= 7 * 24 * 60 * 60 * 1000;
                             });
                             if (activePendings.length > 0) {
                                 hasPending = true;
@@ -1428,11 +1739,18 @@ export function startSetuPoller(io) {
                     const extRecord = JSON.parse(row.data);
                     const pendings = extRecord.pendingSetuPayments || (extRecord.platformBillID ? [{ platformBillID: extRecord.platformBillID, amount: extRecord.amount, createdAt: extRecord.createdAt }] : []);
                     for (const pending of pendings) {
+                        if (!pending.platformBillID) continue;
+                        // Skip if already marked paid in partialPayments
+                        if (extRecord.partialPayments && extRecord.partialPayments.some(p => p.txnId === pending.platformBillID || p.platformBillID === pending.platformBillID)) {
+                            continue;
+                        }
+
                         const ageMs = Date.now() - new Date(pending.createdAt || Date.now()).getTime();
-                        if (ageMs > 24 * 60 * 60 * 1000) continue;
+                        if (ageMs > 7 * 24 * 60 * 60 * 1000) continue;
                         try {
                             let statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
-                                headers: getSetuHeaders(token, schemeId)
+                                headers: getSetuHeaders(token, schemeId),
+                                signal: AbortSignal.timeout(5000)
                             });
 
                             if (statusResponse.status === 403) {
@@ -1452,7 +1770,8 @@ export function startSetuPoller(io) {
                                     refreshConn.release();
                                     
                                     statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
-                                        headers: getSetuHeaders(token, schemeId)
+                                        headers: getSetuHeaders(token, schemeId),
+                                        signal: AbortSignal.timeout(5000)
                                     });
                                 } catch (refreshErr) {
                                     console.info("[Setu Poller] Token refresh deferred during poll:", refreshErr.message);
@@ -1464,10 +1783,7 @@ export function startSetuPoller(io) {
                             if (!statusResponseText.trim().startsWith('{')) continue;
                             const statusData = JSON.parse(statusResponseText);
                             if (statusData.success && statusData.data && ['PAYMENT_SUCCESSFUL', 'SUCCESS', 'BILL_FULFILLED', 'CREDIT_RECEIVED'].includes(statusData.data.status)) {
-                                const amountPaid = (statusData.data.amountPaid?.value / 100) || (statusData.data.amount?.value / 100) || pending.amount; 
-                                const upiTransactionID = statusData.data.paymentLink?.platformBillID || statusData.data.platformBillID || pending.platformBillID;
-                                const payerVpa = statusData.data.payerVpa || null;
-                                await processSuccessfulExternalPayment(extRecord.id, amountPaid, upiTransactionID, payerVpa, { io });
+                                await handleSetuPaymentSuccess(statusData.data, { io });
                             }
                         } catch (extPollErr) {
                             console.error(`Error polling Setu for external payment ${pending.platformBillID}:`, extPollErr.message);
@@ -1482,12 +1798,18 @@ export function startSetuPoller(io) {
                 const order = JSON.parse(row.data);
                 if (order.pendingSetuPayments && order.pendingSetuPayments.length > 0) {
                     for (const pending of order.pendingSetuPayments) {
+                        if (!pending.platformBillID) continue;
+                        if (order.payments && order.payments.some(p => p.txnId === pending.platformBillID || p.reference === pending.platformBillID)) {
+                            continue;
+                        }
+
                         const ageMs = Date.now() - new Date(pending.createdAt).getTime();
-                        if (ageMs > 24 * 60 * 60 * 1000) continue; // skip older than 24 hours
+                        if (ageMs > 7 * 24 * 60 * 60 * 1000) continue;
 
                         try {
                             let statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
-                                headers: getSetuHeaders(token, schemeId)
+                                headers: getSetuHeaders(token, schemeId),
+                                signal: AbortSignal.timeout(5000)
                             });
                             
                             if (statusResponse.status === 403) {
@@ -1507,7 +1829,8 @@ export function startSetuPoller(io) {
                                     refreshConn.release();
                                     
                                     statusResponse = await fetch(`${baseUrl}/payment-links/${pending.platformBillID}`, {
-                                        headers: getSetuHeaders(token, schemeId)
+                                        headers: getSetuHeaders(token, schemeId),
+                                        signal: AbortSignal.timeout(5000)
                                     });
                                 } catch (refreshErr) {
                                     console.info("[Setu Poller] Token refresh deferred during poll:", refreshErr.message);
@@ -1521,10 +1844,7 @@ export function startSetuPoller(io) {
                             }
                             const statusData = JSON.parse(statusResponseText);
                             if (statusData.success && statusData.data && ['PAYMENT_SUCCESSFUL', 'SUCCESS', 'BILL_FULFILLED', 'CREDIT_RECEIVED'].includes(statusData.data.status)) {
-                                const amountPaid = (statusData.data.amountPaid?.value / 100) || (statusData.data.amount?.value / 100) || 0; 
-                                const upiTransactionID = statusData.data.paymentLink?.platformBillID || statusData.data.platformBillID || pending.platformBillID;
-                                const payerVpa = statusData.data.payerVpa || null;
-                                await processSuccessfulPayment(order.id, amountPaid, upiTransactionID, payerVpa, { io });
+                                await handleSetuPaymentSuccess(statusData.data, { io });
                             }
                         } catch (e) {
                             console.error(`Error polling Setu for ${pending.platformBillID}:`, e.message);
@@ -1535,7 +1855,7 @@ export function startSetuPoller(io) {
         } catch (err) {
             console.error("Poller Error:", err);
         }
-    }, 60 * 1000);
+    }, 45 * 1000);
 }
 
 export { processSuccessfulPayment, processSuccessfulExternalPayment, getSetuToken };

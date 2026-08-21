@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { getPool, ensureDb, logDbActivity, isMock, initDb } from './db.js';
 import { resolveContactNames } from './whatsapp.js';
+import { authenticateToken, requireRole, optionalAuth } from './auth.js';
 
 const router = express.Router();
 
@@ -36,8 +37,8 @@ router.get('/debug/db', async (req, res) => {
     });
 });
 
-// --- SYSTEM LOGS (ERRORS) ---
-router.get('/logs/errors', ensureDb, async (req, res) => {
+// --- SYSTEM LOGS (ERRORS) - Restricted to Authorized Staff ---
+router.get('/logs/errors', ensureDb, authenticateToken, requireRole('ADMIN', 'MANAGER'), async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
@@ -77,8 +78,8 @@ router.post('/logs/error', ensureDb, async (req, res) => {
     }
 });
 
-// --- NEW: ACTIVITY LOGS ---
-router.get('/logs/activities', ensureDb, async (req, res) => {
+// --- ACTIVITY LOGS - Restricted to Authorized Staff ---
+router.get('/logs/activities', ensureDb, authenticateToken, requireRole('ADMIN', 'MANAGER'), async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
@@ -103,7 +104,7 @@ router.get('/logs/activities', ensureDb, async (req, res) => {
     }
 });
 
-router.get('/logs/webhooks', ensureDb, async (req, res) => {
+router.get('/logs/webhooks', ensureDb, authenticateToken, requireRole('ADMIN', 'MANAGER'), async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
@@ -152,10 +153,14 @@ router.get('/public/order/:token', ensureDb, async (req, res) => {
         res.setHeader('Expires', '0');
 
         const token = req.params.token;
+        if (!token || typeof token !== 'string' || token.trim().length < 5) {
+            return res.status(400).json({ success: false, error: "Invalid Order Token" });
+        }
+
         const pool = getPool();
         const connection = await pool.getConnection();
         
-        // Optimized query
+        // Strictly verify unguessable cryptographically generated share_token
         const [rows] = await connection.query('SELECT data FROM orders WHERE share_token = ?', [token]);
         
         let order = rows.length > 0 ? JSON.parse(rows[0].data) : null;
@@ -225,16 +230,21 @@ router.get('/public/order/:token', ensureDb, async (req, res) => {
     }
 });
 
-// --- PUBLIC EXTERNAL PAYMENT ACCESS ---
+// --- PUBLIC EXTERNAL PAYMENT ACCESS (IDOR HARDENED) ---
 router.get('/public/external-payment/:token', ensureDb, async (req, res) => {
     try {
         const token = req.params.token;
+        if (!token || typeof token !== 'string' || token.trim().length < 5) {
+            return res.status(400).json({ success: false, error: "Invalid External Payment Token" });
+        }
+
         const pool = getPool();
         const connection = await pool.getConnection();
         
         let rows = [];
         try {
-            const [qRows] = await connection.query('SELECT data FROM external_payments WHERE share_token = ? OR id = ?', [token, token]);
+            // IDOR DEFENSE: Strictly match by share_token ONLY (never match by sequential record ID)
+            const [qRows] = await connection.query('SELECT data FROM external_payments WHERE share_token = ?', [token]);
             rows = qRows;
         } catch (dbErr) {
             console.warn("[Core] Direct share_token query failed, attempting JSON scan fallback:", dbErr.message);
@@ -246,7 +256,8 @@ router.get('/public/external-payment/:token', ensureDb, async (req, res) => {
                 for (const row of allRows) {
                     try {
                         const parsed = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
-                        if (parsed && (parsed.shareToken === token || parsed.share_token === token || parsed.id === token)) {
+                        // IDOR DEFENSE: Match ONLY against shareToken
+                        if (parsed && (parsed.shareToken === token || parsed.share_token === token)) {
                             rows = [row];
                             break;
                         }
@@ -262,8 +273,16 @@ router.get('/public/external-payment/:token', ensureDb, async (req, res) => {
         let record = rows.length > 0 ? (typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data) : null;
         
         if (record) {
-            // If link is pending but has a platformBillID, perform live status check
-            if (record.status !== 'PAID' && record.platformBillID) {
+            // If link is pending, perform live status check across all generated Setu payment links
+            const pendingBillIds = new Set();
+            if (record.platformBillID) pendingBillIds.add(record.platformBillID);
+            if (Array.isArray(record.pendingSetuPayments)) {
+                record.pendingSetuPayments.forEach(p => {
+                    if (p.platformBillID) pendingBillIds.add(p.platformBillID);
+                });
+            }
+
+            if (record.status !== 'PAID' && pendingBillIds.size > 0) {
                 let statusConn;
                 try {
                     statusConn = await getPool().getConnection();
@@ -278,26 +297,33 @@ router.get('/public/external-payment/:token', ensureDb, async (req, res) => {
                                 const schemeId = config.schemeId || config.productInstanceId || config.product_instance_id || '';
                                 const { getSetuToken, getSetuHeaders, processSuccessfulExternalPayment } = await import('./payments.js');
                                 const tokenVal = await getSetuToken(statusConn, config);
-                                const statusRes = await fetch(`${baseUrl}/payment-links/${record.platformBillID}`, {
-                                    headers: getSetuHeaders(tokenVal, schemeId),
-                                    signal: AbortSignal.timeout(3500)
-                                });
-                                const statusText = await statusRes.text();
-                                if (statusText.trim().startsWith('{')) {
-                                    const statusData = JSON.parse(statusText);
-                                    if (statusData.success && statusData.data && ['PAYMENT_SUCCESSFUL', 'SUCCESS', 'BILL_FULFILLED', 'CREDIT_RECEIVED'].includes(statusData.data.status)) {
-                                        let parsedAmt = statusData.data.amountPaid?.value !== undefined ? Number(statusData.data.amountPaid.value) / 100
-                                                      : (statusData.data.amount?.value !== undefined ? Number(statusData.data.amount.value) / 100
-                                                      : (statusData.data.amountPaid !== undefined ? Number(statusData.data.amountPaid) : Number(statusData.data.amount)));
-                                        const amountPaid = !isNaN(parsedAmt) && parsedAmt > 0 ? parsedAmt : (record.amount - (record.amountPaid || 0));
-                                        const upiTxnId = statusData.data.paymentLink?.platformBillID || statusData.data.platformBillID || record.platformBillID;
-                                        await processSuccessfulExternalPayment(record.id, amountPaid, upiTxnId, statusData.data.payerVpa || null, req);
-                                        
-                                        // Re-read updated record from database
-                                        const [updatedRows] = await statusConn.query('SELECT data FROM external_payments WHERE id = ?', [record.id]);
-                                        if (updatedRows.length > 0) {
-                                            record = JSON.parse(updatedRows[0].data);
+
+                                for (const billId of pendingBillIds) {
+                                    try {
+                                        const statusRes = await fetch(`${baseUrl}/payment-links/${billId}`, {
+                                            headers: getSetuHeaders(tokenVal, schemeId),
+                                            signal: AbortSignal.timeout(3500)
+                                        });
+                                        const statusText = await statusRes.text();
+                                        if (statusText.trim().startsWith('{')) {
+                                            const statusData = JSON.parse(statusText);
+                                            if (statusData.success && statusData.data && ['PAYMENT_SUCCESSFUL', 'SUCCESS', 'BILL_FULFILLED', 'CREDIT_RECEIVED'].includes(statusData.data.status)) {
+                                                let parsedAmt = statusData.data.amountPaid?.value !== undefined ? Number(statusData.data.amountPaid.value) / 100
+                                                              : (statusData.data.amount?.value !== undefined ? Number(statusData.data.amount.value) / 100
+                                                              : (statusData.data.amountPaid !== undefined ? Number(statusData.data.amountPaid) : Number(statusData.data.amount)));
+                                                const amountPaid = !isNaN(parsedAmt) && parsedAmt > 0 ? parsedAmt : (record.amount - (record.amountPaid || 0));
+                                                const upiTxnId = statusData.data.paymentLink?.platformBillID || statusData.data.platformBillID || billId;
+                                                await processSuccessfulExternalPayment(record.id, amountPaid, upiTxnId, statusData.data.payerVpa || null, req);
+                                                
+                                                // Re-read updated record from database
+                                                const [updatedRows] = await statusConn.query('SELECT data FROM external_payments WHERE id = ?', [record.id]);
+                                                if (updatedRows.length > 0) {
+                                                    record = JSON.parse(updatedRows[0].data);
+                                                }
+                                            }
                                         }
+                                    } catch (singleErr) {
+                                        console.info(`[Public External Payment] Status check for ${billId} deferred:`, singleErr.message);
                                     }
                                 }
                             }
