@@ -81,7 +81,7 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
     setStep('GENERATED');
 
     try {
-      const res = await fetch('/api/setu/create-link', {
+      let res = await fetch('/api/setu/create-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -92,7 +92,25 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
           forceRefresh: isRetry
         })
       });
-      const data = await res.json();
+      let data = await res.json();
+
+      // Seamless auto-retry once if first attempt encountered any transient issue
+      if ((!res.ok || !data.success) && !isRetry) {
+        console.warn("[ExternalPayment] First attempt failed. Auto-retrying with fresh credentials...");
+        res = await fetch('/api/setu/create-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: amountToPay,
+            externalPaymentId: rec.id,
+            customerID: rec.customerContact,
+            name: rec.customerName,
+            forceRefresh: true
+          })
+        });
+        data = await res.json();
+      }
+
       if (res.ok && data.success && data.data) {
         const setuPL = data.data.data?.paymentLink || data.data.paymentLink || data.data || {};
         const shortUrl = setuPL.shortUrl || setuPL.shortURL || setuPL.shortLink || setuPL.url || '';
@@ -108,6 +126,34 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
       }
     } catch (err: any) {
       console.error("Error generating Setu payment link:", err);
+      // Auto-retry once on network catch if not already a retry
+      if (!isRetry) {
+        try {
+          const retryRes = await fetch('/api/setu/create-link', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              amount: amountToPay,
+              externalPaymentId: rec.id,
+              customerID: rec.customerContact,
+              name: rec.customerName,
+              forceRefresh: true
+            })
+          });
+          const retryData = await retryRes.json();
+          if (retryRes.ok && retryData.success && retryData.data) {
+            const setuPL = retryData.data.data?.paymentLink || retryData.data.paymentLink || retryData.data || {};
+            const shortUrl = setuPL.shortUrl || setuPL.shortURL || setuPL.shortLink || setuPL.url || '';
+            const upiIntentLink = setuPL.upiIntentLink || setuPL.upiLink || setuPL.upiURL || (setuPL.upiID && setuPL.upiID.startsWith('upi://') ? setuPL.upiID : '') || (retryData.data.platformBillID ? `/api/setu/pay/${retryData.data.platformBillID}` : '');
+
+            setCustomLink({
+              shortUrl,
+              upiIntentLink
+            });
+            return;
+          }
+        } catch (retryCatch) {}
+      }
       setGenError("System busy, please try again in a few minutes");
     } finally {
       setGeneratingLink(false);

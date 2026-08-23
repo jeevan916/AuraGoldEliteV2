@@ -256,21 +256,87 @@ router.post('/external-payments', ensureDb, async (req, res) => {
     try {
         const pool = getPool();
         const connection = await pool.getConnection();
+        const syncedRecords = [];
+
         if (Array.isArray(req.body.externalPayments)) {
-            for (const item of req.body.externalPayments) {
+            for (let item of req.body.externalPayments) {
+                if (!item || !item.id) continue;
+
+                let existingRecord = null;
+                try {
+                    const [rows] = await connection.query('SELECT data FROM external_payments WHERE id = ?', [item.id]);
+                    if (rows.length > 0) {
+                        existingRecord = typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data;
+                    }
+                } catch (e) {}
+
+                // Merge payments: preserve existing server-recorded partialPayments
+                const existingPartials = (existingRecord && Array.isArray(existingRecord.partialPayments)) ? existingRecord.partialPayments : [];
+                const incomingPartials = Array.isArray(item.partialPayments) ? item.partialPayments : [];
+                
+                const mergedPartials = [...existingPartials];
+                for (const inc of incomingPartials) {
+                    const exists = mergedPartials.some(ep => 
+                        (ep.txnId && inc.txnId && ep.txnId === inc.txnId) ||
+                        (ep.reference && inc.reference && ep.reference === inc.reference) ||
+                        (ep.platformBillID && inc.platformBillID && ep.platformBillID === inc.platformBillID)
+                    );
+                    if (!exists) {
+                        mergedPartials.push(inc);
+                    }
+                }
+
+                item.partialPayments = mergedPartials;
+
+                // Merge pendingSetuPayments
+                const existingPendingSetu = (existingRecord && Array.isArray(existingRecord.pendingSetuPayments)) ? existingRecord.pendingSetuPayments : [];
+                const incomingPendingSetu = Array.isArray(item.pendingSetuPayments) ? item.pendingSetuPayments : [];
+                const mergedPendingSetu = [...existingPendingSetu];
+                for (const ips of incomingPendingSetu) {
+                    if (ips.platformBillID && !mergedPendingSetu.some(m => m.platformBillID === ips.platformBillID)) {
+                        mergedPendingSetu.push(ips);
+                    }
+                }
+                item.pendingSetuPayments = mergedPendingSetu;
+
+                // Reconcile amounts and status
+                const totalPaidSoFar = mergedPartials.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+                const reqAmount = Number(item.amount) || 0;
+                
+                if (totalPaidSoFar > 0) {
+                    item.amountPaid = totalPaidSoFar;
+                    item.remainingAmount = Math.max(0, reqAmount - totalPaidSoFar);
+                } else if (existingRecord && existingRecord.amountPaid > 0 && !item.amountPaid) {
+                    item.amountPaid = existingRecord.amountPaid;
+                    item.remainingAmount = existingRecord.remainingAmount;
+                }
+
+                if (existingRecord && existingRecord.status === 'PAID' && item.status !== 'PAID') {
+                    item.status = 'PAID';
+                    if (!item.amountPaid || item.amountPaid === 0) {
+                        item.amountPaid = reqAmount;
+                        item.remainingAmount = 0;
+                    }
+                } else if (item.amountPaid >= (reqAmount - 0.5) && reqAmount > 0) {
+                    item.status = 'PAID';
+                    item.remainingAmount = 0;
+                }
+
                 await connection.query(
                     `INSERT INTO external_payments (id, customer_contact, status, created_at, share_token, data, updated_at) 
                      VALUES (?, ?, ?, ?, ?, ?, ?) 
                      ON DUPLICATE KEY UPDATE status=VALUES(status), share_token=VALUES(share_token), data=VALUES(data), updated_at=VALUES(updated_at)`,
                     [item.id, item.customerContact || '', item.status || 'PENDING', new Date(item.createdAt || Date.now()), item.shareToken || item.share_token || '', JSON.stringify(item), Date.now()]
                 );
+
+                syncedRecords.push(item);
             }
         }
         connection.release();
-        if (req.io) {
-            req.io.emit('external_payments_sync', req.body.externalPayments);
+        if (req.io && syncedRecords.length > 0) {
+            req.io.emit('external_payments_sync', syncedRecords);
         }
-        res.json({ success: true });
+        res.json({ success: true, records: syncedRecords });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

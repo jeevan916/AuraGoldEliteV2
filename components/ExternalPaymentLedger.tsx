@@ -602,6 +602,7 @@ export const ExternalPaymentLedger: React.FC = () => {
       }
 
       if (capturedAny) {
+        await storageService.forceSync();
         triggerNotification('success', `Payment captured & verified as PAID for ${record.customerName}!`);
       } else {
         triggerNotification('info', `Setu Status: ${lastStatus || 'Payment pending on Setu'}`);
@@ -624,6 +625,7 @@ export const ExternalPaymentLedger: React.FC = () => {
       });
       const data = await res.json();
       if (data.success) {
+        await storageService.forceSync();
         if (data.updatedCount > 0) {
           triggerNotification('success', `Sync Complete: ${data.updatedCount} payment(s) captured & reconciled from Setu!`);
         } else {

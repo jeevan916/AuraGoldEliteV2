@@ -156,7 +156,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
       }
       
       // Let backend generate the unique bill ID using orderId
-      const response = await fetch('/api/setu/create-link', {
+      let response = await fetch('/api/setu/create-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -167,7 +167,23 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
         })
       });
 
-      const result = await response.json();
+      let result = await response.json();
+      if (!response.ok || !result.success) {
+        // Auto-retry once with fresh credentials before throwing
+        response = await fetch('/api/setu/create-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: amountToPay,
+            customerID: order.customerContact,
+            name: order.customerName,
+            orderId: order.id,
+            forceRefresh: true
+          })
+        });
+        result = await response.json();
+      }
+
       if (!response.ok || !result.success) {
         const msg = result.error || result.message || "System busy, please try again in a few minutes";
         throw new Error(msg);
