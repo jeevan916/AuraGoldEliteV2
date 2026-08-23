@@ -57,7 +57,7 @@ export function clearSetuBackoff(connection = null, config = null) {
     }
 }
 
-export function getSetuHeaders(token = null, schemeId = null, extraHeaders = {}) {
+function getSetuHeaders(token = null, schemeId = null, extraHeaders = {}) {
     const headers = {
         'Accept': 'application/json, text/plain, */*',
         'Accept-Language': 'en-US,en;q=0.9',
