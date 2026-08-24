@@ -331,7 +331,7 @@ export const ExternalPaymentLedger: React.FC = () => {
       if (resData.paymentLink) {
         const pl = resData.paymentLink;
         updates.shortLink = pl.shortUrl || pl.shortURL || pl.shortLink || pl.url;
-        updates.upiIntentLink = pl.upiIntentLink || pl.upiURL || pl.upiLink || (pl.upiID && pl.upiID.includes('@') ? `upi://pay?pa=${pl.upiID}&pn=AuraGold%20Jewellers&am=${record.amount}&cu=INR` : undefined);
+        updates.upiIntentLink = pl.upiIntentLink || pl.upiURL || pl.upiLink || (pl.upiID && pl.upiID.includes('@') ? `upi://pay?pa=${pl.upiID}&pn=Sanghavi%20Jewellers&am=${record.amount}&cu=INR` : undefined);
       }
       updatedHistory.push({
         date: timestamp,
@@ -431,7 +431,7 @@ export const ExternalPaymentLedger: React.FC = () => {
     }
     let upiUrl = record.upiIntentLink && record.upiIntentLink.startsWith('upi://') ? record.upiIntentLink : null;
     if (!upiUrl && record.upiIntentLink && record.upiIntentLink.includes('@')) {
-      upiUrl = `upi://pay?pa=${record.upiIntentLink}&pn=AuraGold%20Jewellers&tr=${record.id}&am=${record.amount}&cu=INR`;
+      upiUrl = `upi://pay?pa=${record.upiIntentLink}&pn=Sanghavi%20Jewellers&tr=${record.id}&am=${record.amount}&cu=INR`;
     }
     if (upiUrl) {
       const base64Upi = btoa(unescape(encodeURIComponent(upiUrl))).replace(/\+/g, '-').replace(/\//g, '_');

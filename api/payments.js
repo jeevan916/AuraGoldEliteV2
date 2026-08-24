@@ -186,7 +186,7 @@ router.post('/setu/create-link', ensureDb, async (req, res) => {
 
             let intentUrl = pl.upiURL || pl.upiLink || pl.upiIntentLink || '';
             if (!intentUrl && rawVpa && rawVpa.includes('@')) {
-                intentUrl = `upi://pay?pa=${rawVpa}&pn=AuraGold%20Jewellers&tr=${setuPayload.platformBillID || orderId || externalPaymentId || ''}&am=${amount || ''}&cu=INR`;
+                intentUrl = `upi://pay?pa=${rawVpa}&pn=Sanghavi%20Jewellers&tr=${setuPayload.platformBillID || orderId || externalPaymentId || ''}&am=${amount || ''}&cu=INR`;
             }
             pl.upiURL = intentUrl;
             pl.upiLink = intentUrl;
@@ -650,7 +650,7 @@ router.get(['/setu/pay/:encodedIntent', '/setu/pay'], async (req, res) => {
         if (resolved.startsWith('upi://') || resolved.startsWith('https://') || resolved.startsWith('http://')) {
             intent = resolved;
         } else if (resolved.includes('@') && !resolved.includes('://')) {
-            intent = `upi://pay?pa=${encodeURIComponent(resolved)}&pn=AuraGold%20Jewellers&cu=INR`;
+            intent = `upi://pay?pa=${encodeURIComponent(resolved)}&pn=Sanghavi%20Jewellers&cu=INR`;
         } else if (/^[a-zA-Z0-9_-]+$/.test(resolved)) {
             const pool = getPool();
             const connection = await pool.getConnection();

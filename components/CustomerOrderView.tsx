@@ -197,7 +197,7 @@ const CustomerOrderView: React.FC<CustomerOrderViewProps> = ({ order: rawOrder }
       let upiIntentLink = payload?.paymentLink?.upiURL || payload?.paymentLink?.upiLink || payload?.paymentLink?.upiIntentLink || payload?.upiURL || payload?.upiLink || payload?.upiIntentLink;
 
       if (!upiIntentLink && upiID && upiID.includes('@')) {
-        upiIntentLink = `upi://pay?pa=${upiID}&pn=AuraGold%20Jewellers&tr=${order.id}&am=${amountToPay}&cu=INR`;
+        upiIntentLink = `upi://pay?pa=${upiID}&pn=Sanghavi%20Jewellers&tr=${order.id}&am=${amountToPay}&cu=INR`;
       }
 
       if (!shortLink && !upiIntentLink) {

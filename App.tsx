@@ -292,6 +292,12 @@ const App = () => {
     };
   }, []);
 
+  useEffect(() => {
+      if (user && (user.role === 'ADMIN' || user.role === 'MANAGER')) {
+          errorService.refreshHistoricalData();
+      }
+  }, [user]);
+
   const handleLogout = () => {
       localStorage.removeItem('aura_auth');
       setUser(null);

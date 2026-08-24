@@ -284,7 +284,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
               key: settings.razorpayKeyId,
               amount: orderData.amount,
               currency: orderData.currency,
-              name: "AuraGold Jewellers",
+              name: "AuraGold by Sanghavi Jewellers",
               description: `Payment for Order #${order.id}`,
               order_id: orderData.id,
               handler: function (response: any) {
@@ -371,7 +371,7 @@ export const PaymentWidget: React.FC<PaymentWidgetProps> = ({ order, onPaymentRe
 
           if (!upiIntentLink && upiID && upiID.includes('@')) {
               // Construct the intent link manually ONLY if Setu didn't return it
-              const payeeName = encodeURIComponent("AuraGold Jewellers");
+              const payeeName = encodeURIComponent("Sanghavi Jewellers");
               const transactionNote = encodeURIComponent(`Order ${order.id}`);
               upiIntentLink = `upi://pay?pa=${upiID}&pn=${payeeName}&tr=${order.id}&am=${val}&cu=INR&tn=${transactionNote}`;
           } else if (!upiIntentLink) {

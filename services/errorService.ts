@@ -21,9 +21,24 @@ class ErrorService {
     this.fetchActivitiesFromDb();
   }
 
+  private getAuthHeaders() {
+      const authStr = localStorage.getItem('aura_auth');
+      if (authStr) {
+          try {
+              const user = JSON.parse(authStr);
+              if (user && user.token) {
+                  return { 'Authorization': `Bearer ${user.token}` };
+              }
+          } catch (e) {}
+      }
+      return {};
+  }
+
   private async fetchErrorsFromDb() {
       try {
-          const res = await fetch('/api/logs/errors');
+          const headers = this.getAuthHeaders();
+          if (!headers['Authorization']) return; // Skip fetch if not authenticated
+          const res = await fetch('/api/logs/errors', { headers });
           const data = await res.json();
           if (data.success && Array.isArray(data.errors)) {
               this.errors = data.errors;
@@ -36,7 +51,9 @@ class ErrorService {
 
   private async fetchActivitiesFromDb() {
       try {
-          const res = await fetch('/api/logs/activities');
+          const headers = this.getAuthHeaders();
+          if (!headers['Authorization']) return; // Skip fetch if not authenticated
+          const res = await fetch('/api/logs/activities', { headers });
           const data = await res.json();
           if (data.success && Array.isArray(data.activities)) {
               const localInit = this.activities.find(act => act.id === 'INIT');
@@ -46,6 +63,11 @@ class ErrorService {
       } catch (e) {
           console.warn("[ErrorService] Failed to fetch activities", e);
       }
+  }
+
+  public refreshHistoricalData() {
+      this.fetchErrorsFromDb();
+      this.fetchActivitiesFromDb();
   }
 
   public initGlobalListeners() {

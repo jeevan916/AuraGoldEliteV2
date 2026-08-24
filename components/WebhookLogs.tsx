@@ -108,7 +108,19 @@ const WebhookLogs = () => {
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch('/api/logs/webhooks');
+            const authStr = localStorage.getItem('aura_auth');
+            let token = '';
+            if (authStr) {
+                try {
+                    const user = JSON.parse(authStr);
+                    token = user.token || '';
+                } catch (e) {}
+            }
+            if (!token) throw new Error("Authentication required");
+
+            const res = await fetch('/api/logs/webhooks', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (!res.ok) throw new Error("Failed to fetch");
             const data = await res.json();
             if (data.success) {

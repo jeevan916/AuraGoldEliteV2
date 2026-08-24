@@ -229,8 +229,9 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
             <ReceiptIndianRupee size={12} />
             {record.referenceNote || 'External Payment Request'}
           </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">AuraGold Jewellers</h1>
-          <p className="text-xs text-slate-400 mt-1">Official Setu UPI Payment Gateway</p>
+          <h1 className="text-3xl font-black text-white tracking-tight leading-none">AuraGold</h1>
+          <p className="text-[11px] font-bold text-amber-500/80 mt-1 uppercase tracking-widest text-center w-full">By Sanghavi Jewellers</p>
+          <p className="text-xs text-slate-400 mt-3">Official Setu UPI Payment Gateway</p>
         </div>
 
         {/* Payment Settled Screen */}

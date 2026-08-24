@@ -115,7 +115,8 @@ export function renderRedirectHtml(intent) {
 </head>
 <body>
     <div class="card">
-        <div class="logo">AuraGold</div>
+        <div class="logo" style="margin-bottom: 4px; line-height: 1;">AuraGold</div>
+        <div style="font-size: 0.7rem; font-weight: bold; color: #f59e0b; text-transform: uppercase; letter-spacing: 0.18em; margin-bottom: 24px;">By Sanghavi Jewellers</div>
         <h2>Opening UPI App</h2>
         <div class="loader"></div>
         <p>Please wait while we securely redirect you to your payment application.</p>
