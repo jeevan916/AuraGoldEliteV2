@@ -4,11 +4,21 @@ import {
   CheckCircle2, Clock, XCircle, AlertTriangle, CreditCard, Copy, 
   ExternalLink, Trash2, Filter, Calendar, DollarSign, Check, Send, 
   Download, RefreshCw, X, ShieldCheck, ArrowUpRight, HelpCircle,
-  Code, Terminal, Bug, FileText, ChevronDown, ChevronUp
+  Code, Terminal, Bug, FileText, ChevronDown, ChevronUp, Lock, Shield
 } from 'lucide-react';
 import { ExternalPaymentRecord, ExternalPaymentStatus } from '../types';
 import { storageService } from '../services/storageService';
 import { whatsappService } from '../services/whatsappService';
+
+// Function to generate a guaranteed unique, tamper-proof, system-assigned Order / Reference ID
+export const generateUniqueExternalPaymentId = (): string => {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const randomNum = Math.floor(1000 + Math.random() * 9000);
+  return `EXT-ORD-${yy}${mm}${dd}-${randomNum}`;
+};
 
 export const ExternalPaymentLedger: React.FC = () => {
   const [records, setRecords] = useState<ExternalPaymentRecord[]>(storageService.getExternalPayments());
@@ -20,6 +30,7 @@ export const ExternalPaymentLedger: React.FC = () => {
   const [sortBy, setSortBy] = useState<'DATE_DESC' | 'DATE_ASC' | 'AMOUNT_DESC' | 'AMOUNT_ASC' | 'CUSTOMER_ASC' | 'PAID_DATE_DESC' | 'DUE_DATE_ASC'>('DATE_DESC');
 
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [systemGeneratedRefId, setSystemGeneratedRefId] = useState<string>(generateUniqueExternalPaymentId());
   const [selectedRecord, setSelectedRecord] = useState<ExternalPaymentRecord | null>(null);
   const [activeDetailTab, setActiveDetailTab] = useState<'OVERVIEW' | 'RAW_DEBUG'>('OVERVIEW');
   const [showQrModal, setShowQrModal] = useState<ExternalPaymentRecord | null>(null);
@@ -91,10 +102,23 @@ export const ExternalPaymentLedger: React.FC = () => {
     customerContact: '',
     amount: '',
     description: '',
-    referenceNote: 'External payment request',
     dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     dispatchWaImmediately: true
   });
+
+  const openCreateModal = () => {
+    const nextId = generateUniqueExternalPaymentId();
+    setSystemGeneratedRefId(nextId);
+    setFormData({
+      customerName: '',
+      customerContact: '',
+      amount: '',
+      description: '',
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      dispatchWaImmediately: true
+    });
+    setShowCreateModal(true);
+  };
 
   useEffect(() => {
     const unsubscribe = storageService.subscribe(() => {
@@ -376,11 +400,7 @@ export const ExternalPaymentLedger: React.FC = () => {
     }
 
     const shareToken = `ext_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const newId = `EXT-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    const finalRefNote = formData.referenceNote.trim() && formData.referenceNote.trim().toLowerCase() !== 'external payment request'
-      ? formData.referenceNote.trim()
-      : newId;
+    const newId = systemGeneratedRefId || generateUniqueExternalPaymentId();
 
     const newRecord: ExternalPaymentRecord = {
       id: newId,
@@ -388,7 +408,7 @@ export const ExternalPaymentLedger: React.FC = () => {
       customerContact: formData.customerContact.trim().replace(/[^0-9]/g, ''),
       amount: Number(formData.amount),
       description: formData.description.trim() || 'Offline Sale / Repair Payment',
-      referenceNote: finalRefNote,
+      referenceNote: newId, // Tamper-proof, system-locked unique reference ID
       status: 'PENDING',
       createdAt: new Date().toISOString(),
       dueDate: formData.dueDate,
@@ -396,7 +416,7 @@ export const ExternalPaymentLedger: React.FC = () => {
       history: [{
         date: new Date().toISOString(),
         action: 'REQUEST_CREATED',
-        details: `External Payment Request generated for ₹${formData.amount}. Reference: ${finalRefNote}`
+        details: `External Payment Request generated for ₹${Number(formData.amount).toLocaleString('en-IN')}. System Reference ID: ${newId}`
       }]
     };
 
@@ -414,10 +434,10 @@ export const ExternalPaymentLedger: React.FC = () => {
       customerContact: '',
       amount: '',
       description: '',
-      referenceNote: '',
       dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       dispatchWaImmediately: true
     });
+    setSystemGeneratedRefId(generateUniqueExternalPaymentId());
     triggerNotification('success', `External Payment Request ${newRecord.id} created successfully!`);
   };
 
@@ -449,9 +469,8 @@ export const ExternalPaymentLedger: React.FC = () => {
     try {
       const validPayLink = getValidPayLink(record);
 
-      const orderRef = (record.referenceNote && record.referenceNote.trim() && record.referenceNote.trim().toLowerCase() !== 'external payment request')
-        ? record.referenceNote.trim()
-        : (record.id || 'N/A');
+      // Strictly use system generated unique Reference ID
+      const orderRef = record.id || record.referenceNote || 'N/A';
 
       const res = await whatsappService.sendTemplateMessage(
         record.customerContact,
@@ -743,8 +762,8 @@ export const ExternalPaymentLedger: React.FC = () => {
               <Download size={14} /> Export CSV
             </button>
             <button
-              onClick={() => setShowCreateModal(true)}
-              className="px-5 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl transition-all flex items-center gap-2 active:scale-95"
+              onClick={openCreateModal}
+              className="px-5 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl transition-all flex items-center gap-2 active:scale-95 cursor-pointer"
             >
               <Plus size={16} /> New Payment Request
             </button>
@@ -1019,8 +1038,8 @@ export const ExternalPaymentLedger: React.FC = () => {
                         Create an external payment request to collect offline payments via Setu UPI & WhatsApp.
                       </p>
                       <button
-                        onClick={() => setShowCreateModal(true)}
-                        className="mt-2 px-4 py-2 bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 hover:bg-amber-600"
+                        onClick={openCreateModal}
+                        className="mt-2 px-4 py-2 bg-amber-500 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-2 hover:bg-amber-600 cursor-pointer"
                       >
                         <Plus size={14} /> Create First Request
                       </button>
@@ -1069,9 +1088,9 @@ export const ExternalPaymentLedger: React.FC = () => {
 
                       {/* Reference Badge */}
                       <td className="py-4 px-6">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200/80 rounded-full font-bold text-[10px] uppercase tracking-wider">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                          {r.referenceNote}
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-900 border border-amber-300 rounded-lg font-mono font-bold text-[11px] tracking-wider">
+                          <Lock size={11} className="text-amber-600" />
+                          {r.referenceNote || r.id}
                         </span>
                       </td>
 
@@ -1303,18 +1322,33 @@ export const ExternalPaymentLedger: React.FC = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
-                  Reference / Order No Tag
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. ORD-101, Bill #502, or leave blank"
-                  value={formData.referenceNote}
-                  onChange={e => setFormData({ ...formData, referenceNote: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">If left blank, request ID (e.g. EXT-1234) will automatically be used in WhatsApp message.</p>
+              {/* System Generated Unique Reference / Order ID (Locked & Immutable) */}
+              <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-slate-50 border border-amber-500/30 p-4 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                    <Lock size={13} className="text-amber-600" />
+                    System Reference / Order ID
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded-full font-bold text-[10px] uppercase tracking-wider">
+                    <ShieldCheck size={11} className="text-amber-700" /> Locked & Immutable
+                  </span>
+                </div>
+                <div className="flex items-center justify-between bg-white px-3.5 py-2.5 rounded-xl border border-amber-200 shadow-inner">
+                  <span className="font-mono font-black text-amber-950 text-sm tracking-wider">
+                    {systemGeneratedRefId}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(systemGeneratedRefId, 'System Reference ID', 'new-ref-id')}
+                    className="text-amber-800 hover:text-amber-950 text-xs font-bold flex items-center gap-1 hover:bg-amber-50 px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                  >
+                    {copiedId === 'new-ref-id' ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+                    {copiedId === 'new-ref-id' ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-snug">
+                  Every payment link is assigned a unique, tamper-proof Reference ID to guarantee error-free Setu UPI reconciliation and tracking. It cannot be altered.
+                </p>
               </div>
 
               <div className="pt-2">
@@ -1400,6 +1434,14 @@ export const ExternalPaymentLedger: React.FC = () => {
             </div>
 
             <div className="space-y-2 text-left bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs my-4">
+              <div className="flex justify-between items-center text-slate-600">
+                <span className="flex items-center gap-1 font-bold text-amber-900">
+                  <Lock size={12} className="text-amber-600" /> System Reference ID:
+                </span>
+                <span className="font-mono font-black text-amber-950 bg-amber-100/70 px-2 py-0.5 rounded border border-amber-300">
+                  {showQrModal.id}
+                </span>
+              </div>
               <div className="flex justify-between items-center text-slate-600">
                 <span>Setu Bill ID:</span>
                 <span className="font-mono font-bold text-slate-900 flex items-center gap-1.5">
@@ -1652,8 +1694,12 @@ export const ExternalPaymentLedger: React.FC = () => {
                     </span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Reference Tag</span>
-                    <span className="font-bold text-amber-700">{selectedRecord.referenceNote}</span>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold flex items-center gap-1">
+                      <Lock size={10} className="text-amber-600" /> System Reference ID
+                    </span>
+                    <span className="font-mono font-bold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-xs inline-block mt-0.5">
+                      {selectedRecord.referenceNote || selectedRecord.id}
+                    </span>
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">Status</span>

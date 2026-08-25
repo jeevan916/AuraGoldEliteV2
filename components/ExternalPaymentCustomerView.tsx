@@ -227,7 +227,7 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
         <div className="text-center pb-4 border-b border-slate-800">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full font-bold text-[10px] uppercase tracking-wider mb-3">
             <ReceiptIndianRupee size={12} />
-            {record.referenceNote || 'External Payment Request'}
+            {record.referenceNote || record.id || 'External Payment Request'}
           </div>
           <h1 className="text-3xl font-black text-white tracking-tight leading-none">AuraGold</h1>
           <p className="text-[11px] font-bold text-amber-500/80 mt-1 uppercase tracking-widest text-center w-full">By Sanghavi Jewellers</p>
@@ -282,9 +282,11 @@ export const ExternalPaymentCustomerView: React.FC<ExternalPaymentCustomerViewPr
                     <span className="font-bold text-white">{record.customerName}</span>
                   </div>
                   <div className="flex justify-between items-center text-xs text-slate-400">
-                    <span>Reference Tag:</span>
-                    <span className="font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                      {record.referenceNote}
+                    <span className="flex items-center gap-1">
+                      <Lock size={11} className="text-amber-500/80" /> Reference / Order ID:
+                    </span>
+                    <span className="font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                      {record.referenceNote || record.id}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-xs text-slate-400">

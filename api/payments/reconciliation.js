@@ -33,97 +33,108 @@ export async function handleSetuPaymentSuccess(data, req) {
     const upiTransactionID = String(data.transactionId || data.txnId || data.bankReferenceNumber || data.rrn || data.utr || data.reference || platformBillID || `setu_${Date.now()}`).trim();
     const payerVpa = data.payerVpa || data.sourceAccount?.number || data.payerAccount?.vpa || data.payer || null;
 
-    let explicitExtId = data.additionalInfo?.externalPaymentId || data.additionalInfo?.externalPaymentID || paymentLinkData.additionalInfo?.externalPaymentId || paymentLinkData.additionalInfo?.externalPaymentID || '';
-    let explicitOrderId = data.additionalInfo?.orderId || data.additionalInfo?.orderID || paymentLinkData.additionalInfo?.orderId || paymentLinkData.additionalInfo?.orderID || '';
+    let explicitExtId = String(data.additionalInfo?.externalPaymentId || data.additionalInfo?.externalPaymentID || paymentLinkData.additionalInfo?.externalPaymentId || paymentLinkData.additionalInfo?.externalPaymentID || '').trim();
+    let explicitOrderId = String(data.additionalInfo?.orderId || data.additionalInfo?.orderID || paymentLinkData.additionalInfo?.orderId || paymentLinkData.additionalInfo?.orderID || '').trim();
 
     const pool = getPool();
     if (!pool) return;
     const connection = await pool.getConnection();
 
     try {
-        // Collect all potential text tokens from note, description, billerBillID, name, remarks, additionalInfo
-        const textSources = [
-            billerBillID,
-            platformBillID,
-            data.transactionNote || '',
-            paymentLinkData.transactionNote || '',
-            data.description || '',
-            paymentLinkData.description || '',
-            data.name || '',
-            paymentLinkData.name || '',
-            data.remarks || '',
-            data.note || '',
-            data.receipt || '',
-            explicitExtId,
-            explicitOrderId,
-            JSON.stringify(data.additionalInfo || {}),
-            JSON.stringify(paymentLinkData.additionalInfo || {})
-        ].join(' ');
-
-        // Extract EXT tokens (e.g. EXT-8928, EXT8928, EXT_8928, or digits)
-        const extMatches = textSources.match(/EXT[\-_]?[0-9A-Za-z]+/gi) || [];
-        const candidateExtTokens = Array.from(new Set([
-            ...(explicitExtId ? [explicitExtId] : []),
-            ...extMatches
-        ]));
-
-        // Extract Order tokens (e.g. ORD-1234, ORD1234, or numeric order IDs)
-        const ordMatches = textSources.match(/ORD[\-_]?[0-9A-Za-z]+/gi) || [];
-        const candidateOrdTokens = Array.from(new Set([
-            ...(explicitOrderId ? [explicitOrderId] : []),
-            ...ordMatches
-        ]));
-
-        const normalizeId = (str) => String(str || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-
-        // 1. Try matching External Payments
         const [allExtRows] = await connection.query("SELECT id, data FROM external_payments");
-        
+        const [allOrderRows] = await connection.query("SELECT id, data FROM orders");
+
         let matchedExternalRecordId = null;
+        let matchedOrderId = null;
 
-        for (const row of allExtRows) {
-            const rawId = row.id;
-            const normRowId = normalizeId(rawId);
-            const numOnlyRowId = rawId.replace(/\D/g, '');
+        // --- STEP 1: EXACT MATCH BY PLATFORM BILL ID (Most accurate and unique) ---
+        if (platformBillID) {
+            for (const row of allExtRows) {
+                try {
+                    const rec = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                    if (String(rec.platformBillID || '').trim() === platformBillID ||
+                        (Array.isArray(rec.pendingSetuPayments) && rec.pendingSetuPayments.some(p => String(p.platformBillID || '').trim() === platformBillID))) {
+                        matchedExternalRecordId = row.id;
+                        break;
+                    }
+                } catch (e) {}
+            }
 
-            // Match by candidate tokens
-            for (const token of candidateExtTokens) {
-                const normToken = normalizeId(token);
-                const numOnlyToken = token.replace(/\D/g, '');
-                if (rawId === token || normRowId === normToken || (numOnlyRowId && numOnlyToken && numOnlyRowId === numOnlyToken)) {
-                    matchedExternalRecordId = rawId;
+            if (!matchedExternalRecordId) {
+                for (const row of allOrderRows) {
+                    try {
+                        const order = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                        if (String(order.platformBillID || '').trim() === platformBillID ||
+                            (Array.isArray(order.pendingSetuPayments) && order.pendingSetuPayments.some(p => String(p.platformBillID || '').trim() === platformBillID))) {
+                            matchedOrderId = row.id;
+                            break;
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
+
+        // --- STEP 2: EXACT MATCH BY EXPLICIT ID IN ADDITIONAL INFO ---
+        if (!matchedExternalRecordId && !matchedOrderId) {
+            if (explicitExtId) {
+                const found = allExtRows.find(r => r.id === explicitExtId || r.id.toUpperCase() === explicitExtId.toUpperCase());
+                if (found) matchedExternalRecordId = found.id;
+            }
+            if (explicitOrderId && !matchedExternalRecordId) {
+                const found = allOrderRows.find(r => r.id === explicitOrderId || r.id.toUpperCase() === explicitOrderId.toUpperCase());
+                if (found) matchedOrderId = found.id;
+            }
+        }
+
+        // --- STEP 3: STRICT BILLER BILL ID PREFIX / EXACT MATCH ---
+        // (billerBillID is generated as `${id}_${Date.now()}` or `${id}`)
+        if (!matchedExternalRecordId && !matchedOrderId && billerBillID) {
+            for (const row of allExtRows) {
+                if (billerBillID === row.id || billerBillID.startsWith(`${row.id}_`)) {
+                    matchedExternalRecordId = row.id;
                     break;
                 }
             }
-            if (matchedExternalRecordId) break;
+            if (!matchedExternalRecordId) {
+                for (const row of allOrderRows) {
+                    if (billerBillID === row.id || billerBillID.startsWith(`${row.id}_`)) {
+                        matchedOrderId = row.id;
+                        break;
+                    }
+                }
+            }
+        }
 
-            // Match by platformBillID or pendingSetuPayments
-            try {
-                const rec = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
-                if (platformBillID && (
-                    String(rec.platformBillID || '').trim() === platformBillID ||
-                    (rec.pendingSetuPayments && rec.pendingSetuPayments.some(p => String(p.platformBillID || '').trim() === platformBillID))
-                )) {
-                    matchedExternalRecordId = rawId;
+        // --- STEP 4: STRICT TOKEN MATCH FROM TRANSACTION NOTE (e.g. "External Pay EXT-8137" or "Order ORD-1001") ---
+        if (!matchedExternalRecordId && !matchedOrderId) {
+            const noteSources = [
+                data.transactionNote || '',
+                paymentLinkData.transactionNote || '',
+                data.description || '',
+                paymentLinkData.description || ''
+            ].join(' ');
+
+            const extTokens = noteSources.match(/EXT[\-_][0-9A-Za-z\-_]+/gi) || [];
+            for (const token of extTokens) {
+                const normToken = token.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                const found = allExtRows.find(r => r.id.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === normToken);
+                if (found) {
+                    matchedExternalRecordId = found.id;
                     break;
                 }
-                if (billerBillID && (
-                    (rec.billerBillID && String(rec.billerBillID).trim() === billerBillID) ||
-                    billerBillID.includes(normRowId) ||
-                    (numOnlyRowId && billerBillID.includes(numOnlyRowId))
-                )) {
-                    matchedExternalRecordId = rawId;
-                    break;
+            }
+
+            if (!matchedExternalRecordId) {
+                const ordTokens = noteSources.match(/ORD[\-_][0-9A-Za-z\-_]+/gi) || [];
+                for (const token of ordTokens) {
+                    const normToken = token.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                    const found = allOrderRows.find(r => r.id.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === normToken);
+                    if (found) {
+                        matchedOrderId = found.id;
+                        break;
+                    }
                 }
-                if (rec.referenceNote && (
-                    normalizeId(rec.referenceNote) === normalizeId(billerBillID) ||
-                    candidateExtTokens.some(t => normalizeId(t) === normalizeId(rec.referenceNote)) ||
-                    textSources.includes(rec.referenceNote)
-                )) {
-                    matchedExternalRecordId = rawId;
-                    break;
-                }
-            } catch (e) {}
+            }
         }
 
         if (matchedExternalRecordId) {
@@ -139,47 +150,6 @@ export async function handleSetuPaymentSuccess(data, req) {
             return;
         }
 
-        // 2. Try matching Orders
-        const [allOrderRows] = await connection.query("SELECT id, data FROM orders");
-        let matchedOrderId = null;
-
-        for (const row of allOrderRows) {
-            const rawId = row.id;
-            const normRowId = normalizeId(rawId);
-            const numOnlyRowId = rawId.replace(/\D/g, '');
-
-            // Match by candidate tokens
-            for (const token of candidateOrdTokens) {
-                const normToken = normalizeId(token);
-                const numOnlyToken = token.replace(/\D/g, '');
-                if (rawId === token || normRowId === normToken || (numOnlyRowId && numOnlyToken && numOnlyRowId === numOnlyToken)) {
-                    matchedOrderId = rawId;
-                    break;
-                }
-            }
-            if (matchedOrderId) break;
-
-            // Match by platformBillID or pendingSetuPayments
-            try {
-                const order = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
-                if (platformBillID && (
-                    String(order.platformBillID || '').trim() === platformBillID ||
-                    (order.pendingSetuPayments && order.pendingSetuPayments.some(p => String(p.platformBillID || '').trim() === platformBillID))
-                )) {
-                    matchedOrderId = rawId;
-                    break;
-                }
-                if (billerBillID && (
-                    (order.billerBillID && String(order.billerBillID).trim() === billerBillID) ||
-                    billerBillID.includes(normRowId) ||
-                    (numOnlyRowId && billerBillID.includes(numOnlyRowId))
-                )) {
-                    matchedOrderId = rawId;
-                    break;
-                }
-            } catch (e) {}
-        }
-
         if (matchedOrderId) {
             connection.release();
             await processSuccessfulPayment(matchedOrderId, amountPaid, upiTransactionID, payerVpa, req);
@@ -189,8 +159,8 @@ export async function handleSetuPaymentSuccess(data, req) {
         console.warn("[Setu Matcher] Could not match Setu payment to any external payment or order:", {
             platformBillID,
             billerBillID,
-            candidateExtTokens,
-            candidateOrdTokens,
+            explicitExtId,
+            explicitOrderId,
             amountPaid,
             upiTransactionID
         });
@@ -210,6 +180,35 @@ export async function processSuccessfulPayment(orderId, amountPaid, upiTransacti
     const connection = await pool.getConnection();
 
     try {
+        // Global deduplication: ensure upiTransactionID is never credited to multiple records
+        if (upiTransactionID) {
+            const [allOrd] = await connection.query("SELECT id, data FROM orders");
+            for (const r of allOrd) {
+                try {
+                    const ord = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+                    if (ord.payments && ord.payments.some(p => p.reference === upiTransactionID || p.transactionId === upiTransactionID)) {
+                        if (r.id !== orderId) {
+                            console.warn(`[Reconciliation Security] Transaction ${upiTransactionID} is already credited to order ${r.id}. Rejecting cross-customer credit to ${orderId}.`);
+                            return;
+                        } else {
+                            return;
+                        }
+                    }
+                } catch(e) {}
+            }
+
+            const [allExt] = await connection.query("SELECT id, data FROM external_payments");
+            for (const r of allExt) {
+                try {
+                    const rec = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+                    if (rec.partialPayments && rec.partialPayments.some(p => p.txnId === upiTransactionID || p.platformBillID === upiTransactionID || p.reference === upiTransactionID)) {
+                        console.warn(`[Reconciliation Security] Transaction ${upiTransactionID} is already credited to external payment ${r.id}. Rejecting cross-customer credit to Order ${orderId}.`);
+                        return;
+                    }
+                } catch(e) {}
+            }
+        }
+
         const [rows] = await connection.query('SELECT data FROM orders WHERE id=?', [orderId]);
         if (rows.length === 0) return;
         
@@ -338,6 +337,35 @@ export async function processSuccessfulExternalPayment(externalId, amountPaid, u
     const connection = await pool.getConnection();
 
     try {
+        // Global deduplication: ensure upiTransactionID is never credited to multiple records
+        if (upiTransactionID) {
+            const [allExt] = await connection.query("SELECT id, data FROM external_payments");
+            for (const r of allExt) {
+                try {
+                    const rec = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+                    if (rec.partialPayments && rec.partialPayments.some(p => p.txnId === upiTransactionID || (p.platformBillID && p.platformBillID === upiTransactionID) || (p.reference && p.reference === upiTransactionID))) {
+                        if (r.id !== externalId) {
+                            console.warn(`[Reconciliation Security] Transaction ${upiTransactionID} is already credited to external payment ${r.id}. Rejecting cross-customer credit to ${externalId}.`);
+                            return;
+                        } else {
+                            return;
+                        }
+                    }
+                } catch(e) {}
+            }
+
+            const [allOrd] = await connection.query("SELECT id, data FROM orders");
+            for (const r of allOrd) {
+                try {
+                    const ord = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+                    if (ord.payments && ord.payments.some(p => p.reference === upiTransactionID || p.transactionId === upiTransactionID)) {
+                        console.warn(`[Reconciliation Security] Transaction ${upiTransactionID} is already credited to order ${r.id}. Rejecting cross-customer credit to External Payment ${externalId}.`);
+                        return;
+                    }
+                } catch(e) {}
+            }
+        }
+
         const [rows] = await connection.query('SELECT data FROM external_payments WHERE id=?', [externalId]);
         if (rows.length === 0) return;
         
