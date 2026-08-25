@@ -13,24 +13,41 @@ router.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date
 router.get('/debug/db', async (req, res) => {
     let connectionTest = "Not attempted";
     let errorMsg = null;
+    const hasHost = !!process.env.DB_HOST;
+    const hasUser = !!process.env.DB_USER;
+    const hasPass = !!process.env.DB_PASSWORD;
+    const hasName = !!process.env.DB_NAME;
     
     try {
         const pool = getPool();
         if (pool && !isMock) {
             const conn = await pool.getConnection();
-            connectionTest = "Success";
+            connectionTest = "Connected to Live MySQL Database";
             conn.release();
+        } else if (isMock) {
+            connectionTest = "Operating in Mock / Local Storage Mode";
+            if (!hasHost) {
+                errorMsg = "Missing DB_HOST environment variable. Set DB_HOST, DB_USER, DB_PASSWORD, and DB_NAME in environment settings to connect a live database.";
+            } else {
+                errorMsg = "External database connection failed or timed out. Falling back to local mock storage.";
+            }
         } else {
-            connectionTest = "Pool is null or running in Mock mode";
+            connectionTest = "Pool is uninitialized";
         }
     } catch (e) {
         connectionTest = "Failed";
-        errorMsg = "Database connection error. Please check server logs.";
+        errorMsg = e.message || "Database connection error. Please check server logs.";
     }
 
     res.json({
         config: {
-            isMockMode: isMock
+            isMockMode: isMock,
+            hasDbHost: hasHost,
+            hasDbUser: hasUser,
+            hasDbPassword: hasPass,
+            hasDbName: hasName,
+            dbHost: process.env.DB_HOST ? `${process.env.DB_HOST.substring(0, 3)}***` : '(not configured)',
+            dbPort: process.env.DB_PORT || '3306'
         },
         status: connectionTest,
         error: errorMsg

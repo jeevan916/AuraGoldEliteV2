@@ -69,7 +69,29 @@ process.on('unhandledRejection', (reason) => {
 
 const app = express();
 const httpServer = createServer(app);
-const PORT = process.env.PORT || 3000;
+
+// Determine runtime port or domain socket path
+const determinePort = () => {
+    const rawPort = process.env.PORT;
+    if (!rawPort) return 3000;
+
+    // Check if it's a Unix domain socket path (Hostinger / cPanel / Passenger)
+    const isSocket = typeof rawPort === 'string' && (rawPort.startsWith('/') || rawPort.startsWith('\\\\') || rawPort.includes('.sock'));
+    if (isSocket) {
+        return rawPort;
+    }
+
+    // In AI Studio / dev container environment (or when APPLET_ID is present), always bind strictly to 3000
+    if (process.env.APPLET_ID || process.env.NODE_ENV !== 'production') {
+        return 3000;
+    }
+
+    // External production host numeric port fallback
+    const parsed = parseInt(rawPort, 10);
+    return !isNaN(parsed) && parsed > 0 ? parsed : 3000;
+};
+
+const PORT = determinePort();
 
 const io = new Server(httpServer, {
     cors: {
