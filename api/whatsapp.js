@@ -212,7 +212,7 @@ export async function sendWhatsAppMessage({ to, message, templateName, language,
 
 // Webhook Verification
 router.get('/webhook', async (req, res) => {
-    let verify_token = process.env.WHATSAPP_VERIFY_TOKEN || "auragold_elite_secure_2025";
+    let verify_token = process.env.WHATSAPP_VERIFY_TOKEN || "";
     try {
         const pool = getPool();
         const connection = await pool.getConnection();

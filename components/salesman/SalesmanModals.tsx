@@ -3,6 +3,7 @@ import {
   X, Gem, Coins, Bookmark, Trash2, Edit3, Sparkles, Scale, Check 
 } from 'lucide-react';
 import { JewelryDetail, OldGoldExchangeItem, SalesmanEstimate } from '../../types';
+import { EstimateSearchModal } from './EstimateSearchModal';
 
 interface SalesmanModalsProps {
   // Item Modal
@@ -47,6 +48,8 @@ interface SalesmanModalsProps {
   savedEstimates: SalesmanEstimate[];
   onLoadEstimate: (est: SalesmanEstimate) => void;
   onDeleteSavedEstimate: (id: string) => void;
+  onPrintEstimate?: (est: SalesmanEstimate) => void;
+  onShareWhatsApp?: (est: SalesmanEstimate) => void;
 }
 
 export const SalesmanModals: React.FC<SalesmanModalsProps> = ({
@@ -88,6 +91,8 @@ export const SalesmanModals: React.FC<SalesmanModalsProps> = ({
   savedEstimates,
   onLoadEstimate,
   onDeleteSavedEstimate,
+  onPrintEstimate,
+  onShareWhatsApp,
 }) => {
   return (
     <>
@@ -579,66 +584,16 @@ export const SalesmanModals: React.FC<SalesmanModalsProps> = ({
         </div>
       )}
 
-      {/* --- MODAL 4: SAVED ESTIMATES MODAL --- */}
-      {showSavedQuotesModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto space-y-4">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-              <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
-                <Bookmark size={18} className="text-amber-500" />
-                <span>Saved Quotations ({savedEstimates.length})</span>
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowSavedQuotesModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {savedEstimates.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-8">No saved estimates found in this browser.</p>
-            ) : (
-              <div className="space-y-2.5">
-                {savedEstimates.map((est) => (
-                  <div
-                    key={est.id}
-                    className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex justify-between items-center gap-3"
-                  >
-                    <div>
-                      <h4 className="font-bold text-slate-900 text-xs">{est.customerName || 'Walk-in Client'}</h4>
-                      <p className="text-[10px] text-slate-500">
-                        {est.id} • {new Date(est.date).toLocaleDateString('en-IN')} • {est.items?.length || 1} Item(s)
-                      </p>
-                      <p className="text-xs font-black text-amber-700 mt-0.5">
-                        Net: ₹{est.netPayableAmount.toLocaleString('en-IN')}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => onLoadEstimate(est)}
-                        className="px-3 py-1.5 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase hover:bg-slate-800 transition-colors"
-                      >
-                        Load
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteSavedEstimate(est.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg cursor-pointer"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* --- MODAL 4: INSTANT REAL-TIME SEARCH ESTIMATES MODAL --- */}
+      <EstimateSearchModal
+        show={showSavedQuotesModal}
+        onClose={() => setShowSavedQuotesModal(false)}
+        savedEstimates={savedEstimates}
+        onLoadEstimate={onLoadEstimate}
+        onDeleteEstimate={onDeleteSavedEstimate}
+        onPrintEstimate={onPrintEstimate}
+        onShareWhatsApp={onShareWhatsApp}
+      />
     </>
   );
 };

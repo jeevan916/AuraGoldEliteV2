@@ -7,18 +7,30 @@ import path from 'path';
 
 let pool = null;
 export let isMock = false;
+export let lastDbError = null;
 const envAdminUsername = process.env.APP_ADMIN || 'admin';
-const initialAdminPassword = process.env.APP_PASSWORD || process.env.ADMIN_INITIAL_PASSWORD || 'admin123';
-const initialAdminHash = bcrypt.hashSync(initialAdminPassword, 10);
+const initialAdminPassword = process.env.APP_PASSWORD || process.env.ADMIN_INITIAL_PASSWORD || '';
+const initialAdminHash = initialAdminPassword ? bcrypt.hashSync(initialAdminPassword, 10) : '';
 
 export const mockData = {
     gold_rates: [],
     plan_templates: [],
     external_payments: [],
+    orders: [],
+    customers: [],
+    catalog: [],
+    templates: [],
+    payment_schedules: [],
+    system_errors: [],
+    system_activities: [],
+    webhook_logs: [],
+    whatsapp_logs: [],
     app_users: [{ id: 1, username: envAdminUsername, password_hash: initialAdminHash, role: 'ADMIN', mobile_number: '' }],
     integrations: [
         { 
+            id: 1,
             provider: 'core_settings', 
+            enabled: 1,
             config: JSON.stringify({
                 preferredRateProvider: 'auto',
                 goldRateFetchIntervalMinutes: 60,
@@ -29,11 +41,15 @@ export const mockData = {
             }) 
         },
         {
+            id: 2,
             provider: 'setu',
+            enabled: process.env.SETU_CLIENT_ID && process.env.SETU_SECRET ? 1 : 0,
             config: JSON.stringify({
-                clientId: process.env.SETU_CLIENT_ID || 'default_client_id',
-                secret: process.env.SETU_SECRET || 'default_secret',
-                schemeId: process.env.SETU_SCHEME_ID || 'default_scheme_id'
+                clientId: process.env.SETU_CLIENT_ID || '',
+                secret: process.env.SETU_SECRET || '',
+                schemeId: process.env.SETU_SCHEME_ID || '',
+                mode: process.env.SETU_MODE || 'PRODUCTION',
+                enabled: !!(process.env.SETU_CLIENT_ID && process.env.SETU_SECRET)
             })
         }
     ],
@@ -44,17 +60,20 @@ export const mockData = {
 };
 
 export async function initDb() {
-    try {
-        if (pool) await pool.end();
-        
-        const host = process.env.DB_HOST;
-        // Only fallback to mock if host is missing, OR if we are inside AI Studio and trying to use localhost
-        if (!host || (process.env.APPLET_ID && (host === '127.0.0.1' || host === 'localhost'))) {
-            console.warn("[DB] No external DB_HOST provided. Falling back to Mock Database.");
-            isMock = true;
-            return { success: true, mock: true };
+    const host = process.env.DB_HOST;
+    // Only fallback to mock if host is missing, OR if we are inside AI Studio and trying to use localhost
+    if (!host || (process.env.APPLET_ID && (host === '127.0.0.1' || host === 'localhost'))) {
+        console.warn("[DB] No external DB_HOST provided. Operating in Mock Database mode.");
+        isMock = true;
+        if (pool) {
+            try { await pool.end(); } catch (e) {}
+            pool = null;
         }
+        return { success: true, mock: true };
+    }
 
+    let tempPool = null;
+    try {
         const dbConfig = {
             host: host,
             user: process.env.DB_USER,
@@ -64,15 +83,14 @@ export async function initDb() {
             socketPath: process.env.DB_SOCKET_PATH || undefined,
             waitForConnections: true,
             connectionLimit: 5,
-            connectTimeout: 10000,
+            connectTimeout: 5000,
             enableKeepAlive: true,
             ssl: process.env.DB_SSL === 'true' ? {
-                rejectUnauthorized: false // Often needed for cloud DBs
+                rejectUnauthorized: false
             } : undefined
         };
-        pool = mysql.createPool(dbConfig);
-        const connection = await pool.getConnection();
-        isMock = false;
+        tempPool = mysql.createPool(dbConfig);
+        const connection = await tempPool.getConnection();
         console.log(`[DB] Successfully connected to MySQL at ${host}`);
         
         const tables = [
@@ -165,6 +183,16 @@ export async function initDb() {
                 status VARCHAR(50),
                 timestamp DATETIME,
                 data LONGTEXT
+            )`,
+            `CREATE TABLE IF NOT EXISTS salesman_estimates (
+                id VARCHAR(100) PRIMARY KEY,
+                customer_name VARCHAR(255),
+                customer_contact VARCHAR(50),
+                gross_amount DECIMAL(12, 2) DEFAULT 0,
+                net_payable DECIMAL(12, 2) DEFAULT 0,
+                created_at DATETIME,
+                data LONGTEXT,
+                updated_at BIGINT
             )`
         ];
         for (const sql of tables) await connection.query(sql);
@@ -237,59 +265,62 @@ export async function initDb() {
             try { await connection.query("CREATE INDEX idx_payments_order ON payments_log(order_id)"); } catch(e){}
             try { await connection.query("CREATE INDEX idx_payments_contact ON payments_log(customer_contact)"); } catch(e){}
             
-            // 2. Fetch all orders and migrate implicit data
-            const [allOrders] = await connection.query("SELECT id, data FROM orders");
-            
-            for (const row of allOrders) {
-                try {
-                    const orderData = JSON.parse(row.data);
-                    
-                    // A. Migrate Customers from Orders
-                    if (orderData.customerContact) {
-                        const customId = `CUST-${orderData.customerContact.replace(/\D/g, '').slice(-10)}`;
-                        const customerData = {
-                            id: customId,
-                            name: orderData.customerName || 'Unknown',
-                            contact: orderData.customerContact,
-                            email: orderData.customerEmail || '',
-                            secondaryContact: orderData.secondaryContact || '',
-                            joinDate: orderData.createdAt
-                        };
+            // 2. Fetch all orders and migrate implicit data only if customers table is unpopulated
+            const [custCheck] = await connection.query("SELECT COUNT(*) as cnt FROM customers");
+            if ((custCheck[0]?.cnt || 0) === 0) {
+                const [allOrders] = await connection.query("SELECT id, data FROM orders");
+                
+                for (const row of allOrders) {
+                    try {
+                        const orderData = JSON.parse(row.data);
                         
-                        await connection.query(
-                            `INSERT INTO customers (id, contact, name, data, updated_at) 
-                             VALUES (?, ?, ?, ?, ?) 
-                             ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data)`,
-                            [customId, orderData.customerContact, orderData.customerName || 'Unknown', JSON.stringify(customerData), Date.now()]
-                        );
-                    }
-                    
-                    // B. Migrate Payments from Orders
-                    if (Array.isArray(orderData.payments)) {
-                        for (const payment of orderData.payments) {
-                            if (!payment.id) continue;
+                        // A. Migrate Customers from Orders
+                        if (orderData.customerContact) {
+                            const customId = `CUST-${orderData.customerContact.replace(/\D/g, '').slice(-10)}`;
+                            const customerData = {
+                                id: customId,
+                                name: orderData.customerName || 'Unknown',
+                                contact: orderData.customerContact,
+                                email: orderData.customerEmail || '',
+                                secondaryContact: orderData.secondaryContact || '',
+                                joinDate: orderData.createdAt
+                            };
+                            
                             await connection.query(
-                                `INSERT INTO payments_log (id, order_id, customer_contact, amount, method, status, timestamp, data) 
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                                 ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data)`,
-                                [
-                                    payment.id, 
-                                    orderData.id, 
-                                    orderData.customerContact,
-                                    payment.amount || 0,
-                                    payment.method || 'Unknown',
-                                    payment.status || 'SUCCESS',
-                                    new Date(payment.timestamp || Date.now()),
-                                    JSON.stringify(payment)
-                                ]
+                                `INSERT INTO customers (id, contact, name, data, updated_at) 
+                                 VALUES (?, ?, ?, ?, ?) 
+                                 ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data)`,
+                                [customId, orderData.customerContact, orderData.customerName || 'Unknown', JSON.stringify(customerData), Date.now()]
                             );
                         }
+                        
+                        // B. Migrate Payments from Orders
+                        if (Array.isArray(orderData.payments)) {
+                            for (const payment of orderData.payments) {
+                                if (!payment.id) continue;
+                                await connection.query(
+                                    `INSERT INTO payments_log (id, order_id, customer_contact, amount, method, status, timestamp, data) 
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                     ON DUPLICATE KEY UPDATE status=VALUES(status), data=VALUES(data)`,
+                                    [
+                                        payment.id, 
+                                        orderData.id, 
+                                        orderData.customerContact,
+                                        payment.amount || 0,
+                                        payment.method || 'Unknown',
+                                        payment.status || 'SUCCESS',
+                                        new Date(payment.timestamp || Date.now()),
+                                        JSON.stringify(payment)
+                                    ]
+                                );
+                            }
+                        }
+                    } catch (e) {
+                        console.error(`[DB] Failed to process order ${row.id}: `, e.message);
                     }
-                } catch (e) {
-                    console.error(`[DB] Failed to process order ${row.id}: `, e.message);
                 }
+                console.log("[DB] Finished data migration successfully.");
             }
-            console.log("[DB] Finished data migration successfully.");
         } catch(e) {
             console.error("[DB] Migration failed:", e.message);
         }
@@ -303,11 +334,11 @@ export async function initDb() {
 
         // --- SEED DEFAULT ADMIN ---
         const adminUsername = process.env.APP_ADMIN || 'admin';
-        const adminPassword = process.env.APP_PASSWORD || process.env.ADMIN_INITIAL_PASSWORD || 'admin123';
+        const adminPassword = process.env.APP_PASSWORD || process.env.ADMIN_INITIAL_PASSWORD;
         const [users] = await connection.query("SELECT * FROM app_users WHERE username = ?", [adminUsername]);
         if (users.length === 0) {
-            console.log(`[DB] Seeding admin user (${adminUsername})...`);
-            const hash = await bcrypt.hash(adminPassword, 10);
+            console.log(`[DB] Seeding initial admin user (${adminUsername})...`);
+            const hash = adminPassword ? await bcrypt.hash(adminPassword, 10) : '';
             await connection.query(
                 "INSERT INTO app_users (username, password_hash, role) VALUES (?, ?, ?)",
                 [adminUsername, hash, 'ADMIN']
@@ -317,35 +348,55 @@ export async function initDb() {
         // --- SEED DEFAULT SETU CONFIG ---
         const [setuConfig] = await connection.query("SELECT * FROM integrations WHERE provider = ?", ['setu']);
         if (setuConfig.length === 0) {
-            console.log("[DB] Seeding default Setu config...");
+            console.log("[DB] Seeding initial Setu config...");
             await connection.query(
                 "INSERT INTO integrations (provider, config) VALUES (?, ?)",
                 ['setu', JSON.stringify({
-                    clientId: process.env.SETU_CLIENT_ID || 'default_client_id',
-                    secret: process.env.SETU_SECRET || 'default_secret',
-                    schemeId: process.env.SETU_SCHEME_ID || 'default_scheme_id'
+                    clientId: process.env.SETU_CLIENT_ID || '',
+                    secret: process.env.SETU_SECRET || '',
+                    schemeId: process.env.SETU_SCHEME_ID || ''
                 })]
             );
         }
 
         connection.release();
-        return { success: true };
+        
+        // Swap to the new pool cleanly
+        const oldPool = pool;
+        pool = tempPool;
+        isMock = false;
+        lastDbError = null;
+        if (oldPool && oldPool !== pool) {
+            try { await oldPool.end(); } catch (e) {}
+        }
+        console.log(`[DB] Successfully connected to MySQL at ${host}`);
+        return { success: true, mock: false };
     } catch (err) {
+        lastDbError = err.message || String(err);
         console.error("[DB] Connection Error:", err.message);
         console.warn("[DB] Falling back to Mock Database due to connection failure.");
+        if (tempPool) {
+            try { await tempPool.end(); } catch (e) {}
+        }
+        if (pool) {
+            try { await pool.end(); } catch (e) {}
+            pool = null;
+        }
         isMock = true;
-        pool = null; 
         return { success: true, mock: true, error: err.message };
     }
 }
 
 export const getPool = () => {
-    if (isMock) {
+    if (isMock || !pool) {
         return {
             getConnection: async () => ({
-                query: async (sql, params) => {
+                query: async (sql, params = []) => {
                     const lowerSql = sql.toLowerCase();
                     
+                    if (lowerSql.includes('select 1') || lowerSql.includes('select @@version')) {
+                        return [[{ 1: 1 }]];
+                    }
                     if (lowerSql.includes('select * from app_users where username = ?')) {
                         const user = mockData.app_users.find(u => u.username === params[0]);
                         return [user ? [user] : []];
@@ -399,19 +450,67 @@ export const getPool = () => {
                         }
                         return [{ affectedRows: 1 }];
                     }
-                    if (lowerSql.includes('select config from integrations where provider = ?')) {
-                        const row = mockData.integrations.find(i => i.provider === params[0]);
-                        return [row ? [row] : []];
+                    if (lowerSql.includes('from integrations')) {
+                        if (lowerSql.includes('where provider = ?')) {
+                            const row = (mockData.integrations || []).find(i => i.provider === params[0]);
+                            return [row ? [row] : []];
+                        }
+                        return [mockData.integrations || []];
                     }
                     if (lowerSql.includes('insert into system_activities')) {
-                        mockData.system_activities.push(params);
-                        return [{ insertId: Date.now() }];
+                        const newAct = {
+                            id: params[0] || `ACT-${Date.now()}`,
+                            action_type: params[1] || 'INFO',
+                            details: params[2] || '',
+                            metadata: typeof params[3] === 'string' ? JSON.parse(params[3] || '{}') : (params[3] || {}),
+                            ip_address: params[4] || '127.0.0.1',
+                            geo_location: params[5] || 'Local Network',
+                            device_info: params[6] || 'Desktop',
+                            timestamp: params[7] || new Date().toISOString()
+                        };
+                        if (!mockData.system_activities) mockData.system_activities = [];
+                        mockData.system_activities.unshift(newAct);
+                        if (mockData.system_activities.length > 300) mockData.system_activities.pop();
+                        return [{ affectedRows: 1, insertId: Date.now() }];
                     }
-                    if (lowerSql.includes('select * from system_activities')) {
-                        return [mockData.system_activities];
+                    if (lowerSql.includes('select * from system_activities') || lowerSql.includes('select') && lowerSql.includes('from system_activities')) {
+                        return [mockData.system_activities || []];
                     }
-                    if (lowerSql.includes('select * from system_errors')) {
-                        return [mockData.system_errors];
+                    if (lowerSql.includes('insert into system_errors')) {
+                        const newErr = {
+                            id: params[0] || `ERR-${Date.now()}`,
+                            source: params[1] || 'App',
+                            message: params[2] || '',
+                            stack: params[3] || '',
+                            severity: params[4] || 'MEDIUM',
+                            timestamp: params[5] || new Date().toISOString(),
+                            context: typeof params[6] === 'string' ? JSON.parse(params[6] || '{}') : (params[6] || {})
+                        };
+                        if (!mockData.system_errors) mockData.system_errors = [];
+                        mockData.system_errors.unshift(newErr);
+                        if (mockData.system_errors.length > 200) mockData.system_errors.pop();
+                        return [{ affectedRows: 1 }];
+                    }
+                    if (lowerSql.includes('select * from system_errors') || lowerSql.includes('select') && lowerSql.includes('from system_errors')) {
+                        return [mockData.system_errors || []];
+                    }
+                    if (lowerSql.includes('insert into webhook_logs')) {
+                        const newWl = {
+                            id: params[0] || `WH-${Date.now()}`,
+                            provider: params[1],
+                            event_type: params[2],
+                            payload: params[3],
+                            headers: params[4],
+                            status: params[5],
+                            error_message: params[6],
+                            created_at: new Date().toISOString()
+                        };
+                        if (!mockData.webhook_logs) mockData.webhook_logs = [];
+                        mockData.webhook_logs.unshift(newWl);
+                        return [{ affectedRows: 1 }];
+                    }
+                    if (lowerSql.includes('select * from webhook_logs') || lowerSql.includes('from webhook_logs')) {
+                        return [mockData.webhook_logs || []];
                     }
                     if (lowerSql.includes('select * from gold_rates')) {
                         return [mockData.gold_rates];
@@ -518,6 +617,71 @@ export const getPool = () => {
                         const logs = mockData.payments_log || [];
                         return [logs.map(l => ({ data: l.data }))];
                     }
+                    if (lowerSql.includes('select data from orders where id = ?') || lowerSql.includes('select data from orders where share_token = ?')) {
+                        const ord = (mockData.orders || []).find(o => o.id === params[0] || o.share_token === params[0]);
+                        return [ord ? [{ data: ord.data }] : []];
+                    }
+                    if (lowerSql.includes('select data from orders') || lowerSql.includes('select * from orders')) {
+                        return [(mockData.orders || []).map(o => ({ data: o.data, id: o.id, status: o.status }))];
+                    }
+                    if (lowerSql.includes('insert into orders')) {
+                        const newOrd = { id: params[0], customer_contact: params[1], status: params[2], share_token: params[4], data: params[5], updated_at: params[6] };
+                        if (!mockData.orders) mockData.orders = [];
+                        const idx = mockData.orders.findIndex(o => o.id === newOrd.id);
+                        if (idx > -1) mockData.orders[idx] = newOrd;
+                        else mockData.orders.push(newOrd);
+                        return [{ affectedRows: 1 }];
+                    }
+                    if (lowerSql.includes('select data from customers')) {
+                        if (lowerSql.includes('where id = ?') || lowerSql.includes('where contact = ?')) {
+                            const c = (mockData.customers || []).find(cust => cust.id === params[0] || cust.contact === params[0]);
+                            return [c ? [{ data: c.data }] : []];
+                        }
+                        return [(mockData.customers || []).map(c => ({ data: c.data }))];
+                    }
+                    if (lowerSql.includes('insert into customers')) {
+                        const newCust = { id: params[0], contact: params[1], name: params[2], data: params[3], updated_at: params[4] };
+                        if (!mockData.customers) mockData.customers = [];
+                        const idx = mockData.customers.findIndex(c => c.id === newCust.id);
+                        if (idx > -1) mockData.customers[idx] = newCust;
+                        else mockData.customers.push(newCust);
+                        return [{ affectedRows: 1 }];
+                    }
+                    if (lowerSql.includes('select data from catalog') || lowerSql.includes('select * from catalog')) {
+                        return [(mockData.catalog || []).map(c => ({ data: c.data }))];
+                    }
+                    if (lowerSql.includes('insert into catalog')) {
+                        if (!mockData.catalog) mockData.catalog = [];
+                        mockData.catalog.push({ id: params[0], category: params[1], data: params[2] });
+                        return [{ affectedRows: 1 }];
+                    }
+                    if (lowerSql.includes('select data from templates') || lowerSql.includes('select * from templates')) {
+                        return [(mockData.templates || []).map(t => ({ data: t.data }))];
+                    }
+                    if (lowerSql.includes('insert into templates')) {
+                        if (!mockData.templates) mockData.templates = [];
+                        mockData.templates.push({ id: params[0], name: params[1], category: params[2], data: params[3] });
+                        return [{ affectedRows: 1 }];
+                    }
+                    if (lowerSql.includes('select data from external_payments where share_token = ?')) {
+                        const ext = (mockData.external_payments || []).find(e => e.share_token === params[0]);
+                        return [ext ? [{ data: ext.data }] : []];
+                    }
+                    if (lowerSql.includes('select data from external_payments where id = ?')) {
+                        const ext = (mockData.external_payments || []).find(e => e.id === params[0]);
+                        return [ext ? [{ data: ext.data }] : []];
+                    }
+                    if (lowerSql.includes('select * from external_payments') || lowerSql.includes('select data from external_payments')) {
+                        return [(mockData.external_payments || []).map(e => ({ id: e.id, data: e.data }))];
+                    }
+                    if (lowerSql.includes('insert into external_payments')) {
+                        const newExt = { id: params[0], customer_contact: params[1], status: params[2], share_token: params[4], data: params[5], updated_at: params[6] };
+                        if (!mockData.external_payments) mockData.external_payments = [];
+                        const idx = mockData.external_payments.findIndex(e => e.id === newExt.id);
+                        if (idx > -1) mockData.external_payments[idx] = newExt;
+                        else mockData.external_payments.push(newExt);
+                        return [{ affectedRows: 1 }];
+                    }
                     return [[]];
                 },
                 release: () => {}
@@ -564,10 +728,12 @@ export const normalizePhone = (p) => {
 };
 
 export const logDbActivity = async (actionType, details, metadata, req) => {
-    if (!pool) return;
     try {
-        const ip = req ? (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim() : 'System';
-        const userAgent = req ? req.get('User-Agent') : 'Internal Process';
+        const poolInstance = getPool();
+        if (!poolInstance) return;
+
+        const ip = req ? (req.headers?.['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim() : 'System';
+        const userAgent = req ? (req.get ? req.get('User-Agent') : req.headers?.['user-agent']) || 'Internal Process' : 'Internal Process';
         
         // Resolve Geo Location (Async, don't block)
         let location = 'Unknown';
@@ -585,11 +751,11 @@ export const logDbActivity = async (actionType, details, metadata, req) => {
 
         const enrichedMeta = {
             ...metadata,
-            referer: req ? req.get('Referer') : undefined,
-            platform: userAgent.includes('Mobile') ? 'Mobile' : 'Desktop'
+            referer: req && req.get ? req.get('Referer') : undefined,
+            platform: typeof userAgent === 'string' && userAgent.includes('Mobile') ? 'Mobile' : 'Desktop'
         };
 
-        const connection = await pool.getConnection();
+        const connection = await poolInstance.getConnection();
         await connection.query(
             `INSERT INTO system_activities (id, action_type, details, metadata, ip_address, geo_location, device_info, timestamp) 
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -600,13 +766,13 @@ export const logDbActivity = async (actionType, details, metadata, req) => {
                 JSON.stringify(enrichedMeta),
                 ip,
                 location,
-                userAgent.substring(0, 250), // Truncate to fit
+                (userAgent || '').substring(0, 250), // Truncate to fit
                 new Date()
             ]
         );
         connection.release();
     } catch (e) {
-        console.error("Failed to log activity:", e.message);
+        // Silently capture activity logging errors to prevent request disruption
     }
 };
 

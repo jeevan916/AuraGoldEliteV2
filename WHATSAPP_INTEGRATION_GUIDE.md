@@ -30,7 +30,7 @@ To send and receive WhatsApp messages programmatically, you need to set up a Wha
 5. **Set Up a Webhook**:
    - Go to the **Webhooks** section in your app or under WhatsApp configuration.
    - Configure a webhook URL (e.g. `https://your-domain.com/api/whatsapp/webhook`).
-   - Define a custom **Verify Token** (e.g., `auragold_elite_secure_2025`).
+   - Define a custom **Verify Token** (a random secret token of your choice).
    - Subscribe to the **messages** event field to receive inbound customer replies and message status delivery receipts (SENT, DELIVERED, READ).
 
 ---
@@ -176,12 +176,12 @@ export async function sendWhatsAppMessage({ to, message, templateName, language,
  * Used by Meta to register and verify your endpoint's health
  */
 router.get('/webhook', (req, res) => {
-    const verify_token = process.env.WHATSAPP_VERIFY_TOKEN || "auragold_elite_secure_2025";
+    const verify_token = process.env.WHATSAPP_VERIFY_TOKEN;
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
     if (mode && token) {
-        if (mode === 'subscribe' && token === verify_token) return res.status(200).send(challenge);
+        if (mode === 'subscribe' && verify_token && token === verify_token) return res.status(200).send(challenge);
         return res.sendStatus(403);
     }
     res.sendStatus(400);

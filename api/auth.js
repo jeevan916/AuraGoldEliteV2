@@ -2,10 +2,11 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { getPool, ensureDb, logDbActivity, isMock } from './db.js';
 
 const router = express.Router();
-export const JWT_SECRET = process.env.JWT_SECRET || 'auragold_elite_secret_key_2025';
+export const JWT_SECRET = process.env.JWT_SECRET || 'auragold_jwt_secure_master_secret_2026_prod_v2';
 
 // ---------------------------------------------------------
 // REUSABLE AUTHENTICATION & IDOR PROTECTION MIDDLEWARE
@@ -184,7 +185,7 @@ router.post('/auth/login', ensureDb, async (req, res) => {
         const token = jwt.sign(
             { id: user.id || 1, username: user.username, role: user.role || 'ADMIN', mobile_number: user.mobile_number || '' },
             JWT_SECRET,
-            { expiresIn: '12h' }
+            { expiresIn: '7d' }
         );
 
         await logDbActivity('LOGIN_SUCCESS', `User ${username} logged in`, { role: user.role || 'ADMIN' }, req);

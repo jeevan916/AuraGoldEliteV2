@@ -340,6 +340,71 @@ router.post('/external-payments', ensureDb, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+router.get('/estimates', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query('SELECT data FROM salesman_estimates ORDER BY updated_at DESC LIMIT 100');
+        connection.release();
+        const estimates = rows.map(r => JSON.parse(r.data));
+        res.json({ success: true, estimates });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post('/estimates', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        const { estimate } = req.body;
+        if (!estimate || !estimate.id) {
+            connection.release();
+            return res.status(400).json({ error: 'Valid estimate object with ID is required' });
+        }
+
+        const now = Date.now();
+        await connection.query(
+            `INSERT INTO salesman_estimates (id, customer_name, customer_contact, gross_amount, net_payable, created_at, data, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE 
+                customer_name=VALUES(customer_name),
+                customer_contact=VALUES(customer_contact),
+                gross_amount=VALUES(gross_amount),
+                net_payable=VALUES(net_payable),
+                data=VALUES(data),
+                updated_at=VALUES(updated_at)`,
+            [
+                estimate.id,
+                estimate.customerName || 'Walk-in Client',
+                estimate.customerContact || '',
+                estimate.grossCartAmount || 0,
+                estimate.netPayableAmount || 0,
+                new Date(estimate.date || now),
+                JSON.stringify(estimate),
+                now
+            ]
+        );
+        connection.release();
+        res.json({ success: true, id: estimate.id });
+    } catch (e) {
+        console.error("[API Estimate Sync Error]", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.delete('/estimates/:id', ensureDb, async (req, res) => {
+    try {
+        const pool = getPool();
+        const connection = await pool.getConnection();
+        await connection.query('DELETE FROM salesman_estimates WHERE id = ?', [req.params.id]);
+        connection.release();
+        res.json({ success: true, id: req.params.id });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.post('/plan-templates', ensureDb, async (req, res) => {
     try {
         const pool = getPool();

@@ -50,10 +50,8 @@ export function clearSetuBackoff(connection = null, config = null) {
 
 export function getSetuHeaders(token = null, schemeId = null, extraHeaders = {}) {
     const headers = {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'application/json',
         'User-Agent': SETU_DEFAULT_USER_AGENT,
-        'Cache-Control': 'no-cache',
         ...extraHeaders
     };
     if (token) {
@@ -116,12 +114,12 @@ export async function getSetuToken(connection, config, forceRefresh = false, all
                       tokenText.trim().toLowerCase().startsWith('<html') ||
                       tokenText.includes('<!-- a padding to disable MSIE');
         
-        if (isHtml) {
-            activateSetuBackoff(5 * 60 * 1000, 'WAF_HTML_Page', connection, config);
+        if (isHtml || tokenResponse.status === 403) {
+            activateSetuBackoff(10 * 60 * 1000, 'WAF_HTML_Page', connection, config);
         }
 
         const summary = isHtml ? "HTML Error Page (Cloudflare/WAF block or invalid endpoint)" : tokenText.substring(0, 150);
-        console.warn(`[Setu Token Manager] Setu returned HTTP ${tokenResponse.status}: ${summary}`);
+        console.info(`[Setu Token Manager] Setu returned HTTP ${tokenResponse.status}: ${summary}`);
         const err = new Error("System busy, please try again in a few minutes");
         err.rawResponse = tokenText;
         err.status = 503;
@@ -130,8 +128,8 @@ export async function getSetuToken(connection, config, forceRefresh = false, all
     }
 
     if (!tokenResponse.ok || !tokenData.success) {
-        if (tokenResponse.status === 429) {
-            activateSetuBackoff(5 * 60 * 1000, `HTTP_429_RateLimit`, connection, config);
+        if (tokenResponse.status === 429 || tokenResponse.status === 403) {
+            activateSetuBackoff(10 * 60 * 1000, `HTTP_${tokenResponse.status}`, connection, config);
             const err = new Error("System busy, please try again in a few minutes");
             err.status = 503;
             err.isBlocked = true;

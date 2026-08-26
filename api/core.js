@@ -2,7 +2,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { getPool, ensureDb, logDbActivity, isMock, initDb } from './db.js';
+import { getPool, ensureDb, logDbActivity, isMock, initDb, lastDbError } from './db.js';
 import { resolveContactNames } from './whatsapp.js';
 import { authenticateToken, requireRole, optionalAuth } from './auth.js';
 
@@ -18,6 +18,15 @@ router.get('/debug/db', async (req, res) => {
     const hasPass = !!process.env.DB_PASSWORD;
     const hasName = !!process.env.DB_NAME;
     
+    // If DB_HOST is configured, attempt an active reconnect/probe only when explicit retry is requested
+    if (hasHost && req.query.retry === 'true') {
+        try {
+            await initDb();
+        } catch (e) {
+            console.error("[DB Probe Error]:", e.message);
+        }
+    }
+    
     try {
         const pool = getPool();
         if (pool && !isMock) {
@@ -28,6 +37,8 @@ router.get('/debug/db', async (req, res) => {
             connectionTest = "Operating in Mock / Local Storage Mode";
             if (!hasHost) {
                 errorMsg = "Missing DB_HOST environment variable. Set DB_HOST, DB_USER, DB_PASSWORD, and DB_NAME in environment settings to connect a live database.";
+            } else if (lastDbError) {
+                errorMsg = `Database connection failed: ${lastDbError}`;
             } else {
                 errorMsg = "External database connection failed or timed out. Falling back to local mock storage.";
             }
@@ -457,7 +468,7 @@ router.get('/bootstrap', ensureDb, async (req, res) => {
                 whatsappPhoneNumberId: intMap.whatsapp?.phoneId, 
                 whatsappBusinessAccountId: intMap.whatsapp?.accountId, 
                 whatsappBusinessToken: intMap.whatsapp?.token,
-                whatsappVerifyToken: intMap.whatsapp?.verifyToken || process.env.WHATSAPP_VERIFY_TOKEN || "auragold_elite_secure_2025",
+                whatsappVerifyToken: intMap.whatsapp?.verifyToken || process.env.WHATSAPP_VERIFY_TOKEN || "",
                 setuClientId: intMap.setu?.clientId,
                 setuSecret: intMap.setu?.secret,
                 setuSchemeId: intMap.setu?.schemeId,

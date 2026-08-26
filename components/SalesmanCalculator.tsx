@@ -1,6 +1,8 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
-  Calculator, Bookmark, Download, RotateCcw, Eye, EyeOff, Sparkles, Check
+  Calculator, Bookmark, Download, RotateCcw, Eye, EyeOff, Sparkles, Check,
+  Zap, Search, Printer, Plus, Send, Copy, Layers, ShieldCheck, CheckCircle2,
+  RefreshCw, Clock, ArrowRight
 } from 'lucide-react';
 import { 
   GlobalSettings, JewelryDetail, ProductionStatus, Purity, 
@@ -18,6 +20,9 @@ import { Step3OldGoldTradeIn } from './salesman/Step3OldGoldTradeIn';
 import { Step4PaymentQuotation } from './salesman/Step4PaymentQuotation';
 import { SalesmanModals } from './salesman/SalesmanModals';
 import { CustomerShowcaseView } from './salesman/CustomerShowcaseView';
+import { ExpressQuickEstimator } from './salesman/ExpressQuickEstimator';
+import { QuotationPrintSlip } from './salesman/QuotationPrintSlip';
+import { EstimateSearchModal } from './salesman/EstimateSearchModal';
 
 interface SalesmanCalculatorProps {
   settings: GlobalSettings;
@@ -36,6 +41,9 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
   onConvertToOrder,
   onRefreshRates
 }) => {
+  // --- CALCULATOR OPERATING MODE: EXPRESS (1-Screen Live) vs WIZARD (4-Step Multi-Item) ---
+  const [calculatorMode, setCalculatorMode] = useState<'EXPRESS' | 'WIZARD'>('EXPRESS');
+
   // --- WIZARD STEP STATE (1: Customer & Rates, 2: Cart Items, 3: Old Gold, 4: Payment & Quote) ---
   const [currentStep, setCurrentStep] = useState<number>(1);
 
@@ -72,22 +80,22 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
   const [cartItems, setCartItems] = useState<JewelryDetail[]>([
     {
       id: `ITEM-${Date.now()}-1`,
-      category: 'Necklace',
+      category: 'Ring',
       metalColor: 'Yellow Gold',
-      grossWeight: 22.500,
-      netWeight: 21.000,
+      grossWeight: 6.000,
+      netWeight: 5.500,
       wastagePercentage: 10,
       wastageValue: 0,
       makingChargesPerGram: 550,
       totalLaborValue: 0,
-      stoneCharges: 3500,
-      stoneDetails: 'CZ & Semi-precious Ruby (1.500g)',
+      stoneCharges: 0,
+      stoneDetails: '',
       otherCharges: 45, // Hallmarking
       purity: '22K',
       taxAmount: 0,
       baseMetalValue: 0,
       finalAmount: 0,
-      customizationDetails: '22K Bridal Choker Necklace',
+      customizationDetails: '22K Gold Finger Ring',
       productionStatus: ProductionStatus.DESIGNING,
       photoUrls: []
     }
@@ -149,20 +157,47 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
   const [subventionPercentage, setSubventionPercentage] = useState<number>(2);
   const [rateProtectionEnabled, setRateProtectionEnabled] = useState(true);
 
-  // UI Presentation Mode
+  // UI Presentation Mode & Modals
   const [customerViewActive, setCustomerViewActive] = useState(false);
   const [expandedBifurcationId, setExpandedBifurcationId] = useState<string | null>(null);
   const [savedEstimates, setSavedEstimates] = useState<SalesmanEstimate[]>([]);
   const [showSavedQuotesModal, setShowSavedQuotesModal] = useState(false);
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [selectedPrintEstimate, setSelectedPrintEstimate] = useState<SalesmanEstimate | null>(null);
   const [copiedText, setCopiedText] = useState(false);
   const [conversionSuccess, setConversionSuccess] = useState<string | null>(null);
 
-  // Load saved estimates from localStorage
+  // Auto-Save Status: 'SAVED' | 'SAVING' | 'IDLE'
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'SAVED' | 'SAVING' | 'IDLE'>('IDLE');
+  const autoSaveTimerRef = useRef<any>(null);
+
+  // Load saved estimates from localStorage and attempt sync with backend
   useEffect(() => {
     try {
       const stored = localStorage.getItem('auragold_saved_estimates');
-      if (stored) setSavedEstimates(JSON.parse(stored));
+      if (stored) {
+        setSavedEstimates(JSON.parse(stored));
+      }
     } catch(e) {}
+
+    // Fetch latest estimates from database if accessible
+    fetch('/api/sync/estimates')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.estimates) && data.estimates.length > 0) {
+          setSavedEstimates(prev => {
+            const map = new Map<string, SalesmanEstimate>();
+            data.estimates.forEach((e: SalesmanEstimate) => map.set(e.id, e));
+            prev.forEach(e => {
+              if (!map.has(e.id)) map.set(e.id, e);
+            });
+            const merged = Array.from(map.values()).sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+            try { localStorage.setItem('auragold_saved_estimates', JSON.stringify(merged)); } catch(err) {}
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Helper: Get applicable benchmark rate for jewellery items
@@ -251,20 +286,34 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
 
   // --- CART TOTALS ---
   const cartTotals = useMemo(() => {
-    const totalGrossWeight = Number(recalculatedCartItems.reduce((sum, i) => sum + (Number(i.grossWeight) || 0), 0).toFixed(3));
-    const totalNetWeight = Number(recalculatedCartItems.reduce((sum, i) => sum + (Number(i.netWeight) || 0), 0).toFixed(3));
-    const totalMetalValue = recalculatedCartItems.reduce((sum, i) => sum + i.baseMetalValue, 0);
-    const totalWastageValue = recalculatedCartItems.reduce((sum, i) => sum + i.wastageValue, 0);
-    const totalMakingValue = recalculatedCartItems.reduce((sum, i) => sum + i.totalLaborValue, 0);
-    const totalStoneValue = recalculatedCartItems.reduce((sum, i) => sum + (i.stoneCharges || 0), 0);
-    const totalOtherCharges = recalculatedCartItems.reduce((sum, i) => sum + (i.otherCharges || 0), 0);
-    const subTotalPreTax = totalMetalValue + totalWastageValue + totalMakingValue + totalStoneValue + totalOtherCharges;
-    const totalGst = recalculatedCartItems.reduce((sum, i) => sum + i.taxAmount, 0);
-    const grossCartTotal = recalculatedCartItems.reduce((sum, i) => sum + i.finalAmount, 0);
+    let totalGrossWeight = 0;
+    let totalNetWeight = 0;
+    let totalMetalValue = 0;
+    let totalWastageValue = 0;
+    let totalMakingValue = 0;
+    let totalStoneValue = 0;
+    let totalOtherCharges = 0;
+    let subTotalPreTax = 0;
+    let totalGst = 0;
+    let grossCartTotal = 0;
+
+    recalculatedCartItems.forEach(item => {
+      totalGrossWeight += Number(item.grossWeight) || 0;
+      totalNetWeight += Number(item.netWeight) || 0;
+      totalMetalValue += item.baseMetalValue || 0;
+      totalWastageValue += item.wastageValue || 0;
+      totalMakingValue += item.totalLaborValue || 0;
+      totalStoneValue += item.stoneCharges || 0;
+      totalOtherCharges += item.otherCharges || 45;
+      totalGst += item.taxAmount || 0;
+      grossCartTotal += item.finalAmount || 0;
+    });
+
+    subTotalPreTax = totalMetalValue + totalWastageValue + totalMakingValue + totalStoneValue + totalOtherCharges;
 
     return {
-      totalGrossWeight,
-      totalNetWeight,
+      totalGrossWeight: Number(totalGrossWeight.toFixed(3)),
+      totalNetWeight: Number(totalNetWeight.toFixed(3)),
       totalMetalValue,
       totalWastageValue,
       totalMakingValue,
@@ -276,61 +325,57 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
     };
   }, [recalculatedCartItems]);
 
-  // --- OLD GOLD RECALCULATIONS ---
+  // --- RECALCULATE OLD GOLD ITEMS ---
   const recalculatedOldGoldItems = useMemo(() => {
     return oldGoldItems.map(item => {
       const gross = Number(item.grossWeight) || 0;
       const deduction = Number(item.deductionWeight) || 0;
       const netMelt = Math.max(0, gross - deduction);
-      const lossPct = Number(item.meltingLossPercentage) || 0;
-      const netAfterLoss = netMelt * (1 - (lossPct / 100));
-
-      let purityFraction = 0.916;
-      if (item.metalType === 'SILVER') {
-        if (item.purity === '925') purityFraction = 0.925;
-        else if (item.purity === '800') purityFraction = 0.800;
-        else if (item.purity === 'CUSTOM') purityFraction = (Number(item.customPurityPercent) || 92.5) / 100;
-        else purityFraction = 0.999;
-      } else {
-        if (item.purity === '24K') purityFraction = 0.999;
-        else if (item.purity === '22K') purityFraction = 0.916;
-        else if (item.purity === '20K') purityFraction = 0.833;
-        else if (item.purity === '18K') purityFraction = 0.750;
-        else if (item.purity === '14K') purityFraction = 0.585;
-        else if (item.purity === 'CUSTOM') purityFraction = (Number(item.customPurityPercent) || 91.6) / 100;
-      }
-
-      const fineGoldWeight = Number((netAfterLoss * purityFraction).toFixed(3));
-      const defaultBenchmarkRate = getOldGoldBenchmarkRate(item.metalType, item.purity, item.customPurityPercent);
-      const rate = Number(item.ratePerGram) || defaultBenchmarkRate;
-      const exchangeValue = Math.round(netAfterLoss * rate);
+      const meltingLoss = item.meltingLossPercentage ?? 1;
+      const effectivePurityRatio = (item.purity === 'CUSTOM' ? (item.customPurityPercent || 91.6) : (item.purity === '24K' ? 99.9 : item.purity === '22K' ? 91.6 : item.purity === '18K' ? 75.0 : 58.5)) / 100;
+      const fineGoldWeight = Number((netMelt * (1 - meltingLoss / 100) * effectivePurityRatio).toFixed(3));
+      const applicableRate = item.ratePerGram || getOldGoldBenchmarkRate(item.metalType, item.purity, item.customPurityPercent);
+      const exchangeValue = Math.round(netMelt * (1 - meltingLoss / 100) * applicableRate);
 
       return {
         ...item,
-        netMeltingWeight: Number(netMelt.toFixed(3)),
+        grossWeight: gross,
+        deductionWeight: deduction,
+        netMeltingWeight: netMelt,
         fineGoldWeight,
-        ratePerGram: rate,
+        ratePerGram: applicableRate,
         exchangeValue
       };
     });
-  }, [oldGoldItems, rate24K, rate22K, rate18K, rate14K, rateSilver]);
+  }, [oldGoldItems, rate24K, rate22K, rate18K, rateSilver]);
 
+  // --- OLD GOLD TOTALS ---
   const oldGoldTotals = useMemo(() => {
-    const totalGrossWeight = Number(recalculatedOldGoldItems.reduce((sum, i) => sum + i.grossWeight, 0).toFixed(3));
-    const totalNetMeltWeight = Number(recalculatedOldGoldItems.reduce((sum, i) => sum + i.netMeltingWeight, 0).toFixed(3));
-    const totalFineWeight = Number(recalculatedOldGoldItems.reduce((sum, i) => sum + (i.fineGoldWeight || 0), 0).toFixed(3));
-    const totalCredit = recalculatedOldGoldItems.reduce((sum, i) => sum + i.exchangeValue, 0);
+    let totalGross = 0;
+    let totalDeduction = 0;
+    let totalNetMelt = 0;
+    let totalFineGold = 0;
+    let totalCredit = 0;
+
+    recalculatedOldGoldItems.forEach(item => {
+      totalGross += item.grossWeight || 0;
+      totalDeduction += item.deductionWeight || 0;
+      totalNetMelt += item.netMeltingWeight || 0;
+      totalFineGold += item.fineGoldWeight || 0;
+      totalCredit += item.exchangeValue || 0;
+    });
 
     return {
-      itemCount: recalculatedOldGoldItems.length,
-      totalGrossWeight,
-      totalNetMeltWeight,
-      totalFineWeight,
-      totalCredit
+      totalGrossWeight: Number(totalGross.toFixed(3)),
+      totalDeductionWeight: Number(totalDeduction.toFixed(3)),
+      totalNetMeltWeight: Number(totalNetMelt.toFixed(3)),
+      totalFineGoldWeight: Number(totalFineGold.toFixed(3)),
+      totalCredit,
+      itemCount: recalculatedOldGoldItems.length
     };
   }, [recalculatedOldGoldItems]);
 
-  // --- FINAL NET SETTLEMENT CALCULATION ---
+  // --- NET COMMERCIAL TOTALS ---
   const netPayable = useMemo(() => {
     const gross = cartTotals.grossCartTotal;
     const oldGoldCredit = enableOldGold ? oldGoldTotals.totalCredit : 0;
@@ -340,8 +385,9 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
 
   const subventionDiscountAmount = useMemo(() => {
     if (planType !== 'PLAN' || !subventionPercentage || subventionPercentage <= 0) return 0;
-    return Math.round(cartTotals.grossCartTotal * (subventionPercentage / 100));
-  }, [planType, subventionPercentage, cartTotals.grossCartTotal]);
+    const commercialGross = Math.max(0, cartTotals.grossCartTotal - (discountAmount || 0));
+    return Math.round(commercialGross * (subventionPercentage / 100));
+  }, [planType, subventionPercentage, cartTotals.grossCartTotal, discountAmount]);
 
   const netPayableAfterSubvention = useMemo(() => {
     return Math.max(0, netPayable - subventionDiscountAmount);
@@ -357,7 +403,6 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
     const oldGoldCredit = enableOldGold ? oldGoldTotals.totalCredit : 0;
     const commercialGross = Math.max(0, cartTotals.grossCartTotal - (discountAmount || 0) - subventionDiscountAmount);
 
-    // 1. Calculate Required Down Payment (either fixed amount or percentage of gross)
     let requiredDownPayment = 0;
     if (planAdvanceAmount > 0) {
       requiredDownPayment = Math.min(commercialGross, planAdvanceAmount);
@@ -367,7 +412,6 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
       requiredDownPayment = 0;
     }
 
-    // 2. Deduct Old Gold from Down Payment & compute Net Down Payment to pay today
     let netDownPaymentPayable = 0;
     let oldGoldAppliedToDownPayment = 0;
     let oldGoldSurplusToEMI = 0;
@@ -375,13 +419,11 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
 
     if (enableOldGold && oldGoldCredit > 0) {
       if (oldGoldCredit >= requiredDownPayment) {
-        // Old gold exceeds or matches required down payment: customer pays ₹0 additional upfront
         netDownPaymentPayable = 0;
         oldGoldAppliedToDownPayment = requiredDownPayment;
         oldGoldSurplusToEMI = oldGoldCredit - requiredDownPayment;
         totalAdvanceValue = oldGoldCredit;
       } else {
-        // Old gold is less than required down payment: customer pays the difference
         netDownPaymentPayable = requiredDownPayment - oldGoldCredit;
         oldGoldAppliedToDownPayment = oldGoldCredit;
         oldGoldSurplusToEMI = 0;
@@ -394,7 +436,6 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
       totalAdvanceValue = requiredDownPayment;
     }
 
-    // 3. Calculate remaining balance to be financed over the selected plan duration
     const principalFinanced = Math.max(0, commercialGross - totalAdvanceValue);
     const interestAmount = Math.round(principalFinanced * (planInterestPercent / 100) * (planMonths / 12));
     const totalFinanced = principalFinanced + interestAmount;
@@ -402,7 +443,6 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
     const totalCustomerCashOutflow = netDownPaymentPayable + totalFinanced;
     const monthlyInstallment = planMonths > 0 ? Math.round(totalFinanced / planMonths) : totalFinanced;
 
-    // 4. Generate Milestones for booking and tracking
     const milestones: any[] = [];
     const today = new Date();
     
@@ -497,6 +537,86 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
     subventionDiscountAmount
   ]);
 
+  // --- AUTOMATIC SAVING OF EVERY ESTIMATE (DEBOUNCED) ---
+  const currentEstimateObject: SalesmanEstimate = useMemo(() => {
+    return {
+      id: estimateId,
+      customerName: customerName || 'Walk-in Client',
+      customerContact: customerContact || '',
+      customerCity,
+      date: new Date().toISOString(),
+      items: recalculatedCartItems,
+      oldGoldItems: enableOldGold ? recalculatedOldGoldItems : [],
+      goldRate22K: rate22K,
+      goldRate24K: rate24K,
+      goldRate18K: rate18K,
+      silverRate: rateSilver,
+      discountAmount,
+      taxRate,
+      totalJewelryValue: cartTotals.subTotalPreTax,
+      totalGstAmount: cartTotals.totalGst,
+      grossCartAmount: cartTotals.grossCartTotal,
+      totalOldGoldCredit: enableOldGold ? oldGoldTotals.totalCredit : 0,
+      netPayableAmount: planType === 'PLAN' ? netPayableAfterSubvention : netPayable,
+      paymentPlan: {
+        type: 'MANUAL',
+        months: planMonths,
+        interestPercentage: planInterestPercent,
+        advancePercentage: planAdvancePercent,
+        goldRateProtection: rateProtectionEnabled,
+        protectionLimit: 500,
+        protectionRateBooked: rate22K,
+        protectionDeadline: new Date().toISOString(),
+        milestones: planCalculations.milestones,
+        protectionStatus: ProtectionStatus.ACTIVE
+      },
+      salesmanName,
+      notes: ''
+    };
+  }, [
+    estimateId, customerName, customerContact, customerCity,
+    recalculatedCartItems, enableOldGold, recalculatedOldGoldItems,
+    rate22K, rate24K, rate18K, rateSilver, discountAmount, taxRate,
+    cartTotals, oldGoldTotals, netPayable, netPayableAfterSubvention,
+    planType, planMonths, planInterestPercent, planAdvancePercent,
+    rateProtectionEnabled, planCalculations.milestones, salesmanName
+  ]);
+
+  useEffect(() => {
+    // Only auto-save if we have at least one item with valid weight
+    if (cartTotals.totalNetWeight <= 0 && (!enableOldGold || oldGoldTotals.totalNetMeltWeight <= 0)) {
+      return;
+    }
+
+    setAutoSaveStatus('SAVING');
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+    autoSaveTimerRef.current = setTimeout(() => {
+      // 1. Update localStorage
+      setSavedEstimates(prev => {
+        const filtered = prev.filter(e => e.id !== currentEstimateObject.id);
+        const updated = [currentEstimateObject, ...filtered].slice(0, 50);
+        try {
+          localStorage.setItem('auragold_saved_estimates', JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
+
+      // 2. Background sync to backend API
+      fetch('/api/sync/estimates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estimate: currentEstimateObject })
+      }).catch(() => {});
+
+      setAutoSaveStatus('SAVED');
+    }, 600);
+
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [currentEstimateObject, cartTotals.totalNetWeight, enableOldGold, oldGoldTotals.totalNetMeltWeight]);
+
   // --- ITEM FORM HANDLERS ---
   const handleOpenAddItemModal = () => {
     setEditingItemId(null);
@@ -573,6 +693,13 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
 
   const handleDeleteItem = (id: string) => {
     setCartItems(cartItems.filter(i => i.id !== id));
+  };
+
+  // Add Item directly from Express Quick Estimator to Cart
+  const handleAddToCartFromExpress = (newItem: JewelryDetail) => {
+    setCartItems(prev => [newItem, ...prev]);
+    setCalculatorMode('WIZARD');
+    setCurrentStep(2);
   };
 
   // --- OLD GOLD FORM HANDLERS ---
@@ -659,7 +786,7 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
     msg += `• 18K Diamond Gold: ₹${rate18K.toLocaleString('en-IN')}/g\n`;
     msg += `• Silver: ₹${rateSilver.toLocaleString('en-IN')}/g\n\n`;
 
-    msg += `🛍️ *SELECTED JEWELLERY (${recalculatedCartItems.length} Items):*\n`;
+    msg += `🛍️ *ITEMIZED BREAKDOWN (${recalculatedCartItems.length} Items):*\n`;
     recalculatedCartItems.forEach((item, idx) => {
       msg += `*${idx + 1}. ${item.customizationDetails || `${item.purity} ${item.category}`} (${item.purity})*\n`;
       msg += `  • Net Wt: ${item.netWeight}g @ ₹${getPurityRate(item.purity, item.metalColor)}/g\n`;
@@ -706,9 +833,6 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
           msg += `• *Net Down Payment to Pay Today: ₹${planCalculations.netDownPaymentPayable.toLocaleString('en-IN')}* (Cash / UPI)\n`;
         } else {
           msg += `• *Net Down Payment to Pay Today: ₹0* (100% Covered by Old Gold)\n`;
-          if (planCalculations.oldGoldSurplusToEMI > 0) {
-            msg += `   └ Surplus ₹${planCalculations.oldGoldSurplusToEMI.toLocaleString('en-IN')} Old Gold deducted from EMI balance\n`;
-          }
         }
       } else {
         msg += `• *Net Down Payment to Pay Today: ₹${planCalculations.netDownPaymentPayable.toLocaleString('en-IN')}*\n`;
@@ -720,7 +844,6 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
       }
       msg += `• Monthly Installment: *₹${planCalculations.monthlyInstallment.toLocaleString('en-IN')}/month* (${planMonths} Months)\n`;
       msg += `• Total Financed over EMIs: ₹${planCalculations.totalFinanced.toLocaleString('en-IN')}\n`;
-      msg += `• Net Customer Cash Outflow: ₹${planCalculations.totalCustomerCashOutflow.toLocaleString('en-IN')}\n`;
       if (rateProtectionEnabled) {
         msg += `🛡️ *Gold Rate Protection:* Locked @ ₹${rate22K}/g\n`;
       }
@@ -761,6 +884,12 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
     navigator.clipboard.writeText(text);
     setCopiedText(true);
     setTimeout(() => setCopiedText(false), 2500);
+  };
+
+  // Print Slip
+  const handleOpenPrintSlip = (est?: SalesmanEstimate) => {
+    setSelectedPrintEstimate(est || currentEstimateObject);
+    setShowPrintModal(true);
   };
 
   // --- CONVERT TO FORMAL ORDER ---
@@ -823,45 +952,15 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
   };
 
   // --- SAVE & LOAD ESTIMATES ---
-  const handleSaveEstimate = () => {
-    const currentEstimate: SalesmanEstimate = {
-      id: estimateId,
-      customerName: customerName || 'Walk-in Client',
-      customerContact: customerContact || '',
-      customerCity,
-      date: new Date().toISOString(),
-      items: recalculatedCartItems,
-      oldGoldItems: enableOldGold ? recalculatedOldGoldItems : [],
-      goldRate22K: rate22K,
-      goldRate24K: rate24K,
-      goldRate18K: rate18K,
-      silverRate: rateSilver,
-      discountAmount,
-      taxRate,
-      totalJewelryValue: cartTotals.subTotalPreTax,
-      totalGstAmount: cartTotals.totalGst,
-      grossCartAmount: cartTotals.grossCartTotal,
-      totalOldGoldCredit: enableOldGold ? oldGoldTotals.totalCredit : 0,
-      netPayableAmount: netPayable,
-      paymentPlan: {
-        type: 'MANUAL',
-        months: planMonths,
-        interestPercentage: planInterestPercent,
-        advancePercentage: planAdvancePercent,
-        goldRateProtection: rateProtectionEnabled,
-        protectionLimit: 500,
-        protectionRateBooked: rate22K,
-        protectionDeadline: new Date().toISOString(),
-        milestones: planCalculations.milestones,
-        protectionStatus: ProtectionStatus.ACTIVE
-      },
-      salesmanName,
-      notes: ''
-    };
-
-    const updated = [currentEstimate, ...savedEstimates.filter(e => e.id !== estimateId)].slice(0, 20);
+  const handleSaveEstimateManual = () => {
+    const updated = [currentEstimateObject, ...savedEstimates.filter(e => e.id !== estimateId)].slice(0, 50);
     setSavedEstimates(updated);
     localStorage.setItem('auragold_saved_estimates', JSON.stringify(updated));
+    fetch('/api/sync/estimates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estimate: currentEstimateObject })
+    }).catch(() => {});
     alert(`Estimate ${estimateId} saved successfully!`);
   };
 
@@ -893,6 +992,7 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
       setPlanType('FULL');
     }
     setShowSavedQuotesModal(false);
+    setCalculatorMode('WIZARD');
     setCurrentStep(4);
   };
 
@@ -935,7 +1035,7 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
 
   // --- RENDER ---
   return (
-    <div className="space-y-5 pb-36 animate-fadeIn max-w-4xl mx-auto px-2 sm:px-4">
+    <div className="space-y-5 pb-36 animate-fadeIn max-w-5xl mx-auto px-2 sm:px-4">
       
       {/* 1. TOP SHOWROOM HEADER & CONTROL STRIP */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -946,20 +1046,41 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="font-serif font-black text-lg sm:text-xl text-slate-900 tracking-tight">
-                Salesman Calculator
+                Salesman Estimator
               </h1>
-              <span className="bg-amber-100 text-amber-900 text-[10px] font-black uppercase px-2 py-0.5 rounded-full font-mono">
+              <span className="bg-amber-100 text-amber-900 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full font-mono">
                 {estimateId}
               </span>
+              {autoSaveStatus === 'SAVED' && (
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckCircle2 size={11} />
+                  <span>Auto-saved</span>
+                </span>
+              )}
+              {autoSaveStatus === 'SAVING' && (
+                <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                  <span>Saving...</span>
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500">
-              Interactive mobile wizard for instant jewellery quotation
+              Instant transparent quotation & breakdown engine for showroom salesmen
             </p>
           </div>
         </div>
 
-        {/* Action Controls */}
+        {/* Action Controls: Search, Showcase, Print, New */}
         <div className="flex items-center gap-1.5 w-full sm:w-auto flex-wrap">
+          <button
+            type="button"
+            onClick={() => setShowSavedQuotesModal(true)}
+            className="px-3.5 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm active:scale-98 transition-all"
+            title="Search all estimates by number, customer name, phone, item"
+          >
+            <Search size={13} />
+            <span>Search Quotes ({savedEstimates.length})</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setCustomerViewActive(!customerViewActive)}
@@ -975,11 +1096,12 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
 
           <button
             type="button"
-            onClick={() => setShowSavedQuotesModal(true)}
+            onClick={() => handleOpenPrintSlip()}
             className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
+            title="Print or preview customer quotation slip"
           >
-            <Bookmark size={13} />
-            <span>Saved ({savedEstimates.length})</span>
+            <Printer size={13} />
+            <span className="hidden sm:inline">Print Slip</span>
           </button>
 
           <button
@@ -989,20 +1111,41 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
             title="Reset to fresh calculation"
           >
             <RotateCcw size={13} />
-            <span>Reset</span>
+            <span>New</span>
           </button>
         </div>
       </div>
 
-      {/* 2. WIZARD STEP NAVIGATOR */}
-      <WizardStepNav
-        currentStep={currentStep}
-        setCurrentStep={setCurrentStep}
-        cartItemCount={recalculatedCartItems.length}
-        enableOldGold={enableOldGold}
-        oldGoldItemCount={recalculatedOldGoldItems.length}
-        netPayableAmount={planType === 'PLAN' ? netPayableAfterSubvention : netPayable}
-      />
+      {/* 2. MODE SWITCHER SEGMENTED TABS */}
+      {!customerViewActive && (
+        <div className="bg-slate-100 p-1.5 rounded-2xl flex gap-1 border border-slate-200/80 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setCalculatorMode('EXPRESS')}
+            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+              calculatorMode === 'EXPRESS'
+                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/60'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Zap size={15} className={calculatorMode === 'EXPRESS' ? 'text-amber-500 fill-amber-500' : ''} />
+            <span>Express Quick Estimator (1-Screen)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCalculatorMode('WIZARD')}
+            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+              calculatorMode === 'WIZARD'
+                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/60'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Layers size={15} className={calculatorMode === 'WIZARD' ? 'text-amber-600' : ''} />
+            <span>Multi-Item & EMI Wizard ({recalculatedCartItems.length} items)</span>
+          </button>
+        </div>
+      )}
 
       {/* 3. CUSTOMER SHOWCASE VIEW (IF TOGGLED) */}
       {customerViewActive ? (
@@ -1022,8 +1165,48 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
           planCalculations={planCalculations}
           onCloseShowcase={() => setCustomerViewActive(false)}
         />
+      ) : calculatorMode === 'EXPRESS' ? (
+        /* --- EXPRESS QUICK ESTIMATOR (1-SCREEN LIVE RATE & BREAKDOWN) --- */
+        <ExpressQuickEstimator
+          rate24K={rate24K}
+          rate22K={rate22K}
+          rate18K={rate18K}
+          rate14K={rate14K}
+          rateSilver={rateSilver}
+          onOpenRateModal={() => setShowRateModal(true)}
+          onRefreshRates={onRefreshRates}
+          refreshingRates={refreshingRates}
+          customerName={customerName}
+          setCustomerName={setCustomerName}
+          customerContact={customerContact}
+          setCustomerContact={setCustomerContact}
+          customerCity={customerCity}
+          setCustomerCity={setCustomerCity}
+          estimateId={estimateId}
+          discountAmount={discountAmount}
+          setDiscountAmount={setDiscountAmount}
+          taxRate={taxRate}
+          onAddToCart={handleAddToCartFromExpress}
+          onShareWhatsApp={handleShareWhatsApp}
+          onCopyQuote={handleCopyText}
+          onToggleCustomerView={() => setCustomerViewActive(true)}
+          onPrintSlip={() => handleOpenPrintSlip()}
+          onConvertEstimateToOrder={handleConvertEstimateToOrder}
+          copiedText={copiedText}
+          autoSaveStatus={autoSaveStatus}
+        />
       ) : (
+        /* --- WIZARD MODE: 4-STEP MULTI-ITEM & EMI SIMULATOR --- */
         <>
+          <WizardStepNav
+            currentStep={currentStep}
+            setCurrentStep={setCurrentStep}
+            cartItemCount={recalculatedCartItems.length}
+            enableOldGold={enableOldGold}
+            oldGoldItemCount={recalculatedOldGoldItems.length}
+            netPayableAmount={planType === 'PLAN' ? netPayableAfterSubvention : netPayable}
+          />
+
           {/* STEP 1: CUSTOMER & BENCHMARK RATES */}
           {currentStep === 1 && (
             <Step1CustomerRates
@@ -1117,7 +1300,7 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
               onShareWhatsApp={handleShareWhatsApp}
               onCopyText={handleCopyText}
               onConvertEstimateToOrder={handleConvertEstimateToOrder}
-              onSaveEstimate={handleSaveEstimate}
+              onSaveEstimate={handleSaveEstimateManual}
               onToggleCustomerView={() => setCustomerViewActive(true)}
               customerViewActive={customerViewActive}
             />
@@ -1168,7 +1351,24 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
           const updated = savedEstimates.filter(e => e.id !== id);
           setSavedEstimates(updated);
           localStorage.setItem('auragold_saved_estimates', JSON.stringify(updated));
+          fetch(`/api/sync/estimates/${id}`, { method: 'DELETE' }).catch(() => {});
         }}
+        onPrintEstimate={(est) => handleOpenPrintSlip(est)}
+        onShareWhatsApp={(est) => {
+          handleLoadEstimate(est);
+          handleShareWhatsApp();
+        }}
+      />
+
+      {/* 5. PRINTABLE QUOTATION SLIP MODAL */}
+      <QuotationPrintSlip
+        show={showPrintModal}
+        onClose={() => {
+          setShowPrintModal(false);
+          setSelectedPrintEstimate(null);
+        }}
+        estimate={selectedPrintEstimate}
+        settings={settings}
       />
 
     </div>

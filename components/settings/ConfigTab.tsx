@@ -56,6 +56,20 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
         }
     };
 
+    const getAuthHeaders = (extra: Record<string, string> = {}) => {
+        const headers: Record<string, string> = { ...extra };
+        try {
+            const authStr = localStorage.getItem('aura_auth');
+            if (authStr) {
+                const user = JSON.parse(authStr);
+                if (user && user.token) {
+                    headers['Authorization'] = `Bearer ${user.token}`;
+                }
+            }
+        } catch (e) {}
+        return headers;
+    };
+
     const handleLiveSync = async () => {
         setSyncing(true);
         try {
@@ -71,7 +85,7 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
         try {
             const res = await fetch('/api/rates/force-update', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: getAuthHeaders({'Content-Type': 'application/json'}),
                 body: JSON.stringify({ providerId })
             });
             const result = await res.json();
@@ -114,24 +128,24 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
 
     const handleTestDatabase = async () => {
         setDbStatus('TESTING');
-        setDbMessage('Diagnosing connection...');
+        setDbMessage('Connecting and verifying database...');
         setDebugInfo(null);
         try {
-            const result = await storageService.forceSync();
-            if (result.success) {
+            const debugRes = await fetch('/api/debug/db?retry=true', {
+                headers: getAuthHeaders()
+            });
+            const debugData = await debugRes.json();
+            setDebugInfo(debugData);
+            
+            if (debugData.config && !debugData.config.isMockMode && debugData.status?.includes('Connected to Live')) {
                 setDbStatus('SUCCESS');
-                setDbMessage(result.message);
+                setDbMessage(`Connected: ${debugData.status}`);
+            } else if (debugData.error) {
+                setDbStatus('ERROR');
+                setDbMessage(debugData.error);
             } else {
                 setDbStatus('ERROR');
-                setDbMessage("Connection Failed. Fetching diagnostics...");
-                const debugRes = await fetch('/api/debug/db');
-                const debugData = await debugRes.json();
-                setDebugInfo(debugData);
-                if (debugData.error) {
-                    setDbMessage(`Error: ${debugData.error}`);
-                } else {
-                    setDbMessage("Unknown Connection Error");
-                }
+                setDbMessage(debugData.status || 'Database is in Mock Mode');
             }
         } catch (e: any) {
             setDbStatus('ERROR');
@@ -330,7 +344,7 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                                 <ConfigInput label="Phone Number ID" value={localSettings.whatsappPhoneNumberId} onChange={(v: string) => setLocalSettings({...localSettings, whatsappPhoneNumberId: v})} />
                                 <ConfigInput label="WABA ID" value={localSettings.whatsappBusinessAccountId} onChange={(v: string) => setLocalSettings({...localSettings, whatsappBusinessAccountId: v})} />
                                 <div className="md:col-span-2"><ConfigInput label="Permanent Access Token" value={localSettings.whatsappBusinessToken} onChange={(v: string) => setLocalSettings({...localSettings, whatsappBusinessToken: v})} type="password" /></div>
-                                <div className="md:col-span-2"><ConfigInput label="Webhook Verify Token" value={localSettings.whatsappVerifyToken || 'auragold_elite_secure_2025'} onChange={(v: string) => setLocalSettings({...localSettings, whatsappVerifyToken: v})} /></div>
+                                <div className="md:col-span-2"><ConfigInput label="Webhook Verify Token" value={localSettings.whatsappVerifyToken || ''} onChange={(v: string) => setLocalSettings({...localSettings, whatsappVerifyToken: v})} /></div>
                             </div>
                             <div className="bg-emerald-50/70 border border-emerald-200 text-emerald-900 p-4 rounded-xl text-xs font-bold leading-relaxed shadow-sm mt-4">
                                 <div className="flex items-start gap-2.5">
@@ -348,7 +362,7 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                                             <div>
                                                 <span className="text-[10px] text-emerald-700 block mb-0.5 uppercase tracking-wider font-extrabold">Verify Token</span>
                                                 <div className="font-mono bg-white text-slate-800 px-3 py-2 border border-emerald-200 rounded-lg select-all break-all shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]">
-                                                    {localSettings.whatsappVerifyToken || 'auragold_elite_secure_2025'}
+                                                    {localSettings.whatsappVerifyToken || '(Enter your custom verify token above)'}
                                                 </div>
                                             </div>
                                         </div>
@@ -391,7 +405,7 @@ const ConfigTab: React.FC<ConfigTabProps> = ({ settings, onUpdate }) => {
                                                 try {
                                                     const res = await fetch('/api/payments/setu/test-connection', {
                                                         method: 'POST',
-                                                        headers: { 'Content-Type': 'application/json' },
+                                                        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
                                                         body: JSON.stringify({
                                                             clientId: localSettings.setuClientId,
                                                             secret: localSettings.setuSecret,

@@ -4,7 +4,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
-import { getPool, isMock, mockData } from './db.js';
+import { getPool, ensureDb, isMock, mockData } from './db.js';
 import { verifyAdmin } from './auth.js';
 
 const router = express.Router();
@@ -288,6 +288,9 @@ export const initBackupScheduler = () => {
 };
 
 // --- HTTP ROUTES ---
+// Ensure Database schema exists before accessing backups and journal
+router.use(ensureDb);
+
 // Enforce Admin Authentication & Authorization on all backup and journal operations
 router.use(verifyAdmin);
 
@@ -526,24 +529,45 @@ router.get('/journal', async (req, res) => {
 router.get('/journal/verify', async (req, res) => {
     try {
         let entries = [];
+        let source = 'database';
+
         if (!isMock) {
-            const pool = getPool();
-            const connection = await pool.getConnection();
             try {
-                const [rows] = await connection.query('SELECT * FROM transaction_journal ORDER BY timestamp DESC');
-                entries = rows;
-            } finally {
-                connection.release();
+                const pool = getPool();
+                const connection = await pool.getConnection();
+                try {
+                    const [rows] = await connection.query('SELECT * FROM transaction_journal ORDER BY timestamp DESC');
+                    entries = rows || [];
+                } finally {
+                    connection.release();
+                }
+            } catch (dbErr) {
+                console.warn("[Journal API] DB query failed during verify, checking disk log:", dbErr.message);
+                source = 'disk_file';
             }
         } else {
             entries = mockData.transaction_journal || [];
+            source = 'mock';
+        }
+
+        // Fallback to disk mirror file if DB had 0 entries or failed
+        if ((entries.length === 0 || source === 'disk_file') && fs.existsSync(JOURNAL_FILE_PATH)) {
+            try {
+                const fileContent = fs.readFileSync(JOURNAL_FILE_PATH, 'utf8');
+                const lines = fileContent.trim().split('\n').filter(Boolean);
+                entries = lines.map(line => JSON.parse(line));
+                source = 'disk_file';
+            } catch (fileErr) {
+                console.error("[Journal API] Disk file parsing failed during verify:", fileErr.message);
+            }
         }
         
         let verifiedCount = 0;
         let corruptedEntries = [];
         
         for (const entry of entries) {
-            const calculated = crypto.createHash('sha256').update(entry.payload).digest('hex');
+            const rawPayload = typeof entry.payload === 'object' ? JSON.stringify(entry.payload) : String(entry.payload || '');
+            const calculated = crypto.createHash('sha256').update(rawPayload).digest('hex');
             if (calculated === entry.checksum) {
                 verifiedCount++;
             } else {
@@ -562,10 +586,12 @@ router.get('/journal/verify', async (req, res) => {
             totalScanned: entries.length,
             verifiedCount,
             corruptedCount: corruptedEntries.length,
-            corruptedEntries
+            corruptedEntries,
+            source
         });
     } catch (e) {
-        res.status(500).json({ success: false, error: e.message });
+        console.error("[Journal API] Verify error:", e);
+        res.status(500).json({ success: false, error: e.message || 'Cryptographic verification failed.' });
     }
 });
 

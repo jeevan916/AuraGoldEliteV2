@@ -185,13 +185,17 @@ class ErrorService {
     this.notify();
 
     try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        const authH = this.getAuthHeaders();
+        Object.assign(headers, authH);
+
         await fetch('/api/logs/error', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify(newError)
         });
-    } catch (e) {
-        console.error("Critical: Failed to save error to DB", e);
+    } catch (e: any) {
+        console.warn("[ErrorService] Notice: could not persist error to server:", e?.message || e);
     }
 
     if (severity !== 'LOW') {

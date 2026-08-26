@@ -582,7 +582,7 @@ router.post('/setu/refund', ensureDb, authenticateToken, requireRole('ADMIN', 'M
 });
 
 // Setu Test Connection
-router.post('/setu/test-connection', ensureDb, authenticateToken, requireRole('ADMIN'), async (req, res) => {
+router.post(['/setu/test-connection', '/payments/setu/test-connection'], ensureDb, authenticateToken, requireRole('ADMIN'), async (req, res) => {
     const { clientId, secret, mode } = req.body;
     
     if (!clientId || !secret) {

@@ -21,6 +21,9 @@ migrated_prompt_history/
 secrets/
 config/secrets.*
 firebase-applet-config.json
+backups/
+*.sql
+*.sqlite
 
 ############################################
 # Node.js / Frontend

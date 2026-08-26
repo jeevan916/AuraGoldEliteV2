@@ -230,28 +230,7 @@ const getValidDistPath = () => {
 const finalDistPath = getValidDistPath();
 
 async function startServer() {
-    // 1. Initialize Database
-    try {
-        const result = await initDb();
-        if (result.success) {
-            initRateService();
-            runPaymentReminders();
-            setInterval(runPaymentReminders, 24 * 60 * 60 * 1000);
-            startSetuPoller(io);
-            initBackupScheduler();
-            
-            // Asynchronously run DB image analysis and migration
-            migrateExistingDbImages().catch(err => {
-                console.error("[System] Startup image migration failed:", err.message);
-            });
-        } else {
-            console.error(`[System] Database initialization failed: ${result.error}`);
-        }
-    } catch (dbErr) {
-        console.error(`[System] Error during DB init:`, dbErr?.message || dbErr);
-    }
-
-    // 2. Vite Middleware for Development or Static Serving for Production
+    // 1. Vite Middleware for Development or Static Serving for Production
     if (process.env.NODE_ENV !== 'production') {
         try {
             const { createServer: createViteServer } = await import('vite');
@@ -298,7 +277,7 @@ async function startServer() {
         });
     }
 
-    // 3. Start HTTP Server
+    // 2. Start HTTP Server immediately so port 3000 is open without delay
     const isSocketPath = typeof PORT === 'string' && (PORT.startsWith('/') || PORT.startsWith('\\\\') || isNaN(Number(PORT)));
 
     httpServer.on('error', (err) => {
@@ -320,18 +299,45 @@ async function startServer() {
         }
     });
 
-    if (isSocketPath) {
-        httpServer.listen(PORT, () => {
-            console.log(`[Server] Operational on socket: ${PORT}`);
-            console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
-        });
-    } else {
-        const numericPort = Number(PORT) || 3000;
-        httpServer.listen(numericPort, '0.0.0.0', () => {
-            console.log(`[Server] Operational on port ${numericPort}`);
-            console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
-        });
-    }
+    await new Promise((resolve) => {
+        if (isSocketPath) {
+            httpServer.listen(PORT, () => {
+                console.log(`[Server] Operational on socket: ${PORT}`);
+                console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
+                resolve();
+            });
+        } else {
+            const numericPort = Number(PORT) || 3000;
+            httpServer.listen(numericPort, '0.0.0.0', () => {
+                console.log(`[Server] Operational on port ${numericPort}`);
+                console.log(`[Server] Environment: ${process.env.NODE_ENV || 'development'}`);
+                resolve();
+            });
+        }
+    });
+
+    // 3. Asynchronously Initialize Database and Background Services
+    (async () => {
+        try {
+            const result = await initDb();
+            if (result.success) {
+                initRateService();
+                runPaymentReminders();
+                setInterval(runPaymentReminders, 24 * 60 * 60 * 1000);
+                startSetuPoller(io);
+                initBackupScheduler();
+                
+                // Asynchronously run DB image analysis and migration
+                migrateExistingDbImages().catch(err => {
+                    console.error("[System] Startup image migration failed:", err.message);
+                });
+            } else {
+                console.error(`[System] Database initialization failed: ${result.error}`);
+            }
+        } catch (dbErr) {
+            console.error(`[System] Error during DB init:`, dbErr?.message || dbErr);
+        }
+    })();
 }
 
 startServer().catch(err => {

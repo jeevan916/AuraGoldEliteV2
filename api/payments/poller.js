@@ -15,13 +15,19 @@ export function startSetuPoller(io) {
         
         try {
             const connection = await pool.getConnection();
-            const [setuRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['setu']);
+            const [setuRows] = await connection.query("SELECT enabled, config FROM integrations WHERE provider = ?", ['setu']);
             if (setuRows.length === 0) {
                 connection.release();
                 return;
             }
             
-            let config = setuRows[0].config;
+            const setuRow = setuRows[0];
+            if (setuRow.enabled === 0 || setuRow.enabled === false || setuRow.enabled === '0') {
+                connection.release();
+                return;
+            }
+            
+            let config = setuRow.config;
             if (typeof config === 'string') config = typeof config === "string" ? JSON.parse(config) : config;
             
             // Check if Setu has valid, non-placeholder credentials

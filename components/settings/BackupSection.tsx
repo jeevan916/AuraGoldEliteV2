@@ -59,15 +59,48 @@ const BackupSection: React.FC = () => {
     const [showConfirmRevert, setShowConfirmRevert] = useState<JournalEntry | null>(null);
     const [filterEntity, setFilterEntity] = useState<string>('ALL');
 
+    const getAuthHeaders = (extra: Record<string, string> = {}) => {
+        const headers: Record<string, string> = { ...extra };
+        try {
+            const authStr = localStorage.getItem('aura_auth');
+            if (authStr) {
+                const user = JSON.parse(authStr);
+                if (user && user.token) {
+                    headers['Authorization'] = `Bearer ${user.token}`;
+                }
+            }
+        } catch (e) {}
+        return headers;
+    };
+
+    const getAuthToken = () => {
+        try {
+            const authStr = localStorage.getItem('aura_auth');
+            if (authStr) {
+                const user = JSON.parse(authStr);
+                return user?.token || '';
+            }
+        } catch (e) {}
+        return '';
+    };
+
     const fetchBackups = async () => {
         setIsLoading(true);
         setErrorMessage(null);
         try {
-            const res = await fetch('/api/backups');
+            const token = getAuthToken();
+            if (!token) {
+                setErrorMessage("Authentication required. Please log in as an administrator to manage backups.");
+                setIsLoading(false);
+                return;
+            }
+            const res = await fetch('/api/backups', {
+                headers: getAuthHeaders()
+            });
             const data = await res.json();
             if (data.success) {
-                setBackups(data.backups);
-                setIsMock(data.isMock);
+                setBackups(data.backups || []);
+                setIsMock(data.isMock || false);
             } else {
                 setErrorMessage(data.error || "Failed to load backups list.");
             }
@@ -81,15 +114,22 @@ const BackupSection: React.FC = () => {
     const fetchJournal = async () => {
         setIsJournalLoading(true);
         try {
+            const token = getAuthToken();
+            if (!token) return;
+
             // Fetch entries
-            const entriesRes = await fetch('/api/journal');
+            const entriesRes = await fetch('/api/journal', {
+                headers: getAuthHeaders()
+            });
             const entriesData = await entriesRes.json();
             if (entriesData.success) {
-                setJournalEntries(entriesData.entries);
+                setJournalEntries(entriesData.entries || []);
             }
 
             // Fetch stats
-            const statsRes = await fetch('/api/journal/stats');
+            const statsRes = await fetch('/api/journal/stats', {
+                headers: getAuthHeaders()
+            });
             const statsData = await statsRes.json();
             if (statsData.success) {
                 setJournalStats(statsData);
@@ -113,9 +153,13 @@ const BackupSection: React.FC = () => {
         try {
             const res = await fetch('/api/backups/create', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ type, includeApp: true })
             });
+            if (res.status === 401) {
+                setErrorMessage("Authentication required. Please log in as an administrator.");
+                return;
+            }
             const data = await res.json();
             if (data.success) {
                 setSuccessMessage(`Success: ${type === 'CLONE' ? 'Last Resort Recovery Clone' : 'Manual Backup'} created successfully.`);
@@ -137,8 +181,13 @@ const BackupSection: React.FC = () => {
         setShowConfirmRestore(null);
         try {
             const res = await fetch(`/api/backups/restore/${bkp.id}`, {
-                method: 'POST'
+                method: 'POST',
+                headers: getAuthHeaders()
             });
+            if (res.status === 401) {
+                setErrorMessage("Authentication required. Please log in as an administrator.");
+                return;
+            }
             const data = await res.json();
             if (data.success) {
                 setSuccessMessage(`System Restored Successfully! All database tables rebuilt using backup ${bkp.id}.`);
@@ -162,8 +211,13 @@ const BackupSection: React.FC = () => {
         setSuccessMessage(null);
         try {
             const res = await fetch(`/api/backups/delete/${id}`, {
-                method: 'POST'
+                method: 'POST',
+                headers: getAuthHeaders()
             });
+            if (res.status === 401) {
+                setErrorMessage("Authentication required. Please log in as an administrator.");
+                return;
+            }
             const data = await res.json();
             if (data.success) {
                 setSuccessMessage("Backup deleted from server.");
@@ -183,17 +237,27 @@ const BackupSection: React.FC = () => {
         setErrorMessage(null);
         setSuccessMessage(null);
         try {
-            const res = await fetch('/api/journal/verify');
+            const res = await fetch('/api/journal/verify', {
+                headers: getAuthHeaders()
+            });
+            if (res.status === 401) {
+                setErrorMessage("Authentication required. Please log in as an administrator to run cryptographic audits.");
+                return;
+            }
             const data = await res.json();
             if (data.success) {
                 setVerificationResult(data);
                 if (data.status === 'PRISTINE') {
-                    setSuccessMessage(`Cryptographic Audit Trail Verified: All ${data.verifiedCount} historical transactions matched their digital signatures perfectly!`);
+                    if (data.totalScanned === 0) {
+                        setSuccessMessage("Cryptographic Audit Trail Verified: Ledger is pristine (0 transactions recorded). Dual-layer mirroring active.");
+                    } else {
+                        setSuccessMessage(`Cryptographic Audit Trail Verified: All ${data.verifiedCount} historical transactions matched their digital signatures perfectly!`);
+                    }
                 } else {
                     setErrorMessage(`Warning: Detected ${data.corruptedCount} altered or corrupted journal entries in active memory.`);
                 }
             } else {
-                setErrorMessage("Journal signature verification protocol failed.");
+                setErrorMessage(data.error || "Cryptographic verification protocol could not be completed.");
             }
         } catch (e: any) {
             setErrorMessage("Network error during cryptographic validation.");
@@ -209,8 +273,13 @@ const BackupSection: React.FC = () => {
         setShowConfirmRevert(null);
         try {
             const res = await fetch(`/api/journal/revert/${entry.id}`, {
-                method: 'POST'
+                method: 'POST',
+                headers: getAuthHeaders()
             });
+            if (res.status === 401) {
+                setErrorMessage("Authentication required. Please log in as an administrator.");
+                return;
+            }
             const data = await res.json();
             if (data.success) {
                 setSuccessMessage(`State Restored Successfully! ${entry.entity_type} state rolled back to transaction state ${entry.id}.`);
@@ -402,7 +471,7 @@ const BackupSection: React.FC = () => {
 
                                             <div className="flex items-center gap-2 self-end sm:self-auto">
                                                 <a 
-                                                    href={`/api/backups/download/${bkp.id}`}
+                                                    href={`/api/backups/download/${bkp.id}?auth_token=${encodeURIComponent(getAuthToken())}`}
                                                     className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-xl transition-all"
                                                     title="Download Database JSON"
                                                 >
@@ -463,7 +532,7 @@ const BackupSection: React.FC = () => {
                                 Verify Ledger Signatures
                             </button>
                             <a
-                                href="/api/journal/download"
+                                href={`/api/journal/download?auth_token=${encodeURIComponent(getAuthToken())}`}
                                 className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-sm text-center"
                                 title="Download live_journal_mirror.log"
                             >

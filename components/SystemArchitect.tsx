@@ -19,13 +19,29 @@ const SystemArchitect: React.FC = () => {
   const [processing, setProcessing] = useState(false);
   const [status, setStatus] = useState('Online');
 
+  const getAuthHeaders = (extra: Record<string, string> = {}) => {
+    const headers: Record<string, string> = { ...extra };
+    try {
+      const authStr = localStorage.getItem('aura_auth');
+      if (authStr) {
+        const user = JSON.parse(authStr);
+        if (user && user.token) {
+          headers['Authorization'] = `Bearer ${user.token}`;
+        }
+      }
+    } catch (e) {}
+    return headers;
+  };
+
   useEffect(() => {
     fetchFiles();
   }, []);
 
   const fetchFiles = async () => {
     try {
-      const res = await fetch('/api/architect/files');
+      const res = await fetch('/api/architect/files', {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       if (data.success) {
           setFiles(data.files);
@@ -48,7 +64,7 @@ const SystemArchitect: React.FC = () => {
     try {
       const res = await fetch('/api/architect/read', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ filePath: path })
       });
       const data = await res.json();
@@ -66,7 +82,7 @@ const SystemArchitect: React.FC = () => {
     try {
       const res = await fetch('/api/architect/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ prompt, filePath: selectedFile })
       });
       const data = await res.json();
@@ -89,7 +105,7 @@ const SystemArchitect: React.FC = () => {
     try {
       const res = await fetch('/api/architect/apply', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ filePath: selectedFile, content: output })
       });
       const data = await res.json();
