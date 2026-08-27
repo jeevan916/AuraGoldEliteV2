@@ -23,25 +23,26 @@ export async function runPaymentReminders(specificOrderId = null) {
             return results;
         }
 
-        const connection = await pool.getConnection();
-
-        // 1. Fetch Core Settings
-        let config = {};
+        let connection = null;
         try {
-            const [settingsRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['core_settings']);
-            if (settingsRows.length > 0) {
-                config = typeof settingsRows[0].config === "string" ? JSON.parse(settingsRows[0].config) : settingsRows[0].config;
-            }
-        } catch (e) {
-            console.warn("[ReminderService] Warning loading core_settings:", e.message);
-        }
+            connection = await pool.getConnection();
 
-        // Global WhatsApp toggle check
-        if (config.whatsappEnabled === false) {
-            console.log("[ReminderService] WhatsApp messaging is globally turned OFF in settings. Aborting reminder run.");
-            connection.release();
-            return results;
-        }
+            // 1. Fetch Core Settings
+            let config = {};
+            try {
+                const [settingsRows] = await connection.query("SELECT config FROM integrations WHERE provider = ?", ['core_settings']);
+                if (settingsRows.length > 0) {
+                    config = typeof settingsRows[0].config === "string" ? JSON.parse(settingsRows[0].config) : settingsRows[0].config;
+                }
+            } catch (e) {
+                console.warn("[ReminderService] Warning loading core_settings:", e.message);
+            }
+
+            // Global WhatsApp toggle check
+            if (config.whatsappEnabled === false) {
+                console.log("[ReminderService] WhatsApp messaging is globally turned OFF in settings. Aborting reminder run.");
+                return results;
+            }
 
         const reminderScheduleDays = config.reminderScheduleDays || [15, 7, 3, 1];
         const overdueFrequencyDays = config.overdueFrequencyDays || 1;
@@ -267,8 +268,12 @@ export async function runPaymentReminders(specificOrderId = null) {
             }
         }
 
-        connection.release();
-        return results;
+            return results;
+        } finally {
+            if (connection) {
+                try { connection.release(); } catch (e) {}
+            }
+        }
     } catch (e) {
         console.error("[ReminderService] Fatal Error in runPaymentReminders:", e);
         results.error = e.message;

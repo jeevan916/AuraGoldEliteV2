@@ -4,20 +4,21 @@ import crypto from 'crypto';
 import { getPool, isMock } from './db.js';
 
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
-const ORDERED_DIR = path.join(UPLOADS_DIR, 'ordered');
-const READY_DIR = path.join(UPLOADS_DIR, 'ready');
+const SUBFOLDERS = ['ordered', 'ready', 'catalog', 'estimates', 'customers', 'general'];
 
-// Ensure the uploads directory and subdirectories exist on the server drive
+// Ensure all upload directories and subdirectories exist on the server drive
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-if (!fs.existsSync(ORDERED_DIR)) fs.mkdirSync(ORDERED_DIR, { recursive: true });
-if (!fs.existsSync(READY_DIR)) fs.mkdirSync(READY_DIR, { recursive: true });
+for (const sub of SUBFOLDERS) {
+    const subDir = path.join(UPLOADS_DIR, sub);
+    if (!fs.existsSync(subDir)) fs.mkdirSync(subDir, { recursive: true });
+}
 
 /**
  * Saves a base64 encoded data-url image to the physical server drive
- * inside either the 'ordered' or 'ready' folder and returns the relative path URL.
+ * inside the designated folder and returns the relative path URL.
  * 
  * @param {string} base64Str - The data URL (e.g. data:image/jpeg;base64,...)
- * @param {string} folder - 'ordered' or 'ready'
+ * @param {string} folder - 'ordered' | 'ready' | 'catalog' | 'estimates' | 'customers' | 'general'
  * @returns {string} - The public relative path (e.g. /uploads/ordered/filename.jpg)
  */
 export function saveBase64ImageToServer(base64Str, folder = 'ordered') {
@@ -25,29 +26,81 @@ export function saveBase64ImageToServer(base64Str, folder = 'ordered') {
     if (!base64Str.startsWith('data:image/')) return base64Str;
 
     try {
-        const match = base64Str.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
+        const match = base64Str.match(/^data:image\/([a-zA-Z0-9\+\-]+);base64,(.+)$/);
         if (!match) return base64Str;
 
-        const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
+        let rawExt = match[1].toLowerCase();
+        if (rawExt === 'jpeg') rawExt = 'jpg';
+        else if (rawExt === 'svg+xml') rawExt = 'svg';
+        const ext = rawExt.replace(/[^a-z0-9]/g, '') || 'jpg';
+
         const data = match[2];
         const buffer = Buffer.from(data, 'base64');
 
-        const targetFolder = folder === 'ready' ? READY_DIR : ORDERED_DIR;
-        const subPath = folder === 'ready' ? 'ready' : 'ordered';
+        const validFolder = SUBFOLDERS.includes(folder) ? folder : 'general';
+        const targetFolder = path.join(UPLOADS_DIR, validFolder);
+        if (!fs.existsSync(targetFolder)) fs.mkdirSync(targetFolder, { recursive: true });
 
-        // Generate a cryptographically secure safe unique filename
+        // Generate a cryptographically safe unique filename
         const filename = `img_${crypto.randomBytes(8).toString('hex')}_${Date.now()}.${ext}`;
         const filePath = path.join(targetFolder, filename);
 
         // Save the file binary to server drive
         fs.writeFileSync(filePath, buffer);
-        console.log(`[Storage Service] Saved base64 image physically at /uploads/${subPath}/${filename} (${Math.round(buffer.length / 1024)} KB)`);
+        console.log(`[Storage Service] Saved image physically to /uploads/${validFolder}/${filename} (${Math.round(buffer.length / 1024)} KB)`);
 
-        return `/uploads/${subPath}/${filename}`;
+        return `/uploads/${validFolder}/${filename}`;
     } catch (err) {
         console.error("[Storage Service] Error saving base64 image:", err.message);
         return base64Str; // Return original on failure
     }
+}
+
+/**
+ * Recursively inspects any object, array, or string, extracting any embedded base64 images,
+ * saving them to physical disk files, and replacing them with relative /uploads/... URLs.
+ * 
+ * @param {any} target - The object, array, or string to sanitize
+ * @param {string} defaultFolder - The default storage folder
+ * @returns {any} - The sanitized data structure
+ */
+export function stripAndSaveBase64Images(target, defaultFolder = 'ordered') {
+    if (!target) return target;
+
+    if (typeof target === 'string') {
+        if (target.startsWith('data:image/')) {
+            return saveBase64ImageToServer(target, defaultFolder);
+        }
+        return target;
+    }
+
+    if (Array.isArray(target)) {
+        return target.map(item => stripAndSaveBase64Images(item, defaultFolder));
+    }
+
+    if (typeof target === 'object') {
+        const cleaned = {};
+        for (const [key, value] of Object.entries(target)) {
+            let folderForField = defaultFolder;
+            const lowerKey = key.toLowerCase();
+            if (lowerKey.includes('ready') || lowerKey === 'readyphotourls') {
+                folderForField = 'ready';
+            } else if (lowerKey.includes('catalog') || lowerKey.includes('product')) {
+                folderForField = 'catalog';
+            } else if (lowerKey.includes('estimate') || lowerKey.includes('cart')) {
+                folderForField = 'estimates';
+            } else if (lowerKey.includes('customer') || lowerKey.includes('avatar') || lowerKey.includes('profile')) {
+                folderForField = 'customers';
+            } else if (lowerKey.includes('photo') || lowerKey.includes('image') || lowerKey.includes('design')) {
+                folderForField = defaultFolder === 'ready' ? 'ready' : 'ordered';
+            }
+
+            cleaned[key] = stripAndSaveBase64Images(value, folderForField);
+        }
+        return cleaned;
+    }
+
+    return target;
 }
 
 /**
@@ -57,22 +110,13 @@ export function saveBase64ImageToServer(base64Str, folder = 'ordered') {
  * @returns {object} - The mutated order with relative file URLs
  */
 export function processOrderImages(order) {
-    if (!order || !order.items || !Array.isArray(order.items)) return order;
-
-    for (const item of order.items) {
-        if (item.photoUrls && Array.isArray(item.photoUrls)) {
-            item.photoUrls = item.photoUrls.map(url => saveBase64ImageToServer(url, 'ordered'));
-        }
-        if (item.readyPhotoUrls && Array.isArray(item.readyPhotoUrls)) {
-            item.readyPhotoUrls = item.readyPhotoUrls.map(url => saveBase64ImageToServer(url, 'ready'));
-        }
-    }
-    return order;
+    if (!order) return order;
+    return stripAndSaveBase64Images(order, 'ordered');
 }
 
 /**
- * One-time startup migration: Scans the relational DB orders for old embedded base64 blobs,
- * extracts them, writes them to files in /uploads/ordered or /uploads/ready, and updates the database record with relative URLs.
+ * Startup migration: Scans relational DB tables (orders, catalog, salesman_estimates, customers, templates, external_payments)
+ * for old embedded base64 blobs, writes them to physical files in /uploads/..., and updates database records with relative URLs.
  */
 export async function migrateExistingDbImages() {
     if (isMock) {
@@ -86,90 +130,64 @@ export async function migrateExistingDbImages() {
         return;
     }
 
-    console.log("[Migration] Running analysis for base64 embedded images in active records...");
+    console.log("[Migration] Running analysis for base64 embedded images across all database tables...");
 
     let connection;
     try {
         connection = await pool.getConnection();
 
-        // Find orders containing base64 images
-        const [orders] = await connection.query("SELECT id, data FROM orders WHERE data LIKE '%data:image/%'");
-        if (orders.length === 0) {
-            console.log("[Migration] Analysis complete: No base64 images found in active orders.");
-            connection.release();
-            return;
-        }
+        const tablesToScan = [
+            { name: 'orders', idCol: 'id', dataCol: 'data', defaultFolder: 'ordered' },
+            { name: 'catalog', idCol: 'id', dataCol: 'data', defaultFolder: 'catalog' },
+            { name: 'salesman_estimates', idCol: 'id', dataCol: 'data', defaultFolder: 'estimates' },
+            { name: 'customers', idCol: 'id', dataCol: 'data', defaultFolder: 'customers' },
+            { name: 'templates', idCol: 'id', dataCol: 'data', defaultFolder: 'general' },
+            { name: 'external_payments', idCol: 'id', dataCol: 'data', defaultFolder: 'general' }
+        ];
 
-        console.log(`[Migration] Analysis complete: Found ${orders.length} orders containing embedded base64 images. Initiating transfer...`);
+        let totalMigratedImages = 0;
 
-        let migratedCount = 0;
-
-        for (const orderRow of orders) {
+        for (const tbl of tablesToScan) {
             try {
-                const order = JSON.parse(orderRow.data);
-                let orderModified = false;
+                // Check if table exists
+                const [rows] = await connection.query(
+                    `SELECT ${tbl.idCol} AS id, ${tbl.dataCol} AS data FROM ${tbl.name} WHERE ${tbl.dataCol} LIKE '%data:image/%'`
+                );
 
-                if (order.items && Array.isArray(order.items)) {
-                    for (const item of order.items) {
-                        // Extract photoUrls (Ordered Reference images)
-                        if (item.photoUrls && Array.isArray(item.photoUrls)) {
-                            item.photoUrls = item.photoUrls.map(url => {
-                                if (url && url.startsWith('data:image/')) {
-                                    const match = url.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
-                                    if (match) {
-                                        const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
-                                        const data = match[2];
-                                        const buffer = Buffer.from(data, 'base64');
-                                        const filename = `migrated_${crypto.randomBytes(8).toString('hex')}_${Date.now()}.${ext}`;
-                                        const filePath = path.join(ORDERED_DIR, filename);
+                if (rows.length > 0) {
+                    console.log(`[Migration] Found ${rows.length} rows with base64 images in table '${tbl.name}'. Extracting to drive...`);
+                    for (const row of rows) {
+                        try {
+                            const parsedData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                            const cleanedData = stripAndSaveBase64Images(parsedData, tbl.defaultFolder);
+                            const updatedJson = JSON.stringify(cleanedData);
 
-                                        fs.writeFileSync(filePath, buffer);
-                                        orderModified = true;
-                                        migratedCount++;
-                                        return `/uploads/ordered/${filename}`;
-                                    }
-                                }
-                                return url;
-                            });
-                        }
-
-                        // Extract readyPhotoUrls (Showcase / Final pictures)
-                        if (item.readyPhotoUrls && Array.isArray(item.readyPhotoUrls)) {
-                            item.readyPhotoUrls = item.readyPhotoUrls.map(url => {
-                                if (url && url.startsWith('data:image/')) {
-                                    const match = url.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
-                                    if (match) {
-                                        const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
-                                        const data = match[2];
-                                        const buffer = Buffer.from(data, 'base64');
-                                        const filename = `migrated_${crypto.randomBytes(8).toString('hex')}_${Date.now()}.${ext}`;
-                                        const filePath = path.join(READY_DIR, filename);
-
-                                        fs.writeFileSync(filePath, buffer);
-                                        orderModified = true;
-                                        migratedCount++;
-                                        return `/uploads/ready/${filename}`;
-                                    }
-                                }
-                                return url;
-                            });
+                            await connection.query(
+                                `UPDATE ${tbl.name} SET ${tbl.dataCol} = ? WHERE ${tbl.idCol} = ?`,
+                                [updatedJson, row.id]
+                            );
+                            totalMigratedImages++;
+                        } catch (rowErr) {
+                            console.warn(`[Migration] Error processing row ${row.id} in ${tbl.name}:`, rowErr.message);
                         }
                     }
+                    console.log(`[Migration] Cleaned and updated ${rows.length} rows in '${tbl.name}'.`);
                 }
-
-                if (orderModified) {
-                    await connection.query("UPDATE orders SET data = ? WHERE id = ?", [JSON.stringify(order), orderRow.id]);
-                    console.log(`[Migration] Successfully extracted and saved images for Order #${orderRow.id}`);
-                }
-            } catch (orderErr) {
-                console.error(`[Migration] Failed to migrate row #${orderRow.id}:`, orderErr.message);
+            } catch (tblErr) {
+                // Table might not exist yet or have no records; non-fatal
             }
         }
 
-        console.log(`[Migration] Migration complete. Transferred ${migratedCount} base64 images successfully onto the server's drive.`);
+        if (totalMigratedImages === 0) {
+            console.log("[Migration] Analysis complete: No legacy base64 images found across database tables.");
+        } else {
+            console.log(`[Migration] Database migration complete: Successfully extracted and cleared base64 images from ${totalMigratedImages} database records.`);
+        }
     } catch (err) {
-        console.error("[Migration] Error during image migration script execution:", err.message);
+        console.error("[Migration] Error during image migration execution:", err.message);
     } finally {
-        if (connection) connection.release();
+        if (connection) {
+            try { connection.release(); } catch (e) {}
+        }
     }
 }

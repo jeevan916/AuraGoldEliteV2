@@ -65,10 +65,10 @@ export const compressImage = async (file: File): Promise<string> => {
 const API_BASE = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) || (typeof process !== 'undefined' && process.env?.VITE_API_BASE_URL) || '';
 
 /**
- * Uploads an order image to the physical server storage in /uploads/ordered or /uploads/ready folder
+ * Uploads an image to the physical server storage in /uploads/... folder
  * and returns the relative path URL (e.g. /uploads/ordered/img_xxx.jpg or /uploads/ready/img_xxx.jpg).
  */
-export const uploadOrderImage = async (file: File, folder: 'ordered' | 'ready' = 'ordered'): Promise<string> => {
+export const uploadOrderImage = async (file: File, folder: 'ordered' | 'ready' | 'catalog' | 'estimates' | 'customers' | 'general' = 'ordered'): Promise<string> => {
   const compressedBase64 = await compressImage(file);
   try {
     const res = await fetch(`${API_BASE}/api/sync/upload`, {

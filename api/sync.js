@@ -2,19 +2,19 @@
 import express from 'express';
 import { getPool, ensureDb, journalTransaction } from './db.js';
 import { refreshInterval } from './rateService.js';
-import { processOrderImages, saveBase64ImageToServer } from './imageStore.js';
+import { processOrderImages, saveBase64ImageToServer, stripAndSaveBase64Images } from './imageStore.js';
 import { authenticateToken, requireRole, verifyAdmin, optionalAuth } from './auth.js';
 
 const router = express.Router();
 
-// Direct image upload endpoint for saving images into /uploads/ordered or /uploads/ready
+// Direct image upload endpoint for saving images into physical server drive
 router.post('/upload', (req, res) => {
     try {
         const { image, folder } = req.body;
         if (!image) {
             return res.status(400).json({ error: 'Image data is required' });
         }
-        const url = saveBase64ImageToServer(image, folder === 'ready' ? 'ready' : 'ordered');
+        const url = saveBase64ImageToServer(image, folder || 'ordered');
         return res.json({ success: true, url });
     } catch (e) {
         return res.status(500).json({ error: e.message });
@@ -22,9 +22,10 @@ router.post('/upload', (req, res) => {
 });
 
 router.post('/orders', ensureDb, async (req, res) => {
+    let connection;
     try {
         const pool = getPool();
-        const connection = await pool.getConnection();
+        connection = await pool.getConnection();
         for (let i = 0; i < req.body.orders.length; i++) {
             // Intercept and extract any base64 images, saving them on the server drive in /uploads/ordered or /uploads/ready
             req.body.orders[i] = processOrderImages(req.body.orders[i]);
@@ -164,7 +165,6 @@ router.post('/orders', ensureDb, async (req, res) => {
                 await connection.query(`DELETE FROM payment_schedules WHERE orderId = ?`, [order.id]);
             }
         }
-        connection.release();
         
         // SOCKET IO BROADCAST: Notify all clients about the new/updated orders immediately
         if (req.io) {
@@ -173,13 +173,20 @@ router.post('/orders', ensureDb, async (req, res) => {
         }
 
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { 
+        res.status(500).json({ error: e.message }); 
+    } finally {
+        if (connection) {
+            try { connection.release(); } catch (e) {}
+        }
+    }
 });
 
 router.delete('/orders/:id', ensureDb, async (req, res) => {
+    let connection;
     try {
         const pool = getPool();
-        const connection = await pool.getConnection();
+        connection = await pool.getConnection();
         
         // Fetch order details first so we have a restorable backup in the journal
         const [rows] = await connection.query('SELECT data FROM orders WHERE id = ?', [req.params.id]);
@@ -192,7 +199,6 @@ router.delete('/orders/:id', ensureDb, async (req, res) => {
 
         await connection.query('DELETE FROM payment_schedules WHERE orderId = ?', [req.params.id]);
         await connection.query('DELETE FROM orders WHERE id = ?', [req.params.id]);
-        connection.release();
         
         // Broadcast deletion event to clients
         if (req.io) {
@@ -200,30 +206,45 @@ router.delete('/orders/:id', ensureDb, async (req, res) => {
         }
         
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { 
+        res.status(500).json({ error: e.message }); 
+    } finally {
+        if (connection) {
+            try { connection.release(); } catch (e) {}
+        }
+    }
 });
 
 router.post('/customers', ensureDb, async (req, res) => {
+    let connection;
     try {
         const pool = getPool();
-        const connection = await pool.getConnection();
-        for (const cust of req.body.customers) {
+        connection = await pool.getConnection();
+        for (let cust of req.body.customers) {
+            cust = stripAndSaveBase64Images(cust, 'customers');
             await connection.query('INSERT INTO customers (id, contact, name, data, updated_at) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), data=VALUES(data), updated_at=VALUES(updated_at)', [cust.id, cust.contact, cust.name, JSON.stringify(cust), Date.now()]);
             await journalTransaction('CUSTOMER', cust.id, 'SYNC_WRITE', cust, connection);
         }
-        connection.release();
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { 
+        res.status(500).json({ error: e.message }); 
+    } finally {
+        if (connection) {
+            try { connection.release(); } catch (e) {}
+        }
+    }
 });
 
 router.post('/templates', ensureDb, async (req, res) => {
+    let connection;
     try {
         const pool = getPool();
-        const connection = await pool.getConnection();
+        connection = await pool.getConnection();
         // Clear old templates and insert current active set
         await connection.query('DELETE FROM templates');
         if (Array.isArray(req.body.templates)) {
-            for (const tpl of req.body.templates) {
+            for (let tpl of req.body.templates) {
+                tpl = stripAndSaveBase64Images(tpl, 'general');
                 await connection.query(
                     `INSERT INTO templates (id, name, category, data) VALUES (?, ?, ?, ?) 
                      ON DUPLICATE KEY UPDATE name=VALUES(name), category=VALUES(category), data=VALUES(data)`,
@@ -231,36 +252,50 @@ router.post('/templates', ensureDb, async (req, res) => {
                 );
             }
         }
-        connection.release();
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { 
+        res.status(500).json({ error: e.message }); 
+    } finally {
+        if (connection) {
+            try { connection.release(); } catch (e) {}
+        }
+    }
 });
 
 router.post('/catalog', ensureDb, async (req, res) => {
+    let connection;
     try {
         const pool = getPool();
-        const connection = await pool.getConnection();
-        for (const item of req.body.catalog) {
+        connection = await pool.getConnection();
+        for (let item of req.body.catalog) {
+            item = stripAndSaveBase64Images(item, 'catalog');
             await connection.query(
                 `INSERT INTO catalog (id, category, data) VALUES (?, ?, ?) 
                  ON DUPLICATE KEY UPDATE category=VALUES(category), data=VALUES(data)`,
                 [item.id, item.category, JSON.stringify(item)]
             );
         }
-        connection.release();
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { 
+        res.status(500).json({ error: e.message }); 
+    } finally {
+        if (connection) {
+            try { connection.release(); } catch (e) {}
+        }
+    }
 });
 
 router.post('/external-payments', ensureDb, async (req, res) => {
+    let connection;
     try {
         const pool = getPool();
-        const connection = await pool.getConnection();
+        connection = await pool.getConnection();
         const syncedRecords = [];
 
         if (Array.isArray(req.body.externalPayments)) {
-            for (let item of req.body.externalPayments) {
-                if (!item || !item.id) continue;
+            for (let rawItem of req.body.externalPayments) {
+                if (!rawItem || !rawItem.id) continue;
+                const item = stripAndSaveBase64Images(rawItem, 'general');
 
                 let existingRecord = null;
                 try {
@@ -332,36 +367,48 @@ router.post('/external-payments', ensureDb, async (req, res) => {
                 syncedRecords.push(item);
             }
         }
-        connection.release();
+        
         if (req.io && syncedRecords.length > 0) {
             req.io.emit('external_payments_sync', syncedRecords);
         }
         res.json({ success: true, records: syncedRecords });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { 
+        res.status(500).json({ error: e.message }); 
+    } finally {
+        if (connection) {
+            try { connection.release(); } catch (e) {}
+        }
+    }
 });
 
 router.get('/estimates', ensureDb, async (req, res) => {
+    let connection;
     try {
         const pool = getPool();
-        const connection = await pool.getConnection();
+        connection = await pool.getConnection();
         const [rows] = await connection.query('SELECT data FROM salesman_estimates ORDER BY updated_at DESC LIMIT 100');
-        connection.release();
         const estimates = rows.map(r => JSON.parse(r.data));
         res.json({ success: true, estimates });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    } finally {
+        if (connection) {
+            try { connection.release(); } catch (e) {}
+        }
     }
 });
 
 router.post('/estimates', ensureDb, async (req, res) => {
+    let connection;
     try {
         const pool = getPool();
-        const connection = await pool.getConnection();
-        const { estimate } = req.body;
+        connection = await pool.getConnection();
+        let { estimate } = req.body;
         if (!estimate || !estimate.id) {
-            connection.release();
             return res.status(400).json({ error: 'Valid estimate object with ID is required' });
         }
+
+        estimate = stripAndSaveBase64Images(estimate, 'estimates');
 
         const now = Date.now();
         await connection.query(
@@ -385,47 +432,59 @@ router.post('/estimates', ensureDb, async (req, res) => {
                 now
             ]
         );
-        connection.release();
         res.json({ success: true, id: estimate.id });
     } catch (e) {
         console.error("[API Estimate Sync Error]", e);
         res.status(500).json({ error: e.message });
+    } finally {
+        if (connection) {
+            try { connection.release(); } catch (e) {}
+        }
     }
 });
 
 router.delete('/estimates/:id', ensureDb, async (req, res) => {
+    let connection;
     try {
         const pool = getPool();
-        const connection = await pool.getConnection();
+        connection = await pool.getConnection();
         await connection.query('DELETE FROM salesman_estimates WHERE id = ?', [req.params.id]);
-        connection.release();
         res.json({ success: true, id: req.params.id });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    } finally {
+        if (connection) {
+            try { connection.release(); } catch (e) {}
+        }
     }
 });
 
 router.post('/plan-templates', ensureDb, async (req, res) => {
+    let connection;
     try {
         const pool = getPool();
-        const connection = await pool.getConnection();
+        connection = await pool.getConnection();
         
         // Clear old templates and insert the complete current active set
         await connection.query('DELETE FROM plan_templates');
         
         if (Array.isArray(req.body.planTemplates)) {
-            for (const tpl of req.body.planTemplates) {
+            for (let tpl of req.body.planTemplates) {
+                tpl = stripAndSaveBase64Images(tpl, 'general');
                 await connection.query(
                     'INSERT INTO plan_templates (id, name, data) VALUES (?, ?, ?)',
                     [tpl.id, tpl.name, JSON.stringify(tpl)]
                 );
             }
         }
-        connection.release();
         res.json({ success: true });
     } catch (e) {
         console.error("[API Plan Templates Sync Error]", e);
         res.status(500).json({ error: e.message });
+    } finally {
+        if (connection) {
+            try { connection.release(); } catch (e) {}
+        }
     }
 });
 

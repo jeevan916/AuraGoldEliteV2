@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 
 let pool = null;
+let initPromise = null;
 export let isMock = false;
 export let lastDbError = null;
 const envAdminUsername = process.env.APP_ADMIN || 'admin';
@@ -60,6 +61,21 @@ export const mockData = {
 };
 
 export async function initDb() {
+    if (initPromise) {
+        return initPromise;
+    }
+
+    // If pool is already established and functioning, verify and return immediately
+    if (pool && !isMock) {
+        try {
+            const testConn = await pool.getConnection();
+            testConn.release();
+            return { success: true, mock: false };
+        } catch (e) {
+            console.warn("[DB] Existing pool unhealthy, re-initializing:", e.message);
+        }
+    }
+
     const host = process.env.DB_HOST;
     // Only fallback to mock if host is missing, OR if we are inside AI Studio and trying to use localhost
     if (!host || (process.env.APPLET_ID && (host === '127.0.0.1' || host === 'localhost'))) {
@@ -72,26 +88,30 @@ export async function initDb() {
         return { success: true, mock: true };
     }
 
-    let tempPool = null;
-    try {
-        const dbConfig = {
-            host: host,
-            user: process.env.DB_USER,
-            password: process.env.DB_PASSWORD,
-            database: process.env.DB_NAME,
-            port: parseInt(process.env.DB_PORT || '3306'),
-            socketPath: process.env.DB_SOCKET_PATH || undefined,
-            waitForConnections: true,
-            connectionLimit: 5,
-            connectTimeout: 5000,
-            enableKeepAlive: true,
-            ssl: process.env.DB_SSL === 'true' ? {
-                rejectUnauthorized: false
-            } : undefined
-        };
-        tempPool = mysql.createPool(dbConfig);
-        const connection = await tempPool.getConnection();
-        console.log(`[DB] Successfully connected to MySQL at ${host}`);
+    initPromise = (async () => {
+        let tempPool = null;
+        let connection = null;
+        try {
+            const dbConfig = {
+                host: host,
+                user: process.env.DB_USER,
+                password: process.env.DB_PASSWORD,
+                database: process.env.DB_NAME,
+                port: parseInt(process.env.DB_PORT || '3306'),
+                socketPath: process.env.DB_SOCKET_PATH || undefined,
+                waitForConnections: true,
+                connectionLimit: 10,
+                queueLimit: 0,
+                connectTimeout: 8000,
+                enableKeepAlive: true,
+                keepAliveInitialDelay: 10000,
+                ssl: process.env.DB_SSL === 'true' ? {
+                    rejectUnauthorized: false
+                } : undefined
+            };
+            tempPool = mysql.createPool(dbConfig);
+            connection = await tempPool.getConnection();
+            console.log(`[DB] Successfully connected to MySQL at ${host}`);
         
         const tables = [
             `CREATE TABLE IF NOT EXISTS gold_rates (id INT AUTO_INCREMENT PRIMARY KEY, rate24k DECIMAL(10, 2), rate22k DECIMAL(10, 2), rate18k DECIMAL(10, 2), rateSilver DECIMAL(10, 2) DEFAULT 0, recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
@@ -359,32 +379,43 @@ export async function initDb() {
             );
         }
 
-        connection.release();
-        
-        // Swap to the new pool cleanly
-        const oldPool = pool;
-        pool = tempPool;
-        isMock = false;
-        lastDbError = null;
-        if (oldPool && oldPool !== pool) {
-            try { await oldPool.end(); } catch (e) {}
+            if (connection) {
+                try { connection.release(); } catch (e) {}
+                connection = null;
+            }
+            
+            // Swap to the new pool cleanly
+            const oldPool = pool;
+            pool = tempPool;
+            isMock = false;
+            lastDbError = null;
+            if (oldPool && oldPool !== pool) {
+                try { await oldPool.end(); } catch (e) {}
+            }
+            console.log(`[DB] Successfully initialized and verified MySQL at ${host}`);
+            return { success: true, mock: false };
+        } catch (err) {
+            if (connection) {
+                try { connection.release(); } catch (e) {}
+            }
+            lastDbError = err.message || String(err);
+            console.error("[DB] Connection Error:", err.message);
+            console.warn("[DB] Falling back to Mock Database due to connection failure.");
+            if (tempPool) {
+                try { await tempPool.end(); } catch (e) {}
+            }
+            if (pool) {
+                try { await pool.end(); } catch (e) {}
+                pool = null;
+            }
+            isMock = true;
+            return { success: true, mock: true, error: err.message };
+        } finally {
+            initPromise = null;
         }
-        console.log(`[DB] Successfully connected to MySQL at ${host}`);
-        return { success: true, mock: false };
-    } catch (err) {
-        lastDbError = err.message || String(err);
-        console.error("[DB] Connection Error:", err.message);
-        console.warn("[DB] Falling back to Mock Database due to connection failure.");
-        if (tempPool) {
-            try { await tempPool.end(); } catch (e) {}
-        }
-        if (pool) {
-            try { await pool.end(); } catch (e) {}
-            pool = null;
-        }
-        isMock = true;
-        return { success: true, mock: true, error: err.message };
-    }
+    })();
+
+    return initPromise;
 }
 
 export const getPool = () => {
