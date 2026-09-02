@@ -115,7 +115,7 @@ export const Step2JewelryCart: React.FC<Step2JewelryCartProps> = ({
                         {item.stoneCharges ? (
                           <span>Stones: <strong className="text-indigo-700">₹{item.stoneCharges.toLocaleString('en-IN')}</strong></span>
                         ) : null}
-                        <span>VA/Making: <strong className="text-slate-800">{item.wastagePercentage}% + ₹{item.makingChargesPerGram}/g</strong></span>
+                        <span>Making & Majuri: <strong className="text-slate-800">{item.wastagePercentage}% + ₹{item.makingChargesPerGram}/g</strong></span>
                       </div>
                     </div>
                   </div>
@@ -140,11 +140,11 @@ export const Step2JewelryCart: React.FC<Step2JewelryCartProps> = ({
                         <span className="font-black text-slate-800">₹{item.baseMetalValue.toLocaleString('en-IN')}</span>
                       </div>
                       <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-500 block">Wastage / VA ({item.wastagePercentage}%)</span>
+                        <span className="text-[10px] text-slate-500 block">Making Charges / Labour ({item.wastagePercentage}%)</span>
                         <span className="font-black text-slate-800">₹{item.wastageValue.toLocaleString('en-IN')}</span>
                       </div>
                       <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-500 block">Making Charges (₹{item.makingChargesPerGram}/g)</span>
+                        <span className="text-[10px] text-slate-500 block">Majuri (₹{item.makingChargesPerGram}/g)</span>
                         <span className="font-black text-slate-800">₹{item.totalLaborValue.toLocaleString('en-IN')}</span>
                       </div>
                       <div className="bg-white p-2.5 rounded-xl border border-slate-200">

@@ -204,7 +204,7 @@ export const SalesmanModals: React.FC<SalesmanModalsProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">Wastage / VA (%)</label>
+                  <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">Making Charges / Labour (%)</label>
                   <input
                     type="number"
                     step="0.1"
@@ -216,7 +216,7 @@ export const SalesmanModals: React.FC<SalesmanModalsProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">Making Charges (₹/g)</label>
+                  <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">Majuri (₹/g)</label>
                   <input
                     type="number"
                     step="10"

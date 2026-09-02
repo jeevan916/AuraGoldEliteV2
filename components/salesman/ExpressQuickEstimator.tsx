@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
-  Sparkles, Zap, Scale, Gem, ReceiptIndianRupee, Send, Copy, 
+  Sparkles, Zap, Scale, ReceiptIndianRupee, Send, Copy, 
   Printer, ArrowRight, RefreshCw, Edit3, User, Phone, CheckCircle2,
-  Percent, ShieldCheck, Coins, Plus, Eye, Check, ChevronDown, ChevronUp
+  Percent, Coins, Plus, Eye, Check, ChevronDown, ChevronUp, Gem,
+  RotateCcw, Bookmark, Keyboard, Maximize2, Minimize2, Delete,
+  Sliders, MessageSquare, ShoppingBag
 } from 'lucide-react';
-import { JewelryDetail, OldGoldExchangeItem, ProductionStatus } from '../../types';
+import { JewelryDetail, ProductionStatus } from '../../types';
 import { ComponentBreakdownCard } from './ComponentBreakdownCard';
 
 interface ExpressQuickEstimatorProps {
@@ -32,32 +34,56 @@ interface ExpressQuickEstimatorProps {
   setDiscountAmount: (amt: number) => void;
   taxRate: number;
 
+  // Old Gold in Express Mode
+  enableOldGold: boolean;
+  setEnableOldGold: (val: boolean) => void;
+  oldGoldGrossWeight: number;
+  oldGoldPurity: string;
+  setOldGoldGrossWeight: (val: number) => void;
+  setOldGoldPurity: (val: string) => void;
+  oldGoldRate: number;
+  setOldGoldRate: (val: number) => void;
+  oldGoldCredit: number;
+
   // Actions
   onAddToCart: (item: JewelryDetail) => void;
-  onShareWhatsApp: () => void;
-  onCopyQuote: () => void;
-  onToggleCustomerView: () => void;
-  onPrintSlip: () => void;
-  onConvertEstimateToOrder: () => void;
+  onShareWhatsApp: (item?: JewelryDetail) => void;
+  onCopyQuote: (item?: JewelryDetail) => void;
+  onToggleCustomerView: (item?: JewelryDetail) => void;
+  onPrintSlip: (item?: JewelryDetail) => void;
+  onConvertEstimateToOrder: (item?: JewelryDetail) => void;
+  onSaveEstimateManual?: () => void;
+  onExpressItemChange?: (item: JewelryDetail) => void;
   copiedText: boolean;
   autoSaveStatus: 'SAVED' | 'SAVING' | 'IDLE';
+
+  // Fullscreen state
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }
 
-const POPULAR_CATEGORIES = [
-  { id: 'Ring', label: 'Ring', defaultWastage: 10, defaultMaking: 550 },
-  { id: 'Necklace', label: 'Necklace / Choker', defaultWastage: 12, defaultMaking: 650 },
-  { id: 'Bangles', label: 'Bangles / Kada', defaultWastage: 9, defaultMaking: 450 },
-  { id: 'Chain', label: 'Gold Chain', defaultWastage: 8, defaultMaking: 350 },
-  { id: 'Earrings', label: 'Earrings / Jhumka', defaultWastage: 11, defaultMaking: 550 },
-  { id: 'Bracelet', label: 'Bracelet', defaultWastage: 10, defaultMaking: 500 },
-  { id: 'Mangalsutra', label: 'Mangalsutra', defaultWastage: 10, defaultMaking: 550 },
-  { id: 'Pendant', label: 'Pendant', defaultWastage: 9, defaultMaking: 450 },
-  { id: 'Coin', label: 'Gold / Silver Coin', defaultWastage: 2, defaultMaking: 150 },
-  { id: 'Silver Article', label: 'Silver Article', defaultWastage: 5, defaultMaking: 200 },
-];
+export type CalcField = 
+  | 'grossWeight'
+  | 'stoneWeight'
+  | 'makingPercent'
+  | 'customRate'
+  | 'stoneCharges'
+  | 'discountAmount'
+  | 'oldGoldGrossWeight'
+  | 'oldGoldRate'
+  | 'otherCharges';
 
-const WASTAGE_PRESETS = [8, 10, 12, 14, 16];
-const MAKING_PRESETS = [350, 450, 550, 650, 800];
+const CATEGORIES = [
+  { id: 'Ring', label: 'Ring', defaultMakingPct: 12, icon: '💍' },
+  { id: 'Chain', label: 'Chain', defaultMakingPct: 10, icon: '📿' },
+  { id: 'Necklace', label: 'Necklace', defaultMakingPct: 14, icon: '✨' },
+  { id: 'Bangles', label: 'Bangles', defaultMakingPct: 12, icon: '🪙' },
+  { id: 'Earrings', label: 'Earrings', defaultMakingPct: 14, icon: '💎' },
+  { id: 'Bracelet', label: 'Bracelet', defaultMakingPct: 12, icon: '⚡' },
+  { id: 'Pendant', label: 'Pendant', defaultMakingPct: 12, icon: '🌟' },
+  { id: 'Coin', label: 'Coin', defaultMakingPct: 3, icon: '🥇' },
+  { id: 'Silver', label: 'Silver Article', defaultMakingPct: 15, icon: '🥈' },
+];
 
 export const ExpressQuickEstimator: React.FC<ExpressQuickEstimatorProps> = ({
   rate24K,
@@ -78,34 +104,61 @@ export const ExpressQuickEstimator: React.FC<ExpressQuickEstimatorProps> = ({
   discountAmount,
   setDiscountAmount,
   taxRate,
+  enableOldGold,
+  setEnableOldGold,
+  oldGoldGrossWeight,
+  setOldGoldGrossWeight,
+  oldGoldPurity,
+  setOldGoldPurity,
+  oldGoldRate,
+  setOldGoldRate,
+  oldGoldCredit,
   onAddToCart,
   onShareWhatsApp,
   onCopyQuote,
   onToggleCustomerView,
   onPrintSlip,
   onConvertEstimateToOrder,
+  onSaveEstimateManual,
+  onExpressItemChange,
   copiedText,
-  autoSaveStatus
+  autoSaveStatus,
+  isFullscreen = false,
+  onToggleFullscreen
 }) => {
-  // Fast Form State
+  // Main Product States
   const [category, setCategory] = useState('Ring');
-  const [customTitle, setCustomTitle] = useState('');
   const [purity, setPurity] = useState<'24K' | '22K' | '18K' | '14K' | '925' | '999'>('22K');
-  const [metalColor, setMetalColor] = useState('Yellow Gold');
-  const [grossWeight, setGrossWeight] = useState<number>(6.000);
-  const [stoneWeight, setStoneWeight] = useState<number>(0.500);
-  const [wastagePercentage, setWastagePercentage] = useState<number>(10);
-  const [makingChargesPerGram, setMakingChargesPerGram] = useState<number>(550);
-  const [stoneCharges, setStoneCharges] = useState<number>(0);
-  const [stoneDetails, setStoneDetails] = useState('');
-  const [otherCharges, setOtherCharges] = useState<number>(45); // Standard Hallmarking
-  const [showAdvancedFields, setShowAdvancedFields] = useState(false);
+  const [customTitle, setCustomTitle] = useState('');
+  const [customRate, setCustomRate] = useState<string>('');
+  const [isEditingRate, setIsEditingRate] = useState(false);
 
-  // Auto calculate Net Weight
-  const netWeight = Math.max(0, Number((grossWeight - (stoneWeight || 0)).toFixed(3)));
+  // Weights & percentages as precise string buffers (allows typing decimals like "10.", "10.500")
+  const [grossWeight, setGrossWeight] = useState<string>('6.0');
+  const [stoneWeight, setStoneWeight] = useState<string>('0.5');
 
-  // Get active benchmark rate for the chosen purity
-  const getPurityRate = () => {
+  // Making Charges (%) - Pure making percentage (Majuri skipped completely)
+  const [makingPercent, setMakingPercent] = useState<string>('12');
+
+  // Additional charges
+  const [stoneCharges, setStoneCharges] = useState<string>('0');
+  const [otherCharges, setOtherCharges] = useState<string>('45'); // Standard Hallmarking
+
+  // String buffers for discount & old gold
+  const [discountStr, setDiscountStr] = useState<string>(discountAmount ? String(discountAmount) : '0');
+  const [oldGoldWeightStr, setOldGoldWeightStr] = useState<string>(oldGoldGrossWeight ? String(oldGoldGrossWeight) : '0');
+  const [oldGoldRateStr, setOldGoldRateStr] = useState<string>(oldGoldRate ? String(oldGoldRate) : '');
+
+  // Active Keypad Field (Focus)
+  const [activeField, setActiveField] = useState<CalcField>('grossWeight');
+
+  // Computed Values
+  const numericGross = parseFloat(grossWeight) || 0;
+  const numericStone = parseFloat(stoneWeight) || 0;
+  const netWeight = Math.max(0, Number((numericGross - numericStone).toFixed(3)));
+
+  // Benchmark default rate for purity
+  const defaultRate = (() => {
     if (purity === '925') return Math.round(rateSilver * 0.925);
     if (purity === '999') return rateSilver;
     if (purity === '24K') return rate24K;
@@ -113,525 +166,846 @@ export const ExpressQuickEstimator: React.FC<ExpressQuickEstimatorProps> = ({
     if (purity === '18K') return rate18K;
     if (purity === '14K') return rate14K;
     return rate22K;
-  };
+  })();
 
-  const activeRate = getPurityRate();
+  const numericCustomRate = parseFloat(customRate) || 0;
+  const activeRate = numericCustomRate > 0 ? numericCustomRate : defaultRate;
 
-  // Instant Component Calculations
+  // Financial Calculations (Skip Majuri completely, use Making % of Metal Value)
   const baseMetalValue = Math.round(netWeight * activeRate);
-  const wastageValue = Math.round(baseMetalValue * (wastagePercentage / 100));
-  const totalLaborValue = Math.round(makingChargesPerGram * netWeight);
-  const subTotalPreTax = baseMetalValue + wastageValue + totalLaborValue + (stoneCharges || 0) + (otherCharges || 0);
+
+  const numericMakingPct = parseFloat(makingPercent) || 0;
+  const makingChargesValue = Math.round(baseMetalValue * (numericMakingPct / 100));
+
+  const numericStoneCharges = parseFloat(stoneCharges) || 0;
+  const numericOtherCharges = parseFloat(otherCharges) || 45;
+
+  const subTotalPreTax = baseMetalValue + makingChargesValue + numericStoneCharges + numericOtherCharges;
   const taxAmount = Math.round(subTotalPreTax * (taxRate / 100));
   const grossFinalAmount = subTotalPreTax + taxAmount;
-  const netPayableAmount = Math.max(0, grossFinalAmount - (discountAmount || 0));
 
-  // Handle Category selection
+  const totalDeductions = (enableOldGold ? oldGoldCredit : 0) + (discountAmount || 0);
+  const netPayableAmount = Math.max(0, grossFinalAmount - totalDeductions);
+
+  // Real-time complete JewelryDetail object representing currently configured item
+  const currentJewelryItem: JewelryDetail = useMemo(() => ({
+    id: `ITEM-EXPRESS-${Date.now()}`,
+    category,
+    metalColor: purity.includes('925') || purity.includes('999') ? 'Silver' : 'Yellow Gold',
+    grossWeight: numericGross || netWeight,
+    netWeight,
+    wastagePercentage: numericMakingPct,
+    wastageValue: makingChargesValue,
+    makingChargesPerGram: 0,
+    totalLaborValue: 0,
+    stoneCharges: numericStoneCharges,
+    stoneDetails: numericStone > 0 ? `${numericStone}g Stone Weight` : '',
+    otherCharges: numericOtherCharges,
+    purity: purity as any,
+    taxAmount,
+    baseMetalValue,
+    finalAmount: grossFinalAmount,
+    customizationDetails: customTitle.trim() || `${purity} ${category} (${netWeight}g)`,
+    productionStatus: ProductionStatus.DESIGNING,
+    photoUrls: []
+  }), [
+    category, purity, numericGross, netWeight, numericMakingPct, makingChargesValue,
+    numericStoneCharges, numericStone, numericOtherCharges, taxAmount, baseMetalValue,
+    grossFinalAmount, customTitle
+  ]);
+
+  // Synchronize item state with parent calculator continuously
+  useEffect(() => {
+    onExpressItemChange?.(currentJewelryItem);
+  }, [currentJewelryItem, onExpressItemChange]);
+
+  // Category Selector Handler
   const handleSelectCategory = (catId: string) => {
     setCategory(catId);
-    const found = POPULAR_CATEGORIES.find(c => c.id === catId);
+    const found = CATEGORIES.find(c => c.id === catId);
     if (found) {
-      setWastagePercentage(found.defaultWastage);
-      setMakingChargesPerGram(found.defaultMaking);
+      setMakingPercent(String(found.defaultMakingPct));
     }
   };
 
-  // Convert to JewelryDetail object for multi-item cart
+  // Convert to JewelryDetail item for Cart
   const handleAddCurrentToCart = () => {
     if (netWeight <= 0) {
-      alert("Please enter a valid Gross and Net gold weight.");
+      alert("Please enter a valid gold weight (Gross / Net weight > 0).");
       return;
     }
 
     const newItem: JewelryDetail = {
-      id: `ITEM-${Date.now()}`,
-      category,
-      metalColor,
-      grossWeight: grossWeight || netWeight,
-      netWeight,
-      wastagePercentage,
-      wastageValue,
-      makingChargesPerGram,
-      totalLaborValue,
-      stoneCharges: stoneCharges || 0,
-      stoneDetails,
-      otherCharges: otherCharges || 45,
-      purity: purity as any,
-      taxAmount,
-      baseMetalValue,
-      finalAmount: grossFinalAmount,
-      customizationDetails: customTitle.trim() || `${purity} ${category} (Gross ${grossWeight}g / Net ${netWeight}g)`,
-      productionStatus: ProductionStatus.DESIGNING,
-      photoUrls: []
+      ...currentJewelryItem,
+      id: `ITEM-${Date.now()}`
     };
 
     onAddToCart(newItem);
   };
 
-  return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* 1. TOP LIVE RATE & CUSTOMER QUICK STRIP */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-        {/* Left: Customer Info (Compact) */}
-        <div className="md:col-span-7 bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-3">
-          <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-              <User size={13} className="text-amber-600" />
-              <span>Customer Identification</span>
-            </span>
-            {autoSaveStatus === 'SAVED' && (
-              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center gap-1">
-                <CheckCircle2 size={11} />
-                <span>Auto-saved</span>
-              </span>
-            )}
-            {autoSaveStatus === 'SAVING' && (
-              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
-                <span>Saving...</span>
-              </span>
-            )}
-          </div>
+  // --- KEYPAD DATA HANDLING (String Preserving) ---
+  const getCurrentFieldValue = (field: CalcField): string => {
+    switch (field) {
+      case 'grossWeight': return grossWeight;
+      case 'stoneWeight': return stoneWeight;
+      case 'makingPercent': return makingPercent;
+      case 'customRate': return isEditingRate ? customRate : (customRate !== '' ? customRate : String(activeRate));
+      case 'discountAmount': return discountStr;
+      case 'oldGoldGrossWeight': return oldGoldWeightStr;
+      case 'oldGoldRate': return oldGoldRateStr !== '' ? oldGoldRateStr : (oldGoldRate ? String(oldGoldRate) : '');
+      case 'stoneCharges': return stoneCharges;
+      case 'otherCharges': return otherCharges;
+      default: return '';
+    }
+  };
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <input
-                type="text"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="Customer Full Name (Optional)"
-                className="w-full text-xs font-bold text-slate-900 bg-slate-50 focus:bg-white border border-slate-200 focus:border-amber-500 rounded-xl px-3 py-2.5 outline-none"
-              />
-            </div>
-            <div>
-              <input
-                type="tel"
-                inputMode="numeric"
-                value={customerContact}
-                onChange={(e) => setCustomerContact(e.target.value)}
-                placeholder="WhatsApp / Mobile No."
-                className="w-full text-xs font-bold text-slate-900 bg-slate-50 focus:bg-white border border-slate-200 focus:border-amber-500 rounded-xl px-3 py-2.5 outline-none font-mono"
-              />
+  const applyFieldValue = useCallback((field: CalcField, strVal: string) => {
+    switch (field) {
+      case 'grossWeight':
+        setGrossWeight(strVal);
+        break;
+      case 'stoneWeight':
+        setStoneWeight(strVal);
+        break;
+      case 'makingPercent':
+        setMakingPercent(strVal);
+        break;
+      case 'customRate':
+        setIsEditingRate(true);
+        setCustomRate(strVal);
+        break;
+      case 'discountAmount':
+        setDiscountStr(strVal);
+        setDiscountAmount(parseFloat(strVal) || 0);
+        break;
+      case 'oldGoldGrossWeight':
+        setOldGoldWeightStr(strVal);
+        setOldGoldGrossWeight(parseFloat(strVal) || 0);
+        break;
+      case 'oldGoldRate':
+        setOldGoldRateStr(strVal);
+        setOldGoldRate(parseFloat(strVal) || 0);
+        break;
+      case 'stoneCharges':
+        setStoneCharges(strVal);
+        break;
+      case 'otherCharges':
+        setOtherCharges(strVal);
+        break;
+    }
+  }, [setDiscountAmount, setOldGoldGrossWeight, setOldGoldRate]);
+
+  const handleKeypadPress = useCallback((key: string) => {
+    const currentVal = getCurrentFieldValue(activeField);
+    let strVal = currentVal === undefined || currentVal === null ? '' : String(currentVal);
+
+    if (key === '.') {
+      if (!strVal.includes('.')) {
+        strVal = strVal === '' ? '0.' : strVal + '.';
+      }
+    } else if (key === '00') {
+      if (strVal === '' || strVal === '0') {
+        strVal = '0';
+      } else {
+        strVal = strVal + '00';
+      }
+    } else {
+      if (strVal === '0' && key !== '.') {
+        strVal = key;
+      } else {
+        strVal = strVal + key;
+      }
+    }
+
+    applyFieldValue(activeField, strVal);
+  }, [activeField, applyFieldValue, grossWeight, stoneWeight, makingPercent, isEditingRate, customRate, activeRate, discountStr, oldGoldWeightStr, oldGoldRateStr, stoneCharges, otherCharges]);
+
+  const handleKeypadBackspace = useCallback(() => {
+    const currentVal = getCurrentFieldValue(activeField);
+    let strVal = currentVal === undefined || currentVal === null ? '' : String(currentVal);
+
+    if (strVal.length > 0) {
+      strVal = strVal.slice(0, -1);
+      applyFieldValue(activeField, strVal);
+    }
+  }, [activeField, applyFieldValue, grossWeight, stoneWeight, makingPercent, isEditingRate, customRate, activeRate, discountStr, oldGoldWeightStr, oldGoldRateStr, stoneCharges, otherCharges]);
+
+  const handleKeypadClear = useCallback(() => {
+    applyFieldValue(activeField, '');
+  }, [activeField, applyFieldValue]);
+
+  const handleKeypadQuickAdd = useCallback((amount: number) => {
+    const currentVal = getCurrentFieldValue(activeField);
+    const num = parseFloat(String(currentVal)) || 0;
+    const nextVal = Number((num + amount).toFixed(3));
+    applyFieldValue(activeField, String(nextVal));
+  }, [activeField, applyFieldValue, grossWeight, stoneWeight, makingPercent, isEditingRate, customRate, activeRate, discountStr, oldGoldWeightStr, oldGoldRateStr, stoneCharges, otherCharges]);
+
+  // Field cycling
+  const fieldOrder: CalcField[] = [
+    'grossWeight',
+    'stoneWeight',
+    'makingPercent',
+    'customRate',
+    'stoneCharges',
+    'discountAmount'
+  ];
+
+  const handleNextField = () => {
+    const idx = fieldOrder.indexOf(activeField);
+    if (idx !== -1 && idx < fieldOrder.length - 1) {
+      setActiveField(fieldOrder[idx + 1]);
+    } else {
+      setActiveField(fieldOrder[0]);
+    }
+  };
+
+  // Keyboard navigation support
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Do not capture if user is typing into an explicit text input (e.g. name or notes)
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT') return;
+
+      if (e.key >= '0' && e.key <= '9') {
+        e.preventDefault();
+        handleKeypadPress(e.key);
+      } else if (e.key === '.') {
+        e.preventDefault();
+        handleKeypadPress('.');
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        handleKeypadBackspace();
+      } else if (e.key === 'Escape' || e.key === 'c' || e.key === 'C') {
+        e.preventDefault();
+        handleKeypadClear();
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        handleNextField();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeypadPress, handleKeypadBackspace, handleKeypadClear]);
+
+  // Quick increment buttons according to active field
+  const isWeightActive = activeField === 'grossWeight' || activeField === 'stoneWeight' || activeField === 'oldGoldGrossWeight';
+  const isPercentActive = activeField === 'makingPercent';
+
+  return (
+    <div className="space-y-4 animate-fadeIn max-w-5xl mx-auto">
+      
+      {/* 1. TOP STATUS STRIP (Apple Clean Glass Bar) */}
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl px-4 py-2.5 border border-slate-200/80 shadow-2xs flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+            <Zap size={14} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black font-mono text-slate-900">{estimateId}</span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live Calculator
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Right: Live Benchmark Rates Strip */}
-        <div className="md:col-span-5 bg-gradient-to-br from-amber-500/10 via-amber-600/5 to-slate-50 rounded-3xl p-4 sm:p-5 border border-amber-200 shadow-sm flex flex-col justify-between gap-2">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1">
-              <Sparkles size={12} />
-              <span>Today's Gold Benchmark</span>
-            </span>
-            <div className="flex items-center gap-1">
-              {onRefreshRates && (
-                <button
-                  type="button"
-                  onClick={() => onRefreshRates()}
-                  disabled={refreshingRates}
-                  className="p-1 text-amber-800 hover:text-amber-950 rounded-lg hover:bg-amber-100/50 transition-colors"
-                  title="Refresh Live Rates"
-                >
-                  <RefreshCw size={13} className={refreshingRates ? 'animate-spin' : ''} />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={onOpenRateModal}
-                className="text-[10px] font-bold text-amber-800 bg-amber-100/80 hover:bg-amber-200 px-2 py-0.5 rounded-md transition-colors"
-              >
-                Edit Rates
-              </button>
-            </div>
-          </div>
+        <div className="flex items-center gap-2">
+          {onRefreshRates && (
+            <button
+              type="button"
+              onClick={() => onRefreshRates()}
+              disabled={refreshingRates}
+              className="p-1.5 text-slate-500 hover:text-amber-800 bg-slate-100 hover:bg-amber-50 rounded-xl transition-colors"
+              title="Refresh Market Rates"
+            >
+              <RefreshCw size={13} className={refreshingRates ? 'animate-spin' : ''} />
+            </button>
+          )}
 
-          <div className="grid grid-cols-3 gap-1.5 text-center">
-            <div className="bg-white/80 rounded-xl p-1.5 border border-amber-200/60 shadow-2xs">
-              <span className="text-[9px] font-black uppercase text-amber-800 block">22K (916)</span>
-              <span className="text-xs font-black text-slate-900 font-mono">₹{rate22K}</span>
-            </div>
-            <div className="bg-white/80 rounded-xl p-1.5 border border-amber-200/60 shadow-2xs">
-              <span className="text-[9px] font-black uppercase text-amber-800 block">24K Pure</span>
-              <span className="text-xs font-black text-slate-900 font-mono">₹{rate24K}</span>
-            </div>
-            <div className="bg-white/80 rounded-xl p-1.5 border border-amber-200/60 shadow-2xs">
-              <span className="text-[9px] font-black uppercase text-amber-800 block">18K (750)</span>
-              <span className="text-xs font-black text-slate-900 font-mono">₹{rate18K}</span>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={onOpenRateModal}
+            className="text-xs font-bold text-amber-950 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 px-2.5 py-1 rounded-xl transition-all flex items-center gap-1.5"
+          >
+            <Edit3 size={11} className="text-amber-700" />
+            <span>22K: ₹{rate22K.toLocaleString('en-IN')}</span>
+          </button>
+
+          {onToggleFullscreen && (
+            <button
+              type="button"
+              onClick={onToggleFullscreen}
+              className={`px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1 transition-all ${
+                isFullscreen
+                  ? 'bg-amber-500 text-slate-950 font-black'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+              title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Mode"}
+            >
+              {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+              <span className="hidden sm:inline">{isFullscreen ? 'Exit' : 'Full'}</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => onToggleCustomerView(currentJewelryItem)}
+            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1"
+          >
+            <Eye size={12} />
+            <span className="hidden sm:inline">Showcase</span>
+          </button>
         </div>
       </div>
 
-      {/* 2. MAIN 2-COLUMN WORKSPACE: LEFT INPUTS / RIGHT LIVE BREAKDOWN */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      {/* 2. MAIN 2-PANEL CALCULATOR BODY */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         
-        {/* LEFT COLUMN: FAST PRODUCT & WEIGHT CALCULATOR */}
-        <div className="lg:col-span-7 space-y-4">
-          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-5">
-            
-            {/* Header */}
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black shadow-sm shadow-amber-500/20">
-                  <Zap size={18} />
-                </div>
-                <div>
-                  <h3 className="font-black text-slate-900 text-base">Express Estimator</h3>
-                  <p className="text-xs text-slate-500">Live rate instant quotation calculator</p>
-                </div>
+        {/* LEFT COLUMN: THE PHYSICAL COMPACT CALCULATOR DEVICE */}
+        <div className="lg:col-span-7 bg-[#1C1C1E] text-white rounded-3xl p-4 sm:p-5 shadow-2xl border border-slate-800 space-y-4">
+          
+          {/* CALCULATOR SCREEN (Apple iOS Style OLED Display) */}
+          <div className="bg-[#000000]/90 rounded-2xl p-4 border border-white/10 space-y-2">
+            {/* Live Formula Tape */}
+            <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 overflow-x-auto scrollbar-none">
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-amber-400 font-bold">{purity} {category}</span>
+                <span>•</span>
+                <span>{netWeight}g net @ ₹{activeRate.toLocaleString('en-IN')}/g</span>
+                <span>+</span>
+                <span>Making ({numericMakingPct}%) ₹{makingChargesValue.toLocaleString('en-IN')}</span>
+                {numericStoneCharges > 0 && <span>+ Stones ₹{numericStoneCharges.toLocaleString('en-IN')}</span>}
+                <span>+ GST 3%</span>
+                {totalDeductions > 0 && <span className="text-rose-400">- ₹{totalDeductions.toLocaleString('en-IN')}</span>}
               </div>
+            </div>
 
-              <span className="text-xs font-mono font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded-xl">
-                {purity} @ ₹{activeRate}/g
+            {/* Big Main Readout */}
+            <div className="flex items-baseline justify-between pt-1">
+              <span className="text-xs font-mono font-bold text-amber-500 uppercase tracking-widest">
+                Net Total
+              </span>
+              <div className="text-right">
+                <span className="text-4xl sm:text-5xl font-black font-mono tracking-tight text-white">
+                  ₹{netPayableAmount.toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+
+            {/* Active Input Parameter Display Line */}
+            <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs">
+              <span className="text-slate-400 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                Editing: <strong className="text-white uppercase font-bold">
+                  {activeField === 'grossWeight' && 'Gross Weight'}
+                  {activeField === 'stoneWeight' && 'Less / Stone Wt'}
+                  {activeField === 'makingPercent' && 'Making Charges (%)'}
+                  {activeField === 'customRate' && 'Gold Rate'}
+                  {activeField === 'stoneCharges' && 'Stone Charges'}
+                  {activeField === 'discountAmount' && 'Discount'}
+                  {activeField === 'oldGoldGrossWeight' && 'Scrap Gold Wt'}
+                  {activeField === 'oldGoldRate' && 'Scrap Rate'}
+                  {activeField === 'otherCharges' && 'Other Charges'}
+                </strong>
+              </span>
+              <span className="bg-white/15 px-2.5 py-0.5 rounded-lg font-mono font-black text-amber-300">
+                {getCurrentFieldValue(activeField) !== '' ? getCurrentFieldValue(activeField) : '0'} 
+                {isWeightActive ? ' g' : isPercentActive ? ' %' : ' ₹'}
               </span>
             </div>
+          </div>
 
-            {/* Category Quick Chips */}
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
-                Jewellery Category
-              </label>
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                {POPULAR_CATEGORIES.map((cat) => (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => handleSelectCategory(cat.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      category === cat.id
-                        ? 'bg-slate-900 text-white shadow-xs'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    {cat.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Purity & Metal Selection */}
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
-                Metal Purity & Standard
-              </label>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                {[
-                  { id: '22K', label: '22K (916)', rate: rate22K },
-                  { id: '24K', label: '24K (999)', rate: rate24K },
-                  { id: '18K', label: '18K (750)', rate: rate18K },
-                  { id: '14K', label: '14K (585)', rate: rate14K },
-                  { id: '925', label: '925 Silver', rate: Math.round(rateSilver * 0.925) },
-                  { id: '999', label: '999 Fine', rate: rateSilver },
-                ].map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setPurity(p.id as any)}
-                    className={`p-2.5 rounded-2xl border text-center transition-all ${
-                      purity === p.id
-                        ? 'bg-amber-50 border-amber-500 text-amber-950 font-black shadow-xs ring-2 ring-amber-400/20'
-                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 font-bold'
-                    }`}
-                  >
-                    <span className="text-xs block">{p.label}</span>
-                    <span className="text-[10px] text-slate-500 font-mono block mt-0.5">₹{p.rate}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Weights Input: Gross, Less/Stone, Auto Net */}
-            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-[11px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                  <Scale size={14} className="text-amber-600" />
-                  <span>Weight Measurements (Grams)</span>
-                </span>
-                <span className="text-xs font-bold text-amber-800">
-                  Net Gold: <strong className="font-mono text-sm">{netWeight}g</strong>
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* Gross Weight */}
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">
-                    Gross Wt (g)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    value={grossWeight || ''}
-                    onChange={(e) => setGrossWeight(parseFloat(e.target.value) || 0)}
-                    placeholder="0.000"
-                    className="w-full text-base font-black text-slate-900 bg-white border border-slate-300 focus:border-amber-500 rounded-xl px-3 py-2.5 outline-none font-mono"
-                  />
-                </div>
-
-                {/* Less / Stone Weight */}
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">
-                    Less / Stone Wt (g)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    value={stoneWeight || ''}
-                    onChange={(e) => setStoneWeight(parseFloat(e.target.value) || 0)}
-                    placeholder="0.000"
-                    className="w-full text-base font-bold text-slate-800 bg-white border border-slate-300 focus:border-amber-500 rounded-xl px-3 py-2.5 outline-none font-mono"
-                  />
-                </div>
-
-                {/* Net Gold Weight (Computed) */}
-                <div className="bg-amber-100/60 border border-amber-300 rounded-xl p-2.5 text-center flex flex-col justify-center">
-                  <span className="text-[10px] font-black uppercase text-amber-900 block">
-                    Calculated Net Gold
-                  </span>
-                  <span className="text-lg font-black text-amber-950 font-mono mt-0.5">
-                    {netWeight} g
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Wastage / Value Addition (VA) */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                  Wastage / Value Addition (VA %)
-                </label>
-                <span className="text-xs font-bold text-slate-700">
-                  {wastagePercentage}% = <strong className="font-mono text-amber-800">₹{wastageValue.toLocaleString('en-IN')}</strong>
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 flex-1 overflow-x-auto pb-0.5">
-                  {WASTAGE_PRESETS.map((pct) => (
-                    <button
-                      key={pct}
-                      type="button"
-                      onClick={() => setWastagePercentage(pct)}
-                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                        wastagePercentage === pct
-                          ? 'bg-amber-600 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
-                    >
-                      {pct}%
-                    </button>
-                  ))}
-                </div>
-
-                <div className="w-24 shrink-0">
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    max="100"
-                    value={wastagePercentage || ''}
-                    onChange={(e) => setWastagePercentage(parseFloat(e.target.value) || 0)}
-                    placeholder="Custom %"
-                    className="w-full text-xs font-bold text-center bg-slate-50 border border-slate-300 rounded-xl px-2 py-2"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Making Charges (₹/g) */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                  Craftsmanship / Making Charges (₹/g)
-                </label>
-                <span className="text-xs font-bold text-slate-700">
-                  ₹{makingChargesPerGram}/g = <strong className="font-mono text-slate-900">₹{totalLaborValue.toLocaleString('en-IN')}</strong>
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 flex-1 overflow-x-auto pb-0.5">
-                  {MAKING_PRESETS.map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => setMakingChargesPerGram(amt)}
-                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                        makingChargesPerGram === amt
-                          ? 'bg-slate-900 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
-                    >
-                      ₹{amt}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="w-24 shrink-0">
-                  <input
-                    type="number"
-                    step="50"
-                    min="0"
-                    value={makingChargesPerGram || ''}
-                    onChange={(e) => setMakingChargesPerGram(parseFloat(e.target.value) || 0)}
-                    placeholder="₹/g"
-                    className="w-full text-xs font-bold text-center bg-slate-50 border border-slate-300 rounded-xl px-2 py-2"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Optional / Advanced Details Accordion (Stones, Title, Hallmark, Goodwill Discount) */}
-            <div className="pt-2 border-t border-slate-100">
+          {/* PURITY FUNCTION KEYS (Top Row of Calculator) */}
+          <div className="grid grid-cols-5 gap-1.5">
+            {[
+              { id: '22K', label: '22K 916', rate: rate22K },
+              { id: '24K', label: '24K Pure', rate: rate24K },
+              { id: '18K', label: '18K 750', rate: rate18K },
+              { id: '14K', label: '14K', rate: rate14K },
+              { id: '925', label: 'Silver', rate: Math.round(rateSilver * 0.925) },
+            ].map((p) => (
               <button
+                key={p.id}
                 type="button"
-                onClick={() => setShowAdvancedFields(!showAdvancedFields)}
-                className="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center justify-between w-full py-1.5"
+                onClick={() => {
+                  setPurity(p.id as any);
+                  setCustomRate('');
+                  setIsEditingRate(false);
+                }}
+                className={`py-2 px-1 rounded-xl text-center transition-all ${
+                  purity === p.id
+                    ? 'bg-amber-500 text-slate-950 font-black shadow-md'
+                    : 'bg-[#2C2C2E] text-slate-300 hover:bg-[#3A3A3C] font-bold'
+                }`}
               >
-                <span>Optional: Stones, Custom Description & Discounts</span>
-                {showAdvancedFields ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                <span className="text-xs block leading-none">{p.label}</span>
+                <span className="text-[9px] opacity-75 font-mono mt-0.5 block">₹{p.rate}</span>
               </button>
+            ))}
+          </div>
 
-              {showAdvancedFields && (
-                <div className="pt-3 space-y-3 animate-fadeIn">
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">
-                      Custom Item Title / Description
-                    </label>
-                    <input
-                      type="text"
-                      value={customTitle}
-                      onChange={(e) => setCustomTitle(e.target.value)}
-                      placeholder={`e.g. 22K Traditional ${category} with Ruby Stone`}
-                      className="w-full text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5"
-                    />
-                  </div>
+          {/* CATEGORY FUNCTION STRIP */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => handleSelectCategory(cat.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 ${
+                  category === cat.id
+                    ? 'bg-white text-slate-950 shadow-sm'
+                    : 'bg-[#2C2C2E] text-slate-300 hover:bg-[#3A3A3C]'
+                }`}
+              >
+                <span>{cat.icon}</span>
+                <span>{cat.label}</span>
+              </button>
+            ))}
+          </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">
-                        Stone / Diamond Charges (₹)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={stoneCharges || ''}
-                        onChange={(e) => setStoneCharges(parseFloat(e.target.value) || 0)}
-                        placeholder="0"
-                        className="w-full text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5"
-                      />
-                    </div>
+          {/* PARAMETER SELECTOR TABS (What keying into - Clean 6 Tabs, No Majuri) */}
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+            {/* 1. Gross Wt */}
+            <button
+              type="button"
+              onClick={() => setActiveField('grossWeight')}
+              className={`p-2 rounded-xl text-left transition-all ${
+                activeField === 'grossWeight'
+                  ? 'bg-amber-500/20 border-2 border-amber-400 text-white'
+                  : 'bg-[#2C2C2E] border border-white/5 text-slate-300 hover:bg-[#3A3A3C]'
+              }`}
+            >
+              <span className="text-[9px] uppercase font-bold text-slate-400 block">Gross Wt</span>
+              <span className="text-xs font-black font-mono text-white">{grossWeight !== '' ? grossWeight : '0'}g</span>
+            </button>
 
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">
-                        Showroom Goodwill Discount (₹)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={discountAmount || ''}
-                        onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
-                        placeholder="0"
-                        className="w-full text-xs font-bold text-rose-700 bg-rose-50/50 border border-rose-200 rounded-xl px-3 py-2.5"
-                      />
-                    </div>
-                  </div>
-                </div>
+            {/* 2. Less / Stone */}
+            <button
+              type="button"
+              onClick={() => setActiveField('stoneWeight')}
+              className={`p-2 rounded-xl text-left transition-all ${
+                activeField === 'stoneWeight'
+                  ? 'bg-amber-500/20 border-2 border-amber-400 text-white'
+                  : 'bg-[#2C2C2E] border border-white/5 text-slate-300 hover:bg-[#3A3A3C]'
+              }`}
+            >
+              <span className="text-[9px] uppercase font-bold text-slate-400 block">Less Wt</span>
+              <span className="text-xs font-black font-mono text-white">{stoneWeight !== '' ? stoneWeight : '0'}g</span>
+            </button>
+
+            {/* 3. Making % */}
+            <button
+              type="button"
+              onClick={() => setActiveField('makingPercent')}
+              className={`p-2 rounded-xl text-left transition-all ${
+                activeField === 'makingPercent'
+                  ? 'bg-amber-500/20 border-2 border-amber-400 text-white'
+                  : 'bg-[#2C2C2E] border border-white/5 text-slate-300 hover:bg-[#3A3A3C]'
+              }`}
+            >
+              <span className="text-[9px] uppercase font-bold text-slate-400 block">Making %</span>
+              <span className="text-xs font-black font-mono text-amber-400">{makingPercent !== '' ? makingPercent : '0'}%</span>
+            </button>
+
+            {/* 4. Gold Rate */}
+            <button
+              type="button"
+              onClick={() => setActiveField('customRate')}
+              className={`p-2 rounded-xl text-left transition-all ${
+                activeField === 'customRate'
+                  ? 'bg-amber-500/20 border-2 border-amber-400 text-white'
+                  : 'bg-[#2C2C2E] border border-white/5 text-slate-300 hover:bg-[#3A3A3C]'
+              }`}
+            >
+              <span className="text-[9px] uppercase font-bold text-slate-400 block">Rate / g</span>
+              <span className="text-xs font-black font-mono text-white">₹{activeRate}</span>
+            </button>
+
+            {/* 5. Stones ₹ */}
+            <button
+              type="button"
+              onClick={() => setActiveField('stoneCharges')}
+              className={`p-2 rounded-xl text-left transition-all ${
+                activeField === 'stoneCharges'
+                  ? 'bg-amber-500/20 border-2 border-amber-400 text-white'
+                  : 'bg-[#2C2C2E] border border-white/5 text-slate-300 hover:bg-[#3A3A3C]'
+              }`}
+            >
+              <span className="text-[9px] uppercase font-bold text-slate-400 block">Stones ₹</span>
+              <span className="text-xs font-black font-mono text-white">₹{stoneCharges !== '' ? stoneCharges : '0'}</span>
+            </button>
+
+            {/* 6. Discount */}
+            <button
+              type="button"
+              onClick={() => setActiveField('discountAmount')}
+              className={`p-2 rounded-xl text-left transition-all ${
+                activeField === 'discountAmount'
+                  ? 'bg-rose-500/20 border-2 border-rose-400 text-white'
+                  : 'bg-[#2C2C2E] border border-white/5 text-slate-300 hover:bg-[#3A3A3C]'
+              }`}
+            >
+              <span className="text-[9px] uppercase font-bold text-rose-300 block">Discount</span>
+              <span className="text-xs font-black font-mono text-rose-400">₹{discountStr !== '' ? discountStr : '0'}</span>
+            </button>
+          </div>
+
+          {/* NUMBER PAD ALWAYS VISIBLE & INTEGRATED (Apple iOS 4x5 Layout) */}
+          <div className="space-y-2 pt-1">
+            
+            {/* Quick Increment Row */}
+            <div className="grid grid-cols-4 gap-2">
+              {isWeightActive ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleKeypadQuickAdd(0.1)}
+                    className="py-2 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:scale-95 text-amber-300 rounded-xl text-xs font-mono font-bold transition-all"
+                  >
+                    +0.1g
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleKeypadQuickAdd(0.5)}
+                    className="py-2 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:scale-95 text-amber-300 rounded-xl text-xs font-mono font-bold transition-all"
+                  >
+                    +0.5g
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleKeypadQuickAdd(1.0)}
+                    className="py-2 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:scale-95 text-amber-300 rounded-xl text-xs font-mono font-bold transition-all"
+                  >
+                    +1.0g
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleKeypadQuickAdd(5.0)}
+                    className="py-2 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:scale-95 text-amber-300 rounded-xl text-xs font-mono font-bold transition-all"
+                  >
+                    +5.0g
+                  </button>
+                </>
+              ) : isPercentActive ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleKeypadQuickAdd(1)}
+                    className="py-2 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:scale-95 text-amber-300 rounded-xl text-xs font-mono font-bold transition-all"
+                  >
+                    +1%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleKeypadQuickAdd(2)}
+                    className="py-2 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:scale-95 text-amber-300 rounded-xl text-xs font-mono font-bold transition-all"
+                  >
+                    +2%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleKeypadQuickAdd(5)}
+                    className="py-2 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:scale-95 text-amber-300 rounded-xl text-xs font-mono font-bold transition-all"
+                  >
+                    +5%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleKeypadQuickAdd(10)}
+                    className="py-2 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:scale-95 text-amber-300 rounded-xl text-xs font-mono font-bold transition-all"
+                  >
+                    +10%
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleKeypadQuickAdd(50)}
+                    className="py-2 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:scale-95 text-amber-300 rounded-xl text-xs font-mono font-bold transition-all"
+                  >
+                    +₹50
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleKeypadQuickAdd(100)}
+                    className="py-2 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:scale-95 text-amber-300 rounded-xl text-xs font-mono font-bold transition-all"
+                  >
+                    +₹100
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleKeypadQuickAdd(500)}
+                    className="py-2 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:scale-95 text-amber-300 rounded-xl text-xs font-mono font-bold transition-all"
+                  >
+                    +₹500
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleKeypadPress('00')}
+                    className="py-2 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:scale-95 text-slate-300 rounded-xl text-xs font-mono font-bold transition-all"
+                  >
+                    00
+                  </button>
+                </>
               )}
             </div>
 
-          </div>
+            {/* Apple Calculator 4-Column Keypad Grid */}
+            <div className="grid grid-cols-4 gap-2">
+              {/* Row 1 */}
+              <button
+                type="button"
+                onClick={handleKeypadClear}
+                className="h-12 bg-[#505054] hover:bg-[#636366] active:scale-95 text-white font-bold text-base rounded-2xl transition-all"
+              >
+                C
+              </button>
+              <button
+                type="button"
+                onClick={handleKeypadBackspace}
+                className="h-12 bg-[#505054] hover:bg-[#636366] active:scale-95 text-white flex items-center justify-center rounded-2xl transition-all"
+                title="Backspace"
+              >
+                <Delete size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isPercentActive) {
+                    handleKeypadQuickAdd(1);
+                  } else if (isWeightActive) {
+                    handleKeypadQuickAdd(1.0);
+                  } else {
+                    handleKeypadQuickAdd(100);
+                  }
+                }}
+                className="h-12 bg-[#505054] hover:bg-[#636366] active:scale-95 text-amber-300 font-bold text-xs rounded-2xl transition-all font-mono"
+              >
+                {isPercentActive ? '+1%' : isWeightActive ? '+1.0g' : '+100'}
+              </button>
+              <button
+                type="button"
+                onClick={handleNextField}
+                className="h-12 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl transition-all flex items-center justify-center gap-1"
+              >
+                <span>Next</span>
+                <ArrowRight size={14} />
+              </button>
 
-          {/* Quick Action Buttons Toolbar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <button
-              type="button"
-              onClick={onShareWhatsApp}
-              className="py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-sm active:scale-98 transition-all"
-            >
-              <Send size={14} />
-              <span>WhatsApp</span>
-            </button>
+              {/* Row 2: 7, 8, 9 */}
+              {['7', '8', '9'].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => handleKeypadPress(d)}
+                  className="h-12 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:bg-[#48484A] active:scale-95 text-white font-mono font-bold text-xl rounded-2xl transition-all shadow-xs"
+                >
+                  {d}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setEnableOldGold(!enableOldGold);
+                  if (!enableOldGold) setActiveField('oldGoldGrossWeight');
+                }}
+                className={`h-12 font-bold text-[11px] rounded-2xl transition-all flex flex-col items-center justify-center ${
+                  enableOldGold ? 'bg-emerald-600 text-white' : 'bg-[#2C2C2E] text-slate-400 hover:bg-[#3A3A3C]'
+                }`}
+              >
+                <span>🪙 Scrap</span>
+                <span className="text-[9px] font-mono">{enableOldGold ? `₹${oldGoldCredit}` : 'Off'}</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={onCopyQuote}
-              className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-2xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
-            >
-              {copiedText ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
-              <span>{copiedText ? 'Copied' : 'Copy Quote'}</span>
-            </button>
+              {/* Row 3: 4, 5, 6 */}
+              {['4', '5', '6'].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => handleKeypadPress(d)}
+                  className="h-12 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:bg-[#48484A] active:scale-95 text-white font-mono font-bold text-xl rounded-2xl transition-all shadow-xs"
+                >
+                  {d}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => onConvertEstimateToOrder(currentJewelryItem)}
+                className="h-12 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs uppercase tracking-wider rounded-2xl transition-all flex flex-col items-center justify-center shadow-xs"
+              >
+                <span>Book</span>
+                <span className="text-[9px] opacity-80">Order</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={onToggleCustomerView}
-              className="py-3 bg-slate-900 hover:bg-black text-white rounded-2xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-sm active:scale-98 transition-all"
-            >
-              <Eye size={14} />
-              <span>Showcase</span>
-            </button>
+              {/* Row 4: 1, 2, 3 */}
+              {['1', '2', '3'].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => handleKeypadPress(d)}
+                  className="h-12 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:bg-[#48484A] active:scale-95 text-white font-mono font-bold text-xl rounded-2xl transition-all shadow-xs"
+                >
+                  {d}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => onShareWhatsApp(currentJewelryItem)}
+                className="h-12 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl transition-all flex items-center justify-center gap-1 shadow-xs"
+                title="Send Live WhatsApp Quote"
+              >
+                <Send size={13} />
+                <span>Quote</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={onPrintSlip}
-              className="py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-2xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <Printer size={14} />
-              <span>Print Slip</span>
-            </button>
+              {/* Row 5: 0, ., +Cart, Print */}
+              <button
+                type="button"
+                onClick={() => handleKeypadPress('0')}
+                className="h-12 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:bg-[#48484A] active:scale-95 text-white font-mono font-bold text-xl rounded-2xl transition-all shadow-xs"
+              >
+                0
+              </button>
+              <button
+                type="button"
+                onClick={() => handleKeypadPress('.')}
+                className="h-12 bg-[#2C2C2E] hover:bg-[#3A3A3C] active:bg-[#48484A] active:scale-95 text-white font-mono font-bold text-xl rounded-2xl transition-all shadow-xs"
+              >
+                .
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddCurrentToCart()}
+                className="h-12 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold text-xs rounded-2xl transition-all flex items-center justify-center gap-1"
+                title="Add item to multi-item cart"
+              >
+                <Plus size={13} />
+                <span>Cart</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onPrintSlip(currentJewelryItem)}
+                className="h-12 bg-slate-700 hover:bg-slate-600 active:scale-95 text-white font-bold text-xs rounded-2xl transition-all flex items-center justify-center gap-1"
+                title="Print Estimate Slip"
+              >
+                <Printer size={13} />
+                <span>Slip</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* RIGHT COLUMN: TRANSPARENT COMPONENT BREAKDOWN & TOTAL CARD */}
-        <div className="lg:col-span-5 space-y-4">
+        {/* RIGHT COLUMN: COMPACT LIVE BREAKDOWN & CUSTOMER WHATSAPP TAPE */}
+        <div className="lg:col-span-5 space-y-3">
+          
+          {/* Transparent Live Calculation Card */}
           <ComponentBreakdownCard
-            grossWeight={grossWeight}
+            grossWeight={numericGross}
             netWeight={netWeight}
-            stoneWeight={stoneWeight}
+            stoneWeight={numericStone}
             purity={purity}
-            metalColor={metalColor}
             ratePerGram={activeRate}
             baseMetalValue={baseMetalValue}
-            wastagePercentage={wastagePercentage}
-            wastageValue={wastageValue}
-            makingChargesPerGram={makingChargesPerGram}
-            totalLaborValue={totalLaborValue}
-            stoneCharges={stoneCharges || 0}
-            otherCharges={otherCharges || 45}
+            wastagePercentage={numericMakingPct}
+            wastageValue={makingChargesValue}
+            makingChargesPerGram={0}
+            makingChargeType="PERCENT"
+            makingChargePercent={0}
+            totalLaborValue={0}
+            stoneCharges={numericStoneCharges}
+            otherCharges={numericOtherCharges}
+            oldGoldCredit={enableOldGold ? oldGoldCredit : 0}
+            discountAmount={discountAmount}
             subTotalPreTax={subTotalPreTax}
             taxRate={taxRate}
             taxAmount={taxAmount}
             finalAmount={netPayableAmount}
-            title="Live Price Valuation"
-            subtitle={`${purity} ${category} • BIS Hallmarked`}
-            showVisualComposition={true}
+            title={`${purity} ${category} Estimate`}
+            subtitle="Transparent live pricing breakdown"
+            category={category}
           />
 
-          {/* Add to Multi-Item Cart & Convert to Order Actions */}
-          <div className="space-y-2.5">
-            <button
-              type="button"
-              onClick={handleAddCurrentToCart}
-              className="w-full py-3.5 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-2xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-md shadow-amber-600/20 active:scale-98 transition-all"
-            >
-              <Plus size={16} strokeWidth={3} />
-              <span>Add to Multi-Item Estimate Cart</span>
-            </button>
+          {/* Quick Customer Phone & Name Input */}
+          <div className="bg-white rounded-3xl p-4 border border-slate-200/90 shadow-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <User size={13} className="text-amber-500" />
+                <span>Customer Details (WhatsApp)</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => onCopyQuote(currentJewelryItem)}
+                className="text-[10px] font-bold text-slate-500 hover:text-slate-800 flex items-center gap-1 bg-slate-100 px-2 py-1 rounded-xl"
+              >
+                <Copy size={11} />
+                <span>{copiedText ? 'Copied!' : 'Copy Text'}</span>
+              </button>
+            </div>
 
-            <button
-              type="button"
-              onClick={onConvertEstimateToOrder}
-              className="w-full py-3.5 bg-slate-900 hover:bg-black text-white rounded-2xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm active:scale-98 transition-all"
-            >
-              <span>Convert to Booking Order</span>
-              <ArrowRight size={15} />
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="relative">
+                <User size={13} className="absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="Customer Name"
+                  className="w-full text-xs font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-2xl pl-8 pr-3 py-2 outline-none focus:bg-white focus:border-amber-500"
+                />
+              </div>
+
+              <div className="relative">
+                <Phone size={13} className="absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="tel"
+                  value={customerContact}
+                  onChange={(e) => setCustomerContact(e.target.value)}
+                  placeholder="10-digit WhatsApp"
+                  className="w-full text-xs font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-2xl pl-8 pr-3 py-2 outline-none focus:bg-white focus:border-amber-500 font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Quick 1-Tap Action Bar */}
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => onShareWhatsApp(currentJewelryItem)}
+                className="py-2.5 px-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-2xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm transition-all"
+              >
+                <Send size={13} />
+                <span>WhatsApp</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onPrintSlip(currentJewelryItem)}
+                className="py-2.5 px-2 bg-slate-900 hover:bg-black active:scale-95 text-white rounded-2xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
+              >
+                <Printer size={13} />
+                <span>Print Slip</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onConvertEstimateToOrder(currentJewelryItem)}
+                className="py-2.5 px-2 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 rounded-2xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm transition-all"
+              >
+                <CheckCircle2 size={13} />
+                <span>Book Order</span>
+              </button>
+            </div>
           </div>
+
         </div>
 
       </div>
+
     </div>
   );
 };

@@ -1,9 +1,8 @@
 import React from 'react';
 import { 
-  Sparkles, ShieldCheck, Scale, Gem, ReceiptIndianRupee, 
-  HelpCircle, CheckCircle2, Info, ArrowRight, Percent, Award
+  ReceiptIndianRupee, Scale, Sparkles, Gem, ShieldCheck, 
+  Percent, Coins, Check, ArrowRight
 } from 'lucide-react';
-import { JewelryDetail } from '../../types';
 
 interface ComponentBreakdownCardProps {
   grossWeight: number;
@@ -16,17 +15,20 @@ interface ComponentBreakdownCardProps {
   wastagePercentage: number;
   wastageValue: number;
   makingChargesPerGram: number;
+  makingChargeType?: 'PER_GRAM' | 'PERCENT';
+  makingChargePercent?: number;
   totalLaborValue: number;
   stoneCharges: number;
   otherCharges: number;
+  oldGoldCredit?: number;
+  discountAmount?: number;
   subTotalPreTax: number;
   taxRate?: number;
   taxAmount: number;
   finalAmount: number;
   title?: string;
   subtitle?: string;
-  isCompact?: boolean;
-  showVisualComposition?: boolean;
+  category?: string;
 }
 
 export const ComponentBreakdownCard: React.FC<ComponentBreakdownCardProps> = ({
@@ -40,235 +42,172 @@ export const ComponentBreakdownCard: React.FC<ComponentBreakdownCardProps> = ({
   wastagePercentage,
   wastageValue,
   makingChargesPerGram,
+  makingChargeType = 'PER_GRAM',
+  makingChargePercent = 0,
   totalLaborValue,
   stoneCharges,
   otherCharges,
+  oldGoldCredit = 0,
+  discountAmount = 0,
   subTotalPreTax,
   taxRate = 3,
   taxAmount,
   finalAmount,
-  title = "Transparent Price Breakdown",
-  subtitle = "Official 100% Itemized Component Valuation",
-  isCompact = false,
-  showVisualComposition = true
+  title = "Calculation Summary",
+  subtitle = "Instant transparent gold price breakdown",
+  category = "Jewellery"
 }) => {
-  // Calculate percentage composition for customer visual bar
-  const total = finalAmount || 1;
-  const goldPct = Math.min(100, Math.max(0, Math.round((baseMetalValue / total) * 100)));
-  const wastagePct = Math.min(100, Math.max(0, Math.round((wastageValue / total) * 100)));
-  const makingPct = Math.min(100, Math.max(0, Math.round((totalLaborValue / total) * 100)));
-  const stonePct = Math.min(100, Math.max(0, Math.round((stoneCharges / total) * 100)));
-  const taxPct = Math.min(100, Math.max(0, Math.round((taxAmount / total) * 100)));
-
   return (
-    <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-5">
+    <div className="bg-white rounded-3xl p-5 sm:p-6 border border-amber-200/80 shadow-md shadow-amber-500/5 space-y-4">
       {/* Header */}
       <div className="flex justify-between items-start pb-3 border-b border-slate-100">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-700 flex items-center justify-center font-black">
+          <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-800 flex items-center justify-center font-black">
             <ReceiptIndianRupee size={20} />
           </div>
           <div>
             <h3 className="font-serif font-black text-slate-900 text-base">{title}</h3>
-            <p className="text-xs text-slate-500">{subtitle}</p>
+            <p className="text-xs text-slate-500">{purity} {category} • ₹{ratePerGram.toLocaleString('en-IN')}/g</p>
           </div>
         </div>
 
-        <div className="text-right">
-          <span className="bg-amber-100 text-amber-900 text-[10px] font-black uppercase px-2.5 py-1 rounded-full">
-            {purity} • ₹{ratePerGram.toLocaleString('en-IN')}/g
-          </span>
-        </div>
+        <span className="bg-amber-100 text-amber-900 text-xs font-black px-3 py-1 rounded-full font-mono">
+          {netWeight > 0 ? `${netWeight}g` : '0g'} Net
+        </span>
       </div>
 
-      {/* Visual Composition Bar */}
-      {showVisualComposition && finalAmount > 0 && (
-        <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-2">
-          <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-slate-500">
-            <span>Price Composition</span>
-            <span className="text-amber-800 font-bold">100% Transparent</span>
+      {/* Itemized Line Items Table */}
+      <div className="space-y-2.5 text-sm">
+        {/* 1. Gold Metal Value */}
+        <div className="bg-amber-50/60 border border-amber-200/70 rounded-2xl p-3 space-y-1">
+          <div className="flex justify-between items-center text-slate-800">
+            <span className="text-xs font-bold flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
+              <span>Gold Metal Value</span>
+            </span>
+            <span className="font-bold font-mono text-slate-950 text-sm">
+              ₹{baseMetalValue.toLocaleString('en-IN')}
+            </span>
+          </div>
+          <p className="text-[11px] text-amber-800 font-medium pl-4">
+            Calculation: <span className="font-mono font-bold">{netWeight}g</span> (Net Wt) × <span className="font-mono font-bold">₹{ratePerGram.toLocaleString('en-IN')}</span>/g ({purity})
+          </p>
+        </div>
+
+        {/* 2. Crafting Breakdown: Making Charges */}
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2">
+          <div className="flex justify-between items-center text-slate-800 pb-1.5 border-b border-slate-200/80">
+            <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <Sparkles size={13} className="text-amber-600" />
+              <span>Making Charges</span>
+            </span>
+            <span className="font-bold font-mono text-slate-900 text-sm">
+              ₹{(wastageValue + totalLaborValue).toLocaleString('en-IN')}
+            </span>
           </div>
 
-          {/* Progress bar segments */}
-          <div className="h-3 w-full bg-slate-200 rounded-full overflow-hidden flex shadow-inner">
-            <div 
-              style={{ width: `${goldPct}%` }} 
-              className="bg-amber-500 h-full transition-all" 
-              title={`Gold Metal: ${goldPct}%`}
-            />
-            <div 
-              style={{ width: `${wastagePct}%` }} 
-              className="bg-amber-600/80 h-full transition-all" 
-              title={`Wastage/VA: ${wastagePct}%`}
-            />
-            <div 
-              style={{ width: `${makingPct}%` }} 
-              className="bg-indigo-500 h-full transition-all" 
-              title={`Making/Labor: ${makingPct}%`}
-            />
-            {stoneCharges > 0 && (
-              <div 
-                style={{ width: `${stonePct}%` }} 
-                className="bg-emerald-500 h-full transition-all" 
-                title={`Stones: ${stonePct}%`}
-              />
-            )}
-            <div 
-              style={{ width: `${taxPct}%` }} 
-              className="bg-slate-400 h-full transition-all" 
-              title={`GST 3%: ${taxPct}%`}
-            />
-          </div>
-
-          {/* Legend */}
-          <div className="flex items-center gap-3 text-[10px] text-slate-600 font-bold flex-wrap pt-0.5">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
-              <span>Gold Metal ({goldPct}%)</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-amber-600/80" />
-              <span>VA / Wastage ({wastagePct}%)</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-indigo-500" />
-              <span>Labor ({makingPct}%)</span>
-            </span>
-            {stoneCharges > 0 && (
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span>Stones ({stonePct}%)</span>
+          {/* Row A: Making Charges / Labour */}
+          <div className="space-y-0.5">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-slate-700 font-semibold flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-600 shrink-0" />
+                <span>Making Charges ({wastagePercentage}%)</span>
               </span>
-            )}
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-slate-400" />
-              <span>GST ({taxPct}%)</span>
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Itemized Grid Breakdown */}
-      <div className="space-y-2 text-xs">
-        {/* 1. Base Metal Row */}
-        <div className="p-3 rounded-2xl bg-amber-50/50 border border-amber-200/70 flex justify-between items-center gap-2">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
-              <span className="font-bold text-slate-900">1. Pure Gold Metal Value</span>
+              <span className="font-bold font-mono text-slate-900">
+                ₹{wastageValue.toLocaleString('en-IN')}
+              </span>
             </div>
-            <p className="text-[11px] text-slate-500 mt-0.5 pl-3.5">
-              Net Weight <strong className="text-amber-900">{netWeight}g</strong> (Gross {grossWeight}g {stoneWeight > 0 ? `- Less ${stoneWeight}g stones` : ''}) × ₹{ratePerGram.toLocaleString('en-IN')}/g
+            <p className="text-[10.5px] text-slate-500 font-medium pl-3">
+              Formula: {wastagePercentage}% of ₹{baseMetalValue.toLocaleString('en-IN')} (Gold Value)
             </p>
           </div>
-          <span className="font-mono font-black text-sm text-amber-950 shrink-0">
-            ₹{baseMetalValue.toLocaleString('en-IN')}
-          </span>
-        </div>
 
-        {/* 2. Wastage / VA Row */}
-        <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex justify-between items-center gap-2">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-600" />
-              <span className="font-bold text-slate-800">2. Wastage / Value Addition (VA)</span>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-0.5 pl-3.5">
-              {wastagePercentage}% on gold metal value (unavoidable design loss & purification)
-            </p>
-          </div>
-          <span className="font-mono font-black text-sm text-slate-900 shrink-0">
-            ₹{wastageValue.toLocaleString('en-IN')}
-          </span>
-        </div>
-
-        {/* 3. Making / Craftsmanship Charges */}
-        <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex justify-between items-center gap-2">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-indigo-500" />
-              <span className="font-bold text-slate-800">3. Artisan & Making Charges</span>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-0.5 pl-3.5">
-              ₹{makingChargesPerGram}/gram × {netWeight}g net gold craftsmanship
-            </p>
-          </div>
-          <span className="font-mono font-black text-sm text-slate-900 shrink-0">
-            ₹{totalLaborValue.toLocaleString('en-IN')}
-          </span>
-        </div>
-
-        {/* 4. Stone / Diamond Charges (if any) */}
-        {stoneCharges > 0 && (
-          <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex justify-between items-center gap-2">
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="font-bold text-slate-800">4. Stones / Diamonds / Pearls</span>
+          {/* Row B: Majuri (Only if applicable) */}
+          {totalLaborValue > 0 && (
+            <div className="space-y-0.5 pt-1 border-t border-slate-200/50">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-700 font-semibold flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 shrink-0" />
+                  <span>
+                    Majuri {makingChargeType === 'PERCENT' ? `(${makingChargePercent}%)` : `(₹${makingChargesPerGram}/g)`}
+                  </span>
+                </span>
+                <span className="font-bold font-mono text-slate-900">
+                  ₹{totalLaborValue.toLocaleString('en-IN')}
+                </span>
               </div>
-              <p className="text-[11px] text-slate-500 mt-0.5 pl-3.5">
-                Precious gems & setting valuation
+              <p className="text-[10.5px] text-slate-500 font-medium pl-3">
+                {makingChargeType === 'PERCENT' 
+                  ? `Formula: ${makingChargePercent}% of ₹${baseMetalValue.toLocaleString('en-IN')}`
+                  : `Formula: ₹${makingChargesPerGram}/g × ${netWeight}g (Net Wt)`}
               </p>
             </div>
-            <span className="font-mono font-black text-sm text-slate-900 shrink-0">
-              ₹{stoneCharges.toLocaleString('en-IN')}
+          )}
+        </div>
+
+        {/* 3. Stones & Extra Charges (If any) */}
+        {(stoneCharges > 0 || otherCharges > 0) && (
+          <div className="flex justify-between items-center text-slate-700 bg-slate-50 border border-slate-200/70 px-3 py-2 rounded-xl">
+            <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+              <Gem size={13} className="text-emerald-600" />
+              <span>Stones & Hallmarking</span>
+            </span>
+            <span className="font-bold font-mono text-slate-900 text-xs">
+              ₹{(stoneCharges + otherCharges).toLocaleString('en-IN')}
             </span>
           </div>
         )}
 
-        {/* 5. Hallmarking & Certification */}
-        <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex justify-between items-center gap-2">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-slate-400" />
-              <span className="font-bold text-slate-800">5. BIS Hallmarking & Certification</span>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-0.5 pl-3.5">
-              Govt. HUID Laser Inscription & BIS 916 Certification
-            </p>
-          </div>
-          <span className="font-mono font-black text-sm text-slate-900 shrink-0">
-            ₹{(otherCharges || 45).toLocaleString('en-IN')}
+        {/* 4. GST */}
+        <div className="flex justify-between items-center text-slate-700 bg-slate-50 border border-slate-200/70 px-3 py-2 rounded-xl">
+          <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+            <Percent size={13} className="text-slate-500" />
+            <span>GST ({taxRate}% on Pre-Tax Total)</span>
           </span>
-        </div>
-
-        {/* Subtotal Pre-Tax */}
-        <div className="p-3 rounded-2xl bg-slate-100/80 border border-slate-200 flex justify-between items-center gap-2">
-          <span className="font-bold text-slate-700 pl-3.5">Subtotal (Pre-Tax):</span>
-          <span className="font-mono font-bold text-sm text-slate-800">
-            ₹{subTotalPreTax.toLocaleString('en-IN')}
-          </span>
-        </div>
-
-        {/* 6. Statutory GST */}
-        <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 flex justify-between items-center gap-2">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-700" />
-              <span className="font-bold text-amber-900">6. Statutory GST ({taxRate}%)</span>
-            </div>
-            <p className="text-[11px] text-amber-700/80 mt-0.5 pl-3.5">
-              CGST ({taxRate / 2}%) + SGST ({taxRate / 2}%) on total taxable value
-            </p>
-          </div>
-          <span className="font-mono font-black text-sm text-amber-900 shrink-0">
+          <span className="font-bold font-mono text-slate-900 text-xs">
             ₹{taxAmount.toLocaleString('en-IN')}
           </span>
         </div>
+
+        {/* 5. Old Gold Trade-in Credit (If any) */}
+        {oldGoldCredit > 0 && (
+          <div className="flex justify-between items-center text-emerald-800 bg-emerald-50/80 px-3 py-2 rounded-xl border border-emerald-200/70">
+            <span className="text-xs font-bold flex items-center gap-1.5">
+              <Coins size={14} className="text-emerald-600" />
+              <span>Old Gold Exchange Credit</span>
+            </span>
+            <span className="font-black font-mono text-xs">
+              -₹{oldGoldCredit.toLocaleString('en-IN')}
+            </span>
+          </div>
+        )}
+
+        {/* 6. Goodwill Discount (If any) */}
+        {discountAmount > 0 && (
+          <div className="flex justify-between items-center text-rose-800 bg-rose-50/80 px-3 py-2 rounded-xl border border-rose-200/70">
+            <span className="text-xs font-bold flex items-center gap-1.5">
+              <Percent size={14} className="text-rose-600" />
+              <span>Showroom Goodwill Discount</span>
+            </span>
+            <span className="font-black font-mono text-xs">
+              -₹{discountAmount.toLocaleString('en-IN')}
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Final Total Hero Banner */}
-      <div className="bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 text-white rounded-2xl p-4 sm:p-5 shadow-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+      {/* Prominent Total Card */}
+      <div className="bg-gradient-to-br from-amber-500/10 via-amber-600/10 to-amber-700/5 border border-amber-300 rounded-2xl p-4 flex justify-between items-center">
         <div>
-          <span className="text-[10px] font-black uppercase text-amber-200 tracking-wider block">
-            Final All-Inclusive Amount
+          <span className="text-[11px] font-black uppercase tracking-wider text-amber-900 block">
+            Total Net Amount
           </span>
-          <span className="text-xs text-amber-100">
-            Includes pure gold, crafting, hallmarking & 3% GST
+          <span className="text-[10px] text-amber-700 font-medium">
+            Including all taxes & charges
           </span>
         </div>
-        <div className="text-left sm:text-right">
-          <span className="text-2xl sm:text-3xl font-serif font-black tracking-tight text-white font-mono">
+        <div className="text-right">
+          <span className="text-2xl sm:text-3xl font-serif font-black text-amber-950 font-mono tracking-tight">
             ₹{finalAmount.toLocaleString('en-IN')}
           </span>
         </div>

@@ -125,7 +125,7 @@ export const QuotationPrintSlip: React.FC<QuotationPrintSlipProps> = ({
                     <th className="p-3">#</th>
                     <th className="p-3">Item Description</th>
                     <th className="p-3">Gross / Net Wt</th>
-                    <th className="p-3">VA / Making</th>
+                    <th className="p-3">Making & Majuri</th>
                     <th className="p-3 text-right">Taxable</th>
                     <th className="p-3 text-right">Total (3% GST)</th>
                   </tr>

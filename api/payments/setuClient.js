@@ -50,8 +50,9 @@ export function clearSetuBackoff(connection = null, config = null) {
 
 export function getSetuHeaders(token = null, schemeId = null, extraHeaders = {}) {
     const headers = {
-        'Accept': 'application/json',
+        'Accept': 'application/json, text/plain, */*',
         'User-Agent': SETU_DEFAULT_USER_AGENT,
+        'Accept-Language': 'en-US,en;q=0.9',
         ...extraHeaders
     };
     if (token) {
@@ -91,11 +92,16 @@ export async function getSetuToken(connection, config, forceRefresh = false, all
     try {
         tokenResponse = await fetch(`${baseUrl}/auth/token`, {
             method: 'POST',
-            headers: getSetuHeaders(null, null, { 'Content-Type': 'application/json' }),
+            headers: getSetuHeaders(null, null, {
+                'Content-Type': 'application/json',
+                'X-Setu-Client-ID': clientId,
+                'X-Setu-Client-Secret': secret
+            }),
             body: JSON.stringify({
                 clientID: clientId,
                 secret: secret
-            })
+            }),
+            signal: AbortSignal.timeout(10000)
         });
     } catch (fetchErr) {
         console.warn(`[Setu Token Manager] Network request to Setu failed: ${fetchErr.message}`);

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Calculator, Bookmark, Download, RotateCcw, Eye, EyeOff, Sparkles, Check,
   Zap, Search, Printer, Plus, Send, Copy, Layers, ShieldCheck, CheckCircle2,
-  RefreshCw, Clock, ArrowRight
+  RefreshCw, Clock, ArrowRight, Maximize2, Minimize2
 } from 'lucide-react';
 import { 
   GlobalSettings, JewelryDetail, ProductionStatus, Purity, 
@@ -64,6 +64,31 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
   const [isCustomRate, setIsCustomRate] = useState(false);
   const [showRateModal, setShowRateModal] = useState(false);
   const [refreshingRates, setRefreshingRates] = useState(false);
+
+  // --- FULLSCREEN SHOWROOM MODE STATE ---
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const handleToggleFullscreen = () => {
+    if (!isFullscreen) {
+      setIsFullscreen(true);
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    } else {
+      setIsFullscreen(false);
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
 
   // Sync with live settings when live mode is active
   useEffect(() => {
@@ -537,8 +562,38 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
     subventionDiscountAmount
   ]);
 
-  // --- AUTOMATIC SAVING OF EVERY ESTIMATE (DEBOUNCED) ---
+  // --- OLD GOLD IN EXPRESS MODE ---
+  const [expressOldGoldGrossWeight, setExpressOldGoldGrossWeight] = useState<number>(0);
+  const [expressOldGoldPurity, setExpressOldGoldPurity] = useState<string>('22K');
+  const [expressOldGoldRate, setExpressOldGoldRate] = useState<number>(rate22K);
+
+  const expressOldGoldCredit = useMemo(() => {
+    if (!enableOldGold || expressOldGoldGrossWeight <= 0) return 0;
+    const applicableRate = expressOldGoldRate || getOldGoldBenchmarkRate('GOLD', expressOldGoldPurity);
+    const purityRatio = expressOldGoldPurity === '24K' ? 1 : expressOldGoldPurity === '22K' ? 0.916 : expressOldGoldPurity === '18K' ? 0.75 : 0.585;
+    return Math.round(expressOldGoldGrossWeight * 0.99 * applicableRate);
+  }, [enableOldGold, expressOldGoldGrossWeight, expressOldGoldPurity, expressOldGoldRate, rate22K, rate24K, rate18K]);
+
+  // --- CURRENT ESTIMATE OBJECT ---
   const currentEstimateObject: SalesmanEstimate = useMemo(() => {
+    const combinedOldGoldItems = calculatorMode === 'EXPRESS' && enableOldGold && expressOldGoldGrossWeight > 0 ? [
+      {
+        id: `OG-EXP-${Date.now()}`,
+        description: `Old Gold Scrap (${expressOldGoldPurity})`,
+        metalType: 'GOLD' as const,
+        grossWeight: expressOldGoldGrossWeight,
+        deductionWeight: 0,
+        netMeltingWeight: expressOldGoldGrossWeight,
+        fineGoldWeight: Number((expressOldGoldGrossWeight * 0.916).toFixed(3)),
+        purity: expressOldGoldPurity,
+        meltingLossPercentage: 1.0,
+        ratePerGram: expressOldGoldRate || rate22K,
+        exchangeValue: expressOldGoldCredit
+      }
+    ] : enableOldGold ? recalculatedOldGoldItems : [];
+
+    const effectiveOldGoldCredit = calculatorMode === 'EXPRESS' ? expressOldGoldCredit : (enableOldGold ? oldGoldTotals.totalCredit : 0);
+
     return {
       id: estimateId,
       customerName: customerName || 'Walk-in Client',
@@ -546,7 +601,7 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
       customerCity,
       date: new Date().toISOString(),
       items: recalculatedCartItems,
-      oldGoldItems: enableOldGold ? recalculatedOldGoldItems : [],
+      oldGoldItems: combinedOldGoldItems,
       goldRate22K: rate22K,
       goldRate24K: rate24K,
       goldRate18K: rate18K,
@@ -556,8 +611,8 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
       totalJewelryValue: cartTotals.subTotalPreTax,
       totalGstAmount: cartTotals.totalGst,
       grossCartAmount: cartTotals.grossCartTotal,
-      totalOldGoldCredit: enableOldGold ? oldGoldTotals.totalCredit : 0,
-      netPayableAmount: planType === 'PLAN' ? netPayableAfterSubvention : netPayable,
+      totalOldGoldCredit: effectiveOldGoldCredit,
+      netPayableAmount: planType === 'PLAN' ? netPayableAfterSubvention : Math.max(0, netPayable - (calculatorMode === 'EXPRESS' ? expressOldGoldCredit : 0)),
       paymentPlan: {
         type: 'MANUAL',
         months: planMonths,
@@ -576,15 +631,21 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
   }, [
     estimateId, customerName, customerContact, customerCity,
     recalculatedCartItems, enableOldGold, recalculatedOldGoldItems,
+    calculatorMode, expressOldGoldGrossWeight, expressOldGoldPurity, expressOldGoldRate, expressOldGoldCredit,
     rate22K, rate24K, rate18K, rateSilver, discountAmount, taxRate,
     cartTotals, oldGoldTotals, netPayable, netPayableAfterSubvention,
     planType, planMonths, planInterestPercent, planAdvancePercent,
     rateProtectionEnabled, planCalculations.milestones, salesmanName
   ]);
 
+  // --- AUTOMATIC SAVING OF ESTIMATE (ONLY WHEN CUSTOMER DETAILS ARE ENTERED) ---
   useEffect(() => {
-    // Only auto-save if we have at least one item with valid weight
-    if (cartTotals.totalNetWeight <= 0 && (!enableOldGold || oldGoldTotals.totalNetMeltWeight <= 0)) {
+    const hasCustomerDetails = (customerName && customerName.trim().length >= 2) || (customerContact && customerContact.replace(/\D/g, '').length >= 5);
+    const hasValidCalculation = cartTotals.totalNetWeight > 0 || (enableOldGold && (oldGoldTotals.totalNetMeltWeight > 0 || expressOldGoldGrossWeight > 0));
+
+    // Do NOT auto-save on blank scratchpad calculations to avoid polluting database
+    if (!hasCustomerDetails || !hasValidCalculation) {
+      setAutoSaveStatus('IDLE');
       return;
     }
 
@@ -610,12 +671,12 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
       }).catch(() => {});
 
       setAutoSaveStatus('SAVED');
-    }, 600);
+    }, 1000);
 
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [currentEstimateObject, cartTotals.totalNetWeight, enableOldGold, oldGoldTotals.totalNetMeltWeight]);
+  }, [customerName, customerContact, currentEstimateObject, cartTotals.totalNetWeight, enableOldGold, oldGoldTotals.totalNetMeltWeight, expressOldGoldGrossWeight]);
 
   // --- ITEM FORM HANDLERS ---
   const handleOpenAddItemModal = () => {
@@ -772,8 +833,17 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
     if (updated.length === 0) setEnableOldGold(false);
   };
 
+  // Track the live item from Express Estimator
+  const [activeExpressItem, setActiveExpressItem] = useState<JewelryDetail | null>(null);
+
   // --- WHATSAPP ESTIMATE BUILDER ---
-  const constructWhatsAppEstimateMessage = () => {
+  const constructWhatsAppEstimateMessage = (explicitItem?: JewelryDetail) => {
+    const itemsToShare = explicitItem && explicitItem.netWeight > 0
+      ? [explicitItem]
+      : calculatorMode === 'EXPRESS' && activeExpressItem && activeExpressItem.netWeight > 0
+        ? [activeExpressItem]
+        : recalculatedCartItems;
+
     const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
     let msg = `✨ *AURAGOLD JEWELLERS — ESTIMATE QUOTATION* ✨\n`;
     msg += `📋 *Quote ID:* ${estimateId}\n`;
@@ -786,38 +856,48 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
     msg += `• 18K Diamond Gold: ₹${rate18K.toLocaleString('en-IN')}/g\n`;
     msg += `• Silver: ₹${rateSilver.toLocaleString('en-IN')}/g\n\n`;
 
-    msg += `🛍️ *ITEMIZED BREAKDOWN (${recalculatedCartItems.length} Items):*\n`;
-    recalculatedCartItems.forEach((item, idx) => {
+    msg += `🛍️ *ITEMIZED BREAKDOWN (${itemsToShare.length} Items):*\n`;
+    itemsToShare.forEach((item, idx) => {
       msg += `*${idx + 1}. ${item.customizationDetails || `${item.purity} ${item.category}`} (${item.purity})*\n`;
       msg += `  • Net Wt: ${item.netWeight}g @ ₹${getPurityRate(item.purity, item.metalColor)}/g\n`;
-      if (item.wastagePercentage > 0) msg += `  • Wastage (${item.wastagePercentage}%): ₹${item.wastageValue.toLocaleString('en-IN')}\n`;
-      if (item.makingChargesPerGram > 0) msg += `  • Making/Labor: ₹${item.totalLaborValue.toLocaleString('en-IN')} (₹${item.makingChargesPerGram}/g)\n`;
+      if (item.wastagePercentage > 0) msg += `  • Making Charges / Labour (${item.wastagePercentage}%): ₹${item.wastageValue.toLocaleString('en-IN')}\n`;
+      if (item.makingChargesPerGram > 0) msg += `  • Majuri: ₹${item.totalLaborValue.toLocaleString('en-IN')} (₹${item.makingChargesPerGram}/g)\n`;
       if (item.stoneCharges > 0) msg += `  • Stones: ₹${item.stoneCharges.toLocaleString('en-IN')}\n`;
       msg += `  • GST (3%): ₹${item.taxAmount.toLocaleString('en-IN')}\n`;
       msg += `  ➡️ *Item Total: ₹${item.finalAmount.toLocaleString('en-IN')}*\n\n`;
     });
 
-    if (enableOldGold && recalculatedOldGoldItems.length > 0) {
+    const effectiveOldGoldCredit = calculatorMode === 'EXPRESS' ? expressOldGoldCredit : (enableOldGold ? oldGoldTotals.totalCredit : 0);
+
+    if (enableOldGold && effectiveOldGoldCredit > 0) {
       msg += `━━━━━━━━━━━━━━━━━━━━\n`;
       msg += `🪙 *OLD GOLD / SCRAP TRADE-IN VALUE:*\n`;
-      recalculatedOldGoldItems.forEach((og, idx) => {
-        msg += `  ${idx + 1}. ${og.description} (${og.purity === 'CUSTOM' ? `${og.customPurityPercent}%` : og.purity})\n`;
-        msg += `     Net Melt: ${og.netMeltingWeight}g @ ₹${og.ratePerGram}/g\n`;
-        msg += `     Credit: ₹${og.exchangeValue.toLocaleString('en-IN')}\n`;
-      });
-      msg += `  ➡️ *Total Trade-in Credit: -₹${oldGoldTotals.totalCredit.toLocaleString('en-IN')}*\n\n`;
+      if (calculatorMode === 'EXPRESS') {
+        msg += `  • Scrap Weight: ${expressOldGoldGrossWeight}g (${expressOldGoldPurity})\n`;
+        msg += `  • Exchange Rate: ₹${expressOldGoldRate}/g\n`;
+      } else {
+        recalculatedOldGoldItems.forEach((og, idx) => {
+          msg += `  ${idx + 1}. ${og.description} (${og.purity === 'CUSTOM' ? `${og.customPurityPercent}%` : og.purity})\n`;
+          msg += `     Net Melt: ${og.netMeltingWeight}g @ ₹${og.ratePerGram}/g\n`;
+          msg += `     Credit: ₹${og.exchangeValue.toLocaleString('en-IN')}\n`;
+        });
+      }
+      msg += `  ➡️ *Total Trade-in Credit: -₹${effectiveOldGoldCredit.toLocaleString('en-IN')}*\n\n`;
     }
 
+    const effectiveGross = itemsToShare.reduce((s, i) => s + (i.finalAmount || 0), 0);
+    const effectiveNetPayable = Math.max(0, effectiveGross - discountAmount - effectiveOldGoldCredit);
+
     msg += `━━━━━━━━━━━━━━━━━━━━\n`;
-    msg += `💰 *Gross Jewellery Total:* ₹${cartTotals.grossCartTotal.toLocaleString('en-IN')}\n`;
-    if (enableOldGold && oldGoldTotals.totalCredit > 0) {
-      msg += `🪙 *Old Gold Trade-in Credit:* -₹${oldGoldTotals.totalCredit.toLocaleString('en-IN')}\n`;
+    msg += `💰 *Gross Jewellery Total:* ₹${effectiveGross.toLocaleString('en-IN')}\n`;
+    if (enableOldGold && effectiveOldGoldCredit > 0) {
+      msg += `🪙 *Old Gold Trade-in Credit:* -₹${effectiveOldGoldCredit.toLocaleString('en-IN')}\n`;
     }
     if (discountAmount > 0) {
       msg += `🏷️ *Showroom Goodwill Discount:* -₹${discountAmount.toLocaleString('en-IN')}\n`;
     }
     msg += `━━━━━━━━━━━━━━━━━━━━\n`;
-    msg += `⭐ *NET PAYABLE AMOUNT: ₹${(planType === 'PLAN' ? netPayableAfterSubvention : netPayable).toLocaleString('en-IN')}*\n`;
+    msg += `⭐ *NET PAYABLE AMOUNT: ₹${effectiveNetPayable.toLocaleString('en-IN')}*\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━\n`;
 
     if (planType === 'PLAN') {
@@ -856,7 +936,7 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
     return msg;
   };
 
-  const handleShareWhatsApp = () => {
+  const handleShareWhatsApp = (explicitItem?: JewelryDetail) => {
     let targetPhone = customerContact ? customerContact.trim() : '';
     if (!targetPhone) {
       const phoneInput = prompt("Enter customer's 10-digit WhatsApp number (or leave blank to choose contact in WhatsApp):", "");
@@ -867,7 +947,7 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
       }
     }
 
-    const messageText = constructWhatsAppEstimateMessage();
+    const messageText = constructWhatsAppEstimateMessage(explicitItem);
     const encoded = encodeURIComponent(messageText);
 
     if (targetPhone) {
@@ -879,67 +959,124 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
     }
   };
 
-  const handleCopyText = () => {
-    const text = constructWhatsAppEstimateMessage();
+  const handleCopyText = (explicitItem?: JewelryDetail) => {
+    const text = constructWhatsAppEstimateMessage(explicitItem);
     navigator.clipboard.writeText(text);
     setCopiedText(true);
     setTimeout(() => setCopiedText(false), 2500);
   };
 
   // Print Slip
-  const handleOpenPrintSlip = (est?: SalesmanEstimate) => {
-    setSelectedPrintEstimate(est || currentEstimateObject);
+  const handleOpenPrintSlip = (est?: SalesmanEstimate, explicitItem?: JewelryDetail) => {
+    if (explicitItem && explicitItem.netWeight > 0) {
+      const printEst: SalesmanEstimate = {
+        ...currentEstimateObject,
+        items: [explicitItem],
+        totalJewelryValue: explicitItem.baseMetalValue + (explicitItem.wastageValue || 0) + (explicitItem.totalLaborValue || 0) + (explicitItem.stoneCharges || 0) + (explicitItem.otherCharges || 45),
+        totalGstAmount: explicitItem.taxAmount,
+        grossCartAmount: explicitItem.finalAmount,
+        netPayableAmount: Math.max(0, explicitItem.finalAmount - discountAmount - (enableOldGold ? expressOldGoldCredit : 0))
+      };
+      setSelectedPrintEstimate(printEst);
+    } else {
+      setSelectedPrintEstimate(est || currentEstimateObject);
+    }
     setShowPrintModal(true);
   };
 
   // --- CONVERT TO FORMAL ORDER ---
-  const handleConvertEstimateToOrder = () => {
-    if (recalculatedCartItems.length === 0) {
-      alert("Please add at least one jewellery product to convert into an order.");
+  const handleConvertEstimateToOrder = (explicitItem?: JewelryDetail) => {
+    const itemsToConvert: JewelryDetail[] = [];
+    if (explicitItem && explicitItem.netWeight > 0) {
+      itemsToConvert.push(explicitItem);
+    } else if (calculatorMode === 'EXPRESS' && activeExpressItem && activeExpressItem.netWeight > 0) {
+      itemsToConvert.push(activeExpressItem);
+    } else if (recalculatedCartItems.length > 0) {
+      itemsToConvert.push(...recalculatedCartItems);
+    }
+
+    if (itemsToConvert.length === 0) {
+      alert("Please enter a valid jewellery net weight to convert to a booking order.");
       return;
     }
 
     const orderId = `ORD-${Date.now().toString().slice(-6)}`;
+    const effectiveTotalAmount = itemsToConvert.reduce((s, i) => s + (i.finalAmount || 0), 0);
     const initialPayments: any[] = [];
-    if (enableOldGold && oldGoldTotals.totalCredit > 0) {
+    const effectiveOldGoldCredit = calculatorMode === 'EXPRESS' ? expressOldGoldCredit : (enableOldGold ? oldGoldTotals.totalCredit : 0);
+
+    if (enableOldGold && effectiveOldGoldCredit > 0) {
       initialPayments.push({
         id: `PAY-OG-${Date.now()}`,
-        amount: oldGoldTotals.totalCredit,
+        amount: effectiveOldGoldCredit,
         date: new Date().toISOString().split('T')[0],
         method: 'OLD_GOLD',
-        note: `Exchange Credit: ${oldGoldTotals.itemCount} item(s) (${oldGoldTotals.totalNetMeltWeight}g melt)`,
+        note: `Exchange Credit: ${calculatorMode === 'EXPRESS' ? `${expressOldGoldGrossWeight}g Old Gold (${expressOldGoldPurity})` : `${oldGoldTotals.itemCount} item(s) (${oldGoldTotals.totalNetMeltWeight}g melt)`}`,
         orderId
       });
     }
 
-    const lastMilestoneDate = planCalculations.milestones.length > 0
-      ? planCalculations.milestones[planCalculations.milestones.length - 1].dueDate
+    // Generate milestones matching OrderForm.tsx standard logic
+    const today = new Date();
+    let milestones: any[] = [];
+
+    if (planType === 'PLAN') {
+      milestones = planCalculations.milestones;
+    } else {
+      // FULL Booking Payment Flow
+      if (effectiveOldGoldCredit > 0) {
+        milestones.push({
+          id: `M-OG-${Date.now()}`,
+          dueDate: today.toISOString().split('T')[0],
+          targetAmount: effectiveOldGoldCredit,
+          cumulativeTarget: effectiveOldGoldCredit,
+          status: 'PAID',
+          warningCount: 0,
+          description: 'Old Gold Trade-in Credit'
+        });
+      }
+      const remainingCash = Math.max(0, effectiveTotalAmount - discountAmount - effectiveOldGoldCredit);
+      if (remainingCash > 0) {
+        milestones.push({
+          id: `M-1-${Date.now()}`,
+          dueDate: today.toISOString().split('T')[0],
+          targetAmount: remainingCash,
+          cumulativeTarget: effectiveTotalAmount - discountAmount,
+          status: 'PENDING',
+          warningCount: 0,
+          description: 'Booking Advance / Net Total'
+        });
+      }
+    }
+
+    const lastMilestoneDate = milestones.length > 0
+      ? milestones[milestones.length - 1].dueDate
       : new Date().toISOString().split('T')[0];
 
     const newOrder: Order = {
       id: orderId,
       shareToken: Math.random().toString(36).substring(2, 10),
-      customerName: customerName || 'Walk-in Customer',
-      customerContact: customerContact || '9999999999',
-      items: recalculatedCartItems,
+      customerName: customerName.trim() || 'Walk-in Valued Client',
+      customerContact: customerContact.trim() || '',
+      items: itemsToConvert,
       payments: initialPayments,
-      totalAmount: cartTotals.grossCartTotal,
+      totalAmount: Math.max(0, effectiveTotalAmount - discountAmount),
       discountAmount: discountAmount,
       goldRateAtBooking: rate22K,
       status: OrderStatus.ACTIVE,
       createdAt: new Date().toISOString(),
-      createdBy: currentUser?.username || salesmanName,
+      createdBy: currentUser?.username || salesmanName || 'Sales Desk',
       paymentPlan: {
         type: 'MANUAL',
         months: planType === 'PLAN' ? planMonths : 1,
         interestPercentage: planType === 'PLAN' ? planInterestPercent : 0,
         advancePercentage: planType === 'PLAN' ? planAdvancePercent : 100,
-        goldRateProtection: planType === 'PLAN' ? rateProtectionEnabled : false,
+        goldRateProtection: planType === 'PLAN' ? rateProtectionEnabled : true,
         protectionLimit: settings.goldRateProtectionMax || 500,
         protectionRateBooked: rate22K,
         protectionDeadline: lastMilestoneDate,
-        milestones: planCalculations.milestones,
-        protectionStatus: (planType === 'PLAN' && rateProtectionEnabled) ? ProtectionStatus.ACTIVE : ProtectionStatus.NONE
+        milestones,
+        protectionStatus: (planType === 'PLAN' ? (rateProtectionEnabled ? ProtectionStatus.ACTIVE : ProtectionStatus.NONE) : ProtectionStatus.ACTIVE)
       }
     };
 
@@ -947,7 +1084,7 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
       onConvertToOrder(newOrder);
     } else {
       setConversionSuccess(orderId);
-      alert(`Estimate converted to Order ${orderId} successfully!`);
+      alert(`Estimate converted to Booking Order ${orderId} successfully!`);
     }
   };
 
@@ -1035,26 +1172,30 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
 
   // --- RENDER ---
   return (
-    <div className="space-y-5 pb-36 animate-fadeIn max-w-5xl mx-auto px-2 sm:px-4">
+    <div className={`space-y-4 font-sans max-w-6xl mx-auto transition-all ${
+      isFullscreen 
+        ? 'fixed inset-0 z-[9999] bg-[#F2F2F7] overflow-y-auto p-4 sm:p-6 w-screen h-screen min-h-screen' 
+        : 'pb-36 px-2 sm:px-4'
+    }`}>
       
       {/* 1. TOP SHOWROOM HEADER & CONTROL STRIP */}
-      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+      <div className="bg-white/95 backdrop-blur-md rounded-3xl p-3.5 sm:p-4 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-500/20 shrink-0">
-            <Calculator size={22} />
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md shadow-amber-500/20 shrink-0">
+            <Calculator size={20} />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="font-serif font-black text-lg sm:text-xl text-slate-900 tracking-tight">
+              <h1 className="font-serif font-black text-base sm:text-lg text-slate-900 tracking-tight">
                 Salesman Estimator
               </h1>
-              <span className="bg-amber-100 text-amber-900 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full font-mono">
+              <span className="bg-amber-100/80 text-amber-950 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full font-mono">
                 {estimateId}
               </span>
               {autoSaveStatus === 'SAVED' && (
                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full flex items-center gap-1">
                   <CheckCircle2 size={11} />
-                  <span>Auto-saved</span>
+                  <span>Saved</span>
                 </span>
               )}
               {autoSaveStatus === 'SAVING' && (
@@ -1063,51 +1204,66 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-500">
-              Instant transparent quotation & breakdown engine for showroom salesmen
+            <p className="text-[11px] text-slate-500 font-medium">
+              Transparent live quote & labour breakdown engine
             </p>
           </div>
         </div>
 
-        {/* Action Controls: Search, Showcase, Print, New */}
-        <div className="flex items-center gap-1.5 w-full sm:w-auto flex-wrap">
+        {/* Action Controls: Search, Showcase, Print, Fullscreen, New */}
+        <div className="flex items-center gap-1.5 w-full sm:w-auto flex-wrap justify-end">
           <button
             type="button"
             onClick={() => setShowSavedQuotesModal(true)}
-            className="px-3.5 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm active:scale-98 transition-all"
-            title="Search all estimates by number, customer name, phone, item"
+            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-2xl text-xs font-bold flex items-center gap-1.5 transition-all"
+            title="Search all estimates"
           >
             <Search size={13} />
-            <span>Search Quotes ({savedEstimates.length})</span>
+            <span>Quotes ({savedEstimates.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleToggleFullscreen}
+            className={`px-3 py-2 rounded-2xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+              isFullscreen 
+                ? 'bg-amber-500 text-slate-950 font-black ring-2 ring-amber-400/40 shadow-sm' 
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen Mode"}
+          >
+            {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            <span className="hidden sm:inline">{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
           </button>
 
           <button
             type="button"
             onClick={() => setCustomerViewActive(!customerViewActive)}
-            className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-xs ${
+            className={`px-3 py-2 rounded-2xl text-xs font-bold flex items-center gap-1.5 transition-all ${
               customerViewActive 
-                ? 'bg-emerald-600 text-white ring-2 ring-emerald-500/30' 
+                ? 'bg-emerald-600 text-white shadow-xs' 
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
+            title="Customer Showcase Mode"
           >
             {customerViewActive ? <Eye size={13} /> : <EyeOff size={13} />}
-            <span>{customerViewActive ? 'Showroom' : 'Showcase'}</span>
+            <span className="hidden sm:inline">{customerViewActive ? 'Showroom' : 'Showcase'}</span>
           </button>
 
           <button
             type="button"
             onClick={() => handleOpenPrintSlip()}
-            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
-            title="Print or preview customer quotation slip"
+            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold flex items-center gap-1.5 transition-colors"
+            title="Print Quotation Slip"
           >
             <Printer size={13} />
-            <span className="hidden sm:inline">Print Slip</span>
+            <span className="hidden sm:inline">Slip</span>
           </button>
 
           <button
             type="button"
             onClick={handleResetCalculator}
-            className="px-3 py-2 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
+            className="px-3 py-2 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-2xl text-xs font-bold flex items-center gap-1.5 transition-colors"
             title="Reset to fresh calculation"
           >
             <RotateCcw size={13} />
@@ -1116,33 +1272,33 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
         </div>
       </div>
 
-      {/* 2. MODE SWITCHER SEGMENTED TABS */}
+      {/* 2. MODE SWITCHER SEGMENTED TABS (iOS Segmented Bar) */}
       {!customerViewActive && (
-        <div className="bg-slate-100 p-1.5 rounded-2xl flex gap-1 border border-slate-200/80 shadow-2xs">
+        <div className="bg-slate-100/90 p-1 rounded-2xl flex gap-1 border border-slate-200/60 shadow-2xs">
           <button
             type="button"
             onClick={() => setCalculatorMode('EXPRESS')}
-            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
               calculatorMode === 'EXPRESS'
-                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/60'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white text-slate-900 shadow-xs border border-slate-200/40'
+                : 'text-slate-500 hover:text-slate-900'
             }`}
           >
-            <Zap size={15} className={calculatorMode === 'EXPRESS' ? 'text-amber-500 fill-amber-500' : ''} />
-            <span>Express Quick Estimator (1-Screen)</span>
+            <Zap size={14} className={calculatorMode === 'EXPRESS' ? 'text-amber-500 fill-amber-500' : ''} />
+            <span>Express Estimator (1-Screen)</span>
           </button>
 
           <button
             type="button"
             onClick={() => setCalculatorMode('WIZARD')}
-            className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
               calculatorMode === 'WIZARD'
-                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/60'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white text-slate-900 shadow-xs border border-slate-200/40'
+                : 'text-slate-500 hover:text-slate-900'
             }`}
           >
-            <Layers size={15} className={calculatorMode === 'WIZARD' ? 'text-amber-600' : ''} />
-            <span>Multi-Item & EMI Wizard ({recalculatedCartItems.length} items)</span>
+            <Layers size={14} className={calculatorMode === 'WIZARD' ? 'text-amber-600' : ''} />
+            <span>Multi-Item & EMI Wizard ({recalculatedCartItems.length})</span>
           </button>
         </div>
       )}
@@ -1186,14 +1342,27 @@ export const SalesmanCalculator: React.FC<SalesmanCalculatorProps> = ({
           discountAmount={discountAmount}
           setDiscountAmount={setDiscountAmount}
           taxRate={taxRate}
+          enableOldGold={enableOldGold}
+          setEnableOldGold={setEnableOldGold}
+          oldGoldGrossWeight={expressOldGoldGrossWeight}
+          setOldGoldGrossWeight={setExpressOldGoldGrossWeight}
+          oldGoldPurity={expressOldGoldPurity}
+          setOldGoldPurity={setExpressOldGoldPurity}
+          oldGoldRate={expressOldGoldRate}
+          setOldGoldRate={setExpressOldGoldRate}
+          oldGoldCredit={expressOldGoldCredit}
+          onExpressItemChange={setActiveExpressItem}
           onAddToCart={handleAddToCartFromExpress}
           onShareWhatsApp={handleShareWhatsApp}
           onCopyQuote={handleCopyText}
           onToggleCustomerView={() => setCustomerViewActive(true)}
-          onPrintSlip={() => handleOpenPrintSlip()}
+          onPrintSlip={(item) => handleOpenPrintSlip(undefined, item)}
           onConvertEstimateToOrder={handleConvertEstimateToOrder}
+          onSaveEstimateManual={handleSaveEstimateManual}
           copiedText={copiedText}
           autoSaveStatus={autoSaveStatus}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={handleToggleFullscreen}
         />
       ) : (
         /* --- WIZARD MODE: 4-STEP MULTI-ITEM & EMI SIMULATOR --- */
